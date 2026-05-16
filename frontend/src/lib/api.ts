@@ -30,7 +30,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 800) // 缩短超时到 800ms
+  const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
 
   let response: Response
   try {
