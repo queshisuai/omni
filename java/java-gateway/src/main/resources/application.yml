@@ -1,0 +1,49 @@
+server:
+  port: 8088
+
+spring:
+  main:
+    web-application-type: reactive
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.gateway.config.GatewayClassPathWarningAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - com.alibaba.druid.spring.boot.autoconfigure.DruidDataSourceAutoConfigure
+  application:
+    name: gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+      config:
+        import-check:
+          enabled: false
+        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+        file-extension: yaml
+    gateway:
+      routes:
+        - id: user-service
+          uri: lb://java-user
+          predicates:
+            - Path=/api/user/**
+        - id: ticket-service
+          uri: lb://java-ticket
+          predicates:
+            - Path=/api/ticket/**
+        - id: order-service
+          uri: lb://java-order
+          predicates:
+            - Path=/api/order/**
+        - id: payment-service
+          uri: lb://java-payment
+          predicates:
+            - Path=/api/payment/**
+        - id: notification-service
+          uri: lb://java-notification
+          predicates:
+            - Path=/api/notification/**
+        - id: grab-service
+          uri: http://localhost:3000
+          predicates:
+            - Path=/grab/**
