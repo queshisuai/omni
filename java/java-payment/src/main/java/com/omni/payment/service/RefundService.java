@@ -1,0 +1,643 @@
+package com.omni.payment.service;
+
+import com.alipay.api.AlipayApiException;
+import com.alipay.api.AlipayClient;
+import com.alipay.api.DefaultAlipayClient;
+import com.alipay.api.request.AlipayTradeRefundRequest;
+import com.alipay.api.response.AlipayTradeRefundResponse;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.omni.common.result.Result;
+import com.omni.common.result.ResultCode;
+import com.omni.exception.BusinessException;
+import com.omni.payment.client.OrderClient;
+import com.omni.payment.config.AlipayProperties;
+import com.omni.payment.dto.OrderInfoResponse;
+import com.omni.payment.dto.RefundRequestVO;
+import com.omni.payment.entity.ActivityRef;
+import com.omni.payment.entity.Payment;
+import com.omni.payment.entity.RefundRequest;
+import com.omni.payment.entity.SessionRef;
+import com.omni.payment.entity.UserRef;
+import com.omni.payment.mapper.ActivityRefMapper;
+import com.omni.payment.mapper.PaymentMapper;
+import com.omni.payment.mapper.RefundRequestMapper;
+import com.omni.payment.mapper.SessionRefMapper;
+import com.omni.payment.mapper.UserRefMapper;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.sql.SQLException;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+public class RefundService {
+
+    private static final Integer ORDER_STATUS_PAID = 2;
+    private static final Integer REFUND_STATUS_PENDING = 0;
+    private static final Integer REFUND_STATUS_REFUNDED = 1;
+    private static final Integer REFUND_STATUS_REJECTED = 2;
+    private static final Integer REFUND_STATUS_FAILED = 3;
+    private static final Integer REFUND_STATUS_PROCESSING = 4;
+    private static final String ROLE_ADMIN = "admin";
+    private static final String ROLE_ORGANIZER = "organizer";
+
+    private final AlipayProperties alipayProperties;
+    private final OrderClient orderClient;
+    private final RefundRequestMapper refundRequestMapper;
+    private final PaymentMapper paymentMapper;
+    private final UserRefMapper userRefMapper;
+    private final SessionRefMapper sessionRefMapper;
+    private final ActivityRefMapper activityRefMapper;
+    private final String internalApiToken;
+
+    public RefundService(AlipayProperties alipayProperties,
+                         OrderClient orderClient,
+                         RefundRequestMapper refundRequestMapper,
+                         PaymentMapper paymentMapper,
+                         UserRefMapper userRefMapper,
+                         SessionRefMapper sessionRefMapper,
+                         ActivityRefMapper activityRefMapper,
+                         @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+        this.alipayProperties = alipayProperties;
+        this.orderClient = orderClient;
+        this.refundRequestMapper = refundRequestMapper;
+        this.paymentMapper = paymentMapper;
+        this.userRefMapper = userRefMapper;
+        this.sessionRefMapper = sessionRefMapper;
+        this.activityRefMapper = activityRefMapper;
+        this.internalApiToken = internalApiToken;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public RefundRequestVO applyRefund(Long orderId, Long userId, String reason) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        OrderInfoResponse order = getOrderOrThrow(orderId);
+        if (!ORDER_STATUS_PAID.equals(order.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅已支付订单可申请退款");
+        }
+        if (!userId.equals(order.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "只能申请自己的订单退款");
+        }
+
+        RefundRequest latestRefund = getLatestRefundByOrderId(orderId);
+        if (latestRefund != null && isActiveRefundStatus(latestRefund.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "该订单已有退款申请，不允许重复申请");
+        }
+
+        Payment payment = getLatestSuccessfulPayment(order.getOrderNo());
+        validatePaymentForOrder(payment, order);
+
+        latestRefund = getLatestRefundByOrderId(orderId);
+        if (latestRefund != null && isActiveRefundStatus(latestRefund.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "该订单已有退款申请，不允许重复申请");
+        }
+
+        RefundRequest refund = new RefundRequest();
+        refund.setOrderId(order.getId());
+        refund.setUserId(userId);
+        refund.setPaymentId(payment.getId());
+        refund.setRefundNo(generateRefundNo());
+        refund.setAmount(normalizeAmount(order.getAmount()));
+        refund.setReason(reason);
+        refund.setStatus(REFUND_STATUS_PENDING);
+        refund.setCreateTime(LocalDateTime.now());
+        try {
+            refundRequestMapper.insert(refund);
+        } catch (DataIntegrityViolationException e) {
+            if (isUniqueViolation(e)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "该订单已有退款申请处理中");
+            }
+            throw e;
+        }
+        return toVO(refund, order.getOrderNo());
+    }
+
+    public List<RefundRequestVO> listUserRefunds(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        LambdaQueryWrapper<RefundRequest> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(RefundRequest::getUserId, userId)
+                .orderByDesc(RefundRequest::getCreateTime)
+                .orderByDesc(RefundRequest::getId);
+        return refundRequestMapper.selectList(wrapper).stream()
+                .map(this::toVOWithOrderNo)
+                .collect(Collectors.toList());
+    }
+
+    public List<RefundRequestVO> listAdminRefunds(Long reviewerId, Integer status) {
+        UserRef reviewer = requireReviewer(reviewerId);
+        LambdaQueryWrapper<RefundRequest> wrapper = new LambdaQueryWrapper<>();
+        if (status != null) {
+            wrapper.eq(RefundRequest::getStatus, status);
+        }
+        wrapper.orderByDesc(RefundRequest::getCreateTime)
+                .orderByDesc(RefundRequest::getId);
+        List<RefundRequest> refunds = refundRequestMapper.selectList(wrapper);
+
+        if (ROLE_ADMIN.equals(reviewer.getRole())) {
+            return refunds.stream().map(this::toVOWithOrderNo).collect(Collectors.toList());
+        }
+
+        List<RefundRequestVO> result = new ArrayList<>();
+        for (RefundRequest refund : refunds) {
+            OrderInfoResponse order = getOrderOrThrow(refund.getOrderId());
+            if (canOrganizerReview(order, reviewerId)) {
+                result.add(toVO(refund, order.getOrderNo()));
+            }
+        }
+        return result;
+    }
+
+    public RefundRequestVO reject(Long refundId, Long reviewerId, String reviewNote) {
+        RefundRequest refund = getRefundOrThrow(refundId);
+        OrderInfoResponse order = getOrderOrThrow(refund.getOrderId());
+        requireReviewPermission(reviewerId, order);
+        requirePending(refund);
+
+        LocalDateTime now = LocalDateTime.now();
+        refund = updateRefundRejected(refundId, reviewerId, reviewNote, now);
+        return toVO(refund, order.getOrderNo());
+    }
+
+    public RefundRequestVO approve(Long refundId, Long reviewerId, String reviewNote) {
+        validateConfig();
+        RefundRequest refund = getRefundOrThrow(refundId);
+        OrderInfoResponse order = getOrderOrThrow(refund.getOrderId());
+        requireReviewPermission(reviewerId, order);
+        if (REFUND_STATUS_REFUNDED.equals(refund.getStatus())) {
+            return toVO(refund, order.getOrderNo());
+        }
+        requireApprovable(refund);
+        if (!ORDER_STATUS_PAID.equals(order.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅已支付订单可审核退款");
+        }
+
+        Payment payment = getPaymentOrThrow(refund.getPaymentId(), order.getOrderNo());
+        validatePaymentForOrder(payment, order);
+        validateRefundAmount(refund, order);
+
+        LocalDateTime now = LocalDateTime.now();
+        if (REFUND_STATUS_PENDING.equals(refund.getStatus())) {
+            refund = claimRefundProcessing(refundId, reviewerId, reviewNote, now);
+        } else {
+            refund = refreshProcessingReview(refundId, reviewerId, reviewNote, now);
+        }
+        validateRefundAmount(refund, order);
+
+        AlipayTradeRefundRequest request = new AlipayTradeRefundRequest();
+        Map<String, String> bizContent = new LinkedHashMap<>();
+        bizContent.put("out_trade_no", order.getOrderNo());
+        bizContent.put("trade_no", payment.getTradeNo());
+        bizContent.put("refund_amount", normalizeAmount(refund.getAmount()).toPlainString());
+        bizContent.put("out_request_no", refund.getRefundNo());
+        bizContent.put("refund_reason", StringUtils.hasText(refund.getReason()) ? refund.getReason() : "用户申请退款");
+        request.setBizContent(buildJson(bizContent));
+
+        try {
+            AlipayTradeRefundResponse response = createClient().execute(request);
+            if (response != null && response.isSuccess()) {
+                String alipayRefundNo = firstText(response.getTradeNo(), response.getOutTradeNo());
+                try {
+                    markOrderRefunded(order.getId());
+                } catch (RuntimeException e) {
+                    updateRefundCompensationRequired(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), e.getMessage(), now);
+                    throw new BusinessException(ResultCode.INTERNAL_ERROR,
+                            "支付宝退款已成功，但订单状态更新失败，退款申请保持处理中，请人工补偿/重试");
+                }
+                refund = updateRefundSucceeded(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), now);
+                return toVO(refund, order.getOrderNo());
+            }
+
+            if (response != null && !response.isSuccess()) {
+                refund = updateRefundFailed(refundId, reviewerId, reviewNote, response.getBody(), now);
+            } else {
+                refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款响应为空，退款结果未知，请稍后重试/查询", now);
+            }
+            return toVO(refund, order.getOrderNo());
+        } catch (AlipayApiException e) {
+            refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款异常，退款结果未知，请稍后重试/查询: " + e.getMessage(), now);
+            return toVO(refund, order.getOrderNo());
+        }
+    }
+
+    private RefundRequest updateRefundRejected(Long refundId, Long reviewerId, String reviewNote, LocalDateTime now) {
+        LambdaUpdateWrapper<RefundRequest> wrapper = pendingUpdateWrapper(refundId)
+                .set(RefundRequest::getStatus, REFUND_STATUS_REJECTED)
+                .set(RefundRequest::getReviewerId, reviewerId)
+                .set(RefundRequest::getReviewNote, reviewNote)
+                .set(RefundRequest::getReviewTime, now);
+        updatePendingOrThrow(wrapper);
+        return getRefundOrThrow(refundId);
+    }
+
+    private RefundRequest updateRefundSucceeded(Long refundId, Long reviewerId, String reviewNote,
+                                                String alipayRefundNo, String rawResponse, LocalDateTime now) {
+        LambdaUpdateWrapper<RefundRequest> wrapper = processingUpdateWrapper(refundId)
+                .set(RefundRequest::getStatus, REFUND_STATUS_REFUNDED)
+                .set(RefundRequest::getReviewerId, reviewerId)
+                .set(RefundRequest::getReviewNote, reviewNote)
+                .set(RefundRequest::getAlipayRefundNo, alipayRefundNo)
+                .set(RefundRequest::getRawResponse, rawResponse)
+                .set(RefundRequest::getReviewTime, now)
+                .set(RefundRequest::getRefundTime, now);
+        updateProcessingOrThrow(wrapper);
+        return getRefundOrThrow(refundId);
+    }
+
+    private RefundRequest updateRefundFailed(Long refundId, Long reviewerId, String reviewNote, String rawResponse, LocalDateTime now) {
+        LambdaUpdateWrapper<RefundRequest> wrapper = processingUpdateWrapper(refundId)
+                .set(RefundRequest::getStatus, REFUND_STATUS_FAILED)
+                .set(RefundRequest::getReviewerId, reviewerId)
+                .set(RefundRequest::getReviewNote, reviewNote)
+                .set(RefundRequest::getRawResponse, rawResponse)
+                .set(RefundRequest::getReviewTime, now);
+        updateProcessingOrThrow(wrapper);
+        return getRefundOrThrow(refundId);
+    }
+
+    private RefundRequest updateRefundUnknown(Long refundId, Long reviewerId, String reviewNote, String rawResponse, LocalDateTime now) {
+        LambdaUpdateWrapper<RefundRequest> wrapper = processingUpdateWrapper(refundId)
+                .set(RefundRequest::getReviewerId, reviewerId)
+                .set(RefundRequest::getReviewNote, appendMessage(reviewNote, rawResponse))
+                .set(RefundRequest::getRawResponse, rawResponse)
+                .set(RefundRequest::getReviewTime, now);
+        updateProcessingOrThrow(wrapper);
+        return getRefundOrThrow(refundId);
+    }
+
+    private RefundRequest claimRefundProcessing(Long refundId, Long reviewerId, String reviewNote, LocalDateTime now) {
+        LambdaUpdateWrapper<RefundRequest> wrapper = pendingUpdateWrapper(refundId)
+                .set(RefundRequest::getStatus, REFUND_STATUS_PROCESSING)
+                .set(RefundRequest::getReviewerId, reviewerId)
+                .set(RefundRequest::getReviewNote, reviewNote)
+                .set(RefundRequest::getReviewTime, now);
+        updatePendingOrThrow(wrapper);
+        return getRefundOrThrow(refundId);
+    }
+
+    private RefundRequest refreshProcessingReview(Long refundId, Long reviewerId, String reviewNote, LocalDateTime now) {
+        LambdaUpdateWrapper<RefundRequest> wrapper = processingUpdateWrapper(refundId)
+                .set(RefundRequest::getReviewerId, reviewerId)
+                .set(RefundRequest::getReviewNote, reviewNote)
+                .set(RefundRequest::getReviewTime, now);
+        updateProcessingOrThrow(wrapper);
+        return getRefundOrThrow(refundId);
+    }
+
+    private void updateRefundCompensationRequired(Long refundId, Long reviewerId, String reviewNote,
+                                                  String alipayRefundNo, String rawResponse,
+                                                  String failureMessage, LocalDateTime now) {
+        String message = "支付宝退款已成功，但订单退款状态更新失败，需要人工补偿/重试: " + failureMessage;
+        LambdaUpdateWrapper<RefundRequest> wrapper = processingUpdateWrapper(refundId)
+                .set(RefundRequest::getReviewerId, reviewerId)
+                .set(RefundRequest::getReviewNote, appendMessage(reviewNote, message))
+                .set(RefundRequest::getAlipayRefundNo, alipayRefundNo)
+                .set(RefundRequest::getRawResponse, appendMessage(rawResponse, message))
+                .set(RefundRequest::getReviewTime, now);
+        updateProcessingOrThrow(wrapper);
+    }
+
+    private LambdaUpdateWrapper<RefundRequest> pendingUpdateWrapper(Long refundId) {
+        LambdaUpdateWrapper<RefundRequest> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(RefundRequest::getId, refundId)
+                .eq(RefundRequest::getStatus, REFUND_STATUS_PENDING);
+        return wrapper;
+    }
+
+    private LambdaUpdateWrapper<RefundRequest> processingUpdateWrapper(Long refundId) {
+        LambdaUpdateWrapper<RefundRequest> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(RefundRequest::getId, refundId)
+                .eq(RefundRequest::getStatus, REFUND_STATUS_PROCESSING);
+        return wrapper;
+    }
+
+    private void updatePendingOrThrow(LambdaUpdateWrapper<RefundRequest> wrapper) {
+        int updated = refundRequestMapper.update(null, wrapper);
+        if (updated != 1) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款申请状态已变化");
+        }
+    }
+
+    private void updateProcessingOrThrow(LambdaUpdateWrapper<RefundRequest> wrapper) {
+        int updated = refundRequestMapper.update(null, wrapper);
+        if (updated != 1) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款申请状态已变化");
+        }
+    }
+
+    private void markOrderRefunded(Long orderId) {
+        String token = requireInternalApiToken();
+        Result<OrderInfoResponse> result = orderClient.markRefunded(orderId, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+            String message = result != null && StringUtils.hasText(result.getMessage()) ? result.getMessage() : "更新订单退款状态失败";
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "更新订单退款状态失败: " + message);
+        }
+    }
+
+    private OrderInfoResponse getOrderOrThrow(Long orderId) {
+        if (orderId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单ID不能为空");
+        }
+        String token = requireInternalApiToken();
+        Result<OrderInfoResponse> result = orderClient.getOrder(orderId, token);
+        if (result == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "加载订单失败: 订单服务无响应");
+        }
+        if (result.getCode() != ResultCode.SUCCESS.getCode()) {
+            String message = StringUtils.hasText(result.getMessage()) ? result.getMessage() : "订单服务返回失败";
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "加载订单失败: " + message);
+        }
+        if (result.getData() == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
+        }
+        return result.getData();
+    }
+
+    private RefundRequest getRefundOrThrow(Long refundId) {
+        if (refundId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款申请ID不能为空");
+        }
+        RefundRequest refund = refundRequestMapper.selectById(refundId);
+        if (refund == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "退款申请不存在");
+        }
+        return refund;
+    }
+
+    private UserRef requireReviewer(Long reviewerId) {
+        if (reviewerId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "审核人ID不能为空");
+        }
+        UserRef reviewer = userRefMapper.selectById(reviewerId);
+        if (reviewer == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "审核人不存在");
+        }
+        if (!ROLE_ADMIN.equals(reviewer.getRole()) && !ROLE_ORGANIZER.equals(reviewer.getRole())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无退款审核权限");
+        }
+        return reviewer;
+    }
+
+    private void requireReviewPermission(Long reviewerId, OrderInfoResponse order) {
+        UserRef reviewer = requireReviewer(reviewerId);
+        if (ROLE_ADMIN.equals(reviewer.getRole())) {
+            return;
+        }
+        if (!canOrganizerReview(order, reviewerId)) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权审核该活动退款");
+        }
+    }
+
+    private boolean canOrganizerReview(OrderInfoResponse order, Long reviewerId) {
+        if (order == null || order.getSessionId() == null) {
+            return false;
+        }
+        SessionRef session = sessionRefMapper.selectById(order.getSessionId());
+        if (session == null || session.getActivityId() == null) {
+            return false;
+        }
+        ActivityRef activity = activityRefMapper.selectById(session.getActivityId());
+        return activity != null && reviewerId.equals(activity.getOrganizerId());
+    }
+
+    private void requirePending(RefundRequest refund) {
+        if (!REFUND_STATUS_PENDING.equals(refund.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅待审核退款申请可处理");
+        }
+    }
+
+    private void requireApprovable(RefundRequest refund) {
+        if (REFUND_STATUS_PENDING.equals(refund.getStatus()) || REFUND_STATUS_PROCESSING.equals(refund.getStatus())) {
+            return;
+        }
+        if (REFUND_STATUS_REJECTED.equals(refund.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款申请已拒绝，不能同意退款");
+        }
+        if (REFUND_STATUS_FAILED.equals(refund.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款已明确失败，请用户重新申请退款");
+        }
+        throw new BusinessException(ResultCode.BAD_REQUEST, "退款申请状态已变化");
+    }
+
+    private RefundRequest getLatestRefundByOrderId(Long orderId) {
+        LambdaQueryWrapper<RefundRequest> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(RefundRequest::getOrderId, orderId)
+                .orderByDesc(RefundRequest::getCreateTime)
+                .orderByDesc(RefundRequest::getId)
+                .last("LIMIT 1");
+        return refundRequestMapper.selectOne(wrapper);
+    }
+
+    private Payment getLatestSuccessfulPayment(String outTradeNo) {
+        if (!StringUtils.hasText(outTradeNo)) {
+            return null;
+        }
+        LambdaQueryWrapper<Payment> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Payment::getOutTradeNo, outTradeNo)
+                .eq(Payment::getStatus, PaymentService.STATUS_SUCCESS)
+                .isNotNull(Payment::getTradeNo)
+                .orderByDesc(Payment::getCreateTime)
+                .orderByDesc(Payment::getId)
+                .last("LIMIT 1");
+        return paymentMapper.selectOne(wrapper);
+    }
+
+    private Payment getPaymentOrThrow(Long paymentId, String outTradeNo) {
+        Payment payment = paymentId != null ? paymentMapper.selectById(paymentId) : null;
+        if (payment == null) {
+            payment = getLatestSuccessfulPayment(outTradeNo);
+        }
+        if (payment == null || payment.getStatus() == null || PaymentService.STATUS_SUCCESS != payment.getStatus() || !StringUtils.hasText(payment.getTradeNo())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "未找到可退款的成功支付流水");
+        }
+        return payment;
+    }
+
+    private void validatePaymentForOrder(Payment payment, OrderInfoResponse order) {
+        if (payment == null || !StringUtils.hasText(payment.getTradeNo())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "未找到可退款的成功支付流水");
+        }
+        if (!order.getId().equals(payment.getOrderId())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "支付流水订单不匹配");
+        }
+        if (!order.getOrderNo().equals(payment.getOutTradeNo())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "支付流水商户订单号不匹配");
+        }
+        if (!amountEquals(payment.getAmount(), order.getAmount())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "支付流水金额与订单金额不一致");
+        }
+    }
+
+    private void validateRefundAmount(RefundRequest refund, OrderInfoResponse order) {
+        normalizeAmount(refund.getAmount());
+        if (!amountEquals(refund.getAmount(), order.getAmount())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款金额与订单金额不一致");
+        }
+    }
+
+    private boolean isActiveRefundStatus(Integer status) {
+        return REFUND_STATUS_PENDING.equals(status)
+                || REFUND_STATUS_REFUNDED.equals(status)
+                || REFUND_STATUS_PROCESSING.equals(status);
+    }
+
+    private boolean isUniqueViolation(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof SQLException && "23505".equals(((SQLException) current).getSQLState())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private RefundRequestVO toVOWithOrderNo(RefundRequest refund) {
+        OrderInfoResponse order = getOrderOrThrow(refund.getOrderId());
+        return toVO(refund, order.getOrderNo());
+    }
+
+    private RefundRequestVO toVO(RefundRequest refund, String orderNo) {
+        RefundRequestVO vo = new RefundRequestVO();
+        vo.setId(refund.getId());
+        vo.setOrderId(refund.getOrderId());
+        vo.setOrderNo(orderNo);
+        vo.setUserId(refund.getUserId());
+        vo.setPaymentId(refund.getPaymentId());
+        vo.setRefundNo(refund.getRefundNo());
+        vo.setAmount(refund.getAmount());
+        vo.setReason(refund.getReason());
+        vo.setStatus(refund.getStatus());
+        vo.setReviewerId(refund.getReviewerId());
+        vo.setReviewNote(refund.getReviewNote());
+        vo.setAlipayRefundNo(refund.getAlipayRefundNo());
+        vo.setCreateTime(refund.getCreateTime());
+        vo.setReviewTime(refund.getReviewTime());
+        vo.setRefundTime(refund.getRefundTime());
+        return vo;
+    }
+
+    private BigDecimal normalizeAmount(BigDecimal amount) {
+        if (amount == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款金额不能为空");
+        }
+        if (amount.scale() > 2) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款金额最多保留两位小数");
+        }
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款金额必须大于0");
+        }
+        return amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private boolean amountEquals(BigDecimal left, BigDecimal right) {
+        return normalizeAmount(left).compareTo(normalizeAmount(right)) == 0;
+    }
+
+    private String appendMessage(String original, String message) {
+        if (!StringUtils.hasText(original)) {
+            return message;
+        }
+        if (!StringUtils.hasText(message)) {
+            return original;
+        }
+        return original + "; " + message;
+    }
+
+    private void validateConfig() {
+        requireText(alipayProperties.getAppId(), "支付宝 appId 未配置");
+        requireText(alipayProperties.getMerchantPrivateKey(), "支付宝商户私钥未配置");
+        requireText(alipayProperties.getAlipayPublicKey(), "支付宝公钥未配置");
+        requireText(alipayProperties.getGatewayUrl(), "支付宝网关未配置");
+    }
+
+    private String requireInternalApiToken() {
+        if (!StringUtils.hasText(internalApiToken)) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "内部接口令牌未配置");
+        }
+        return internalApiToken;
+    }
+
+    private String requireText(String value, String message) {
+        if (!StringUtils.hasText(value)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, message);
+        }
+        return value;
+    }
+
+    private AlipayClient createClient() {
+        return new DefaultAlipayClient(
+                alipayProperties.getGatewayUrl(),
+                alipayProperties.getAppId(),
+                alipayProperties.getMerchantPrivateKey(),
+                format(),
+                charset(),
+                alipayProperties.getAlipayPublicKey(),
+                signType()
+        );
+    }
+
+    private String generateRefundNo() {
+        return "RF" + System.currentTimeMillis() + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+    }
+
+    private String firstText(String first, String second) {
+        if (StringUtils.hasText(first)) {
+            return first;
+        }
+        return StringUtils.hasText(second) ? second : null;
+    }
+
+    private String format() {
+        return StringUtils.hasText(alipayProperties.getFormat()) ? alipayProperties.getFormat() : "json";
+    }
+
+    private String charset() {
+        return StringUtils.hasText(alipayProperties.getCharset()) ? alipayProperties.getCharset() : "utf-8";
+    }
+
+    private String signType() {
+        return StringUtils.hasText(alipayProperties.getSignType()) ? alipayProperties.getSignType() : "RSA2";
+    }
+
+    private String buildJson(Map<String, String> values) {
+        StringBuilder builder = new StringBuilder("{");
+        boolean first = true;
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            if (!first) {
+                builder.append(',');
+            }
+            builder.append('"').append(escapeJson(entry.getKey())).append("\":\"")
+                    .append(escapeJson(entry.getValue())).append('"');
+            first = false;
+        }
+        builder.append('}');
+        return builder.toString();
+    }
+
+    private String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+                .replace("\t", "\\t");
+    }
+}

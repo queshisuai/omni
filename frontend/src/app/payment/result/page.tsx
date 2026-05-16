@@ -42,6 +42,7 @@ function PaymentResultContent() {
   const [state, setState] = useState<PageState>('loading')
   const [message, setMessage] = useState('正在确认支付结果...')
   const [result, setResult] = useState<PaymentStatusResponse | null>(null)
+  const [redirectSeconds, setRedirectSeconds] = useState(3)
 
   useEffect(() => {
     const orderIdText = searchParams.get('orderId')
@@ -73,6 +74,24 @@ function PaymentResultContent() {
     })()
   }, [searchParams])
 
+  useEffect(() => {
+    if (state !== 'success') return
+
+    setRedirectSeconds(3)
+    const timer = window.setInterval(() => {
+      setRedirectSeconds((current) => {
+        if (current <= 1) {
+          window.clearInterval(timer)
+          router.replace('/orders')
+          return 0
+        }
+        return current - 1
+      })
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [router, state])
+
   const isSuccess = state === 'success'
   const isLoading = state === 'loading'
   const Icon = isSuccess ? CheckCircle2 : state === 'pending' || isLoading ? Clock : XCircle
@@ -96,6 +115,12 @@ function PaymentResultContent() {
             {isSuccess ? '支付成功' : isLoading ? '正在确认支付结果' : state === 'pending' ? '支付结果确认中' : '支付结果确认失败'}
           </h1>
           <p className="text-[14px] text-[#666] leading-6 mb-8">{message}</p>
+
+          {isSuccess && (
+            <p className="text-[13px] text-[#999] mb-6">
+              {redirectSeconds > 0 ? `${redirectSeconds} 秒后自动跳转到我的订单` : '正在跳转到我的订单...'}
+            </p>
+          )}
 
           {result && (
             <div className="bg-[#fafafa] rounded-xl px-5 py-4 mb-8 text-left text-[14px] text-[#666] inline-block min-w-[280px]">

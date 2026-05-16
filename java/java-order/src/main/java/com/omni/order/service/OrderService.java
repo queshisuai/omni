@@ -1,6 +1,7 @@
 package com.omni.order.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.order.dto.CreateOrderRequest;
@@ -80,6 +81,30 @@ public class OrderService {
         orderMapper.updateById(order);
         log.info("订单已标记为已支付: id={}, orderNo={}", id, order.getOrderNo());
         return order;
+    }
+
+    /**
+     * 标记订单为已退款
+     */
+    public Order markRefunded(Long id) {
+        LambdaUpdateWrapper<Order> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(Order::getId, id)
+                .eq(Order::getStatus, STATUS_PAID)
+                .set(Order::getStatus, STATUS_REFUNDED)
+                .set(Order::getUpdateTime, LocalDateTime.now());
+        int updated = orderMapper.update(null, wrapper);
+        if (updated == 1) {
+            return orderMapper.selectById(id);
+        }
+
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
+        }
+        if (order.getStatus() == STATUS_REFUNDED) {
+            return order;
+        }
+        throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许退款");
     }
 
     /**

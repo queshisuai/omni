@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { listOrders, cancelOrder, createAlipayPagePay, submitPayForm } from '@/lib/api'
+import { listOrders, cancelOrder, createAlipayPagePay, submitPayForm, listMyRefunds, applyRefund } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { sections } from '@/lib/mock-data'
-import type { OrderEntity } from '@/types/api'
+import type { OrderEntity, RefundRequestVO, RefundStatus } from '@/types/api'
 
 type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled'
 
@@ -17,6 +17,16 @@ const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> =
   3: { label: '已取消', color: '#999', bg: '#f5f5f5' },
   4: { label: '已退款', color: '#999', bg: '#f5f5f5' },
 }
+
+const REFUND_STATUS_MAP: Record<RefundStatus, { label: string; color: string }> = {
+  0: { label: '退款待审核', color: '#fa8c16' },
+  1: { label: '已退款', color: '#52c41a' },
+  2: { label: '退款已拒绝', color: '#ff4d4f' },
+  3: { label: '退款失败', color: '#ff4d4f' },
+  4: { label: '退款处理中', color: '#1677ff' },
+}
+
+const ACTIVE_REFUND_STATUSES = new Set<RefundStatus>([0, 1, 4])
 
 interface EnrichedOrder extends OrderEntity {
   activityName: string
@@ -57,6 +67,23 @@ function buildMockOrders(): EnrichedOrder[] {
   return enrichMockOrders(raw)
 }
 
+function buildRefundMap(refunds: RefundRequestVO[]) {
+  const map: Record<number, { latest?: RefundRequestVO; active?: RefundRequestVO }> = {}
+  const sorted = [...refunds].sort((a, b) => {
+    const byTime = new Date(b.createTime).getTime() - new Date(a.createTime).getTime()
+    return byTime || b.id - a.id
+  })
+
+  for (const refund of sorted) {
+    const item = map[refund.orderId] || {}
+    if (!item.latest) item.latest = refund
+    if (!item.active && ACTIVE_REFUND_STATUSES.has(refund.status)) item.active = refund
+    map[refund.orderId] = item
+  }
+
+  return map
+}
+
 export default function OrdersPage() {
   const router = useRouter()
   const [orders, setOrders] = useState<EnrichedOrder[]>([])
@@ -65,6 +92,10 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<StatusTab>('all')
   const [cancelling, setCancelling] = useState<number | null>(null)
   const [paying, setPaying] = useState<number | null>(null)
+  const [refunds, setRefunds] = useState<RefundRequestVO[]>([])
+  const [refundTarget, setRefundTarget] = useState<EnrichedOrder | null>(null)
+  const [refundReason, setRefundReason] = useState('')
+  const [refundSubmitting, setRefundSubmitting] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -80,8 +111,14 @@ export default function OrdersPage() {
     ;(async () => {
       setLoading(true)
       try {
-        const data = await listOrders(user.userId)
-        setOrders(enrichMockOrders(data))
+        const orderData = await listOrders(user.userId)
+        setOrders(enrichMockOrders(orderData))
+        try {
+          const refundData = await listMyRefunds()
+          setRefunds(refundData)
+        } catch {
+          setRefunds([])
+        }
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : '加载订单失败')
       } finally {
@@ -116,6 +153,34 @@ export default function OrdersPage() {
       setPaying(null)
     }
   }
+
+  const handleApplyRefund = async () => {
+    if (!refundTarget) return
+    setRefundSubmitting(true)
+    try {
+      const next = await applyRefund(refundTarget.id, refundReason.trim() || undefined)
+      setRefunds((prev) => [next, ...prev.filter((item) => item.id !== next.id)])
+      setRefundTarget(null)
+      setRefundReason('')
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '申请退款失败')
+    } finally {
+      setRefundSubmitting(false)
+    }
+  }
+
+  const openRefundDialog = (order: EnrichedOrder) => {
+    setRefundTarget(order)
+    setRefundReason('')
+  }
+
+  const closeRefundDialog = () => {
+    if (refundSubmitting) return
+    setRefundTarget(null)
+    setRefundReason('')
+  }
+
+  const refundMap = buildRefundMap(refunds)
 
   const filteredOrders = activeTab === 'all'
     ? orders
@@ -175,6 +240,10 @@ export default function OrdersPage() {
           <div className="flex flex-col gap-4">
             {filteredOrders.map((order) => {
               const statusInfo = STATUS_MAP[order.status] || STATUS_MAP[3]
+              const refundInfo = refundMap[order.id]
+              const activeRefund = refundInfo?.active
+              const latestRefund = refundInfo?.latest
+              const lastRefundNote = latestRefund?.reviewNote || latestRefund?.reason
               return (
                 <div
                   key={order.id}
@@ -256,7 +325,28 @@ export default function OrdersPage() {
                         </>
                       )}
                       {order.status === 2 && (
-                        <span className="text-[13px] text-[#52c41a]">已支付</span>
+                        <>
+                          {activeRefund ? (
+                            <span
+                              className="text-[13px] text-center"
+                              style={{ color: REFUND_STATUS_MAP[activeRefund.status].color }}
+                            >
+                              {REFUND_STATUS_MAP[activeRefund.status].label}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => openRefundDialog(order)}
+                              className="cursor-pointer border border-[#ff1268] bg-white text-[#ff1268] text-[14px] px-6 py-2 rounded outline-none"
+                            >
+                              申请退款
+                            </button>
+                          )}
+                          {latestRefund && !activeRefund && (latestRefund.status === 2 || latestRefund.status === 3) && (
+                            <span className="max-w-[180px] text-[12px] text-[#999] leading-[18px] text-center">
+                              上次{REFUND_STATUS_MAP[latestRefund.status].label.replace('退款', '')}：{lastRefundNote || '暂无备注'}
+                            </span>
+                          )}
+                        </>
                       )}
                       {(order.status === 3 || order.status === 4) && (
                         <span className="text-[13px] text-[#999]">{STATUS_MAP[order.status]?.label || '已取消'}</span>
@@ -269,6 +359,42 @@ export default function OrdersPage() {
           </div>
         )}
       </main>
+      {refundTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
+          <div className="w-full max-w-[420px] rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="mb-3 text-[18px] font-medium text-[#111]">申请退款</h2>
+            <p className="mb-4 text-[13px] leading-5 text-[#666]">
+              订单号：{refundTarget.orderNo}<br />
+              退款金额：¥{refundTarget.amount.toFixed(2)}
+            </p>
+            <textarea
+              value={refundReason}
+              onChange={(event) => setRefundReason(event.target.value)}
+              placeholder="请输入退款原因，可不填"
+              className="mb-4 h-[96px] w-full resize-none rounded border border-[#ddd] px-3 py-2 text-[14px] text-[#333] outline-none focus:border-[#ff1268]"
+              maxLength={200}
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={closeRefundDialog}
+                disabled={refundSubmitting}
+                className="cursor-pointer rounded border border-[#ddd] bg-white px-5 py-2 text-[14px] text-[#666] outline-none"
+                style={{ opacity: refundSubmitting ? 0.7 : 1 }}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleApplyRefund}
+                disabled={refundSubmitting}
+                className="cursor-pointer rounded border-none bg-[#ff1268] px-5 py-2 text-[14px] text-white outline-none"
+                style={{ opacity: refundSubmitting ? 0.7 : 1 }}
+              >
+                {refundSubmitting ? '提交中...' : '确认申请'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <Footer />
     </>
   )

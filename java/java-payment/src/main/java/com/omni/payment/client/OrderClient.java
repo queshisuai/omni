@@ -17,5 +17,9 @@ public interface OrderClient {
 
     @PostMapping("/api/order/internal/{id}/paid")
     Result<OrderInfoResponse> markPaid(@PathVariable("id") Long id,
-                                       @RequestHeader("X-Internal-Token") String internalToken);
+                                        @RequestHeader("X-Internal-Token") String internalToken);
+
+    @PostMapping("/api/order/internal/{id}/refunded")
+    Result<OrderInfoResponse> markRefunded(@PathVariable("id") Long id,
+                                           @RequestHeader("X-Internal-Token") String internalToken);
 }

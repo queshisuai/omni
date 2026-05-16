@@ -203,3 +203,23 @@ export interface PaymentStatusResponse {
   tradeNo: string | null
   message: string
 }
+
+export type RefundStatus = 0 | 1 | 2 | 3 | 4
+
+export interface RefundRequestVO {
+  id: number
+  orderId: number
+  orderNo: string
+  userId: number
+  paymentId: number
+  refundNo: string
+  amount: number
+  reason: string | null
+  status: RefundStatus
+  reviewerId: number | null
+  reviewNote: string | null
+  alipayRefundNo: string | null
+  createTime: string
+  reviewTime: string | null
+  refundTime: string | null
+}

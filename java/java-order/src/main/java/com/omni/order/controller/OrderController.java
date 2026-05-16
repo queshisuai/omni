@@ -88,11 +88,24 @@ public class OrderController {
      */
     @PostMapping("/internal/{id}/paid")
     public Result<Order> markInternalPaid(@PathVariable Long id,
-                                           @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+                                            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
             return Result.fail(403, "无权限");
         }
         Order order = orderService.markPaid(id);
+        return Result.success(order);
+    }
+
+    /**
+     * 内部退款回调：标记订单为已退款
+     */
+    @PostMapping("/internal/{id}/refunded")
+    public Result<Order> markInternalRefunded(@PathVariable Long id,
+                                               @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        Order order = orderService.markRefunded(id);
         return Result.success(order);
     }
 

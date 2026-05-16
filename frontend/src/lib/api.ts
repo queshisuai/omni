@@ -158,6 +158,36 @@ export async function syncAlipayPayment(orderId: number) {
   return request<import('@/types/api').PaymentStatusResponse>(`/api/payment/alipay/sync/${orderId}`)
 }
 
+export async function applyRefund(orderId: number, reason?: string) {
+  return request<import('@/types/api').RefundRequestVO>('/api/payment/refunds/apply', {
+    method: 'POST',
+    body: JSON.stringify({ orderId, reason }),
+  })
+}
+
+export async function listMyRefunds() {
+  return request<import('@/types/api').RefundRequestVO[]>('/api/payment/refunds/my')
+}
+
+export async function listAdminRefunds(status?: number) {
+  const qs = status === undefined ? '' : `?status=${status}`
+  return request<import('@/types/api').RefundRequestVO[]>(`/api/payment/refunds/admin${qs}`)
+}
+
+export async function approveRefund(id: number, reviewNote?: string) {
+  return request<import('@/types/api').RefundRequestVO>(`/api/payment/refunds/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote }),
+  })
+}
+
+export async function rejectRefund(id: number, reviewNote?: string) {
+  return request<import('@/types/api').RefundRequestVO>(`/api/payment/refunds/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote }),
+  })
+}
+
 export function submitPayForm(payForm: string) {
   const container = document.createElement('div')
   container.style.display = 'none'

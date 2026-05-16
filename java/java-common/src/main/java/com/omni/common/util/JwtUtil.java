@@ -6,6 +6,7 @@ import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 
 import java.security.Key;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,8 +16,17 @@ import java.util.Map;
  */
 public class JwtUtil {
 
-    private static final Key KEY = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+    private static final String ENV_JWT_SECRET = "JWT_SECRET";
+    private static final Key KEY = buildKey();
     private static final long EXPIRATION = 7 * 24 * 60 * 60 * 1000L; // 7 天
+
+    private static Key buildKey() {
+        String secret = System.getenv(ENV_JWT_SECRET);
+        if (secret == null || secret.trim().isEmpty()) {
+            throw new IllegalStateException("JWT_SECRET 环境变量未配置，无法初始化 JWT 签名密钥");
+        }
+        return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    }
 
     /**
      * 生成 JWT Token
