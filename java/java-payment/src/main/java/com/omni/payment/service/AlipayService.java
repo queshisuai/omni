@@ -1,0 +1,441 @@
+package com.omni.payment.service;
+
+import com.alipay.api.AlipayApiException;
+import com.alipay.api.AlipayClient;
+import com.alipay.api.DefaultAlipayClient;
+import com.alipay.api.internal.util.AlipaySignature;
+import com.alipay.api.request.AlipayTradePagePayRequest;
+import com.alipay.api.request.AlipayTradeQueryRequest;
+import com.alipay.api.response.AlipayTradePagePayResponse;
+import com.alipay.api.response.AlipayTradeQueryResponse;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.omni.common.result.Result;
+import com.omni.common.result.ResultCode;
+import com.omni.exception.BusinessException;
+import com.omni.payment.client.OrderClient;
+import com.omni.payment.config.AlipayProperties;
+import com.omni.payment.dto.OrderInfoResponse;
+import com.omni.payment.dto.PagePayResponse;
+import com.omni.payment.dto.PaymentStatusResponse;
+import com.omni.payment.entity.Payment;
+import com.omni.payment.mapper.PaymentMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 支付宝沙盒支付核心服务
+ */
+@Service
+public class AlipayService {
+
+    private static final Logger log = LoggerFactory.getLogger(AlipayService.class);
+
+    private static final Integer ORDER_STATUS_PENDING = 1;
+    private static final Integer ORDER_STATUS_PAID = 2;
+    private static final String PAYMENT_METHOD = "ALIPAY_SANDBOX";
+    private static final String TRADE_SUCCESS = "TRADE_SUCCESS";
+    private static final String TRADE_FINISHED = "TRADE_FINISHED";
+
+    private final AlipayProperties alipayProperties;
+    private final OrderClient orderClient;
+    private final PaymentMapper paymentMapper;
+    private final String internalApiToken;
+
+    public AlipayService(AlipayProperties alipayProperties,
+                          OrderClient orderClient,
+                          PaymentMapper paymentMapper,
+                          @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+        this.alipayProperties = alipayProperties;
+        this.orderClient = orderClient;
+        this.paymentMapper = paymentMapper;
+        this.internalApiToken = internalApiToken;
+    }
+
+    public PagePayResponse createPagePay(Long orderId) {
+        validateConfig();
+        OrderInfoResponse order = getOrderOrThrow(orderId);
+        if (ORDER_STATUS_PAID.equals(order.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单已支付");
+        }
+        if (!ORDER_STATUS_PENDING.equals(order.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前订单状态不允许支付");
+        }
+
+        String orderNo = requireText(order.getOrderNo(), "订单号不能为空");
+        BigDecimal amount = normalizeAmount(order.getAmount());
+        Payment payment = getLatestPaymentByOutTradeNo(orderNo);
+        if (payment != null) {
+            if (PaymentService.STATUS_SUCCESS == payment.getStatus()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "订单已支付");
+            }
+            if (PaymentService.STATUS_PENDING != payment.getStatus()) {
+                payment = null;
+            }
+        }
+        AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();
+        request.setReturnUrl(appendOrderId(alipayProperties.getReturnUrl(), orderId));
+        if (StringUtils.hasText(alipayProperties.getNotifyUrl())) {
+            request.setNotifyUrl(alipayProperties.getNotifyUrl());
+        }
+        Map<String, String> bizContent = new LinkedHashMap<>();
+        bizContent.put("out_trade_no", orderNo);
+        bizContent.put("total_amount", amount.toPlainString());
+        bizContent.put("subject", "万象票务订单 " + orderNo);
+        bizContent.put("product_code", "FAST_INSTANT_TRADE_PAY");
+        request.setBizContent(buildJson(bizContent));
+
+        if (payment == null) {
+            payment = createPendingPayment(order);
+        }
+
+        try {
+            AlipayTradePagePayResponse alipayResponse = createClient().pageExecute(request);
+            if (alipayResponse == null || !alipayResponse.isSuccess() || !StringUtils.hasText(alipayResponse.getBody())) {
+                markPaymentFailed(payment, "支付宝支付表单响应为空或失败");
+                throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付表单失败");
+            }
+
+            PagePayResponse response = new PagePayResponse();
+            response.setOrderId(orderId);
+            response.setOrderNo(orderNo);
+            response.setPayForm(alipayResponse.getBody());
+            return response;
+        } catch (AlipayApiException e) {
+            markPaymentFailed(payment, "生成支付宝支付表单异常");
+            log.error("生成支付宝支付表单失败: orderId={}", orderId, e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付表单失败");
+        }
+    }
+
+    public boolean handleNotify(Map<String, String> params) {
+        validateConfig();
+        try {
+            boolean valid = AlipaySignature.rsaCheckV1(
+                    params,
+                    alipayProperties.getAlipayPublicKey(),
+                    charset(),
+                    signType()
+            );
+            if (!valid) {
+                log.warn("支付宝通知验签失败: outTradeNo={}", params.get("out_trade_no"));
+                return false;
+            }
+        } catch (AlipayApiException e) {
+            log.warn("支付宝通知验签异常: outTradeNo={}", params.get("out_trade_no"), e);
+            return false;
+        }
+
+        if (!alipayProperties.getAppId().equals(params.get("app_id"))) {
+            log.warn("支付宝通知 app_id 不匹配: outTradeNo={}, appId={}", params.get("out_trade_no"), params.get("app_id"));
+            return false;
+        }
+
+        String tradeStatus = params.get("trade_status");
+        if (!isPaidTradeStatus(tradeStatus)) {
+            return true;
+        }
+
+        String outTradeNo = params.get("out_trade_no");
+        String totalAmount = params.get("total_amount");
+        String tradeNo = params.get("trade_no");
+        String buyerId = params.get("buyer_id");
+        Payment payment = getLatestPaymentByOutTradeNo(outTradeNo);
+        if (payment == null) {
+            log.warn("支付宝通知未找到本地支付流水: outTradeNo={}", outTradeNo);
+            return false;
+        }
+
+        if (PaymentService.STATUS_SUCCESS == payment.getStatus()) {
+            if (!StringUtils.hasText(tradeNo) || !tradeNo.equals(payment.getTradeNo())) {
+                log.warn("支付宝通知流水已成功但交易号不一致: outTradeNo={}, oldTradeNo={}, newTradeNo={}", outTradeNo, payment.getTradeNo(), tradeNo);
+                return false;
+            }
+            try {
+                markOrderPaid(payment.getOrderId());
+                return true;
+            } catch (RuntimeException e) {
+                log.warn("支付宝通知幂等确认订单支付失败: outTradeNo={}, orderId={}", outTradeNo, payment.getOrderId(), e);
+                return false;
+            }
+        }
+
+        OrderInfoResponse order;
+        try {
+            order = getOrderOrThrow(payment.getOrderId());
+        } catch (RuntimeException e) {
+            log.warn("支付宝通知加载订单失败: outTradeNo={}, orderId={}", outTradeNo, payment.getOrderId(), e);
+            return false;
+        }
+        if (!outTradeNo.equals(order.getOrderNo())) {
+            log.warn("支付宝通知订单号不匹配: outTradeNo={}, orderNo={}, orderId={}", outTradeNo, order.getOrderNo(), order.getId());
+            return false;
+        }
+        if (!amountEquals(order.getAmount(), totalAmount)) {
+            log.warn("支付宝通知金额校验失败: outTradeNo={}, totalAmount={}", outTradeNo, totalAmount);
+            return false;
+        }
+
+        try {
+            completePayment(payment, tradeNo, buyerId, toMapString(params), toMapString(params));
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("支付宝通知处理支付成功失败: outTradeNo={}, orderId={}", outTradeNo, payment.getOrderId(), e);
+            return false;
+        }
+    }
+
+    public PaymentStatusResponse syncByOrderId(Long orderId) {
+        validateConfig();
+        OrderInfoResponse order = getOrderOrThrow(orderId);
+        Payment payment = getLatestPaymentByOutTradeNo(order.getOrderNo());
+        if (ORDER_STATUS_PAID.equals(order.getStatus())) {
+            if (payment == null || PaymentService.STATUS_SUCCESS != payment.getStatus()) {
+                PaymentStatusResponse compensated = queryAndCompletePayment(order, payment);
+                if (PaymentService.STATUS_SUCCESS == compensated.getPaymentStatus()) {
+                    return compensated;
+                }
+                return buildStatusResponse(
+                        order,
+                        payment,
+                        payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING,
+                        "订单已支付，支付流水待补偿"
+                );
+            }
+            return buildStatusResponse(order, payment, PaymentService.STATUS_SUCCESS, "支付成功");
+        }
+
+        return queryAndCompletePayment(order, payment);
+    }
+
+    private PaymentStatusResponse queryAndCompletePayment(OrderInfoResponse order, Payment payment) {
+        AlipayTradeQueryRequest request = new AlipayTradeQueryRequest();
+        Map<String, String> bizContent = new LinkedHashMap<>();
+        bizContent.put("out_trade_no", order.getOrderNo());
+        request.setBizContent(buildJson(bizContent));
+
+        try {
+            AlipayTradeQueryResponse response = createClient().execute(request);
+            if (response.isSuccess() && isPaidTradeStatus(response.getTradeStatus())) {
+                if (!amountEquals(order.getAmount(), response.getTotalAmount())) {
+                    throw new BusinessException(ResultCode.BAD_REQUEST, "支付宝支付金额与订单金额不一致");
+                }
+                if (payment == null) {
+                    payment = createPendingPayment(order);
+                }
+                completePayment(payment, response.getTradeNo(), response.getBuyerUserId(), response.getBody(), response.getBody());
+                OrderInfoResponse paidOrder = getOrderOrThrow(order.getId());
+                return buildStatusResponse(paidOrder, payment, PaymentService.STATUS_SUCCESS, "支付成功");
+            }
+            return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中");
+        } catch (AlipayApiException e) {
+            log.warn("查询支付宝支付结果失败: orderId={}, outTradeNo={}", order.getId(), order.getOrderNo(), e);
+            return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中");
+        }
+    }
+
+    private Payment createPendingPayment(OrderInfoResponse order) {
+        Payment payment = new Payment();
+        payment.setOrderId(order.getId());
+        payment.setPaymentNo(generatePaymentNo());
+        payment.setPaymentMethod(PAYMENT_METHOD);
+        payment.setOutTradeNo(order.getOrderNo());
+        payment.setAmount(normalizeAmount(order.getAmount()));
+        payment.setStatus(PaymentService.STATUS_PENDING);
+        paymentMapper.insert(payment);
+        return payment;
+    }
+
+    private void markPaymentFailed(Payment payment, String callbackData) {
+        payment.setStatus(PaymentService.STATUS_FAILED);
+        payment.setCallbackData(callbackData);
+        paymentMapper.updateById(payment);
+    }
+
+    private void completePayment(Payment payment, String tradeNo, String buyerId, String rawNotify, String callbackData) {
+        if (PaymentService.STATUS_SUCCESS == payment.getStatus()) {
+            if (!StringUtils.hasText(tradeNo) || !tradeNo.equals(payment.getTradeNo())) {
+                throw new BusinessException(ResultCode.CONFLICT, "支付流水交易号不一致");
+            }
+            markOrderPaid(payment.getOrderId());
+            return;
+        }
+
+        markOrderPaid(payment.getOrderId());
+
+        payment.setStatus(PaymentService.STATUS_SUCCESS);
+        payment.setTradeNo(tradeNo);
+        payment.setBuyerId(buyerId);
+        payment.setNotifyTime(LocalDateTime.now());
+        payment.setRawNotify(rawNotify);
+        payment.setCallbackData(callbackData);
+        payment.setPayTime(LocalDateTime.now());
+        paymentMapper.updateById(payment);
+    }
+
+    private void markOrderPaid(Long orderId) {
+        String token = requireInternalApiToken();
+        Result<OrderInfoResponse> result = orderClient.markPaid(orderId, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "更新订单支付状态失败");
+        }
+    }
+
+    private OrderInfoResponse getOrderOrThrow(Long orderId) {
+        if (orderId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单ID不能为空");
+        }
+        String token = requireInternalApiToken();
+        Result<OrderInfoResponse> result = orderClient.getOrder(orderId, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
+        }
+        return result.getData();
+    }
+
+    private String requireInternalApiToken() {
+        if (!StringUtils.hasText(internalApiToken)) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "内部接口令牌未配置");
+        }
+        return internalApiToken;
+    }
+
+    private Payment getLatestPaymentByOutTradeNo(String outTradeNo) {
+        if (!StringUtils.hasText(outTradeNo)) {
+            return null;
+        }
+        LambdaQueryWrapper<Payment> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Payment::getOutTradeNo, outTradeNo)
+                .orderByDesc(Payment::getCreateTime)
+                .orderByDesc(Payment::getId)
+                .last("LIMIT 1");
+        return paymentMapper.selectOne(wrapper);
+    }
+
+    private PaymentStatusResponse buildStatusResponse(OrderInfoResponse order, Payment payment, Integer paymentStatus, String message) {
+        PaymentStatusResponse response = new PaymentStatusResponse();
+        response.setOrderId(order.getId());
+        response.setOrderNo(order.getOrderNo());
+        response.setOrderStatus(order.getStatus());
+        response.setPaymentStatus(paymentStatus);
+        response.setTradeNo(payment != null ? payment.getTradeNo() : null);
+        response.setMessage(message);
+        return response;
+    }
+
+    private AlipayClient createClient() {
+        return new DefaultAlipayClient(
+                alipayProperties.getGatewayUrl(),
+                alipayProperties.getAppId(),
+                alipayProperties.getMerchantPrivateKey(),
+                format(),
+                charset(),
+                alipayProperties.getAlipayPublicKey(),
+                signType()
+        );
+    }
+
+    private void validateConfig() {
+        requireText(alipayProperties.getAppId(), "支付宝 appId 未配置");
+        requireText(alipayProperties.getMerchantPrivateKey(), "支付宝商户私钥未配置");
+        requireText(alipayProperties.getAlipayPublicKey(), "支付宝公钥未配置");
+        requireText(alipayProperties.getGatewayUrl(), "支付宝网关未配置");
+    }
+
+    private String requireText(String value, String message) {
+        if (!StringUtils.hasText(value)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, message);
+        }
+        return value;
+    }
+
+    private BigDecimal normalizeAmount(BigDecimal amount) {
+        if (amount == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单金额不能为空");
+        }
+        if (amount.scale() > 2) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单金额最多保留两位小数");
+        }
+        return amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private boolean amountEquals(BigDecimal expected, String actual) {
+        if (expected == null || !StringUtils.hasText(actual)) {
+            return false;
+        }
+        try {
+            BigDecimal actualAmount = new BigDecimal(actual);
+            if (actualAmount.scale() > 2) {
+                return false;
+            }
+            return normalizeAmount(expected).compareTo(actualAmount.setScale(2, RoundingMode.HALF_UP)) == 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private boolean isPaidTradeStatus(String tradeStatus) {
+        return TRADE_SUCCESS.equals(tradeStatus) || TRADE_FINISHED.equals(tradeStatus);
+    }
+
+    private String appendOrderId(String returnUrl, Long orderId) {
+        String baseUrl = requireText(returnUrl, "支付宝 returnUrl 未配置");
+        String separator = baseUrl.contains("?") ? "&" : "?";
+        return baseUrl + separator + "orderId=" + orderId;
+    }
+
+    private String generatePaymentNo() {
+        return "ALI" + System.currentTimeMillis() + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+    }
+
+    private String format() {
+        return StringUtils.hasText(alipayProperties.getFormat()) ? alipayProperties.getFormat() : "json";
+    }
+
+    private String charset() {
+        return StringUtils.hasText(alipayProperties.getCharset()) ? alipayProperties.getCharset() : "utf-8";
+    }
+
+    private String signType() {
+        return StringUtils.hasText(alipayProperties.getSignType()) ? alipayProperties.getSignType() : "RSA2";
+    }
+
+    private String buildJson(Map<String, String> values) {
+        StringBuilder builder = new StringBuilder("{");
+        boolean first = true;
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            if (!first) {
+                builder.append(',');
+            }
+            builder.append('"').append(escapeJson(entry.getKey())).append("\":\"")
+                    .append(escapeJson(entry.getValue())).append('"');
+            first = false;
+        }
+        builder.append('}');
+        return builder.toString();
+    }
+
+    private String toMapString(Map<String, String> values) {
+        return values == null ? "{}" : buildJson(values);
+    }
+
+    private String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+                .replace("\t", "\\t");
+    }
+}

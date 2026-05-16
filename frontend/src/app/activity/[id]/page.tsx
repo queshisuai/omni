@@ -4,7 +4,7 @@ import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { getActivityDetail, createOrder, payOrder } from '@/lib/api'
+import { getActivityDetail, createOrder, createAlipayPagePay, submitPayForm } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { sections } from '@/lib/mock-data'
 import type { ActivityDetailVO, SessionDetail, TicketTypeEntity } from '@/types/api'
@@ -112,11 +112,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         quantity,
         unitPrice: selectedTicket.price,
       })
-      // 沙盒支付：直接调用支付接口将订单标记为已支付
-      await payOrder(order.id)
+      const pay = await createAlipayPagePay(order.id)
+      submitPayForm(pay.payForm)
       setShowConfirm(false)
-      setSuccessOrderNo(order.orderNo)
-      setShowSuccess(true)
     } catch (err: unknown) {
       setOrderError(err instanceof Error ? err.message : '下单失败，请确认已登录并重试')
     } finally {

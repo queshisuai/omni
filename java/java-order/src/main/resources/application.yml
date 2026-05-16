@@ -25,3 +25,7 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: auto
+
+internal:
+  api:
+    token: ${INTERNAL_API_TOKEN:omni-local-internal-token}

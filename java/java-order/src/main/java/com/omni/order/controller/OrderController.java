@@ -4,11 +4,11 @@ import com.omni.common.result.Result;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.entity.Order;
 import com.omni.order.service.OrderService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 订单接口
@@ -18,9 +18,12 @@ import java.util.Map;
 public class OrderController {
 
     private final OrderService orderService;
+    private final String internalApiToken;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService,
+                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.orderService = orderService;
+        this.internalApiToken = internalApiToken;
     }
 
     /**
@@ -51,6 +54,19 @@ public class OrderController {
     }
 
     /**
+     * 内部订单详情
+     */
+    @GetMapping("/internal/{id}")
+    public Result<Order> getInternalOrderDetail(@PathVariable Long id,
+                                                 @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        Order order = orderService.getOrderDetail(id);
+        return Result.success(order);
+    }
+
+    /**
      * 取消订单
      */
     @DeleteMapping("/{id}")
@@ -60,21 +76,27 @@ public class OrderController {
     }
 
     /**
-     * 沙盒支付：直接将订单标记为已支付并返回结果
+     * 旧沙盒支付接口已禁用，避免绕过支付宝支付。
      */
     @PostMapping("/{id}/pay")
-    public Result<Map<String, Object>> initiatePay(@PathVariable Long id) {
-        Order order = orderService.getOrderDetail(id);
-        if (order.getStatus() != OrderService.STATUS_PENDING) {
-            return Result.fail(400, "订单状态不允许支付");
+    public Result<Void> initiatePay(@PathVariable Long id) {
+        return Result.fail(400, "请通过支付宝支付");
+    }
+
+    /**
+     * 内部支付回调：标记订单为已支付
+     */
+    @PostMapping("/internal/{id}/paid")
+    public Result<Order> markInternalPaid(@PathVariable Long id,
+                                           @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
         }
-        // 沙盒模式：直接标记为已支付
-        orderService.markPaid(id);
-        Map<String, Object> payInfo = new HashMap<>();
-        payInfo.put("orderNo", order.getOrderNo());
-        payInfo.put("amount", order.getAmount());
-        payInfo.put("payUrl", "/orders");
-        payInfo.put("status", "PAID");
-        return Result.success(payInfo);
+        Order order = orderService.markPaid(id);
+        return Result.success(order);
+    }
+
+    private boolean isValidInternalToken(String token) {
+        return StringUtils.hasText(internalApiToken) && internalApiToken.equals(token);
     }
 }

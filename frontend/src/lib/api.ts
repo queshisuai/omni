@@ -147,6 +147,32 @@ export async function payOrder(id: number) {
   return request<{ payUrl: string }>(`/api/order/${id}/pay`, { method: 'POST' })
 }
 
+export async function createAlipayPagePay(orderId: number) {
+  return request<import('@/types/api').PagePayResponse>('/api/payment/alipay/page-pay', {
+    method: 'POST',
+    body: JSON.stringify({ orderId }),
+  })
+}
+
+export async function syncAlipayPayment(orderId: number) {
+  return request<import('@/types/api').PaymentStatusResponse>(`/api/payment/alipay/sync/${orderId}`)
+}
+
+export function submitPayForm(payForm: string) {
+  const container = document.createElement('div')
+  container.style.display = 'none'
+  container.innerHTML = payForm
+  document.body.appendChild(container)
+
+  const form = container.querySelector('form')
+  if (!form) {
+    container.remove()
+    throw new Error('支付宝支付表单无效')
+  }
+
+  form.submit()
+}
+
 // ========== 主办方申请 ==========
 
 export async function applyOrganizer(userId: number, organizerName: string) {

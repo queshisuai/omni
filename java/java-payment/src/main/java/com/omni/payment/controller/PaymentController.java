@@ -5,7 +5,6 @@ import com.omni.payment.entity.Payment;
 import com.omni.payment.service.PaymentService;
 import org.springframework.web.bind.annotation.*;
 
-import java.math.BigDecimal;
 import java.util.Map;
 
 /**
@@ -22,16 +21,11 @@ public class PaymentController {
     }
 
     /**
-     * 模拟支付
+     * 旧模拟支付接口已禁用，避免污染支付宝支付流水。
      */
     @PostMapping("/pay")
-    public Result<Payment> mockPay(@RequestBody Map<String, Object> body) {
-        Long orderId = Long.valueOf(body.get("orderId").toString());
-        BigDecimal amount = body.get("amount") != null
-                ? new BigDecimal(body.get("amount").toString())
-                : BigDecimal.ZERO;
-        Payment payment = paymentService.mockPay(orderId, amount);
-        return Result.success(payment);
+    public Result<Void> mockPay(@RequestBody Map<String, Object> body) {
+        return Result.fail(400, "请通过支付宝支付");
     }
 
     /**
@@ -39,10 +33,7 @@ public class PaymentController {
      */
     @PostMapping("/callback")
     public Result<Void> callback(@RequestBody Map<String, Object> body) {
-        Long orderId = Long.valueOf(body.get("orderId").toString());
-        boolean success = (boolean) body.getOrDefault("success", true);
-        paymentService.callback(orderId, success);
-        return Result.success();
+        return Result.fail(400, "请通过支付宝支付");
     }
 
     /**

@@ -25,3 +25,18 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: auto
+
+alipay:
+  gateway-url: ${ALIPAY_GATEWAY_URL:https://openapi-sandbox.dl.alipaydev.com/gateway.do}
+  app-id: ${ALIPAY_APP_ID:9021000163677324}
+  merchant-private-key: ${ALIPAY_MERCHANT_PRIVATE_KEY:}
+  alipay-public-key: ${ALIPAY_PUBLIC_KEY:}
+  return-url: ${ALIPAY_RETURN_URL:http://localhost:3000/payment/result}
+  notify-url: ${ALIPAY_NOTIFY_URL:}
+  sign-type: RSA2
+  charset: utf-8
+  format: json
+
+internal:
+  api:
+    token: ${INTERNAL_API_TOKEN:omni-local-internal-token}

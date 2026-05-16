@@ -188,3 +188,18 @@ export interface MomentEntity {
   status: number
   createTime: string
 }
+
+export interface PagePayResponse {
+  orderId: number
+  orderNo: string
+  payForm: string
+}
+
+export interface PaymentStatusResponse {
+  orderId: number
+  orderNo: string
+  orderStatus: number
+  paymentStatus: number
+  tradeNo: string | null
+  message: string
+}

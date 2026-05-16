@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { listOrders, cancelOrder, payOrder } from '@/lib/api'
+import { listOrders, cancelOrder, createAlipayPagePay, submitPayForm } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { sections } from '@/lib/mock-data'
 import type { OrderEntity } from '@/types/api'
@@ -106,11 +106,13 @@ export default function OrdersPage() {
   const handlePay = async (orderId: number) => {
     setPaying(orderId)
     try {
-      await payOrder(orderId)
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: 2 } : o)))
+      const pay = await createAlipayPagePay(orderId)
+      submitPayForm(pay.payForm)
+      window.setTimeout(() => {
+        setPaying((current) => (current === orderId ? null : current))
+      }, 3000)
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : '支付失败')
-    } finally {
       setPaying(null)
     }
   }

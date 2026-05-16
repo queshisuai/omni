@@ -145,11 +145,16 @@ CREATE TABLE sms_code (
 CREATE TABLE payment (
     id BIGSERIAL PRIMARY KEY,
     order_id BIGINT REFERENCES "order"(id),
-    payment_no VARCHAR(50) NOT NULL UNIQUE,
-    payment_method VARCHAR(20) DEFAULT 'MOCK',
+    payment_no VARCHAR(64) NOT NULL UNIQUE,
+    payment_method VARCHAR(30) DEFAULT 'MOCK',
+    out_trade_no VARCHAR(64),
+    trade_no VARCHAR(64),
+    buyer_id VARCHAR(64),
     amount DECIMAL(10, 2) NOT NULL,
     status SMALLINT DEFAULT 0,
     callback_data TEXT,
+    notify_time TIMESTAMP,
+    raw_notify TEXT,
     pay_time TIMESTAMP,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -225,6 +230,8 @@ CREATE INDEX idx_order_no ON "order"(order_no);
 CREATE INDEX idx_order_status ON "order"(status);
 CREATE INDEX idx_payment_order ON payment(order_id);
 CREATE INDEX idx_payment_no ON payment(payment_no);
+CREATE INDEX idx_payment_out_trade_no ON payment(out_trade_no);
+CREATE INDEX idx_payment_trade_no ON payment(trade_no);
 CREATE INDEX idx_notification_user ON notification(user_id);
 CREATE INDEX idx_stock_log_session ON stock_log(session_id);
 CREATE INDEX idx_reservation_user ON reservation(user_id);

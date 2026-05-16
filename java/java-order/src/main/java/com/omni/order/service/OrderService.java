@@ -64,15 +64,22 @@ public class OrderService {
     /**
      * 标记订单为已支付
      */
-    public void markPaid(Long id) {
+    public Order markPaid(Long id) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
+        }
+        if (order.getStatus() == STATUS_PAID) {
+            return order;
+        }
+        if (order.getStatus() != STATUS_PENDING) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许支付");
         }
         order.setStatus(STATUS_PAID);
         order.setUpdateTime(LocalDateTime.now());
         orderMapper.updateById(order);
         log.info("订单已标记为已支付: id={}, orderNo={}", id, order.getOrderNo());
+        return order;
     }
 
     /**
