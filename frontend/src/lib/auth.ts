@@ -2,6 +2,8 @@
  * Token 管理工具
  */
 
+import type { UserRole } from '@/types/api'
+
 const TOKEN_KEY = 'damai_token'
 const USER_KEY = 'damai_user'
 
@@ -9,7 +11,7 @@ interface StoredUser {
   userId: number
   phone: string
   nickname: string | null
-  role?: string
+  role?: UserRole
 }
 
 export function setToken(token: string) {
@@ -36,6 +38,20 @@ export function setUser(user: StoredUser) {
   if (typeof window !== 'undefined') {
     localStorage.setItem(USER_KEY, JSON.stringify(user))
   }
+}
+
+export function updateStoredUser(patch: Partial<StoredUser>) {
+  const current = getUser()
+  if (!current || typeof window === 'undefined') {
+    return
+  }
+  const next = { ...current, ...patch }
+  localStorage.setItem(USER_KEY, JSON.stringify(next))
+  window.dispatchEvent(new Event('damai-user-updated'))
+}
+
+export function updateUserRole(role: UserRole) {
+  updateStoredUser({ role })
 }
 
 export function getUser(): StoredUser | null {

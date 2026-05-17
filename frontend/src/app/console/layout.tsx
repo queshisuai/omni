@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { getUser, isAuthenticated, logout } from '@/lib/auth'
-import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw } from 'lucide-react'
+import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
+import { getUserInfo } from '@/lib/api'
+import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList } from 'lucide-react'
 
 const menuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
@@ -12,7 +13,9 @@ const menuItems = [
   { href: '/console/sessions', label: '场次管理', icon: Clock },
   { href: '/console/orders', label: '订单查看', icon: ShoppingCart },
   { href: '/console/refunds', label: '退款审核', icon: RotateCcw },
-  { href: '/console/venue', label: '场馆管理', icon: MapPin },
+  { href: '/console/venue', label: '场馆管理', icon: MapPin, roles: ['admin'] },
+  { href: '/console/organizer-applications', label: '入驻审核', icon: ClipboardList, roles: ['admin'] },
+  { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
 ]
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
@@ -21,16 +24,45 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const [nickname, setNickname] = useState('')
   const [role, setRole] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [checking, setChecking] = useState(true)
+  const visibleMenuItems = useMemo(() => {
+    return menuItems.filter((item) => {
+      if (!('roles' in item) || !item.roles) return true
+      if (!role) return true
+      return item.roles.includes(role as 'admin' | 'organizer')
+    })
+  }, [role])
 
   useEffect(() => {
     if (!isAuthenticated()) { router.push('/login'); return }
-    const user = getUser()
-    if (!user || (user.role !== 'admin' && user.role !== 'organizer')) {
-      router.push('/')
-      return
+    let active = true
+    ;(async () => {
+      const cached = getUser()
+      try {
+        const latest = await getUserInfo()
+        if (!active) return
+        if (latest.role !== 'admin' && latest.role !== 'organizer') {
+          router.push('/')
+          return
+        }
+        updateStoredUser({ nickname: latest.nickname, role: latest.role })
+        setNickname(latest.nickname || latest.phone || '')
+        setRole(latest.role)
+      } catch {
+        if (!active) return
+        if (!cached || (cached.role !== 'admin' && cached.role !== 'organizer')) {
+          router.push('/')
+          return
+        }
+        setNickname(cached.nickname || cached.phone || '')
+        setRole(cached.role || '')
+      } finally {
+        if (active) setChecking(false)
+      }
+    })()
+    return () => {
+      active = false
     }
-    setNickname(user.nickname || user.phone || '')
-    setRole(user.role || '')
   }, [router])
 
   const handleLogout = () => logout()
@@ -46,7 +78,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           </button>
         </div>
         <nav className="flex-1 p-3">
-          {menuItems.map(item => {
+          {visibleMenuItems.map(item => {
             const Icon = item.icon
             const active = pathname === item.href || (item.href !== '/console' && pathname.startsWith(item.href))
             return (
@@ -69,13 +101,23 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             {role === 'admin' ? '平台管理员' : '主办方'}
           </div>
           <div className="text-[14px] text-white mb-3">{nickname}</div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 text-[13px] text-[#a0a0b8] hover:text-white transition-colors bg-transparent border-none cursor-pointer"
-          >
-            <LogOut className="w-4 h-4" />
-            退出登录
-          </button>
+          <div className="flex flex-col gap-2">
+            <Link
+              href="/console/profile"
+              onClick={() => setSidebarOpen(false)}
+              className="flex items-center gap-2 text-[13px] text-[#a0a0b8] hover:text-white transition-colors"
+            >
+              <UserCircle2 className="w-4 h-4" />
+              个人中心
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 text-[13px] text-[#a0a0b8] hover:text-white transition-colors bg-transparent border-none cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              退出登录
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -97,7 +139,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           </Link>
         </header>
         <main className="flex-1 p-6 overflow-auto">
-          {children}
+          {checking ? <div className="text-[14px] text-[#666]">正在校验后台权限...</div> : children}
         </main>
       </div>
     </div>

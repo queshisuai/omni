@@ -1,12 +1,16 @@
 package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
+import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
 import com.omni.user.dto.RegisterRequest;
+import com.omni.user.dto.UpdateProfileRequest;
+import com.omni.user.dto.UserInfoResponse;
 import com.omni.user.entity.User;
 import com.omni.user.mapper.UserMapper;
 import org.slf4j.Logger;
@@ -97,30 +101,152 @@ public class UserService {
         return response;
     }
 
-    /**
-     * 申请成为主办方
-     */
-    public User applyOrganizer(Long userId, String organizerName) {
+    public User getUserById(Long userId) {
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
-        user.setRole("organizer");
-        user.setOrganizerName(organizerName);
-        user.setOrganizerStatus(1); // 沙盒版：自动通过审核
-        userMapper.updateById(user);
-        log.info("用户申请主办方成功: userId={}, organizerName={}", userId, organizerName);
         return user;
     }
 
     /**
      * 获取用户信息
      */
-    public User getUserInfo(Long userId) {
+    public UserInfoResponse getUserInfo(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
-        return user;
+        return toUserInfoResponse(user);
+    }
+
+    /**
+     * 更新用户资料
+     */
+    public UserInfoResponse updateProfile(UpdateProfileRequest request) {
+        if (request == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户资料参数不能为空");
+        }
+        if (request.getUserId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        User user = userMapper.selectById(request.getUserId());
+        if (user == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+
+        LambdaUpdateWrapper<User> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(User::getId, user.getId());
+        boolean hasUpdate = false;
+
+        if (request.getNickname() != null) {
+            String nickname = trimToNull(request.getNickname());
+            if (nickname != null && nickname.length() > 50) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "昵称长度不能超过50个字符");
+            }
+            updateWrapper.set(User::getNickname, nickname);
+            hasUpdate = true;
+        }
+
+        if (request.getEmail() != null) {
+            String email = trimToNull(request.getEmail());
+            if (email != null && email.length() > 100) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "邮箱长度不能超过100个字符");
+            }
+            if (email != null && !email.contains("@")) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "邮箱格式不正确");
+            }
+            updateWrapper.set(User::getEmail, email);
+            hasUpdate = true;
+        }
+
+        if (request.getAvatar() != null) {
+            String avatar = trimToNull(request.getAvatar());
+            if (avatar != null && avatar.length() > 255) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "头像地址长度不能超过255个字符");
+            }
+            updateWrapper.set(User::getAvatar, avatar);
+            hasUpdate = true;
+        }
+
+        if (request.getOrganizerName() != null) {
+            String role = user.getRole();
+            if (!"admin".equals(role) && !"organizer".equals(role)) {
+                throw new BusinessException(ResultCode.FORBIDDEN, "无权限更新主办方名称");
+            }
+            String organizerName = trimToNull(request.getOrganizerName());
+            if (organizerName != null && organizerName.length() > 100) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "主办方名称长度不能超过100个字符");
+            }
+            updateWrapper.set(User::getOrganizerName, organizerName);
+            hasUpdate = true;
+        }
+
+        if (hasUpdate) {
+            userMapper.update(null, updateWrapper);
+        }
+        User updatedUser = userMapper.selectById(user.getId());
+        return toUserInfoResponse(updatedUser);
+    }
+
+    /**
+     * 修改密码
+     */
+    public void changePassword(ChangePasswordRequest request) {
+        if (request == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "修改密码参数不能为空");
+        }
+        if (request.getUserId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        if (request.getOldPassword() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "原密码不能为空");
+        }
+        if (request.getNewPassword() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码不能为空");
+        }
+        if (request.getConfirmPassword() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "确认密码不能为空");
+        }
+        User user = userMapper.selectById(request.getUserId());
+        if (user == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+        if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "原密码错误");
+        }
+        if (request.getNewPassword().length() < 6) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码长度不能少于6位");
+        }
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "两次密码输入不一致");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userMapper.updateById(user);
+    }
+
+    private UserInfoResponse toUserInfoResponse(User user) {
+        UserInfoResponse response = new UserInfoResponse();
+        response.setId(user.getId());
+        response.setPhone(user.getPhone());
+        response.setNickname(user.getNickname());
+        response.setEmail(user.getEmail());
+        response.setAvatar(user.getAvatar());
+        response.setStatus(user.getStatus());
+        response.setRole(user.getRole());
+        response.setOrganizerStatus(user.getOrganizerStatus());
+        response.setOrganizerName(user.getOrganizerName());
+        response.setCreateTime(user.getCreateTime());
+        response.setUpdateTime(user.getUpdateTime());
+        return response;
+    }
+
+    private String trimToNull(String value) {
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

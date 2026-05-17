@@ -2,12 +2,16 @@ import { Smartphone } from "lucide-react";
 import { footerLinks } from "@/lib/mock-data";
 
 export function Footer() {
+  const links = footerLinks.map((link) =>
+    link.text === '商户入驻' ? { ...link, href: '/merchant' } : link
+  )
+
   return (
     <footer className="bg-white border-t border-[#e5e5e5] mt-10">
       <div className="max-w-[1200px] mx-auto px-5 py-10">
         {/* Links */}
         <div className="flex flex-wrap gap-4 justify-center mb-6">
-          {footerLinks.map((link) => (
+          {links.map((link) => (
             <a
               key={link.text}
               href={link.href}

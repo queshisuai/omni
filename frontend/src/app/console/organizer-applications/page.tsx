@@ -1,0 +1,247 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { CheckCircle2, Loader2, Search, XCircle } from 'lucide-react'
+import { approveOrganizerApplication, getUserInfo, listOrganizerApplications, rejectOrganizerApplication } from '@/lib/api'
+import { isAuthenticated } from '@/lib/auth'
+import type { OrganizerApplicationStatus, OrganizerApplicationVO, UserInfo } from '@/types/api'
+
+const STATUS_OPTIONS: Array<{ value: OrganizerApplicationStatus | 'all'; label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 0, label: '待审核' },
+  { value: 1, label: '已通过' },
+  { value: 2, label: '已驳回' },
+]
+
+function statusMeta(status: OrganizerApplicationStatus) {
+  if (status === 0) return { text: '待审核', color: '#ff7a00', bg: '#fff7ed' }
+  if (status === 1) return { text: '已通过', color: '#16a34a', bg: '#f0fdf4' }
+  return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
+}
+
+export default function OrganizerApplicationsPage() {
+  const router = useRouter()
+  const [user, setUser] = useState<UserInfo | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [savingId, setSavingId] = useState<number | null>(null)
+  const [error, setError] = useState('')
+  const [statusFilter, setStatusFilter] = useState<OrganizerApplicationStatus | 'all'>('all')
+  const [items, setItems] = useState<OrganizerApplicationVO[]>([])
+  const [keyword, setKeyword] = useState('')
+  const [reviewNote, setReviewNote] = useState('')
+
+  const loadData = async (status: OrganizerApplicationStatus | 'all' = statusFilter) => {
+    setLoading(true)
+    setError('')
+    try {
+      const list = await listOrganizerApplications(status === 'all' ? undefined : status)
+      setItems(list)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '加载入驻申请失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.replace('/login?ru=/console/organizer-applications')
+      return
+    }
+
+    let active = true
+    ;(async () => {
+      try {
+        const info = await getUserInfo()
+        if (!active) return
+        if (info.role !== 'admin') {
+          router.replace('/console')
+          return
+        }
+        setUser(info)
+        await loadData('all')
+      } catch (err: unknown) {
+        if (active) setError(err instanceof Error ? err.message : '校验后台权限失败')
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [router])
+
+  useEffect(() => {
+    if (!user) return
+    void loadData(statusFilter)
+  }, [statusFilter, user])
+
+  const filteredItems = useMemo(() => {
+    const query = keyword.trim().toLowerCase()
+    if (!query) return items
+    return items.filter((item) => {
+      return [item.organizerName, item.contactName, item.contactPhone, item.phone || '', item.nickname || '']
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    })
+  }, [items, keyword])
+
+  const handleApprove = async (id: number) => {
+    setSavingId(id)
+    setError('')
+    try {
+      await approveOrganizerApplication(id, reviewNote.trim() || undefined)
+      setReviewNote('')
+      await loadData(statusFilter)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '通过申请失败')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const handleReject = async (id: number) => {
+    const note = reviewNote.trim()
+    if (!note) {
+      setError('驳回时必须填写原因')
+      return
+    }
+    setSavingId(id)
+    setError('')
+    try {
+      await rejectOrganizerApplication(id, note)
+      setReviewNote('')
+      await loadData(statusFilter)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '驳回申请失败')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-[24px] font-bold text-[#1a1a2e]">入驻审核</h1>
+          <p className="mt-2 text-sm text-[#666]">管理员审核主办方入驻申请，支持通过与驳回。</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {STATUS_OPTIONS.map((item) => (
+            <button
+              key={String(item.value)}
+              onClick={() => setStatusFilter(item.value)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                statusFilter === item.value ? 'bg-[#ff1268] text-white' : 'bg-white text-[#666] border border-[#e5e5e5]'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-5 rounded-xl border border-[#e5e5e5] bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative w-full lg:max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#999]" />
+            <input
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜索商户名称、联系人、手机号"
+              className="w-full rounded-2xl border border-[#e5e5e5] bg-[#fafafa] py-3 pl-10 pr-4 text-sm outline-none focus:border-[#ff1268]"
+            />
+          </div>
+          <div className="text-sm text-[#666]">共 {filteredItems.length} 条申请</div>
+        </div>
+        <div className="mt-3">
+          <textarea
+            value={reviewNote}
+            onChange={(e) => setReviewNote(e.target.value)}
+            rows={3}
+            placeholder="审核备注，驳回时请填写原因"
+            className="w-full rounded-2xl border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 text-sm outline-none focus:border-[#ff1268]"
+          />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-[#e5e5e5] bg-white shadow-sm">
+          <div className="flex items-center gap-3 text-[#666]">
+            <Loader2 className="h-5 w-5 animate-spin text-[#ff1268]" />
+            正在加载入驻申请...
+          </div>
+        </div>
+      ) : error ? (
+        <div className="rounded-xl border border-[#ffd9e6] bg-white p-6 text-center shadow-sm">
+          <p className="text-sm text-[#ff4d4f]">{error}</p>
+          <button
+            onClick={() => loadData(statusFilter)}
+            className="mt-4 rounded-full bg-[#ff1268] px-5 py-2 text-sm font-medium text-white"
+          >
+            重新加载
+          </button>
+        </div>
+      ) : filteredItems.length === 0 ? (
+        <div className="rounded-xl border border-[#e5e5e5] bg-white p-10 text-center text-sm text-[#666] shadow-sm">
+          暂无符合条件的入驻申请
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredItems.map((item) => {
+            const meta = statusMeta(item.status)
+            return (
+              <div key={item.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-[18px] font-semibold text-[#111]">{item.organizerName}</h2>
+                      <span
+                        className="rounded-full px-3 py-1 text-xs font-medium"
+                        style={{ color: meta.color, backgroundColor: meta.bg }}
+                      >
+                        {meta.text}
+                      </span>
+                    </div>
+                    <div className="grid gap-2 text-sm text-[#666] sm:grid-cols-2 lg:grid-cols-3">
+                      <span>联系人：{item.contactName}</span>
+                      <span>联系电话：{item.contactPhone}</span>
+                      <span>联系邮箱：{item.contactEmail || '未填写'}</span>
+                      <span>主体类型：{item.subjectType === 'enterprise' ? '企业' : '个人'}</span>
+                      <span>手机号：{item.phone || '未绑定'}</span>
+                      <span>昵称：{item.nickname || '未设置'}</span>
+                    </div>
+                    <div className="text-sm text-[#666]">营业执照号：{item.licenseNo || '未填写'}</div>
+                    <div className="text-sm text-[#666]">经营范围：{item.businessScope || '未填写'}</div>
+                    <div className="text-sm text-[#666]">申请说明：{item.description || '未填写'}</div>
+                    {item.reviewNote ? <div className="text-sm text-[#111]">审核备注：{item.reviewNote}</div> : null}
+                  </div>
+                  <div className="flex flex-col gap-2 lg:min-w-[160px] lg:items-end">
+                    <button
+                      onClick={() => handleApprove(item.id)}
+                      disabled={savingId === item.id || item.status !== 0}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#16a34a] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#13813b] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {savingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      通过
+                    </button>
+                    <button
+                      onClick={() => handleReject(item.id)}
+                      disabled={savingId === item.id || item.status !== 0}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[#ef4444] px-4 py-2 text-sm font-medium text-[#ef4444] transition-colors hover:bg-[#fef2f2] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      驳回
+                    </button>
+                    <div className="text-xs text-[#999]">驳回前请在上方备注框填写原因</div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}

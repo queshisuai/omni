@@ -23,7 +23,7 @@ export interface LoginResponse {
   phone: string
   nickname: string | null
   token: string
-  role: string
+  role: UserRole
 }
 
 /** 注册请求 */
@@ -41,7 +41,36 @@ export interface UserInfo {
   email: string | null
   avatar: string | null
   status: number
+  role: UserRole
+  organizerStatus: number | null
+  organizerName: string | null
   createTime: string
+  updateTime: string | null
+}
+
+export type UserRole = 'user' | 'organizer' | 'admin'
+export type OrganizerApplicationStatus = 0 | 1 | 2
+export type SubjectType = 'personal' | 'enterprise'
+
+export interface OrganizerApplicationVO {
+  id: number
+  userId: number
+  phone: string | null
+  nickname: string | null
+  organizerName: string
+  subjectType: SubjectType
+  contactName: string
+  contactPhone: string
+  contactEmail: string | null
+  licenseNo: string | null
+  businessScope: string | null
+  description: string | null
+  status: OrganizerApplicationStatus
+  reviewerId: number | null
+  reviewNote: string | null
+  createTime: string
+  updateTime: string | null
+  reviewTime: string | null
 }
 
 // ========== 票务/活动 ==========
@@ -113,6 +142,7 @@ export interface VenueEntity {
   name: string
   address: string
   city: string
+  capacity?: number | null
 }
 
 /** 票档 */

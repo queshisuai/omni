@@ -17,7 +17,6 @@ export function Header() {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [nickname, setNickname] = useState("");
-  const [role, setRole] = useState("");
   const [searchText, setSearchText] = useState("");
   const [currentCity, setCurrentCity] = useState("北京");
   const [citySearch, setCitySearch] = useState("");
@@ -38,13 +37,16 @@ export function Header() {
       if (auth) {
         const user = getUser()
         setNickname(user?.nickname || user?.phone || "")
-        setRole(user?.role || "")
       }
     }
     checkAuth()
     // 监听路由变化重新检查
     window.addEventListener("focus", checkAuth)
-    return () => window.removeEventListener("focus", checkAuth)
+    window.addEventListener('damai-user-updated', checkAuth)
+    return () => {
+      window.removeEventListener("focus", checkAuth)
+      window.removeEventListener('damai-user-updated', checkAuth)
+    }
   }, [])
 
   const handleLogout = () => {
@@ -216,40 +218,26 @@ export function Header() {
                     onClick={() => { setShowUserDropdown(false); router.push("/login?ru=/") }}
                     className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
                   >
-                    个人信息
+                    登录
                   </button>
                   <button
-                    onClick={() => { setShowUserDropdown(false); router.push("/login?ru=/") }}
+                    onClick={() => { setShowUserDropdown(false); router.push("/register") }}
                     className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
                   >
-                    账号设置
-                  </button>
-                  <button
-                    onClick={() => { setShowUserDropdown(false); router.push("/login?ru=/") }}
-                    className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
-                  >
-                    订单管理
+                    注册
                   </button>
                 </>
               )}
               {loggedIn && (
                 <>
-                  {(role === 'admin' || role === 'organizer') && (
-                    <button
-                      onClick={() => { setShowUserDropdown(false); router.push("/console") }}
-                      className="block w-full px-4 py-3 text-sm text-[#ff1268] hover:bg-[#f5f5f5] cursor-pointer border-none bg-transparent outline-none transition-colors"
-                    >
-                      主办方后台
-                    </button>
-                  )}
                   <button
-                    onClick={() => { setShowUserDropdown(false); router.push("/orders") }}
+                    onClick={() => { setShowUserDropdown(false); router.push("/profile") }}
                     className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
                   >
                     个人信息
                   </button>
                   <button
-                    onClick={() => { setShowUserDropdown(false); router.push("/orders") }}
+                    onClick={() => { setShowUserDropdown(false); router.push("/profile/account") }}
                     className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
                   >
                     账号设置

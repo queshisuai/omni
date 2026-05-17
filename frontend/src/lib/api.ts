@@ -2,7 +2,7 @@
  * API 客户端 - fetch 封装
  */
 import { getToken } from './auth'
-import type { ApiResult } from '@/types/api'
+import type { ApiResult, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, SubjectType, UserInfo } from '@/types/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -63,7 +63,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 // ========== 用户服务 ==========
 
 export async function login(params: { loginType: string; account: string; password?: string; smsCode?: string }) {
-  return request<{ userId: number; phone: string; nickname: string | null; token: string; role?: string }>(
+  return request<LoginResponse>(
     '/api/user/login',
     { method: 'POST', body: JSON.stringify(params) }
   )
@@ -76,10 +76,52 @@ export async function register(params: { phone: string; password: string; confir
   })
 }
 
-export async function getUserInfo(userId: number) {
-  return request<{ id: number; phone: string; nickname: string | null; email: string | null; avatar: string | null }>(
-    `/api/user/info?userId=${userId}`
-  )
+export async function getUserInfo() {
+  return request<UserInfo>('/api/user/info')
+}
+
+export async function updateProfile(params: { nickname?: string | null; email?: string | null; avatar?: string | null; organizerName?: string | null }) {
+  return request<UserInfo>('/api/user/profile', {
+    method: 'PUT',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function changePassword(params: { oldPassword: string; newPassword: string; confirmPassword: string }) {
+  return request<void>('/api/user/password', {
+    method: 'PUT',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function submitOrganizerApplication(params: { organizerName: string; subjectType: SubjectType; contactName: string; contactPhone: string; contactEmail?: string | null; licenseNo?: string | null; businessScope?: string | null; description?: string | null }) {
+  return request<OrganizerApplicationVO>('/api/user/organizer/applications', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function getMyOrganizerApplication() {
+  return request<OrganizerApplicationVO | null>('/api/user/organizer/applications/my')
+}
+
+export async function listOrganizerApplications(status?: OrganizerApplicationStatus) {
+  const qs = status === undefined ? '' : `?status=${status}`
+  return request<OrganizerApplicationVO[]>(`/api/user/organizer/applications/admin${qs}`)
+}
+
+export async function approveOrganizerApplication(id: number, reviewNote?: string) {
+  return request<OrganizerApplicationVO>(`/api/user/organizer/applications/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote }),
+  })
+}
+
+export async function rejectOrganizerApplication(id: number, reviewNote: string) {
+  return request<OrganizerApplicationVO>(`/api/user/organizer/applications/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote }),
+  })
 }
 
 export async function sendSmsCode(phone: string) {
@@ -201,15 +243,6 @@ export function submitPayForm(payForm: string) {
   }
 
   form.submit()
-}
-
-// ========== 主办方申请 ==========
-
-export async function applyOrganizer(userId: number, organizerName: string) {
-  return request<import('@/types/api').UserInfo>('/api/user/organizer/apply', {
-    method: 'POST',
-    body: JSON.stringify({ userId, organizerName }),
-  })
 }
 
 // ========== B端管理接口 ==========
