@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
-import { listAdminActivities, deleteAdminActivity, updateActivityStatus } from '@/lib/api'
+import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity } from '@/lib/api'
 import { Plus, Edit, Trash2, Eye, EyeOff } from 'lucide-react'
 import type { ActivityEntity } from '@/types/api'
 
@@ -26,7 +26,24 @@ export default function ActivitiesPage() {
 
   const handleToggleStatus = async (activity: ActivityEntity) => {
     const newStatus = activity.status === 1 ? 0 : 1
-    await updateActivityStatus(activity.id, { userId, status: newStatus })
+    if (newStatus === 0) {
+      const confirmed = confirm('下架后活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。请确认：同意下架并为所有已支付订单退款。')
+      if (!confirmed) return
+      const result = await deactivateActivity(activity.id, {
+        userId,
+        confirmRefund: true,
+        reason: '活动下架自动退款',
+      })
+      const abnormalCount = result.refundFailedCount + result.refundUnknownCount + result.refundCompensationRequiredCount
+      const summary = `已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
+      if (abnormalCount > 0) {
+        alert(`活动已下架，但部分退款失败/结果未知/需人工处理。${summary}`)
+      } else {
+        alert(`活动已下架。${summary}`)
+      }
+    } else {
+      await updateActivityStatus(activity.id, { userId, status: newStatus })
+    }
     loadData()
   }
 

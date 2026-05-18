@@ -5,9 +5,12 @@ import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
 import com.omni.payment.dto.ApplyRefundRequest;
+import com.omni.payment.dto.DirectRefundRequest;
+import com.omni.payment.dto.DirectRefundResponse;
 import com.omni.payment.dto.RefundRequestVO;
 import com.omni.payment.dto.ReviewRefundRequest;
 import com.omni.payment.service.RefundService;
+import org.springframework.beans.factory.annotation.Value;
 import io.jsonwebtoken.Claims;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,9 +34,12 @@ public class RefundController {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final RefundService refundService;
+    private final String internalApiToken;
 
-    public RefundController(RefundService refundService) {
+    public RefundController(RefundService refundService,
+                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.refundService = refundService;
+        this.internalApiToken = internalApiToken;
     }
 
     @PostMapping("/apply")
@@ -70,11 +76,23 @@ public class RefundController {
 
     @PostMapping("/{id}/reject")
     public Result<RefundRequestVO> reject(@RequestHeader(value = "Authorization", required = false) String authorization,
-                                          @PathVariable Long id,
-                                          @RequestBody(required = false) ReviewRefundRequest request) {
+                                           @PathVariable Long id,
+                                           @RequestBody(required = false) ReviewRefundRequest request) {
         AuthUser authUser = requireAuthUser(authorization);
         String reviewNote = request != null ? request.getReviewNote() : null;
         return Result.success(refundService.reject(id, authUser.userId, reviewNote));
+    }
+
+    @PostMapping("/internal/direct")
+    public Result<DirectRefundResponse> directRefund(@RequestHeader(value = "X-Internal-Token", required = false) String token,
+                                                     @RequestBody(required = false) DirectRefundRequest request) {
+        if (!StringUtils.hasText(internalApiToken) || !internalApiToken.equals(token)) {
+            return Result.fail(403, "无权限");
+        }
+        if (request == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款参数不能为空");
+        }
+        return Result.success(refundService.directRefund(request.getOrderId(), request.getReason()));
     }
 
     private AuthUser requireAuthUser(String authorization) {

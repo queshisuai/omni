@@ -269,3 +269,25 @@ export interface RefundRequestVO {
   reviewTime: string | null
   refundTime: string | null
 }
+
+export interface DirectRefundResponse {
+  orderId: number | null
+  orderNo: string | null
+  status: 'SUCCESS' | 'FAILED' | 'UNKNOWN' | 'COMPENSATION_REQUIRED'
+  success: boolean
+  message: string | null
+}
+
+export interface RefundImpactResponse {
+  activityId: number
+  activityName: string
+  deactivatedActivityCount: number
+  deactivatedSessionCount: number
+  deactivatedTicketTypeCount: number
+  paidOrderCount: number
+  refundSuccessCount: number
+  refundFailedCount: number
+  refundUnknownCount: number
+  refundCompensationRequiredCount: number
+  failures: DirectRefundResponse[]
+}

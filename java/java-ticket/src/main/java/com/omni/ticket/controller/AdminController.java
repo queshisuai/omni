@@ -3,8 +3,11 @@ package com.omni.ticket.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.common.result.Result;
+import com.omni.ticket.dto.DeactivateActivityRequest;
+import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
+import com.omni.ticket.service.ActivityAdminService;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -25,15 +28,18 @@ public class AdminController {
     private final TicketTypeMapper ticketTypeMapper;
     private final VenueMapper venueMapper;
     private final UserRefMapper userRefMapper;
+    private final ActivityAdminService activityAdminService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                            TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
-                           UserRefMapper userRefMapper) {
+                           UserRefMapper userRefMapper,
+                           ActivityAdminService activityAdminService) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
         this.venueMapper = venueMapper;
         this.userRefMapper = userRefMapper;
+        this.activityAdminService = activityAdminService;
     }
 
     /** 获取用户角色，非admin/organizer返回null并拒绝 */
@@ -108,6 +114,12 @@ public class AdminController {
         activity.setStatus(Integer.valueOf(body.get("status").toString()));
         activityMapper.updateById(activity);
         return Result.success();
+    }
+
+    @PostMapping("/activities/{id}/deactivate")
+    public Result<RefundImpactResponse> deactivateActivity(@PathVariable Long id,
+                                                           @RequestBody DeactivateActivityRequest request) {
+        return Result.success(activityAdminService.deactivateActivity(id, request));
     }
 
     @DeleteMapping("/activities/{id}")

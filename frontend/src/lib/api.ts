@@ -278,6 +278,12 @@ export async function updateActivityStatus(id: number, body: Record<string, unkn
   })
 }
 
+export async function deactivateActivity(id: number, body: { userId: number; confirmRefund: boolean; reason?: string }) {
+  return request<import('@/types/api').RefundImpactResponse>(`/api/ticket/admin/activities/${id}/deactivate`, {
+    method: 'POST', body: JSON.stringify(body),
+  })
+}
+
 export async function deleteAdminActivity(id: number, userId: number) {
   return request<void>(`/api/ticket/admin/activities/${id}?userId=${userId}`, { method: 'DELETE' })
 }

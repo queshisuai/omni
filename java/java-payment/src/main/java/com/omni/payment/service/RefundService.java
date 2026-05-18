@@ -12,6 +12,7 @@ import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.payment.client.OrderClient;
 import com.omni.payment.config.AlipayProperties;
+import com.omni.payment.dto.DirectRefundResponse;
 import com.omni.payment.dto.OrderInfoResponse;
 import com.omni.payment.dto.RefundRequestVO;
 import com.omni.payment.entity.ActivityRef;
@@ -52,6 +53,10 @@ public class RefundService {
     private static final Integer REFUND_STATUS_PROCESSING = 4;
     private static final String ROLE_ADMIN = "admin";
     private static final String ROLE_ORGANIZER = "organizer";
+    private static final String DIRECT_REFUND_STATUS_SUCCESS = "SUCCESS";
+    private static final String DIRECT_REFUND_STATUS_FAILED = "FAILED";
+    private static final String DIRECT_REFUND_STATUS_UNKNOWN = "UNKNOWN";
+    private static final String DIRECT_REFUND_STATUS_COMPENSATION_REQUIRED = "COMPENSATION_REQUIRED";
 
     private final AlipayProperties alipayProperties;
     private final OrderClient orderClient;
@@ -233,6 +238,74 @@ public class RefundService {
             refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款异常，退款结果未知，请稍后重试/查询: " + e.getMessage(), now);
             return toVO(refund, order.getOrderNo());
         }
+    }
+
+    public DirectRefundResponse directRefund(Long orderId, String reason) {
+        DirectRefundResponse result = new DirectRefundResponse();
+        result.setOrderId(orderId);
+        try {
+            validateConfig();
+            OrderInfoResponse order = getOrderOrThrow(orderId);
+            result.setOrderNo(order.getOrderNo());
+            if (!ORDER_STATUS_PAID.equals(order.getStatus())) {
+                return directRefundFailure(result, "仅已支付订单可直接退款");
+            }
+
+            Payment payment = getLatestSuccessfulPayment(order.getOrderNo());
+            validatePaymentForOrder(payment, order);
+
+            AlipayTradeRefundRequest request = new AlipayTradeRefundRequest();
+            Map<String, String> bizContent = new LinkedHashMap<>();
+            bizContent.put("out_trade_no", order.getOrderNo());
+            bizContent.put("trade_no", payment.getTradeNo());
+            bizContent.put("refund_amount", normalizeAmount(order.getAmount()).toPlainString());
+            bizContent.put("out_request_no", directRefundRequestNo(order));
+            bizContent.put("refund_reason", StringUtils.hasText(reason) ? reason : "活动下架自动退款");
+            request.setBizContent(buildJson(bizContent));
+
+            AlipayTradeRefundResponse response = createClient().execute(request);
+            if (response != null && response.isSuccess()) {
+                try {
+                    markOrderRefunded(order.getId());
+                } catch (RuntimeException e) {
+                    return directRefundResult(result, DIRECT_REFUND_STATUS_COMPENSATION_REQUIRED, false,
+                            "支付宝已成功退款，但订单状态更新失败，需人工处理: " + e.getMessage());
+                }
+                result.setStatus(DIRECT_REFUND_STATUS_SUCCESS);
+                result.setSuccess(true);
+                result.setMessage("退款成功");
+                return result;
+            }
+            if (response == null) {
+                return directRefundResult(result, DIRECT_REFUND_STATUS_UNKNOWN, false,
+                        "支付宝退款响应为空，退款结果未知，请查询/人工确认");
+            }
+            String message = StringUtils.hasText(response.getBody()) ? response.getBody() : "支付宝退款失败";
+            return directRefundResult(result, DIRECT_REFUND_STATUS_FAILED, false, message);
+        } catch (AlipayApiException e) {
+            return directRefundResult(result, DIRECT_REFUND_STATUS_UNKNOWN, false,
+                    "支付宝退款异常，退款结果未知，请查询/人工确认: " + e.getMessage());
+        } catch (BusinessException e) {
+            return directRefundResult(result, DIRECT_REFUND_STATUS_FAILED, false, e.getMessage());
+        }
+    }
+
+    private DirectRefundResponse directRefundFailure(DirectRefundResponse result, String message) {
+        return directRefundResult(result, DIRECT_REFUND_STATUS_FAILED, false, message);
+    }
+
+    private DirectRefundResponse directRefundResult(DirectRefundResponse result, String status, Boolean success, String message) {
+        result.setStatus(status);
+        result.setSuccess(success);
+        result.setMessage(StringUtils.hasText(message) ? message : "退款失败");
+        return result;
+    }
+
+    private String directRefundRequestNo(OrderInfoResponse order) {
+        if (order != null && order.getId() != null) {
+            return "DIRECT_REFUND_" + order.getId();
+        }
+        return "DIRECT_REFUND_" + requireText(order != null ? order.getOrderNo() : null, "订单号不能为空");
     }
 
     private RefundRequest updateRefundRejected(Long refundId, Long reviewerId, String reviewNote, LocalDateTime now) {

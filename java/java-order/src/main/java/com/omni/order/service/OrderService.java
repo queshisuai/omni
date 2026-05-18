@@ -117,6 +117,17 @@ public class OrderService {
         return orderMapper.selectList(wrapper);
     }
 
+    public List<Order> listPaidOrdersBySessions(List<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        wrapper.in(Order::getSessionId, sessionIds)
+                .eq(Order::getStatus, STATUS_PAID)
+                .orderByAsc(Order::getId);
+        return orderMapper.selectList(wrapper);
+    }
+
     /**
      * 订单详情
      */

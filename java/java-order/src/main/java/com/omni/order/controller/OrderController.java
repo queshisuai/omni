@@ -2,6 +2,7 @@ package com.omni.order.controller;
 
 import com.omni.common.result.Result;
 import com.omni.order.dto.CreateOrderRequest;
+import com.omni.order.dto.PaidOrdersBySessionsRequest;
 import com.omni.order.entity.Order;
 import com.omni.order.service.OrderService;
 import org.springframework.beans.factory.annotation.Value;
@@ -58,12 +59,23 @@ public class OrderController {
      */
     @GetMapping("/internal/{id}")
     public Result<Order> getInternalOrderDetail(@PathVariable Long id,
-                                                 @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+                                                  @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
             return Result.fail(403, "无权限");
         }
         Order order = orderService.getOrderDetail(id);
         return Result.success(order);
+    }
+
+    @PostMapping("/internal/paid-by-sessions")
+    public Result<List<Order>> listInternalPaidOrdersBySessions(
+            @RequestBody(required = false) PaidOrdersBySessionsRequest request,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        List<Long> sessionIds = request != null ? request.getSessionIds() : java.util.Collections.emptyList();
+        return Result.success(orderService.listPaidOrdersBySessions(sessionIds));
     }
 
     /**
