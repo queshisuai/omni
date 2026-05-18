@@ -7,6 +7,7 @@ import com.omni.exception.BusinessException;
 import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.client.PaymentInternalClient;
 import com.omni.ticket.dto.DeactivateActivityRequest;
+import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.DirectRefundRequest;
 import com.omni.ticket.dto.DirectRefundResponse;
 import com.omni.ticket.dto.OrderInfoResponse;
@@ -26,7 +27,9 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,6 +39,8 @@ public class ActivityAdminService {
     private static final String REFUND_STATUS_FAILED = "FAILED";
     private static final String REFUND_STATUS_UNKNOWN = "UNKNOWN";
     private static final String REFUND_STATUS_COMPENSATION_REQUIRED = "COMPENSATION_REQUIRED";
+    // organizer_status: 0待审核, 1已认证, 2已拒绝, 3已取消资格
+    private static final int ORGANIZER_STATUS_CANCELLED = 3;
 
     private final ActivityMapper activityMapper;
     private final SessionMapper sessionMapper;
@@ -80,18 +85,59 @@ public class ActivityAdminService {
         if (!Boolean.TRUE.equals(request.getConfirmRefund())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "下架活动前必须确认同意为所有已支付订单退款");
         }
-        String token = requireInternalApiToken();
+        return deactivateActivities(Collections.singletonList(activity), request.getReason());
+    }
 
-        List<Session> sessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>()
-                .eq(Session::getActivityId, activityId));
+    public RefundImpactResponse deactivateOrganizer(DeactivateOrganizerRequest request) {
+        if (request == null || request.getUserId() == null || request.getOrganizerId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "取消主办方资格参数不能为空");
+        }
+        UserRef operator = userRefMapper.selectById(request.getUserId());
+        if (operator == null || !"admin".equals(operator.getRole())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "仅管理员可取消主办方资格");
+        }
+        if (!Boolean.TRUE.equals(request.getConfirmRefund())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "取消主办方资格前必须确认同意为该主办方所有已支付订单退款");
+        }
+        UserRef organizer = userRefMapper.selectById(request.getOrganizerId());
+        if (organizer == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "主办方不存在");
+        }
+        if (!"organizer".equals(organizer.getRole())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前用户不是主办方");
+        }
+
+        List<Activity> activities = activityMapper.selectList(new LambdaQueryWrapper<Activity>()
+                .eq(Activity::getOrganizerId, request.getOrganizerId()));
+        RefundImpactResponse response = deactivateActivities(activities, request.getReason());
+
+        organizer.setRole("user");
+        organizer.setOrganizerStatus(ORGANIZER_STATUS_CANCELLED);
+        userRefMapper.updateById(organizer);
+        return response;
+    }
+
+    private RefundImpactResponse deactivateActivities(List<Activity> activities, String reason) {
+        String token = requireInternalApiToken();
+        if (activities == null) {
+            activities = Collections.emptyList();
+        }
+        List<Long> activityIds = activities.stream().map(Activity::getId).collect(Collectors.toList());
+
+        List<Session> sessions = activityIds.isEmpty()
+                ? Collections.emptyList()
+                : sessionMapper.selectList(new LambdaQueryWrapper<Session>()
+                .in(Session::getActivityId, activityIds));
         List<Long> sessionIds = sessions.stream().map(Session::getId).collect(Collectors.toList());
         List<TicketType> ticketTypes = sessionIds.isEmpty()
                 ? Collections.emptyList()
                 : ticketTypeMapper.selectList(new LambdaQueryWrapper<TicketType>()
                 .in(TicketType::getSessionId, sessionIds));
 
-        activity.setStatus(0);
-        activityMapper.updateById(activity);
+        for (Activity activity : activities) {
+            activity.setStatus(0);
+            activityMapper.updateById(activity);
+        }
         for (Session session : sessions) {
             session.setStatus(0);
             sessionMapper.updateById(session);
@@ -107,6 +153,7 @@ public class ActivityAdminService {
         if (paidOrders == null) {
             paidOrders = Collections.emptyList();
         }
+        paidOrders = deduplicateOrders(paidOrders);
 
         int successCount = 0;
         int failedCount = 0;
@@ -116,7 +163,7 @@ public class ActivityAdminService {
         for (OrderInfoResponse order : paidOrders) {
             try {
                 DirectRefundResponse result = unwrapRefund(paymentInternalClient.directRefund(
-                        new DirectRefundRequest(order.getId(), request.getReason()), token), order);
+                        new DirectRefundRequest(order.getId(), reason), token), order);
                 String status = normalizeStatus(result);
                 if (REFUND_STATUS_SUCCESS.equals(status)) {
                     successCount++;
@@ -137,9 +184,13 @@ public class ActivityAdminService {
         }
 
         RefundImpactResponse response = new RefundImpactResponse();
-        response.setActivityId(activity.getId());
-        response.setActivityName(activity.getName());
-        response.setDeactivatedActivityCount(1);
+        if (activities.size() == 1) {
+            response.setActivityId(activities.get(0).getId());
+            response.setActivityName(activities.get(0).getName());
+        } else {
+            response.setActivityName("主办方活动批量下架");
+        }
+        response.setDeactivatedActivityCount(activities.size());
         response.setDeactivatedSessionCount(sessions.size());
         response.setDeactivatedTicketTypeCount(ticketTypes.size());
         response.setPaidOrderCount(paidOrders.size());
@@ -159,6 +210,21 @@ public class ActivityAdminService {
         failure.setSuccess(false);
         failure.setMessage(StringUtils.hasText(message) ? message : "退款失败");
         return failure;
+    }
+
+    private List<OrderInfoResponse> deduplicateOrders(List<OrderInfoResponse> orders) {
+        Map<Long, OrderInfoResponse> deduplicated = new LinkedHashMap<>();
+        List<OrderInfoResponse> ordersWithoutId = new ArrayList<>();
+        for (OrderInfoResponse order : orders) {
+            if (order == null || order.getId() == null) {
+                ordersWithoutId.add(order);
+                continue;
+            }
+            deduplicated.putIfAbsent(order.getId(), order);
+        }
+        List<OrderInfoResponse> result = new ArrayList<>(deduplicated.values());
+        result.addAll(ordersWithoutId);
+        return result;
     }
 
     private String normalizeStatus(DirectRefundResponse result) {

@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, Loader2, Search, XCircle } from 'lucide-react'
-import { approveOrganizerApplication, getUserInfo, listOrganizerApplications, rejectOrganizerApplication } from '@/lib/api'
+import { CheckCircle2, Loader2, Search, ShieldOff, XCircle } from 'lucide-react'
+import { approveOrganizerApplication, deactivateOrganizer, getUserInfo, listOrganizerApplications, rejectOrganizerApplication } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import type { OrganizerApplicationStatus, OrganizerApplicationVO, UserInfo } from '@/types/api'
 
@@ -115,6 +115,30 @@ export default function OrganizerApplicationsPage() {
       await loadData(statusFilter)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '驳回申请失败')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const handleDeactivate = async (item: OrganizerApplicationVO) => {
+    if (!user) return
+    const confirmed = confirm(`取消主办方资格后，${item.organizerName} 将降级为普通用户并无法继续访问后台；其旗下全部活动、场次、票档将下架，并直接为关联已支付订单发起真实支付宝退款。请确认：同意取消资格并为整批已支付订单退款。`)
+    if (!confirmed) return
+    setSavingId(item.id)
+    setError('')
+    try {
+      const result = await deactivateOrganizer({
+        userId: user.id,
+        organizerId: item.userId,
+        confirmRefund: true,
+        reason: '管理员取消主办方资格自动退款',
+      })
+      const abnormalCount = result.refundFailedCount + result.refundUnknownCount + result.refundCompensationRequiredCount
+      const summary = `已下架活动 ${result.deactivatedActivityCount} 个，已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
+      alert(abnormalCount > 0 ? `主办方资格已取消，但部分退款异常。${summary}` : `主办方资格已取消。${summary}`)
+      await loadData(statusFilter)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '取消主办方资格失败')
     } finally {
       setSavingId(null)
     }
@@ -233,6 +257,14 @@ export default function OrganizerApplicationsPage() {
                     >
                       <XCircle className="h-4 w-4" />
                       驳回
+                    </button>
+                    <button
+                      onClick={() => handleDeactivate(item)}
+                      disabled={savingId === item.id || item.status !== 1}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[#f97316] px-4 py-2 text-sm font-medium text-[#f97316] transition-colors hover:bg-[#fff7ed] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <ShieldOff className="h-4 w-4" />
+                      取消资格
                     </button>
                     <div className="text-xs text-[#999]">驳回前请在上方备注框填写原因</div>
                   </div>

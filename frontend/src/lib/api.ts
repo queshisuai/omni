@@ -284,6 +284,12 @@ export async function deactivateActivity(id: number, body: { userId: number; con
   })
 }
 
+export async function deactivateOrganizer(body: import('@/types/api').DeactivateOrganizerRequest) {
+  return request<import('@/types/api').RefundImpactResponse>('/api/ticket/admin/organizers/deactivate', {
+    method: 'POST', body: JSON.stringify(body),
+  })
+}
+
 export async function deleteAdminActivity(id: number, userId: number) {
   return request<void>(`/api/ticket/admin/activities/${id}?userId=${userId}`, { method: 'DELETE' })
 }

@@ -15,7 +15,7 @@ CREATE TABLE "user" (
     email VARCHAR(100),
     avatar VARCHAR(255),
     role VARCHAR(20) NOT NULL DEFAULT 'user',       -- 'user' | 'organizer' | 'admin'
-    organizer_status SMALLINT DEFAULT 0,            -- 0:待审核 1:已认证 2:已拒绝
+    organizer_status SMALLINT DEFAULT 0,            -- 0:待审核 1:已认证 2:已拒绝 3:已取消资格
     organizer_name VARCHAR(100),                    -- 主办方名称
     status SMALLINT DEFAULT 1,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

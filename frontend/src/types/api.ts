@@ -58,7 +58,7 @@ export interface UserInfo {
   avatar: string | null
   status: number
   role: UserRole
-  organizerStatus: number | null
+  organizerStatus: OrganizerStatus | null
   organizerName: string | null
   createTime: string
   updateTime: string | null
@@ -66,6 +66,7 @@ export interface UserInfo {
 
 export type UserRole = 'user' | 'organizer' | 'admin'
 export type OrganizerApplicationStatus = 0 | 1 | 2
+export type OrganizerStatus = 0 | 1 | 2 | 3
 export type SubjectType = 'personal' | 'enterprise'
 
 export interface OrganizerApplicationVO {
@@ -290,4 +291,11 @@ export interface RefundImpactResponse {
   refundUnknownCount: number
   refundCompensationRequiredCount: number
   failures: DirectRefundResponse[]
+}
+
+export interface DeactivateOrganizerRequest {
+  userId: number
+  organizerId: number
+  confirmRefund: boolean
+  reason?: string
 }

@@ -4,6 +4,7 @@ import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.client.PaymentInternalClient;
+import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DirectRefundResponse;
 import com.omni.ticket.dto.OrderInfoResponse;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -175,6 +177,120 @@ class ActivityAdminServiceTest {
         assertEquals("UNKNOWN", response.getFailures().get(1).getStatus());
         assertEquals("COMPENSATION_REQUIRED", response.getFailures().get(2).getStatus());
         assertEquals("DM5003", response.getFailures().get(2).getOrderNo());
+    }
+
+    @Test
+    void deactivateActivityDeduplicatesPaidOrdersBeforeDirectRefund() {
+        Activity activity = activity(10L, 2003L);
+        Session session = session(101L, 10L);
+        TicketType ticketType = ticketType(1001L, 101L);
+        OrderInfoResponse firstOrder = order(5001L, "DM5001", 101L);
+        OrderInfoResponse duplicateOrder = order(5001L, "DM5001", 101L);
+
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session));
+        when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType));
+        when(orderInternalClient.listPaidBySessions(any(), eq("test-token")))
+                .thenReturn(Result.success(Arrays.asList(firstOrder, duplicateOrder)));
+        when(paymentInternalClient.directRefund(any(), eq("test-token")))
+                .thenReturn(Result.success(refund(5001L, "DM5001", "SUCCESS", true, "退款成功")));
+
+        DeactivateActivityRequest request = new DeactivateActivityRequest();
+        request.setUserId(2003L);
+        request.setConfirmRefund(true);
+
+        RefundImpactResponse response = service.deactivateActivity(10L, request);
+
+        assertEquals(1, response.getPaidOrderCount());
+        assertEquals(1, response.getRefundSuccessCount());
+        verify(paymentInternalClient, times(1)).directRefund(any(), eq("test-token"));
+    }
+
+    @Test
+    void deactivateOrganizerRejectsNonAdminOperator() {
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+
+        DeactivateOrganizerRequest request = new DeactivateOrganizerRequest();
+        request.setUserId(2003L);
+        request.setOrganizerId(2004L);
+        request.setConfirmRefund(true);
+
+        assertThrows(BusinessException.class, () -> service.deactivateOrganizer(request));
+        verify(activityMapper, never()).updateById(any());
+        verify(userRefMapper, never()).updateById(any());
+        verify(paymentInternalClient, never()).directRefund(any(), any());
+    }
+
+    @Test
+    void deactivateOrganizerRejectsWhenRefundNotConfirmed() {
+        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+
+        DeactivateOrganizerRequest request = new DeactivateOrganizerRequest();
+        request.setUserId(2002L);
+        request.setOrganizerId(2003L);
+        request.setConfirmRefund(false);
+
+        assertThrows(BusinessException.class, () -> service.deactivateOrganizer(request));
+        verify(activityMapper, never()).updateById(any());
+        verify(userRefMapper, never()).updateById(any());
+        verify(paymentInternalClient, never()).directRefund(any(), any());
+    }
+
+    @Test
+    void deactivateOrganizerDowngradesRoleDisablesAllActivitiesAndRefundsPaidOrders() {
+        UserRef admin = user(2002L, "admin");
+        UserRef organizer = user(2003L, "organizer");
+        organizer.setOrganizerStatus(1);
+        Activity firstActivity = activity(10L, 2003L);
+        Activity secondActivity = activity(11L, 2003L);
+        Session firstSession = session(101L, 10L);
+        Session secondSession = session(102L, 11L);
+        TicketType firstTicketType = ticketType(1001L, 101L);
+        TicketType secondTicketType = ticketType(1002L, 102L);
+        OrderInfoResponse firstOrder = order(5001L, "DM5001", 101L);
+        OrderInfoResponse secondOrder = order(5002L, "DM5002", 102L);
+
+        when(userRefMapper.selectById(2002L)).thenReturn(admin);
+        when(userRefMapper.selectById(2003L)).thenReturn(organizer);
+        when(activityMapper.selectList(any())).thenReturn(Arrays.asList(firstActivity, secondActivity));
+        when(sessionMapper.selectList(any())).thenReturn(Arrays.asList(firstSession, secondSession));
+        when(ticketTypeMapper.selectList(any())).thenReturn(Arrays.asList(firstTicketType, secondTicketType));
+        when(orderInternalClient.listPaidBySessions(any(), eq("test-token")))
+                .thenReturn(Result.success(Arrays.asList(firstOrder, secondOrder)));
+        when(paymentInternalClient.directRefund(any(), eq("test-token")))
+                .thenReturn(Result.success(refund(5001L, "DM5001", "SUCCESS", true, "退款成功")),
+                        Result.success(refund(5002L, "DM5002", "FAILED", false, "退款失败")));
+
+        DeactivateOrganizerRequest request = new DeactivateOrganizerRequest();
+        request.setUserId(2002L);
+        request.setOrganizerId(2003L);
+        request.setConfirmRefund(true);
+        request.setReason("取消主办方资格");
+
+        RefundImpactResponse response = service.deactivateOrganizer(request);
+
+        assertEquals("user", organizer.getRole());
+        assertEquals(3, organizer.getOrganizerStatus());
+        assertEquals(0, firstActivity.getStatus());
+        assertEquals(0, secondActivity.getStatus());
+        assertEquals(0, firstSession.getStatus());
+        assertEquals(0, secondSession.getStatus());
+        assertEquals(0, firstTicketType.getStatus());
+        assertEquals(0, secondTicketType.getStatus());
+        assertEquals(2, response.getDeactivatedActivityCount());
+        assertEquals(2, response.getDeactivatedSessionCount());
+        assertEquals(2, response.getDeactivatedTicketTypeCount());
+        assertEquals(2, response.getPaidOrderCount());
+        assertEquals(1, response.getRefundSuccessCount());
+        assertEquals(1, response.getRefundFailedCount());
+        assertEquals(0, response.getRefundUnknownCount());
+        assertEquals(0, response.getRefundCompensationRequiredCount());
+        assertEquals(1, response.getFailures().size());
+        verify(userRefMapper).updateById(organizer);
+        verify(activityMapper).updateById(firstActivity);
+        verify(activityMapper).updateById(secondActivity);
+        verify(paymentInternalClient, times(2)).directRefund(any(), eq("test-token"));
     }
 
     private Activity activity(Long id, Long organizerId) {

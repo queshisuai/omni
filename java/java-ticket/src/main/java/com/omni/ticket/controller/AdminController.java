@@ -3,12 +3,17 @@ package com.omni.ticket.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.common.result.Result;
+import com.omni.common.result.ResultCode;
+import com.omni.common.util.JwtUtil;
 import com.omni.ticket.dto.DeactivateActivityRequest;
+import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
 import com.omni.ticket.service.ActivityAdminService;
+import io.jsonwebtoken.Claims;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -22,6 +27,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/ticket/admin")
 public class AdminController {
+
+    private static final String BEARER_PREFIX = "Bearer ";
 
     private final ActivityMapper activityMapper;
     private final SessionMapper sessionMapper;
@@ -118,8 +125,35 @@ public class AdminController {
 
     @PostMapping("/activities/{id}/deactivate")
     public Result<RefundImpactResponse> deactivateActivity(@PathVariable Long id,
-                                                           @RequestBody DeactivateActivityRequest request) {
+                                                            @RequestBody DeactivateActivityRequest request) {
         return Result.success(activityAdminService.deactivateActivity(id, request));
+    }
+
+    @PostMapping("/organizers/deactivate")
+    public Result<RefundImpactResponse> deactivateOrganizer(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody DeactivateOrganizerRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        if (request == null) {
+            request = new DeactivateOrganizerRequest();
+        }
+        request.setUserId(operatorId);
+        return Result.success(activityAdminService.deactivateOrganizer(request));
+    }
+
+    private Long parseOperatorId(String authorization) {
+        if (!StringUtils.hasText(authorization) || !authorization.startsWith(BEARER_PREFIX)) {
+            return null;
+        }
+        try {
+            Claims claims = JwtUtil.parseToken(authorization.substring(BEARER_PREFIX.length()));
+            return Long.valueOf(claims.getSubject());
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     @DeleteMapping("/activities/{id}")

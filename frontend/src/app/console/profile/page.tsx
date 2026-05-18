@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Building2, Loader2, ShieldCheck, UserRound, Mail, Phone, CalendarDays, ClipboardList } from 'lucide-react'
 import { getMyOrganizerApplication, getUserInfo } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import type { OrganizerApplicationVO, UserInfo } from '@/types/api'
+import type { OrganizerApplicationVO, OrganizerStatus, UserInfo } from '@/types/api'
 
 function formatTime(value: string | null | undefined) {
   if (!value) return '未设置'
@@ -22,6 +22,14 @@ function applicationStatusText(status: OrganizerApplicationVO['status']) {
   if (status === 0) return { text: '待审核', color: '#ff7a00', bg: '#fff7ed' }
   if (status === 1) return { text: '已通过', color: '#16a34a', bg: '#f0fdf4' }
   return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
+}
+
+function organizerStatusText(status: OrganizerStatus | null | undefined) {
+  if (status === 0) return { text: '待审核', color: '#ff7a00', bg: '#fff7ed' }
+  if (status === 1) return { text: '已认证', color: '#16a34a', bg: '#f0fdf4' }
+  if (status === 2) return { text: '已拒绝', color: '#ef4444', bg: '#fef2f2' }
+  if (status === 3) return { text: '已取消资格', color: '#7c3aed', bg: '#f5f3ff' }
+  return { text: '未申请', color: '#666', bg: '#f5f5f5' }
 }
 
 export default function ConsoleProfilePage() {
@@ -123,6 +131,7 @@ export default function ConsoleProfilePage() {
               <InfoCard icon={<CalendarDays className="h-4 w-4" />} title="注册时间" value={formatTime(user.createTime)} />
               <InfoCard icon={<ShieldCheck className="h-4 w-4" />} title="账号状态" value={statusText(user.status).text} />
               <InfoCard icon={<ClipboardList className="h-4 w-4" />} title="当前角色" value={role === 'admin' ? '平台管理员' : '主办方'} />
+              <InfoCard icon={<Building2 className="h-4 w-4" />} title="主办方状态" value={organizerStatusText(user.organizerStatus).text} />
             </div>
 
             {role === 'organizer' && application ? (
