@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 public class UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
+    private static final String MOCK_SMS_CODE = "666666";
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
@@ -80,8 +81,9 @@ public class UserService {
                 throw new BusinessException(ResultCode.BAD_REQUEST, "密码错误");
             }
         } else if ("sms".equals(request.getLoginType())) {
-            // 短信登录：TODO 对接真实短信验证码校验
-            throw new BusinessException(ResultCode.BAD_REQUEST, "短信登录暂未开放");
+            if (!MOCK_SMS_CODE.equals(request.getSmsCode())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "验证码错误");
+            }
         } else {
             throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的登录方式");
         }

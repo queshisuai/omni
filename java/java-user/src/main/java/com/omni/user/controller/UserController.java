@@ -30,6 +30,7 @@ import java.util.Map;
 public class UserController {
 
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String MOCK_SMS_CODE = "666666";
 
     private final UserService userService;
     private final OrganizerApplicationService organizerApplicationService;
@@ -145,16 +146,14 @@ public class UserController {
     }
 
     /**
-     * 发送短信验证码（沙盒版：验证码打印到日志）
+     * 发送短信验证码（沙盒版：固定验证码）
      */
     @PostMapping("/send-code")
     public Result<String> sendCode(@RequestParam String phone) {
-        // 沙盒版：生成 6 位验证码，打印到日志
-        String code = String.valueOf((int) ((Math.random() * 9 + 1) * 100000));
         System.out.println("==========================================");
-        System.out.println("  短信验证码 [" + phone + "]: " + code);
+        System.out.println("  短信验证码 [" + phone + "]: " + MOCK_SMS_CODE);
         System.out.println("==========================================");
-        return Result.success(code);
+        return Result.success(MOCK_SMS_CODE);
     }
 
     private Long requireAuthUserId(String authorization) {
