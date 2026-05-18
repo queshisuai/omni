@@ -76,10 +76,11 @@ public class OrganizerApplicationService {
             application = new OrganizerApplication();
             application.setUserId(userId);
             application.setCreateTime(now);
-        } else if (Integer.valueOf(STATUS_APPROVED).equals(application.getStatus())) {
+        } else if (Integer.valueOf(STATUS_APPROVED).equals(application.getStatus()) && !isCancelledOrganizer(user)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "入驻申请已通过");
         } else if (!Integer.valueOf(STATUS_PENDING).equals(application.getStatus())
-                && !Integer.valueOf(STATUS_REJECTED).equals(application.getStatus())) {
+                && !Integer.valueOf(STATUS_REJECTED).equals(application.getStatus())
+                && !(Integer.valueOf(STATUS_APPROVED).equals(application.getStatus()) && isCancelledOrganizer(user))) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "入驻申请状态不允许修改");
         }
 
@@ -102,11 +103,12 @@ public class OrganizerApplicationService {
                 if (application == null) {
                     throw e;
                 }
-                if (Integer.valueOf(STATUS_APPROVED).equals(application.getStatus())) {
+                if (Integer.valueOf(STATUS_APPROVED).equals(application.getStatus()) && !isCancelledOrganizer(user)) {
                     throw new BusinessException(ResultCode.BAD_REQUEST, "入驻申请已通过");
                 }
                 if (!Integer.valueOf(STATUS_PENDING).equals(application.getStatus())
-                        && !Integer.valueOf(STATUS_REJECTED).equals(application.getStatus())) {
+                        && !Integer.valueOf(STATUS_REJECTED).equals(application.getStatus())
+                        && !(Integer.valueOf(STATUS_APPROVED).equals(application.getStatus()) && isCancelledOrganizer(user))) {
                     throw new BusinessException(ResultCode.BAD_REQUEST, "入驻申请状态不允许修改");
                 }
                 applyApplicationFields(application, request, organizerName, subjectType, contactName, contactPhone, contactEmail, now);
@@ -243,7 +245,7 @@ public class OrganizerApplicationService {
     private void updateApplicationForResubmit(OrganizerApplication application, LocalDateTime now) {
         LambdaUpdateWrapper<OrganizerApplication> updateWrapper = new LambdaUpdateWrapper<>();
         updateWrapper.eq(OrganizerApplication::getId, application.getId())
-                .in(OrganizerApplication::getStatus, STATUS_PENDING, STATUS_REJECTED)
+                .in(OrganizerApplication::getStatus, STATUS_PENDING, STATUS_REJECTED, STATUS_APPROVED)
                 .set(OrganizerApplication::getOrganizerName, application.getOrganizerName())
                 .set(OrganizerApplication::getSubjectType, application.getSubjectType())
                 .set(OrganizerApplication::getContactName, application.getContactName())
@@ -266,6 +268,10 @@ public class OrganizerApplicationService {
         application.setReviewNote(null);
         application.setReviewTime(null);
         application.setUpdateTime(now);
+    }
+
+    private boolean isCancelledOrganizer(User user) {
+        return user != null && "user".equals(user.getRole()) && Integer.valueOf(3).equals(user.getOrganizerStatus());
     }
 
     private void applyApplicationFields(OrganizerApplication application,
@@ -325,6 +331,8 @@ public class OrganizerApplicationService {
         if (user != null) {
             response.setPhone(user.getPhone());
             response.setNickname(user.getNickname());
+            response.setRole(user.getRole());
+            response.setOrganizerStatus(user.getOrganizerStatus());
         }
         return response;
     }

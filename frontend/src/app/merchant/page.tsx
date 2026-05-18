@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation'
 import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, UserRound, Building2 } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { getMyOrganizerApplication, submitOrganizerApplication } from '@/lib/api'
+import { getMyOrganizerApplication, getUserInfo, submitOrganizerApplication } from '@/lib/api'
 import { getUser, isAuthenticated, updateUserRole } from '@/lib/auth'
-import type { OrganizerApplicationStatus, OrganizerApplicationVO, SubjectType, UserRole } from '@/types/api'
+import type { OrganizerApplicationStatus, OrganizerApplicationVO, SubjectType, UserInfo, UserRole } from '@/types/api'
 
 type ApplicationFormState = {
   organizerName: string
@@ -51,6 +51,7 @@ export default function MerchantPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [role, setRole] = useState<UserRole | null>(null)
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [application, setApplication] = useState<OrganizerApplicationVO | null>(null)
   const [form, setForm] = useState<ApplicationFormState>(EMPTY_FORM)
 
@@ -62,24 +63,30 @@ export default function MerchantPage() {
     }
 
     setAuthenticated(true)
-    const currentUser = getUser()
-    const currentRole = currentUser?.role || 'user'
-    setRole(currentRole)
-
-    if (currentRole === 'admin' || currentRole === 'organizer') {
-      setLoading(false)
-      return
-    }
-
     let active = true
     ;(async () => {
       setLoading(true)
       setError('')
       try {
+        const currentUser = getUser()
+        const currentRole = currentUser?.role || 'user'
+        setRole(currentRole)
+
+        const info = await getUserInfo()
+        if (!active) return
+        setUserInfo(info)
+        setRole(info.role)
+
+        if (info.role === 'admin' || info.role === 'organizer') {
+          setLoading(false)
+          return
+        }
+
         const data = await getMyOrganizerApplication()
         if (!active) return
         setApplication(data)
-        if (data?.status === 1) {
+        const isCancelled = info.organizerStatus === 3 && info.role === 'user'
+        if (data?.status === 1 && !isCancelled) {
           updateUserRole('organizer')
           setRole('organizer')
         }
@@ -116,8 +123,9 @@ export default function MerchantPage() {
     return statusMeta(application.status)
   }, [application])
 
-  const canEditForm = !application || application.status === 0 || application.status === 2
-  const isApproved = application?.status === 1
+  const isCancelledOrganizer = userInfo?.organizerStatus === 3 && userInfo?.role === 'user'
+  const canEditForm = isCancelledOrganizer || !application || application.status === 0 || application.status === 2
+  const isApproved = !isCancelledOrganizer && application?.status === 1
 
   const handleChange = (key: keyof ApplicationFormState, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -286,7 +294,9 @@ export default function MerchantPage() {
                     </div>
                     <div className="mt-1 text-[#666]">
                       {application.status === 1
-                        ? '已通过，可进入后台。'
+                        ? isCancelledOrganizer
+                          ? '主办方资格已取消，可重新提交入驻申请。'
+                          : '已通过，可进入后台。'
                         : application.status === 2
                           ? '驳回后可修改后重新提交。'
                           : '资料正在审核中。'}

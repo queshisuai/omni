@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Search, Download, MapPin, ChevronDown, User, Menu } from "lucide-react";
 import { getUser, isAuthenticated, logout } from "@/lib/auth";
+import type { UserRole } from "@/types/api";
 
 export const HOT_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '南京', '成都', '武汉', '天津', '沈阳', '西安', '苏州'];
 export const OTHER_CITIES = Array.from(new Set([
@@ -17,6 +18,7 @@ export function Header() {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [nickname, setNickname] = useState("");
+  const [role, setRole] = useState<UserRole | null>(null);
   const [searchText, setSearchText] = useState("");
   const [currentCity, setCurrentCity] = useState("北京");
   const [citySearch, setCitySearch] = useState("");
@@ -37,6 +39,10 @@ export function Header() {
       if (auth) {
         const user = getUser()
         setNickname(user?.nickname || user?.phone || "")
+        setRole(user?.role || null)
+      } else {
+        setNickname("")
+        setRole(null)
       }
     }
     checkAuth()
@@ -248,6 +254,14 @@ export function Header() {
                   >
                     订单管理
                   </button>
+                  {(role === 'admin' || role === 'organizer') && (
+                    <button
+                      onClick={() => { setShowUserDropdown(false); router.push("/console") }}
+                      className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
+                    >
+                      进入后台
+                    </button>
+                  )}
                   <button
                     onClick={handleLogout}
                     className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none border-t border-[#f5f5f5] mt-1 pt-3 transition-colors"

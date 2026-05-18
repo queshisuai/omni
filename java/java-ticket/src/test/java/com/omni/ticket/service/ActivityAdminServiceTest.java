@@ -9,6 +9,7 @@ import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DirectRefundResponse;
 import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
+import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
@@ -291,6 +292,41 @@ class ActivityAdminServiceTest {
         verify(activityMapper).updateById(firstActivity);
         verify(activityMapper).updateById(secondActivity);
         verify(paymentInternalClient, times(2)).directRefund(any(), eq("test-token"));
+    }
+
+    @Test
+    void publishActivityRejectsWhenNoActiveSession() {
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(1);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.updateActivityStatus(10L, request));
+
+        assertEquals("上架活动前至少需要一个有效场次", exception.getMessage());
+        verify(activityMapper, never()).updateById(any());
+    }
+
+    @Test
+    void publishActivityRejectsWhenNoActiveTicketType() {
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(1);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.updateActivityStatus(10L, request));
+
+        assertEquals("上架活动前至少需要一个可售票档", exception.getMessage());
+        verify(activityMapper, never()).updateById(any());
     }
 
     private Activity activity(Long id, Long organizerId) {

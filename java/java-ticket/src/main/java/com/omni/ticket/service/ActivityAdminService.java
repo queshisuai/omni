@@ -13,6 +13,7 @@ import com.omni.ticket.dto.DirectRefundResponse;
 import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.dto.PaidOrdersBySessionsRequest;
 import com.omni.ticket.dto.RefundImpactResponse;
+import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
@@ -86,6 +87,29 @@ public class ActivityAdminService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "下架活动前必须确认同意为所有已支付订单退款");
         }
         return deactivateActivities(Collections.singletonList(activity), request.getReason());
+    }
+
+    public void updateActivityStatus(Long activityId, UpdateActivityStatusRequest request) {
+        if (request == null || request.getUserId() == null || request.getStatus() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "活动状态参数不能为空");
+        }
+        Activity activity = activityMapper.selectById(activityId);
+        if (activity == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "活动不存在");
+        }
+        UserRef user = userRefMapper.selectById(request.getUserId());
+        String role = user != null ? user.getRole() : null;
+        if (!"admin".equals(role) && !"organizer".equals(role)) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
+        }
+        if ("organizer".equals(role) && !request.getUserId().equals(activity.getOrganizerId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "只能管理自己主办的活动");
+        }
+        if (Integer.valueOf(1).equals(request.getStatus())) {
+            validatePublishable(activityId);
+        }
+        activity.setStatus(request.getStatus());
+        activityMapper.updateById(activity);
     }
 
     public RefundImpactResponse deactivateOrganizer(DeactivateOrganizerRequest request) {
@@ -200,6 +224,22 @@ public class ActivityAdminService {
         response.setRefundCompensationRequiredCount(compensationRequiredCount);
         response.setFailures(failures);
         return response;
+    }
+
+    private void validatePublishable(Long activityId) {
+        List<Session> activeSessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>()
+                .eq(Session::getActivityId, activityId)
+                .eq(Session::getStatus, 1));
+        if (activeSessions == null || activeSessions.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "上架活动前至少需要一个有效场次");
+        }
+        List<Long> sessionIds = activeSessions.stream().map(Session::getId).collect(Collectors.toList());
+        List<TicketType> activeTicketTypes = ticketTypeMapper.selectList(new LambdaQueryWrapper<TicketType>()
+                .in(TicketType::getSessionId, sessionIds)
+                .eq(TicketType::getStatus, 1));
+        if (activeTicketTypes == null || activeTicketTypes.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "上架活动前至少需要一个可售票档");
+        }
     }
 
     private DirectRefundResponse failureOf(OrderInfoResponse order, String status, String message) {

@@ -13,7 +13,7 @@ export default function ConsoleHome() {
     const u = getUser()
     setUser(u)
     if (u) {
-      listAdminActivities(u.userId, 1, 1).then(res => {
+      listAdminActivities(u.userId, { page: 1, size: 1 }).then(res => {
         setStats({ activityCount: res.total })
       }).catch(() => {})
     }

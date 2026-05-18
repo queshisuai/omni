@@ -156,6 +156,10 @@ export async function getActivityDetail(id: number) {
   return request<import('@/types/api').ActivityDetailVO>(`/api/ticket/activities/${id}`)
 }
 
+export async function getSeatMap(sessionId: number, ticketTypeId: number) {
+  return request<import('@/types/api').SeatMapResponse>(`/api/ticket/sessions/${sessionId}/ticket-types/${ticketTypeId}/seats`)
+}
+
 export async function listCategories() {
   return request<import('@/types/api').CategoryVO[]>('/api/ticket/categories')
 }
@@ -175,6 +179,13 @@ export async function listReservations(userId: number) {
 
 export async function createOrder(params: { userId: number; sessionId: number; ticketTypeId: number; quantity: number; unitPrice?: number }) {
   return request<{ id: number; orderNo: string; amount: number }>('/api/order/create', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function createOrderWithSeats(params: { userId: number; sessionId: number; ticketTypeId: number; seatIds: number[]; unitPrice?: number }) {
+  return request<{ id: number; orderNo: string; amount: number }>('/api/order/create-with-seats', {
     method: 'POST',
     body: JSON.stringify(params),
   })
@@ -254,9 +265,14 @@ export function submitPayForm(payForm: string) {
 
 // ========== B端管理接口 ==========
 
-export async function listAdminActivities(userId: number, page = 1, size = 10) {
+export async function listAdminActivities(userId: number, params: { page?: number; size?: number; keyword?: string; status?: number } = {}) {
+  const searchParams = new URLSearchParams({ userId: String(userId) })
+  searchParams.set('page', String(params.page || 1))
+  searchParams.set('size', String(params.size || 10))
+  if (params.keyword?.trim()) searchParams.set('keyword', params.keyword.trim())
+  if (params.status !== undefined) searchParams.set('status', String(params.status))
   return request<import('@/types/api').PageResult<import('@/types/api').ActivityEntity>>(
-    `/api/ticket/admin/activities?userId=${userId}&page=${page}&size=${size}`
+    `/api/ticket/admin/activities?${searchParams.toString()}`
   )
 }
 
@@ -300,6 +316,18 @@ export async function createAdminSession(body: Record<string, unknown>) {
   })
 }
 
+export async function listAdminSessions(userId: number, params: { page?: number; size?: number; activityId?: number; venueId?: number; status?: number } = {}) {
+  const searchParams = new URLSearchParams({ userId: String(userId) })
+  searchParams.set('page', String(params.page || 1))
+  searchParams.set('size', String(params.size || 10))
+  if (params.activityId) searchParams.set('activityId', String(params.activityId))
+  if (params.venueId) searchParams.set('venueId', String(params.venueId))
+  if (params.status !== undefined) searchParams.set('status', String(params.status))
+  return request<import('@/types/api').PageResult<import('@/types/api').SessionAdminVO>>(
+    `/api/ticket/admin/sessions?${searchParams.toString()}`
+  )
+}
+
 export async function updateAdminSession(id: number, body: Record<string, unknown>) {
   return request<import('@/types/api').SessionEntity>(`/api/ticket/admin/sessions/${id}`, {
     method: 'PUT', body: JSON.stringify(body),
@@ -339,6 +367,38 @@ export async function createAdminVenue(body: Record<string, unknown>) {
 export async function updateAdminVenue(id: number, body: Record<string, unknown>) {
   return request<import('@/types/api').VenueEntity>(`/api/ticket/admin/venues/${id}`, {
     method: 'PUT', body: JSON.stringify(body),
+  })
+}
+
+export async function createVenueArea(id: number, body: Record<string, unknown>) {
+  return request<import('@/types/api').SeatTemplateResponse>(`/api/ticket/admin/venues/${id}/areas`, {
+    method: 'POST', body: JSON.stringify(body),
+  })
+}
+
+export async function listVenueAreas(id: number, userId: number) {
+  return request<import('@/types/api').VenueAreaVO[]>(`/api/ticket/admin/venues/${id}/areas?userId=${userId}`)
+}
+
+export async function submitVenueApplication(body: Record<string, unknown>) {
+  return request<import('@/types/api').VenueApplicationVO>('/api/ticket/admin/venue-applications', {
+    method: 'POST', body: JSON.stringify(body),
+  })
+}
+
+export async function listMyVenueApplications(userId: number) {
+  return request<import('@/types/api').VenueApplicationVO[]>(`/api/ticket/admin/venue-applications/my?userId=${userId}`)
+}
+
+export async function listVenueApplications(userId: number, status?: number) {
+  const searchParams = new URLSearchParams({ userId: String(userId) })
+  if (status !== undefined) searchParams.set('status', String(status))
+  return request<import('@/types/api').VenueApplicationVO[]>(`/api/ticket/admin/venue-applications?${searchParams.toString()}`)
+}
+
+export async function reviewVenueApplication(id: number, body: Record<string, unknown>) {
+  return request<import('@/types/api').VenueApplicationVO>(`/api/ticket/admin/venue-applications/${id}/review`, {
+    method: 'POST', body: JSON.stringify(body),
   })
 }
 

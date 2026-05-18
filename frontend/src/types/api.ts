@@ -74,6 +74,8 @@ export interface OrganizerApplicationVO {
   userId: number
   phone: string | null
   nickname: string | null
+  role: UserRole | null
+  organizerStatus: OrganizerStatus | null
   organizerName: string
   subjectType: SubjectType
   contactName: string
@@ -153,6 +155,16 @@ export interface SessionEntity {
   status: number
 }
 
+export interface SessionAdminVO extends SessionEntity {
+  activityName: string | null
+  venueName: string | null
+  venueCity: string | null
+  ticketTypeCount: number
+  totalStock: number
+  soldStock: number
+  remainStock: number
+}
+
 /** 场馆 */
 export interface VenueEntity {
   id: number
@@ -160,6 +172,77 @@ export interface VenueEntity {
   address: string
   city: string
   capacity?: number | null
+  status?: number
+}
+
+export type VenueApplicationStatus = 0 | 1 | 2
+
+export interface VenueApplicationVO {
+  id: number
+  applicantId: number
+  venueId: number | null
+  venueName: string
+  city: string
+  address: string
+  capacity: number | null
+  contactName: string
+  contactPhone: string
+  qualificationNo: string | null
+  businessScope: string | null
+  description: string | null
+  status: VenueApplicationStatus
+  reviewerId: number | null
+  reviewNote: string | null
+  createTime: string
+  updateTime: string | null
+  reviewTime: string | null
+}
+
+export interface VenueAreaVO {
+  id: number
+  venueId: number
+  name: string
+  rowCount: number
+  seatsPerRow: number
+  rowStart: number
+  seatStart: number
+  color: string | null
+  sort: number
+  status: number
+}
+
+export interface SessionAreaStockVO extends VenueAreaVO {
+  availableSeatCount: number
+}
+
+export interface SessionSeatVO {
+  id: number
+  sessionId: number
+  venueId: number
+  areaId: number
+  venueSeatId: number
+  rowNo: number
+  seatNo: number
+  seatLabel: string
+  status: number
+  lockExpireTime: string | null
+  orderId: number | null
+  ticketTypeId: number | null
+}
+
+export interface SeatMapResponse {
+  sessionId: number
+  ticketTypeId: number
+  ticketTypeName: string
+  price: number
+  stageLabel: string
+  areas: VenueAreaVO[]
+  seats: SessionSeatVO[]
+}
+
+export interface SeatTemplateResponse {
+  area: VenueAreaVO
+  generatedSeatCount: number
 }
 
 /** 票档 */
@@ -207,6 +290,13 @@ export interface OrderEntity {
   amount: number
   status: number
   createTime: string
+  activityId?: number | null
+  activityName?: string | null
+  activityPoster?: string | null
+  venueName?: string | null
+  sessionTime?: string | null
+  ticketName?: string | null
+  unitPrice?: number | null
 }
 
 /** 评价 */

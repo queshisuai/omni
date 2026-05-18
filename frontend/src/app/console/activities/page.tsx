@@ -4,22 +4,45 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity } from '@/lib/api'
-import { Plus, Edit, Trash2, Eye, EyeOff } from 'lucide-react'
-import type { ActivityEntity } from '@/types/api'
+import { Plus, Edit, Trash2, Eye, EyeOff, RefreshCw, Search } from 'lucide-react'
+import type { ActivityEntity, UserRole } from '@/types/api'
+
+const PAGE_SIZE = 10
 
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState<ActivityEntity[]>([])
   const [userId, setUserId] = useState(0)
+  const [role, setRole] = useState<UserRole>('user')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [status, setStatus] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [pages, setPages] = useState(1)
 
-  const loadData = () => {
+  const loadData = (nextPage = page) => {
     const u = getUser()
     if (!u) return
     setUserId(u.userId)
-    listAdminActivities(u.userId).then(res => {
+    setRole(u.role || 'user')
+    setLoading(true)
+    setError('')
+    listAdminActivities(u.userId, {
+      page: nextPage,
+      size: PAGE_SIZE,
+      keyword,
+      status: status === '' ? undefined : Number(status),
+    }).then(res => {
       setActivities(res.records)
+      setTotal(res.total)
+      setPages(res.pages || 1)
+      setPage(res.current || nextPage)
       setLoading(false)
-    }).catch(() => setLoading(false))
+    }).catch(err => {
+      setError(err instanceof Error ? err.message : '加载活动失败')
+      setLoading(false)
+    })
   }
 
   useEffect(() => { loadData() }, [])
@@ -44,19 +67,28 @@ export default function ActivitiesPage() {
     } else {
       await updateActivityStatus(activity.id, { userId, status: newStatus })
     }
-    loadData()
+    loadData(page)
   }
 
   const handleDelete = async (id: number) => {
     if (!confirm('确定删除该活动？')) return
     await deleteAdminActivity(id, userId)
-    loadData()
+    loadData(page)
+  }
+
+  const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setPage(1)
+    loadData(1)
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <h1 className="text-[22px] font-bold text-[#1a1a2e]">活动管理</h1>
+      <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{role === 'admin' ? '平台演出管理' : '我的演出管理'}</h1>
+          <p className="mt-1 text-[13px] text-[#999]">搜索、筛选和维护演出上下架状态。</p>
+        </div>
         <Link
           href="/console/activities/new"
           className="flex items-center gap-1.5 bg-[#ff1268] text-white px-4 py-2 rounded-lg text-[14px] font-medium hover:bg-[#e0105a] transition-colors"
@@ -65,14 +97,51 @@ export default function ActivitiesPage() {
         </Link>
       </div>
 
+      <form onSubmit={handleSearch} className="mb-5 grid gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 sm:grid-cols-[1fr_180px_auto]">
+        <label className="relative block">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#999]" />
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="搜索活动名称"
+            className="h-10 w-full rounded-lg border border-[#e5e5e5] pl-9 pr-3 text-[14px] outline-none focus:border-[#ff1268]"
+          />
+        </label>
+        <select
+          value={status}
+          onChange={(event) => setStatus(event.target.value)}
+          className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]"
+        >
+          <option value="">全部状态</option>
+          <option value="1">上架</option>
+          <option value="0">下架</option>
+        </select>
+        <button
+          type="submit"
+          className="h-10 rounded-lg bg-[#1a1a2e] px-5 text-[14px] font-medium text-white transition-colors hover:bg-[#2a2a42]"
+        >
+          查询
+        </button>
+      </form>
+
       {loading ? (
         <div className="text-center text-[#999] py-20 text-[14px]">加载中...</div>
+      ) : error ? (
+        <div className="rounded-xl border border-[#ffd9e6] bg-white py-16 text-center text-[14px] text-[#ff4d4f]">
+          <div>{error}</div>
+          <button
+            onClick={() => loadData(page)}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#ff1268] px-4 py-2 text-white"
+          >
+            <RefreshCw className="h-4 w-4" /> 重试
+          </button>
+        </div>
       ) : activities.length === 0 ? (
         <div className="text-center text-[#999] py-20 bg-white rounded-xl border border-[#e5e5e5] text-[14px]">
-          暂无活动，点击右上角新建
+          暂无匹配活动，可调整筛选条件或点击右上角新建。
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-[#e5e5e5] overflow-hidden">
+        <div className="overflow-hidden rounded-xl border border-[#e5e5e5] bg-white">
           <table className="w-full text-[14px]">
             <thead>
               <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
@@ -123,6 +192,25 @@ export default function ActivitiesPage() {
               ))}
             </tbody>
           </table>
+          <div className="flex flex-col gap-3 border-t border-[#f0f0f0] px-4 py-3 text-[13px] text-[#666] sm:flex-row sm:items-center sm:justify-between">
+            <span>共 {total} 条，当前第 {page} / {pages} 页</span>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => loadData(page - 1)}
+                className="rounded-lg border border-[#e5e5e5] px-3 py-1.5 disabled:cursor-not-allowed disabled:text-[#bbb]"
+              >
+                上一页
+              </button>
+              <button
+                disabled={page >= pages}
+                onClick={() => loadData(page + 1)}
+                className="rounded-lg border border-[#e5e5e5] px-3 py-1.5 disabled:cursor-not-allowed disabled:text-[#bbb]"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

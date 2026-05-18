@@ -93,6 +93,82 @@ CREATE TABLE venue (
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE venue_application (
+    id BIGSERIAL PRIMARY KEY,
+    applicant_id BIGINT NOT NULL REFERENCES "user"(id),
+    venue_id BIGINT REFERENCES venue(id),
+    venue_name VARCHAR(100) NOT NULL,
+    city VARCHAR(50) NOT NULL,
+    address VARCHAR(255) NOT NULL,
+    capacity INTEGER,
+    contact_name VARCHAR(50) NOT NULL,
+    contact_phone VARCHAR(20) NOT NULL,
+    qualification_no VARCHAR(100),
+    business_scope TEXT,
+    description TEXT,
+    status SMALLINT DEFAULT 0,
+    reviewer_id BIGINT REFERENCES "user"(id),
+    review_note TEXT,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    review_time TIMESTAMP
+);
+COMMENT ON TABLE venue_application IS '场馆申请表';
+COMMENT ON COLUMN venue_application.status IS '0=待审核 1=已通过 2=已驳回';
+
+CREATE TABLE venue_area (
+    id BIGSERIAL PRIMARY KEY,
+    venue_id BIGINT NOT NULL REFERENCES venue(id),
+    name VARCHAR(100) NOT NULL,
+    row_count INTEGER NOT NULL,
+    seats_per_row INTEGER NOT NULL,
+    row_start INTEGER DEFAULT 1,
+    seat_start INTEGER DEFAULT 1,
+    color VARCHAR(20),
+    sort INTEGER DEFAULT 0,
+    status SMALLINT DEFAULT 1,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE venue_seat (
+    id BIGSERIAL PRIMARY KEY,
+    venue_id BIGINT NOT NULL REFERENCES venue(id),
+    area_id BIGINT NOT NULL REFERENCES venue_area(id),
+    row_no INTEGER NOT NULL,
+    seat_no INTEGER NOT NULL,
+    seat_label VARCHAR(30) NOT NULL,
+    x INTEGER DEFAULT 0,
+    y INTEGER DEFAULT 0,
+    status SMALLINT DEFAULT 1,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE session_seat (
+    id BIGSERIAL PRIMARY KEY,
+    session_id BIGINT NOT NULL REFERENCES session(id),
+    venue_id BIGINT NOT NULL REFERENCES venue(id),
+    area_id BIGINT NOT NULL REFERENCES venue_area(id),
+    venue_seat_id BIGINT NOT NULL REFERENCES venue_seat(id),
+    row_no INTEGER NOT NULL,
+    seat_no INTEGER NOT NULL,
+    seat_label VARCHAR(30) NOT NULL,
+    status SMALLINT DEFAULT 1,
+    lock_expire_time TIMESTAMP,
+    order_id BIGINT REFERENCES "order"(id),
+    ticket_type_id BIGINT REFERENCES ticket_type(id),
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE ticket_type_area (
+    id BIGSERIAL PRIMARY KEY,
+    ticket_type_id BIGINT NOT NULL REFERENCES ticket_type(id),
+    session_id BIGINT NOT NULL REFERENCES session(id),
+    area_id BIGINT NOT NULL REFERENCES venue_area(id),
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 活动表
 CREATE TABLE activity (
     id BIGSERIAL PRIMARY KEY,
@@ -166,9 +242,14 @@ CREATE TABLE seat (
 -- 座位与订单关联表
 CREATE TABLE order_seat (
     id BIGSERIAL PRIMARY KEY,
-    order_id BIGINT REFERENCES "order"(id),
-    seat_id BIGINT REFERENCES seat(id),
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    order_id BIGINT NOT NULL REFERENCES "order"(id),
+    session_seat_id BIGINT NOT NULL REFERENCES session_seat(id),
+    session_id BIGINT NOT NULL,
+    ticket_type_id BIGINT NOT NULL,
+    status SMALLINT DEFAULT 1,
+    lock_expire_time TIMESTAMP,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 短信验证码表（沙盒版）
@@ -288,6 +369,9 @@ CREATE INDEX idx_user_auth_user ON user_auth(user_id);
 CREATE INDEX idx_order_user ON "order"(user_id);
 CREATE INDEX idx_order_no ON "order"(order_no);
 CREATE INDEX idx_order_status ON "order"(status);
+CREATE INDEX idx_order_seat_order ON order_seat(order_id);
+CREATE INDEX idx_order_seat_session_seat ON order_seat(session_seat_id);
+CREATE INDEX idx_order_seat_status ON order_seat(status);
 CREATE INDEX idx_payment_order ON payment(order_id);
 CREATE INDEX idx_payment_no ON payment(payment_no);
 CREATE INDEX idx_payment_out_trade_no ON payment(out_trade_no);
@@ -297,6 +381,22 @@ CREATE UNIQUE INDEX idx_refund_order_active_unique ON refund_request(order_id) W
 CREATE INDEX idx_refund_user ON refund_request(user_id);
 CREATE INDEX idx_refund_status ON refund_request(status);
 CREATE INDEX idx_refund_no ON refund_request(refund_no);
+CREATE INDEX idx_venue_application_applicant ON venue_application(applicant_id);
+CREATE INDEX idx_venue_application_status ON venue_application(status);
+CREATE INDEX idx_venue_application_create_time ON venue_application(create_time DESC);
+CREATE INDEX idx_venue_area_venue ON venue_area(venue_id);
+CREATE INDEX idx_venue_area_status ON venue_area(status);
+CREATE INDEX idx_venue_seat_venue ON venue_seat(venue_id);
+CREATE INDEX idx_venue_seat_area ON venue_seat(area_id);
+CREATE UNIQUE INDEX idx_venue_seat_area_position ON venue_seat(area_id, row_no, seat_no);
+CREATE INDEX idx_session_seat_session ON session_seat(session_id);
+CREATE INDEX idx_session_seat_venue ON session_seat(venue_id);
+CREATE INDEX idx_session_seat_area ON session_seat(area_id);
+CREATE INDEX idx_session_seat_status ON session_seat(status);
+CREATE UNIQUE INDEX idx_session_seat_session_venue_seat ON session_seat(session_id, venue_seat_id);
+CREATE INDEX idx_ticket_type_area_ticket_type ON ticket_type_area(ticket_type_id);
+CREATE INDEX idx_ticket_type_area_session ON ticket_type_area(session_id);
+CREATE UNIQUE INDEX idx_ticket_type_area_session_area_unique ON ticket_type_area(session_id, area_id);
 CREATE INDEX idx_notification_user ON notification(user_id);
 CREATE INDEX idx_stock_log_session ON stock_log(session_id);
 CREATE INDEX idx_reservation_user ON reservation(user_id);

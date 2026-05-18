@@ -2,6 +2,8 @@ package com.omni.order.controller;
 
 import com.omni.common.result.Result;
 import com.omni.order.dto.CreateOrderRequest;
+import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.PaidOrdersBySessionsRequest;
 import com.omni.order.entity.Order;
 import com.omni.order.service.OrderService;
@@ -36,12 +38,17 @@ public class OrderController {
         return Result.success(order);
     }
 
+    @PostMapping("/create-with-seats")
+    public Result<Order> createOrderWithSeats(@RequestBody LockSeatsRequest request) {
+        return Result.success(orderService.createOrderWithSeats(request));
+    }
+
     /**
      * 用户订单列表
      */
     @GetMapping("/user/{userId}")
-    public Result<List<Order>> listOrders(@PathVariable Long userId) {
-        List<Order> orders = orderService.listOrders(userId);
+    public Result<List<OrderListItemResponse>> listOrders(@PathVariable Long userId) {
+        List<OrderListItemResponse> orders = orderService.listOrderItems(userId);
         return Result.success(orders);
     }
 

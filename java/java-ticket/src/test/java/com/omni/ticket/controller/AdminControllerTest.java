@@ -10,6 +10,10 @@ import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.service.ActivityAdminService;
+import com.omni.ticket.service.SeatTemplateService;
+import com.omni.ticket.service.SessionAdminService;
+import com.omni.ticket.service.TicketTypeAreaService;
+import com.omni.ticket.service.VenueApplicationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -37,6 +41,14 @@ class AdminControllerTest {
     private UserRefMapper userRefMapper;
     @Mock
     private ActivityAdminService activityAdminService;
+    @Mock
+    private SessionAdminService sessionAdminService;
+    @Mock
+    private VenueApplicationService venueApplicationService;
+    @Mock
+    private SeatTemplateService seatTemplateService;
+    @Mock
+    private TicketTypeAreaService ticketTypeAreaService;
 
     @Test
     void deactivateOrganizerUsesAuthorizationTokenAsOperator() {
@@ -68,6 +80,6 @@ class AdminControllerTest {
     }
 
     private AdminController controller() {
-        return new AdminController(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userRefMapper, activityAdminService);
+        return new AdminController(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userRefMapper, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService);
     }
 }

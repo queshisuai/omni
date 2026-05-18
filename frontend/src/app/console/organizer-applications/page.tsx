@@ -20,6 +20,14 @@ function statusMeta(status: OrganizerApplicationStatus) {
   return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
 }
 
+function organizerStatusMeta(status: OrganizerApplicationVO['organizerStatus']) {
+  if (status === 3) return { text: '已取消资格', color: '#ef4444', bg: '#fef2f2' }
+  if (status === 1) return { text: '主办方有效', color: '#16a34a', bg: '#f0fdf4' }
+  if (status === 2) return { text: '认证已拒绝', color: '#ef4444', bg: '#fef2f2' }
+  if (status === 0) return { text: '认证待审核', color: '#ff7a00', bg: '#fff7ed' }
+  return null
+}
+
 export default function OrganizerApplicationsPage() {
   const router = useRouter()
   const [user, setUser] = useState<UserInfo | null>(null)
@@ -215,6 +223,8 @@ export default function OrganizerApplicationsPage() {
         <div className="space-y-4">
           {filteredItems.map((item) => {
             const meta = statusMeta(item.status)
+            const userStatusMeta = organizerStatusMeta(item.organizerStatus)
+            const isCancelled = item.organizerStatus === 3 || item.role === 'user'
             return (
               <div key={item.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -227,6 +237,14 @@ export default function OrganizerApplicationsPage() {
                       >
                         {meta.text}
                       </span>
+                      {userStatusMeta ? (
+                        <span
+                          className="rounded-full px-3 py-1 text-xs font-medium"
+                          style={{ color: userStatusMeta.color, backgroundColor: userStatusMeta.bg }}
+                        >
+                          {userStatusMeta.text}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="grid gap-2 text-sm text-[#666] sm:grid-cols-2 lg:grid-cols-3">
                       <span>联系人：{item.contactName}</span>
@@ -260,11 +278,11 @@ export default function OrganizerApplicationsPage() {
                     </button>
                     <button
                       onClick={() => handleDeactivate(item)}
-                      disabled={savingId === item.id || item.status !== 1}
+                      disabled={savingId === item.id || item.status !== 1 || isCancelled}
                       className="inline-flex items-center justify-center gap-2 rounded-full border border-[#f97316] px-4 py-2 text-sm font-medium text-[#f97316] transition-colors hover:bg-[#fff7ed] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <ShieldOff className="h-4 w-4" />
-                      取消资格
+                      {isCancelled ? '已取消资格' : '取消资格'}
                     </button>
                     <div className="text-xs text-[#999]">驳回前请在上方备注框填写原因</div>
                   </div>

@@ -6,7 +6,6 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { listOrders, cancelOrder, createAlipayPagePay, submitPayForm, listMyRefunds, applyRefund } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import { sections } from '@/lib/mock-data'
 import type { OrderEntity, RefundRequestVO, RefundStatus } from '@/types/api'
 
 type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled'
@@ -31,40 +30,26 @@ const ACTIVE_REFUND_STATUSES = new Set<RefundStatus>([0, 1, 4])
 interface EnrichedOrder extends OrderEntity {
   activityName: string
   activityPoster: string
-  activityId: string
+  activityId: number | null
   venueName: string
   sessionTime: string
   ticketName: string
   unitPrice: number
 }
 
-/** 用 mock 数据丰富订单信息 */
-function enrichMockOrders(orders: OrderEntity[]): EnrichedOrder[] {
-  const allActivities = sections.flatMap((s) => s.items)
+function enrichOrders(orders: OrderEntity[]): EnrichedOrder[] {
   return orders.map((order) => {
-    const activity = allActivities[order.id % allActivities.length]
     return {
       ...order,
-      activityName: activity?.title || '未知活动',
-      activityPoster: activity?.poster || '',
-      activityId: activity?.id || '',
-      venueName: activity?.venue || '未知场馆',
-      sessionTime: activity?.showTime || '',
-      ticketName: order.amount > 500 ? 'VIP票' : order.amount > 200 ? '普通票' : '早鸟票',
-      unitPrice: order.amount / order.quantity,
+      activityName: order.activityName || '未知活动',
+      activityPoster: order.activityPoster || '',
+      activityId: order.activityId ?? null,
+      venueName: order.venueName || '未知场馆',
+      sessionTime: order.sessionTime || '',
+      ticketName: order.ticketName || '未知票档',
+      unitPrice: order.unitPrice || order.amount / order.quantity,
     }
   })
-}
-
-/** Mock 订单数据 */
-function buildMockOrders(): EnrichedOrder[] {
-  const allActivities = sections.flatMap((s) => s.items)
-  const raw: OrderEntity[] = [
-    { id: 1, orderNo: 'DM202605150001', userId: 1, sessionId: 1, ticketTypeId: 1, quantity: 2, amount: 640, status: 0, createTime: '2026-05-15T14:30:00' },
-    { id: 2, orderNo: 'DM202605140002', userId: 1, sessionId: 2, ticketTypeId: 2, quantity: 1, amount: 880, status: 1, createTime: '2026-05-14T10:00:00' },
-    { id: 3, orderNo: 'DM202605100003', userId: 1, sessionId: 3, ticketTypeId: 1, quantity: 2, amount: 560, status: 2, createTime: '2026-05-10T20:15:00' },
-  ]
-  return enrichMockOrders(raw)
 }
 
 function buildRefundMap(refunds: RefundRequestVO[]) {
@@ -109,10 +94,10 @@ export default function OrdersPage() {
     }
 
     ;(async () => {
-      setLoading(true)
-      try {
-        const orderData = await listOrders(user.userId)
-        setOrders(enrichMockOrders(orderData))
+        setLoading(true)
+        try {
+          const orderData = await listOrders(user.userId)
+          setOrders(enrichOrders(orderData))
         try {
           const refundData = await listMyRefunds()
           setRefunds(refundData)

@@ -1,0 +1,145 @@
+package com.omni.ticket.service;
+
+import com.omni.ticket.dto.VenueApplicationRequest;
+import com.omni.ticket.entity.Venue;
+import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.entity.VenueApplication;
+import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.mapper.VenueApplicationMapper;
+import com.omni.ticket.mapper.VenueMapper;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class VenueApplicationServiceTest {
+
+    @Mock
+    private VenueApplicationMapper venueApplicationMapper;
+    @Mock
+    private VenueMapper venueMapper;
+    @Mock
+    private UserRefMapper userRefMapper;
+
+    private VenueApplicationService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new VenueApplicationService(venueApplicationMapper, venueMapper, userRefMapper);
+    }
+
+    @Test
+    void organizerSubmitCreatesPendingApplication() {
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+
+        VenueApplication result = service.submit(request());
+
+        ArgumentCaptor<VenueApplication> captor = ArgumentCaptor.forClass(VenueApplication.class);
+        verify(venueApplicationMapper).insert(captor.capture());
+        VenueApplication saved = captor.getValue();
+        assertEquals(2003L, saved.getApplicantId());
+        assertEquals("国家体育馆", saved.getVenueName());
+        assertEquals("北京", saved.getCity());
+        assertEquals("北京市朝阳区", saved.getAddress());
+        assertEquals(18000, saved.getCapacity());
+        assertEquals("张三", saved.getContactName());
+        assertEquals("13800000002", saved.getContactPhone());
+        assertEquals(0, saved.getStatus());
+        assertNull(saved.getVenueId());
+        assertEquals(saved, result);
+    }
+
+    @Test
+    void approveWithCreateModeCreatesNewVenueAndApprovesApplication() {
+        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        VenueApplication application = pendingApplication();
+        when(venueApplicationMapper.selectById(301L)).thenReturn(application);
+
+        VenueApplication result = service.approve(301L, 2002L, "create", null, "资料真实");
+
+        ArgumentCaptor<Venue> venueCaptor = ArgumentCaptor.forClass(Venue.class);
+        verify(venueMapper).insert(venueCaptor.capture());
+        Venue venue = venueCaptor.getValue();
+        assertEquals("国家体育馆", venue.getName());
+        assertEquals("北京", venue.getCity());
+        assertEquals("北京市朝阳区", venue.getAddress());
+        assertEquals(18000, venue.getCapacity());
+        assertEquals(1, venue.getStatus());
+        assertEquals(1, application.getStatus());
+        assertEquals(2002L, application.getReviewerId());
+        assertEquals("资料真实", application.getReviewNote());
+        verify(venueApplicationMapper).updateById(application);
+        assertEquals(application, result);
+    }
+
+    @Test
+    void approveWithLinkModeAssociatesExistingVenueWithoutCreatingVenue() {
+        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        VenueApplication application = pendingApplication();
+        when(venueApplicationMapper.selectById(301L)).thenReturn(application);
+        when(venueMapper.selectById(99L)).thenReturn(activeVenue(99L));
+
+        VenueApplication result = service.approve(301L, 2002L, "link", 99L, "关联现有场馆");
+
+        verify(venueMapper, never()).insert(any());
+        assertEquals(99L, application.getVenueId());
+        assertEquals(1, application.getStatus());
+        assertEquals(2002L, application.getReviewerId());
+        assertEquals("关联现有场馆", application.getReviewNote());
+        verify(venueApplicationMapper).updateById(application);
+        assertEquals(application, result);
+    }
+
+    private VenueApplicationRequest request() {
+        VenueApplicationRequest request = new VenueApplicationRequest();
+        request.setUserId(2003L);
+        request.setVenueName("国家体育馆");
+        request.setCity("北京");
+        request.setAddress("北京市朝阳区");
+        request.setCapacity(18000);
+        request.setContactName("张三");
+        request.setContactPhone("13800000002");
+        request.setQualificationNo("VENUE-001");
+        request.setBusinessScope("演唱会、体育赛事");
+        request.setDescription("申请加入平台公共场馆库");
+        return request;
+    }
+
+    private VenueApplication pendingApplication() {
+        VenueApplication application = new VenueApplication();
+        application.setId(301L);
+        application.setApplicantId(2003L);
+        application.setVenueName("国家体育馆");
+        application.setCity("北京");
+        application.setAddress("北京市朝阳区");
+        application.setCapacity(18000);
+        application.setContactName("张三");
+        application.setContactPhone("13800000002");
+        application.setStatus(0);
+        return application;
+    }
+
+    private Venue activeVenue(Long id) {
+        Venue venue = new Venue();
+        venue.setId(id);
+        venue.setStatus(1);
+        return venue;
+    }
+
+    private UserRef user(Long id, String role) {
+        UserRef user = new UserRef();
+        user.setId(id);
+        user.setRole(role);
+        return user;
+    }
+}

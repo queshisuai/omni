@@ -1,17 +1,56 @@
--- omni抢票平台种子数据
--- 基于前端 mock-data.ts 生成
+-- Omni 万象抢票平台演示种子数据
+-- 密码均为 123456 的 BCrypt 哈希；保留 CLAUDE.md 中约定的测试账号 ID。
 
--- ========== 用户角色（演示账号） ==========
--- 密码均为 123456 的 BCrypt 哈希
-INSERT INTO "user" (id, phone, password, nickname, role, organizer_name, status) VALUES
-(1001, '13800001111', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5Eh', '演唱会主办方', 'organizer', '北京音乐演出有限公司', 1),
-(1002, '13800002222', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5Eh', '话剧院线', 'organizer', '开心麻花娱乐文化有限公司', 1),
-(1003, '13800003333', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5Eh', '体育赛事运营', 'organizer', '中超联赛运营有限公司', 1),
-(2001, '13900001111', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5Eh', '普通用户小明', 'user', NULL, 1);
+TRUNCATE TABLE
+    moment,
+    review,
+    user_auth,
+    stock_log,
+    notification,
+    refund_request,
+    payment,
+    order_seat,
+    seat,
+    reservation,
+    "order",
+    ticket_type_area,
+    session_seat,
+    ticket_type,
+    session,
+    activity,
+    venue_seat,
+    venue_area,
+    venue_application,
+    venue,
+    artist,
+    category,
+    organizer_application,
+    sms_code,
+    "user"
+RESTART IDENTITY CASCADE;
 
-SELECT setval('user_id_seq', 2001);
+-- ========== 用户与主办方 ==========
+INSERT INTO "user" (id, phone, password, nickname, role, organizer_status, organizer_name, status) VALUES
+(2002, '13800000001', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '平台管理员', 'admin', 0, NULL, 1),
+(2003, '13800000002', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '星河演艺主办方', 'organizer', 1, '星河演艺集团', 1),
+(2004, '13900000001', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '普通用户小明', 'user', 0, NULL, 1),
+(2005, '13800000003', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '城市剧场联盟', 'organizer', 1, '城市剧场联盟', 1),
+(2006, '13800000004', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '运动赛事运营', 'organizer', 1, '华夏体育赛事运营', 1),
+(2007, '13800000005', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '亲子展览主办方', 'organizer', 1, '童梦展演文化', 1),
+(2008, '13900000002', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '观演用户小夏', 'user', 0, NULL, 1),
+(2009, '13900000003', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '曾被取消主办方', 'user', 3, '旧日演出工作室', 1);
 
--- ========== 分类 (10条) ==========
+INSERT INTO organizer_application (id, user_id, organizer_name, subject_type, contact_name, contact_phone, contact_email, license_no, business_scope, description, status, reviewer_id, review_note, review_time) VALUES
+(1, 2003, '星河演艺集团', 'enterprise', '林星', '13800000002', 'contact@xinghe.example', '91110000XINGHE', '演唱会、音乐节、音乐会', '全国巡演主办方', 1, 2002, '资质完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '40 days'),
+(2, 2005, '城市剧场联盟', 'enterprise', '周南', '13800000003', 'service@theatre.example', '91310000THEATRE', '话剧、舞蹈、戏曲', '多城市剧场演出联盟', 1, 2002, '审核通过', CURRENT_TIMESTAMP - INTERVAL '35 days'),
+(3, 2006, '华夏体育赛事运营', 'enterprise', '陈竞', '13800000004', 'sports@example.com', '91440000SPORTS', '体育赛事、电竞赛事', '体育赛事综合运营', 1, 2002, '审核通过', CURRENT_TIMESTAMP - INTERVAL '30 days'),
+(4, 2007, '童梦展演文化', 'enterprise', '赵童', '13800000005', 'kids@example.com', '91510000KIDS', '儿童剧、亲子展、展览', '亲子和展览活动主办方', 1, 2002, '审核通过', CURRENT_TIMESTAMP - INTERVAL '25 days'),
+(5, 2009, '旧日演出工作室', 'enterprise', '吴旧', '13900000003', 'old@example.com', '91610000OLD', '小型演出', '历史资质已取消', 1, 2002, '曾通过，后续被取消资格', CURRENT_TIMESTAMP - INTERVAL '120 days');
+
+SELECT setval('user_id_seq', 2009, true);
+SELECT setval('organizer_application_id_seq', 5, true);
+
+-- ========== 分类 ==========
 INSERT INTO category (id, name, icon, sort, status) VALUES
 (1, '演唱会', NULL, 1, 1),
 (2, '话剧歌剧', NULL, 2, 1),
@@ -23,186 +62,238 @@ INSERT INTO category (id, name, icon, sort, status) VALUES
 (8, '舞蹈芭蕾', NULL, 8, 1),
 (9, '二次元', NULL, 9, 1),
 (10, '旅游展览', NULL, 10, 1);
+SELECT setval('category_id_seq', 10, true);
 
--- 同步序列
-SELECT setval('category_id_seq', 10);
-
--- ========== 艺人 (28条，每个活动一个) ==========
+-- ========== 艺人/团队 ==========
 INSERT INTO artist (id, name, description, avatar, status) VALUES
-(1, '微博大眼音乐节艺人阵容', '超强阵容', NULL, 1),
-(2, 'BY2', '华语流行双胞胎组合', NULL, 1),
-(3, '胡夏', '华语流行男歌手', NULL, 1),
-(4, '奥森计划艺人阵容', '多元音乐人', NULL, 1),
-(5, '民谣30年群星', '民谣歌手集合', NULL, 1),
-(6, '良辰·声境如梦乐团', '古典跨界乐团', NULL, 1),
-(7, '张泽', 'BEATBOX世界冠军', NULL, 1),
-(8, '开心麻花团队', '开心麻花王牌喜剧团队', NULL, 1),
-(9, '樊冲', '音乐剧导演/作曲', NULL, 1),
-(10, '开心麻花宫廷剧组', '开心麻花宫廷剧团队', NULL, 1),
-(11, '狐说臣与仙剧组', '原创音乐剧团队', NULL, 1),
-(12, '丁一滕', '新锐戏剧导演', NULL, 1),
-(13, '朱洁静、乔振宇', '知名舞蹈演员与演员', NULL, 1),
-(14, '谋杀歌谣剧组', '外百老汇原版团队', NULL, 1),
-(15, '北京国安足球俱乐部', '中超老牌劲旅', NULL, 1),
-(16, '三角洲行动电竞战队', 'FPS职业战队', NULL, 1),
-(17, '城市向阳跑组委会', '全民健身赛事', NULL, 1),
-(18, '王者荣耀电竞选手', 'KPL职业选手', NULL, 1),
-(19, '斯巴达勇士赛组委会', '国际障碍赛品牌', NULL, 1),
-(20, '斯巴达勇士赛组委会', '国际障碍赛品牌', NULL, 1),
-(21, '山东省齐鲁足球超级联赛组委会', '地方足球赛事', NULL, 1),
-(22, '加拿大奇幻马秀团', '国际马戏团队', NULL, 1),
-(23, '开心麻花儿童剧组', '开心麻花儿童剧团队', NULL, 1),
-(24, '北京儿艺', '北京儿童艺术剧院', NULL, 1),
-(25, '白雪公主剧组', '经典童话改编', NULL, 1),
-(26, '凯叔讲故事团队', '亲子内容品牌', NULL, 1),
-(27, '小猪佩奇舞台剧组', '知名IP改编', NULL, 1),
-(28, '快乐六一马戏团', '节日马戏表演', NULL, 1);
+(1, '林川', '华语流行唱作人', NULL, 1),
+(2, '银河电台', '城市流行乐队', NULL, 1),
+(3, '仲夏音乐节阵容', '多组独立音乐人联合演出', NULL, 1),
+(4, '城市剧场话剧团', '现实主义话剧团队', NULL, 1),
+(5, '海上歌剧中心', '经典歌剧制作团队', NULL, 1),
+(6, '开心制造喜剧社', '都市喜剧团队', NULL, 1),
+(7, '成都猎鹰篮球俱乐部', '职业篮球俱乐部', NULL, 1),
+(8, '深圳竞速电竞联盟', '电竞赛事运营团队', NULL, 1),
+(9, '西安城墙马拉松组委会', '城市路跑赛事组委会', NULL, 1),
+(10, '童梦剧团', '原创亲子儿童剧团队', NULL, 1),
+(11, '奇妙科学秀', '亲子科学互动团队', NULL, 1),
+(12, '森林马戏团', '亲子马戏演出团队', NULL, 1),
+(13, '未来城市策展组', '城市科技展策展团队', NULL, 1),
+(14, '国风生活市集', '传统文化市集品牌', NULL, 1),
+(15, '重庆山城影像展', '城市影像策展团队', NULL, 1),
+(16, '杭州爱乐室内乐团', '古典室内乐团', NULL, 1),
+(17, '南京交响乐团', '城市交响乐团', NULL, 1),
+(18, '广州爵士四重奏', '爵士乐团', NULL, 1),
+(19, '德云新声相声社', '青年相声团队', NULL, 1),
+(20, '江南评弹社', '传统评弹团队', NULL, 1),
+(21, '山城脱口秀联盟', '脱口秀厂牌', NULL, 1),
+(22, '白鹭现代舞团', '现代舞团', NULL, 1),
+(23, '锦城芭蕾舞团', '古典芭蕾舞团', NULL, 1),
+(24, '长安国风舞集', '国风舞蹈团队', NULL, 1),
+(25, '次元夏日企划', '动漫音乐企划', NULL, 1),
+(26, '星环电竞嘉年华', '二次元电竞嘉年华', NULL, 1),
+(27, '幻境声优见面会', '声优见面会企划', NULL, 1),
+(28, '江南水乡旅行节', '文旅节庆活动', NULL, 1),
+(29, '巴蜀非遗体验展', '非遗体验策展团队', NULL, 1),
+(30, '丝路城市旅游展', '旅游目的地联合展', NULL, 1);
+SELECT setval('artist_id_seq', 30, true);
 
-SELECT setval('artist_id_seq', 28);
-
--- ========== 场馆 (22个不同的场馆) ==========
+-- ========== 城市公共场馆 ==========
 INSERT INTO venue (id, name, city, address, capacity, status) VALUES
-(1, '待公布', '北京', '待定', NULL, 1),
-(2, '首都体育馆', '北京', '北京市海淀区中关村南大街56号', 17500, 1),
-(3, '国家体育馆', '北京', '北京市朝阳区天辰东路9号', 20000, 1),
-(4, '奥森公园南区露天剧场', '北京', '北京市朝阳区奥林匹克森林公园南区内', 5000, 1),
-(5, '北京喜剧院', '北京', '北京市东城区朝阳门北大街11号', 800, 1),
-(6, '北京LIVERSE音宇宙艺术中心', '北京', '北京市朝阳区', 3000, 1),
-(7, 'MAO Livehouse北京(东郎店)', '北京', '北京市东城区东郎电影创意产业园', 600, 1),
-(8, '保利剧院', '北京', '北京市东城区东直门南大街14号', 1500, 1),
-(9, '开心麻花A88剧场', '北京', '北京市朝阳区', 500, 1),
-(10, '北京艺术中心-戏剧场', '北京', '北京市通州区城市绿心森林公园内', 1000, 1),
-(11, '北京艺术中心-歌剧院', '北京', '北京市通州区城市绿心森林公园内', 1800, 1),
-(12, '天桥艺术中心-中剧场', '北京', '北京市西城区天桥南大街9号', 1600, 1),
-(13, 'M空间', '北京', '北京市海淀区复兴路69号', 8000, 1),
-(14, '北京南海子公园', '北京', '北京市大兴区南海子公园', NULL, 1),
-(15, '宝坻体育馆', '天津', '天津市宝坻区', 5000, 1),
-(16, '北京延庆奥林匹克园区', '北京', '北京市延庆区张山营镇', NULL, 1),
-(17, '山东省体育中心体育场', '济南', '山东省济南市市中区经十路20286号', 50000, 1),
-(18, '开心麻花江湖饭局', '北京', '北京市朝阳区', 300, 1),
-(19, '南锣剧场', '北京', '北京市东城区南锣鼓巷', 400, 1),
-(20, '东图剧场-汇空间', '北京', '北京市东城区', 500, 1),
-(21, '北京·隆福寺A99剧场', '北京', '北京市东城区隆福寺街95号', 400, 1);
+(1, '北京星河体育馆', '北京', '北京市朝阳区星河路88号', 18000, 1),
+(2, '北京东城剧院', '北京', '北京市东城区剧场街12号', 1200, 1),
+(3, '上海海风音乐中心', '上海', '上海市浦东新区滨江大道500号', 12000, 1),
+(4, '上海艺海剧场', '上海', '上海市黄浦区人民大道300号', 1600, 1),
+(5, '广州珠江体育馆', '广州', '广州市天河区体育东路66号', 15000, 1),
+(6, '深圳湾演艺中心', '深圳', '深圳市南山区滨海大道100号', 9000, 1),
+(7, '成都锦城剧院', '成都', '成都市高新区天府大道188号', 1800, 1),
+(8, '杭州西子音乐厅', '杭州', '杭州市西湖区曙光路28号', 2000, 1),
+(9, '南京奥体中心体育馆', '南京', '南京市建邺区江东中路222号', 13000, 1),
+(10, '武汉江城会展中心', '武汉', '武汉市汉阳区鹦鹉大道88号', 10000, 1),
+(11, '西安长安剧场', '西安', '西安市碑林区南大街99号', 1400, 1),
+(12, '重庆山城文化中心', '重庆', '重庆市渝中区嘉陵江滨江路70号', 3000, 1);
+SELECT setval('venue_id_seq', 12, true);
 
-SELECT setval('venue_id_seq', 21);
+-- ========== 场馆区域与座位模板 ==========
+INSERT INTO venue_area (id, venue_id, name, row_count, seats_per_row, row_start, seat_start, color, sort, status) VALUES
+(1, 1, 'VIP区', 5, 12, 1, 1, '#ff5a8a', 1, 1), (2, 1, 'A区', 8, 16, 1, 1, '#ffb020', 2, 1), (3, 1, '看台区', 10, 20, 1, 1, '#4f8cff', 3, 1),
+(4, 2, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1), (5, 2, 'A区', 6, 12, 1, 1, '#ffb020', 2, 1), (6, 2, 'B区', 8, 14, 1, 1, '#4f8cff', 3, 1),
+(7, 3, 'VIP区', 5, 12, 1, 1, '#ff5a8a', 1, 1), (8, 3, 'A区', 8, 15, 1, 1, '#ffb020', 2, 1), (9, 3, '看台区', 10, 18, 1, 1, '#4f8cff', 3, 1),
+(10, 4, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1), (11, 4, 'A区', 7, 12, 1, 1, '#ffb020', 2, 1), (12, 4, 'B区', 8, 14, 1, 1, '#4f8cff', 3, 1),
+(13, 5, 'VIP区', 5, 12, 1, 1, '#ff5a8a', 1, 1), (14, 5, 'A区', 8, 16, 1, 1, '#ffb020', 2, 1), (15, 5, '看台区', 10, 20, 1, 1, '#4f8cff', 3, 1),
+(16, 6, 'VIP区', 5, 10, 1, 1, '#ff5a8a', 1, 1), (17, 6, 'A区', 8, 14, 1, 1, '#ffb020', 2, 1), (18, 6, '看台区', 10, 18, 1, 1, '#4f8cff', 3, 1),
+(19, 7, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1), (20, 7, 'A区', 6, 12, 1, 1, '#ffb020', 2, 1), (21, 7, 'B区', 8, 14, 1, 1, '#4f8cff', 3, 1),
+(22, 8, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1), (23, 8, 'A区', 7, 12, 1, 1, '#ffb020', 2, 1), (24, 8, 'B区', 8, 14, 1, 1, '#4f8cff', 3, 1),
+(25, 9, 'VIP区', 5, 12, 1, 1, '#ff5a8a', 1, 1), (26, 9, 'A区', 8, 16, 1, 1, '#ffb020', 2, 1), (27, 9, '看台区', 10, 20, 1, 1, '#4f8cff', 3, 1),
+(28, 10, 'VIP区', 5, 10, 1, 1, '#ff5a8a', 1, 1), (29, 10, 'A区', 8, 14, 1, 1, '#ffb020', 2, 1), (30, 10, '看台区', 10, 18, 1, 1, '#4f8cff', 3, 1),
+(31, 11, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1), (32, 11, 'A区', 6, 12, 1, 1, '#ffb020', 2, 1), (33, 11, 'B区', 8, 14, 1, 1, '#4f8cff', 3, 1),
+(34, 12, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1), (35, 12, 'A区', 7, 12, 1, 1, '#ffb020', 2, 1), (36, 12, 'B区', 9, 14, 1, 1, '#4f8cff', 3, 1);
+SELECT setval('venue_area_id_seq', 36, true);
 
--- ========== 活动 (28条) ==========
-INSERT INTO activity (id, category_id, artist_id, name, description, poster, status) VALUES
-(1, 1, 1, '2026微博大眼音乐节', '2026微博大眼音乐节 - 超强阵容 即将开演', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i1/2251059038/O1CN01wwpkh22GdSmVPmqjQ_!!2251059038.jpg', 1),
-(2, 1, 2, '2026 BY2「撇清关系2.0」十七周年演唱会 · 北京站', 'BY2十七周年演唱会北京站', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i1/2251059038/O1CN011T4dOK2GdSmT2mxkU_!!2251059038.jpg', 1),
-(3, 1, 3, '2026胡夏【那些年·初见之约】演唱会-北京站', '胡夏演唱会北京站', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i3/2251059038/O1CN01zi0EBO2GdSmFU9a0X_!!2251059038.jpg', 1),
-(4, 1, 4, '2026·奥森计划·漾（Awesome·Project·Young）', '奥森计划音乐节', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i1/2251059038/O1CN016KFu7g2GdSmEA7iud_!!2251059038.jpg', 1),
-(5, 1, 5, '民谣30年·不如一见演唱会', '民谣30年经典演唱会', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i4/2251059038/O1CN01wwbQzO2GdSmONJqqn_!!2251059038.png', 1),
-(6, 1, 6, '2026 「良辰·声境如梦」北京音乐会', '古典跨界音乐会', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i3/2251059038/O1CN01QY8exn2GdSmI1uzvl_!!2251059038.jpg', 1),
-(7, 1, 7, '张泽 2026「张嘴就来」BEATBOX 巡演北京站', 'BEATBOX世界冠军巡演', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i3/2251059038/O1CN01e4olzX2GdSmPs2Z8l_!!2251059038.jpg', 1),
-(8, 2, 8, '【明星场】喜人集结丨开心麻花王牌爆笑大戏《贼想得到你》', '开心麻花王牌爆笑大戏', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i2/2251059038/O1CN01E45fi92GdSmHuWw4o_!!2251059038.jpg', 1),
-(9, 2, 9, '樊冲音乐剧《长安大国医》', '樊冲导演音乐剧作品', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i3/2251059038/O1CN01e74n562GdSmUfQk4p_!!2251059038.png', 1),
-(10, 2, 10, '【年度爆剧】开心麻花大型宫廷舞台剧《甄嬛传》沉浸版', '开心麻花宫廷舞台剧沉浸版', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i2/2251059038/O1CN01jOfu4U2GdSmDM2zk1_!!2251059038.jpg', 1),
-(11, 2, 11, '音乐剧《狐说臣与仙》', '原创音乐剧', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i3/2251059038/O1CN01iE4Xfx2GdSmXHZwyj_!!2251059038.png', 1),
-(12, 2, 12, '丁一滕导演 张维伊、金靖主演 舞台剧《看不见的客人》', '新锐导演悬疑舞台剧', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i1/2251059038/O1CN01SE2rHm2GdSmTsh0QW_!!2251059038.png', 1),
-(13, 2, 13, '朱洁静、乔振宇主演话剧《倾城之恋》五周年特别版', '经典话剧五周年特别版', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i1/2251059038/O1CN014FYnGy2GdSmPiajew_!!2251059038.png', 1),
-(14, 2, 14, '外百老汇音乐剧《谋杀歌谣》中文版', '外百老汇经典音乐剧中文版', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i3/2251059038/O1CN01pPwjSt2GdSmPrdBNm_!!2251059038.png', 1),
-(15, 3, 15, '2026怡宝中超联赛北京国安主场赛事', '2026中超联赛北京国安主场', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i2/2251059038/O1CN01IWgifq2GdSln18hWT_!!2251059038.jpg', 1),
-(16, 3, 16, '2026三角洲行动烽火职业联赛春季赛决赛', 'FPS职业联赛春季决赛', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i4/2251059038/O1CN01lIQhdi2GdSmSQ6qJm_!!2251059038.jpg', 1),
-(17, 3, 17, '2026「人机共生」城市向阳跑', '城市主题跑步活动', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i4/2251059038/O1CN01UJekCv2GdSmL4tuSj_!!2251059038.png', 1),
-(18, 3, 18, '峡谷花开·荣耀宝地——2026王者荣耀宝坻主题电竞嘉年华', '王者荣耀电竞赛事', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i3/2251059038/O1CN013EVj9T2GdSmT9li3e_!!2251059038.jpg', 1),
-(19, 3, 19, '2026斯巴达勇士越野周末-北京站 越野赛-21公里', '斯巴达越野赛21公里', 'https://img.alicdn.com/bao/uploaded/i2/2251059038/O1CN01sZHOmf2GdSmVk8QuU_!!4611686018427383646-0-item_pic.jpg', 1),
-(20, 3, 20, '2026斯巴达勇士越野周末-北京站 越野赛-10公里', '斯巴达越野赛10公里', 'https://img.alicdn.com/bao/uploaded/i1/2251059038/O1CN01QcZ0312GdSmVqrKxG_!!4611686018427383646-0-item_pic.jpg', 1),
-(21, 3, 21, '2026年山东省齐鲁足球超级联赛-济南赛区', '山东齐鲁足球超级联赛', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i4/2251059038/O1CN01ep8vlx2GdSmVMvjTw_!!2251059038.jpg', 1),
-(22, 4, 22, '六一快乐-加拿大奇幻马秀一Ethereal灵秀·舞马（亲子马戏）', '加拿大奇幻马戏亲子秀', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i4/2251059038/O1CN01tGOHgY2GdSmP4yD9g_!!2251059038.jpg', 1),
-(23, 4, 23, '开心麻花首个沉浸乐园儿童剧《安徒生盛会》', '开心麻花儿童剧', 'https://img.alicdn.com/bao/uploaded/i1/2251059038/O1CN01ok3mgt2GdSmBTnXj2_!!4611686018427383646-0-item_pic.jpg', 1),
-(24, 4, 24, '北京儿艺儿童剧--《看得见的敦煌·壁画中的我们》', '北京儿艺儿童剧', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i2/2251059038/O1CN0123oUC62GdSm6PneUl_!!2251059038.jpg', 1),
-(25, 4, 25, '【六一特惠】沉浸式亲子互动儿童剧《白雪公主》', '六一特惠白雪公主儿童剧', 'https://img.alicdn.com/bao/uploaded/i2/2251059038/O1CN012Tq6fk2GdSmZ9xEL2_!!4611686018427383646-2-item_pic.png', 1),
-(26, 4, 26, '凯叔讲故事·亲子音乐剧《口袋神探》', '凯叔讲故事亲子音乐剧', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i1/2251059038/O1CN01tMJwKw2GdSmNWHsRn_!!2251059038.png', 1),
-(27, 4, 27, '开心麻花沉浸式亲子儿童剧《小猪佩奇之奇妙一日游》', '小猪佩奇舞台剧', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i2/2251059038/O1CN01YUnxyO2GdSlpdxaSf_!!2251059038.jpg', 1),
-(28, 4, 28, '【五折特惠】快乐六一欢乐马戏小丑嘉年华', '六一马戏小丑嘉年华', 'https://img.alicdn.com/bao/uploaded/https://img.alicdn.com/imgextra/i3/2251059038/O1CN01e4njmu2GdSmKrzTOj_!!2251059038.jpg', 1);
+INSERT INTO venue_seat (venue_id, area_id, row_no, seat_no, seat_label, x, y, status)
+SELECT
+    va.venue_id,
+    va.id,
+    r.row_no,
+    s.seat_no,
+    '第' || r.row_no || '排' || s.seat_no || '座',
+    va.sort * 260 + s.seat_no * 18,
+    r.row_no * 24,
+    1
+FROM venue_area va
+CROSS JOIN LATERAL generate_series(va.row_start, va.row_start + va.row_count - 1) AS r(row_no)
+CROSS JOIN LATERAL generate_series(va.seat_start, va.seat_start + va.seats_per_row - 1) AS s(seat_no)
+ORDER BY va.id, r.row_no, s.seat_no;
 
-SELECT setval('activity_id_seq', 28);
+SELECT setval('venue_seat_id_seq', COALESCE((SELECT MAX(id) FROM venue_seat), 1), true);
 
--- ========== 场次 (28条，每个活动1个场次) ==========
+-- ========== 活动 ==========
+INSERT INTO activity (id, category_id, artist_id, organizer_id, name, description, poster, status) VALUES
+(1, 1, 1, 2003, '林川「重逢在星河」巡回演唱会 北京站', '华语流行唱作人林川全新巡演，适合座位选座购票演示。', 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a', 1),
+(2, 1, 2, 2003, '银河电台「午夜频率」演唱会 上海站', '城市流行乐队银河电台年度专场。', 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f', 1),
+(3, 1, 3, 2003, '仲夏音乐节 广州站', '多舞台音乐节，分区域票档售卖。', 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea', 1),
+(4, 2, 4, 2005, '话剧《下一站，春天》北京站', '都市现实主义话剧，剧场座位图演示。', 'https://images.unsplash.com/photo-1503095396549-807759245b35', 1),
+(5, 2, 5, 2005, '经典歌剧《茶花女》上海站', '经典歌剧制作，剧院分区票档。', 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf', 1),
+(6, 2, 6, 2005, '开心制造喜剧夜 成都站', '轻松都市喜剧专场。', 'https://images.unsplash.com/photo-1527224857830-43a7acc85260', 1),
+(7, 3, 7, 2006, '成都猎鹰篮球主场揭幕战', '职业篮球主场赛事。', 'https://images.unsplash.com/photo-1546519638-68e109498ffc', 1),
+(8, 3, 8, 2006, '深圳竞速电竞冠军赛', '电竞决赛线下观赛。', 'https://images.unsplash.com/photo-1542751371-adc38448a05e', 1),
+(9, 3, 9, 2006, '西安城墙马拉松开幕式', '城市马拉松开幕活动。', 'https://images.unsplash.com/photo-1502904550040-7534597429ae', 1),
+(10, 4, 10, 2007, '儿童剧《月亮邮局》成都站', '原创亲子儿童剧。', 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9', 1),
+(11, 4, 11, 2007, '奇妙科学秀 杭州站', '互动科学亲子舞台。', 'https://images.unsplash.com/photo-1532094349884-543bc11b234d', 1),
+(12, 4, 12, 2007, '森林马戏团 南京站', '适合全家观看的亲子马戏。', 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819', 1),
+(13, 5, 13, 2007, '未来城市科技展 武汉站', '科技互动展览。', 'https://images.unsplash.com/photo-1518005020951-eccb494ad742', 1),
+(14, 5, 14, 2007, '国风生活市集 重庆站', '传统文化与生活方式市集。', 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622', 1),
+(15, 5, 15, 2007, '山城影像艺术展 重庆站', '城市影像主题展。', 'https://images.unsplash.com/photo-1531058020387-3be344556be6', 1),
+(16, 6, 16, 2003, '杭州爱乐室内乐音乐会', '古典室内乐精选曲目。', 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6', 1),
+(17, 6, 17, 2003, '南京交响乐团新年音乐会', '交响乐团年度音乐会。', 'https://images.unsplash.com/photo-1507838153414-b4b713384a76', 1),
+(18, 6, 18, 2003, '广州爵士四重奏现场', '爵士乐现场演出。', 'https://images.unsplash.com/photo-1511192336575-5a79af67a629', 1),
+(19, 7, 19, 2005, '德云新声相声大会 北京站', '青年相声专场。', 'https://images.unsplash.com/photo-1529139574466-a303027c1d8b', 1),
+(20, 7, 20, 2005, '江南评弹雅集 上海站', '传统评弹演出。', 'https://images.unsplash.com/photo-1499364615650-ec38552f4f34', 1),
+(21, 7, 21, 2005, '山城脱口秀周末秀 重庆站', '城市脱口秀现场。', 'https://images.unsplash.com/photo-1527224857830-43a7acc85260', 1),
+(22, 8, 22, 2005, '白鹭现代舞《风从海上来》深圳站', '现代舞剧场作品。', 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad', 1),
+(23, 8, 23, 2005, '锦城芭蕾《天鹅湖》成都站', '经典芭蕾舞剧。', 'https://images.unsplash.com/photo-1518834107812-67b0b7c58434', 1),
+(24, 8, 24, 2005, '长安国风舞集 西安站', '国风舞蹈专场。', 'https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff', 1),
+(25, 9, 25, 2003, '次元夏日动漫音乐会 上海站', '动漫音乐现场。', 'https://images.unsplash.com/photo-1511512578047-dfb367046420', 1),
+(26, 9, 26, 2006, '星环电竞嘉年华 深圳站', '二次元电竞嘉年华。', 'https://images.unsplash.com/photo-1511882150382-421056c89033', 1),
+(27, 9, 27, 2003, '幻境声优见面会 南京站', '声优互动见面会。', 'https://images.unsplash.com/photo-1523580846011-d3a5bc25702b', 1),
+(28, 10, 28, 2007, '江南水乡旅行节 杭州站', '文旅节庆体验活动。', 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee', 1),
+(29, 10, 29, 2007, '巴蜀非遗体验展 成都站', '非遗体验与展演。', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e', 1),
+(30, 10, 30, 2007, '丝路城市旅游展 西安站', '多目的地旅游展。', 'https://images.unsplash.com/photo-1488646953014-85cb44e25828', 1);
+SELECT setval('activity_id_seq', 30, true);
+
+-- ========== 未来场次；同一场馆时间错开 ==========
 INSERT INTO session (id, activity_id, venue_id, start_time, end_time, status) VALUES
-(1, 1, 1, '2026-05-30 00:00:00', '2026-05-31 23:59:59', 1),
-(2, 2, 2, '2026-05-23 19:30:00', '2026-05-23 22:00:00', 1),
-(3, 3, 3, '2026-05-16 18:30:00', '2026-05-16 21:00:00', 1),
-(4, 4, 4, '2026-05-16 00:00:00', '2026-05-17 23:59:59', 1),
-(5, 5, 5, '2026-05-30 19:30:00', '2026-05-30 22:00:00', 1),
-(6, 6, 6, '2026-06-06 18:00:00', '2026-06-06 21:00:00', 1),
-(7, 7, 7, '2026-08-08 20:00:00', '2026-08-08 22:30:00', 1),
-(8, 8, 1, '2026-05-20 00:00:00', '2026-06-28 23:59:59', 1),
-(9, 9, 8, '2026-06-25 00:00:00', '2026-06-28 23:59:59', 1),
-(10, 10, 9, '2026-05-15 00:00:00', '2026-06-28 23:59:59', 1),
-(11, 11, 8, '2026-06-05 00:00:00', '2026-06-07 23:59:59', 1),
-(12, 12, 10, '2026-07-11 00:00:00', '2026-07-12 23:59:59', 1),
-(13, 13, 11, '2026-06-12 00:00:00', '2026-06-14 23:59:59', 1),
-(14, 14, 12, '2026-05-22 00:00:00', '2026-05-23 23:59:59', 1),
-(15, 15, 1, '2026-01-01 00:00:00', '2026-12-31 23:59:59', 1),
-(16, 16, 13, '2026-05-16 15:00:00', '2026-05-16 20:00:00', 1),
-(17, 17, 14, '2026-06-06 07:30:00', '2026-06-06 12:00:00', 1),
-(18, 18, 15, '2026-05-16 00:00:00', '2026-05-17 23:59:59', 1),
-(19, 19, 16, '2026-05-23 00:00:00', '2026-05-24 23:59:59', 1),
-(20, 20, 16, '2026-05-23 00:00:00', '2026-05-24 23:59:59', 1),
-(21, 21, 17, '2026-05-17 15:30:00', '2026-05-17 17:30:00', 1),
-(22, 22, 1, '2026-05-01 00:00:00', '2026-06-30 23:59:59', 1),
-(23, 23, 18, '2026-05-16 00:00:00', '2026-05-30 23:59:59', 1),
-(24, 24, 19, '2026-05-22 00:00:00', '2026-06-14 23:59:59', 1),
-(25, 25, 20, '2026-05-16 00:00:00', '2026-06-28 23:59:59', 1),
-(26, 26, 8, '2026-06-13 00:00:00', '2026-06-14 23:59:59', 1),
-(27, 27, 21, '2026-05-30 00:00:00', '2026-06-01 23:59:59', 1),
-(28, 28, 3, '2026-05-30 00:00:00', '2026-05-30 23:59:59', 1);
+(1, 1, 1, CURRENT_DATE + INTERVAL '35 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '35 days 22 hours', 1),
+(2, 2, 3, CURRENT_DATE + INTERVAL '38 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '38 days 22 hours', 1),
+(3, 3, 5, CURRENT_DATE + INTERVAL '41 days 18 hours', CURRENT_DATE + INTERVAL '41 days 22 hours', 1),
+(4, 4, 2, CURRENT_DATE + INTERVAL '44 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '44 days 21 hours 40 minutes', 1),
+(5, 5, 4, CURRENT_DATE + INTERVAL '47 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '47 days 22 hours', 1),
+(6, 6, 7, CURRENT_DATE + INTERVAL '50 days 20 hours', CURRENT_DATE + INTERVAL '50 days 22 hours', 1),
+(7, 7, 7, CURRENT_DATE + INTERVAL '53 days 19 hours', CURRENT_DATE + INTERVAL '53 days 21 hours 30 minutes', 1),
+(8, 8, 6, CURRENT_DATE + INTERVAL '56 days 14 hours', CURRENT_DATE + INTERVAL '56 days 19 hours', 1),
+(9, 9, 11, CURRENT_DATE + INTERVAL '59 days 18 hours', CURRENT_DATE + INTERVAL '59 days 21 hours', 1),
+(10, 10, 7, CURRENT_DATE + INTERVAL '62 days 10 hours 30 minutes', CURRENT_DATE + INTERVAL '62 days 12 hours', 1),
+(11, 11, 8, CURRENT_DATE + INTERVAL '65 days 15 hours', CURRENT_DATE + INTERVAL '65 days 17 hours', 1),
+(12, 12, 9, CURRENT_DATE + INTERVAL '68 days 10 hours', CURRENT_DATE + INTERVAL '68 days 12 hours', 1),
+(13, 13, 10, CURRENT_DATE + INTERVAL '71 days 9 hours', CURRENT_DATE + INTERVAL '71 days 17 hours', 1),
+(14, 14, 12, CURRENT_DATE + INTERVAL '74 days 10 hours', CURRENT_DATE + INTERVAL '74 days 18 hours', 1),
+(15, 15, 12, CURRENT_DATE + INTERVAL '77 days 10 hours', CURRENT_DATE + INTERVAL '77 days 18 hours', 1),
+(16, 16, 8, CURRENT_DATE + INTERVAL '80 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '80 days 21 hours 30 minutes', 1),
+(17, 17, 9, CURRENT_DATE + INTERVAL '83 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '83 days 21 hours 30 minutes', 1),
+(18, 18, 5, CURRENT_DATE + INTERVAL '86 days 20 hours', CURRENT_DATE + INTERVAL '86 days 22 hours', 1),
+(19, 19, 2, CURRENT_DATE + INTERVAL '89 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '89 days 21 hours 30 minutes', 1),
+(20, 20, 4, CURRENT_DATE + INTERVAL '92 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '92 days 21 hours 30 minutes', 1),
+(21, 21, 12, CURRENT_DATE + INTERVAL '95 days 20 hours', CURRENT_DATE + INTERVAL '95 days 22 hours', 1),
+(22, 22, 6, CURRENT_DATE + INTERVAL '98 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '98 days 21 hours 30 minutes', 1),
+(23, 23, 7, CURRENT_DATE + INTERVAL '101 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '101 days 21 hours 30 minutes', 1),
+(24, 24, 11, CURRENT_DATE + INTERVAL '104 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '104 days 21 hours 30 minutes', 1),
+(25, 25, 3, CURRENT_DATE + INTERVAL '107 days 19 hours', CURRENT_DATE + INTERVAL '107 days 21 hours', 1),
+(26, 26, 6, CURRENT_DATE + INTERVAL '110 days 14 hours', CURRENT_DATE + INTERVAL '110 days 18 hours', 1),
+(27, 27, 9, CURRENT_DATE + INTERVAL '113 days 15 hours', CURRENT_DATE + INTERVAL '113 days 17 hours', 1),
+(28, 28, 8, CURRENT_DATE + INTERVAL '116 days 10 hours', CURRENT_DATE + INTERVAL '116 days 18 hours', 1),
+(29, 29, 7, CURRENT_DATE + INTERVAL '119 days 10 hours', CURRENT_DATE + INTERVAL '119 days 18 hours', 1),
+(30, 30, 11, CURRENT_DATE + INTERVAL '122 days 10 hours', CURRENT_DATE + INTERVAL '122 days 18 hours', 1);
+SELECT setval('session_id_seq', 30, true);
 
-SELECT setval('session_id_seq', 28);
+-- ========== 场次座位快照 ==========
+INSERT INTO session_seat (session_id, venue_id, area_id, venue_seat_id, row_no, seat_no, seat_label, status)
+SELECT s.id, s.venue_id, vs.area_id, vs.id, vs.row_no, vs.seat_no, vs.seat_label, 1
+FROM session s
+JOIN venue_seat vs ON vs.venue_id = s.venue_id
+ORDER BY s.id, vs.area_id, vs.row_no, vs.seat_no;
+SELECT setval('session_seat_id_seq', COALESCE((SELECT MAX(id) FROM session_seat), 1), true);
 
--- ========== 票档 (每个场次3种票型) ==========
--- 函数辅助生成票档
+-- ========== 票档与区域绑定；库存等于绑定区域座位数 ==========
 DO $$
 DECLARE
-    s RECORD;
-    base_price DECIMAL(10,2);
+    sess RECORD;
+    vip_area BIGINT;
+    a_area BIGINT;
+    normal_area BIGINT;
+    vip_count INTEGER;
+    a_count INTEGER;
+    normal_count INTEGER;
+    base_price NUMERIC(10, 2);
+    vip_ticket BIGINT;
+    a_ticket BIGINT;
+    normal_ticket BIGINT;
 BEGIN
-    FOR s IN SELECT id, activity_id FROM session LOOP
-        -- 根据活动ID设置基准价格
-        CASE s.activity_id
-            WHEN 1 THEN base_price := 388;
-            WHEN 2 THEN base_price := 380;
-            WHEN 3 THEN base_price := 480;
-            WHEN 4 THEN base_price := 199;
-            WHEN 5 THEN base_price := 100;
-            WHEN 6 THEN base_price := 188;
-            WHEN 7 THEN base_price := 1;
-            WHEN 8 THEN base_price := 80;
-            WHEN 9 THEN base_price := 180;
-            WHEN 10 THEN base_price := 180;
-            WHEN 11 THEN base_price := 180;
-            WHEN 12 THEN base_price := 80;
-            WHEN 13 THEN base_price := 80;
-            WHEN 14 THEN base_price := 180;
-            WHEN 15 THEN base_price := 160;
-            WHEN 16 THEN base_price := 98;
-            WHEN 17 THEN base_price := 159;
-            WHEN 18 THEN base_price := 52.8;
-            WHEN 19 THEN base_price := 369;
-            WHEN 20 THEN base_price := 269;
-            WHEN 21 THEN base_price := 9.9;
-            WHEN 22 THEN base_price := 90;
-            WHEN 23 THEN base_price := 90;
-            WHEN 24 THEN base_price := 80;
-            WHEN 25 THEN base_price := 99;
-            WHEN 26 THEN base_price := 80;
-            WHEN 27 THEN base_price := 80;
-            WHEN 28 THEN base_price := 100;
-            ELSE base_price := 100;
-        END CASE;
+    FOR sess IN
+        SELECT s.id AS session_id, s.venue_id, a.category_id
+        FROM session s
+        JOIN activity a ON a.id = s.activity_id
+        ORDER BY s.id
+    LOOP
+        SELECT id INTO vip_area FROM venue_area WHERE venue_id = sess.venue_id AND name = 'VIP区' AND status = 1;
+        SELECT id INTO a_area FROM venue_area WHERE venue_id = sess.venue_id AND name = 'A区' AND status = 1;
+        SELECT id INTO normal_area FROM venue_area WHERE venue_id = sess.venue_id AND name IN ('B区', '看台区') AND status = 1 ORDER BY sort LIMIT 1;
 
-        -- 普通票(价格=基准价)
-        INSERT INTO ticket_type (session_id, name, price, total_stock, remain_stock, status)
-        VALUES (s.id, '普通票', base_price, 999, 500, 1);
+        SELECT COUNT(*) INTO vip_count FROM session_seat WHERE session_id = sess.session_id AND area_id = vip_area AND status = 1;
+        SELECT COUNT(*) INTO a_count FROM session_seat WHERE session_id = sess.session_id AND area_id = a_area AND status = 1;
+        SELECT COUNT(*) INTO normal_count FROM session_seat WHERE session_id = sess.session_id AND area_id = normal_area AND status = 1;
 
-        -- VIP票(价格=2倍基准价)
-        INSERT INTO ticket_type (session_id, name, price, total_stock, remain_stock, status)
-        VALUES (s.id, 'VIP', base_price * 2, 300, 150, 1);
+        base_price := CASE sess.category_id
+            WHEN 1 THEN 380
+            WHEN 2 THEN 180
+            WHEN 3 THEN 160
+            WHEN 4 THEN 120
+            WHEN 5 THEN 90
+            WHEN 6 THEN 220
+            WHEN 7 THEN 100
+            WHEN 8 THEN 240
+            WHEN 9 THEN 180
+            WHEN 10 THEN 80
+            ELSE 120
+        END;
 
-        -- 套票(价格=3倍基准价)
-        INSERT INTO ticket_type (session_id, name, price, total_stock, remain_stock, status)
-        VALUES (s.id, '套票', base_price * 3, 100, 80, 1);
+        vip_ticket := sess.session_id * 3 - 2;
+        a_ticket := sess.session_id * 3 - 1;
+        normal_ticket := sess.session_id * 3;
+
+        INSERT INTO ticket_type (id, session_id, name, price, total_stock, remain_stock, status)
+        VALUES
+        (vip_ticket, sess.session_id, 'VIP票', base_price * 2.5, vip_count, vip_count, 1),
+        (a_ticket, sess.session_id, 'A区票', base_price * 1.5, a_count, a_count, 1),
+        (normal_ticket, sess.session_id, '普通票', base_price, normal_count, normal_count, 1);
+
+        INSERT INTO ticket_type_area (ticket_type_id, session_id, area_id)
+        VALUES
+        (vip_ticket, sess.session_id, vip_area),
+        (a_ticket, sess.session_id, a_area),
+        (normal_ticket, sess.session_id, normal_area);
     END LOOP;
 END $$;
+
+SELECT setval('ticket_type_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type), 1), true);
+SELECT setval('ticket_type_area_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type_area), 1), true);
+
+-- ========== 示例场馆申请 ==========
+INSERT INTO venue_application (id, applicant_id, venue_id, venue_name, city, address, capacity, contact_name, contact_phone, qualification_no, business_scope, description, status, reviewer_id, review_note, review_time) VALUES
+(1, 2005, 4, '上海艺海剧场', '上海', '上海市黄浦区人民大道300号', 1600, '周南', '13800000003', 'VENUE-SH-001', '话剧歌剧演出', '已关联公共场馆，供主办方创建场次使用。', 1, 2002, '已关联公共场馆', CURRENT_TIMESTAMP - INTERVAL '20 days'),
+(2, 2007, NULL, '苏州亲子艺术中心', '苏州', '苏州市工业园区星湖街66号', 1200, '赵童', '13800000005', 'VENUE-SZ-001', '儿童亲子演出', '待审核示例申请。', 0, NULL, NULL, NULL);
+SELECT setval('venue_application_id_seq', 2, true);
+
+-- 订单、付款和退款记录不写入种子数据，避免污染普通用户真实购票列表。
+SELECT setval('order_id_seq', 1, false);
+SELECT setval('order_seat_id_seq', 1, false);
+SELECT setval('payment_id_seq', 1, false);

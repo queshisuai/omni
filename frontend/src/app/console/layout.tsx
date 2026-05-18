@@ -13,7 +13,8 @@ const menuItems = [
   { href: '/console/sessions', label: '场次管理', icon: Clock },
   { href: '/console/orders', label: '订单查看', icon: ShoppingCart },
   { href: '/console/refunds', label: '退款审核', icon: RotateCcw },
-  { href: '/console/venue', label: '场馆管理', icon: MapPin, roles: ['admin'] },
+  { href: '/console/venue', label: '场馆管理', icon: MapPin },
+  { href: '/console/venue/applications', label: '场馆审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/organizer-applications', label: '入驻审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
 ]

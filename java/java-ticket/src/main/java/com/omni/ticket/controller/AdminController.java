@@ -8,9 +8,19 @@ import com.omni.common.util.JwtUtil;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.RefundImpactResponse;
+import com.omni.ticket.dto.SeatTemplateResponse;
+import com.omni.ticket.dto.SessionAdminResponse;
+import com.omni.ticket.dto.UpdateActivityStatusRequest;
+import com.omni.ticket.dto.VenueApplicationRequest;
+import com.omni.ticket.dto.VenueApplicationResponse;
+import com.omni.ticket.dto.VenueApplicationReviewRequest;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
 import com.omni.ticket.service.ActivityAdminService;
+import com.omni.ticket.service.SeatTemplateService;
+import com.omni.ticket.service.SessionAdminService;
+import com.omni.ticket.service.TicketTypeAreaService;
+import com.omni.ticket.service.VenueApplicationService;
 import io.jsonwebtoken.Claims;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
@@ -36,17 +46,29 @@ public class AdminController {
     private final VenueMapper venueMapper;
     private final UserRefMapper userRefMapper;
     private final ActivityAdminService activityAdminService;
+    private final SessionAdminService sessionAdminService;
+    private final VenueApplicationService venueApplicationService;
+    private final SeatTemplateService seatTemplateService;
+    private final TicketTypeAreaService ticketTypeAreaService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
-                           TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
-                           UserRefMapper userRefMapper,
-                           ActivityAdminService activityAdminService) {
+                            TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
+                            UserRefMapper userRefMapper,
+                            ActivityAdminService activityAdminService,
+                            SessionAdminService sessionAdminService,
+                            VenueApplicationService venueApplicationService,
+                            SeatTemplateService seatTemplateService,
+                            TicketTypeAreaService ticketTypeAreaService) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
         this.venueMapper = venueMapper;
         this.userRefMapper = userRefMapper;
         this.activityAdminService = activityAdminService;
+        this.sessionAdminService = sessionAdminService;
+        this.venueApplicationService = venueApplicationService;
+        this.seatTemplateService = seatTemplateService;
+        this.ticketTypeAreaService = ticketTypeAreaService;
     }
 
     /** 获取用户角色，非admin/organizer返回null并拒绝 */
@@ -107,19 +129,8 @@ public class AdminController {
     }
 
     @PutMapping("/activities/{id}/status")
-    public Result<Void> updateActivityStatus(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
-        String role = checkRole(userId);
-        if (role == null) return Result.fail(403, "无权限");
-
-        Activity activity = activityMapper.selectById(id);
-        if (activity == null) return Result.fail(404, "活动不存在");
-
-        if ("organizer".equals(role) && !userId.equals(activity.getOrganizerId()))
-            return Result.fail(403, "只能管理自己主办的活动");
-
-        activity.setStatus(Integer.valueOf(body.get("status").toString()));
-        activityMapper.updateById(activity);
+    public Result<Void> updateActivityStatus(@PathVariable Long id, @RequestBody UpdateActivityStatusRequest request) {
+        activityAdminService.updateActivityStatus(id, request);
         return Result.success();
     }
 
@@ -175,7 +186,9 @@ public class AdminController {
     public Result<Page<Activity>> listAdminActivities(
             @RequestParam Long userId,
             @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "10") Integer size) {
+            @RequestParam(defaultValue = "10") Integer size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Integer status) {
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
@@ -183,6 +196,12 @@ public class AdminController {
         // organizer 只能看自己的活动，admin 看全部
         if ("organizer".equals(role)) {
             wrapper.eq(Activity::getOrganizerId, userId);
+        }
+        if (StringUtils.hasText(keyword)) {
+            wrapper.like(Activity::getName, keyword.trim());
+        }
+        if (status != null) {
+            wrapper.eq(Activity::getStatus, status);
         }
         wrapper.orderByDesc(Activity::getCreateTime);
         return Result.success(activityMapper.selectPage(new Page<>(page, size), wrapper));
@@ -192,57 +211,29 @@ public class AdminController {
 
     @PostMapping("/sessions")
     public Result<Session> createSession(@RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
-        String role = checkRole(userId);
-        if (role == null) return Result.fail(403, "无权限");
-
-        Long activityId = Long.valueOf(body.get("activityId").toString());
-        if ("organizer".equals(role) && !ownsActivity(activityId, userId))
-            return Result.fail(403, "只能管理自己主办的场次");
-
-        Session session = new Session();
-        session.setActivityId(activityId);
-        session.setVenueId(Long.valueOf(body.get("venueId").toString()));
-        session.setStartTime(LocalDateTime.parse(body.get("startTime").toString().replace(" ", "T")));
-        session.setEndTime(body.get("endTime") != null ? LocalDateTime.parse(body.get("endTime").toString().replace(" ", "T")) : null);
-        session.setStatus(1);
-        sessionMapper.insert(session);
-        return Result.success(session);
+        return Result.success(sessionAdminService.createSession(body));
     }
 
     @PutMapping("/sessions/{id}")
     public Result<Session> updateSession(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
-        String role = checkRole(userId);
-        if (role == null) return Result.fail(403, "无权限");
-
-        Session session = sessionMapper.selectById(id);
-        if (session == null) return Result.fail(404, "场次不存在");
-
-        if ("organizer".equals(role) && !ownsActivity(session.getActivityId(), userId))
-            return Result.fail(403, "只能管理自己主办的场次");
-
-        if (body.containsKey("venueId")) session.setVenueId(Long.valueOf(body.get("venueId").toString()));
-        if (body.containsKey("startTime")) session.setStartTime(LocalDateTime.parse(body.get("startTime").toString().replace(" ", "T")));
-        if (body.containsKey("endTime") && body.get("endTime") != null) session.setEndTime(LocalDateTime.parse(body.get("endTime").toString().replace(" ", "T")));
-        if (body.containsKey("status")) session.setStatus(Integer.valueOf(body.get("status").toString()));
-        sessionMapper.updateById(session);
-        return Result.success(session);
+        return Result.success(sessionAdminService.updateSession(id, body));
     }
 
     @DeleteMapping("/sessions/{id}")
     public Result<Void> deleteSession(@RequestParam Long userId, @PathVariable Long id) {
-        String role = checkRole(userId);
-        if (role == null) return Result.fail(403, "无权限");
-
-        Session session = sessionMapper.selectById(id);
-        if (session == null) return Result.fail(404, "场次不存在");
-
-        if ("organizer".equals(role) && !ownsActivity(session.getActivityId(), userId))
-            return Result.fail(403, "只能删除自己主办的场次");
-
-        sessionMapper.deleteById(id);
+        sessionAdminService.deleteSession(userId, id);
         return Result.success();
+    }
+
+    @GetMapping("/sessions")
+    public Result<Page<SessionAdminResponse>> listAdminSessions(
+            @RequestParam Long userId,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer size,
+            @RequestParam(required = false) Long activityId,
+            @RequestParam(required = false) Long venueId,
+            @RequestParam(required = false) Integer status) {
+        return Result.success(sessionAdminService.listSessions(userId, page, size, activityId, venueId, status));
     }
 
     // ========== 票档管理（权限继承自活动） ==========
@@ -264,10 +255,17 @@ public class AdminController {
         tt.setSessionId(sessionId);
         tt.setName(body.get("name").toString());
         tt.setPrice(new java.math.BigDecimal(body.get("price").toString()));
-        tt.setTotalStock(Integer.valueOf(body.get("totalStock").toString()));
-        tt.setRemainStock(Integer.valueOf(body.get("totalStock").toString()));
         tt.setStatus(1);
-        ticketTypeMapper.insert(tt);
+        if (body.containsKey("areaIds")) {
+            @SuppressWarnings("unchecked")
+            List<Object> rawAreaIds = (List<Object>) body.get("areaIds");
+            List<Long> areaIds = rawAreaIds.stream().map(value -> Long.valueOf(value.toString())).collect(java.util.stream.Collectors.toList());
+            tt = ticketTypeAreaService.createTicketType(tt, areaIds);
+        } else {
+            tt.setTotalStock(Integer.valueOf(body.get("totalStock").toString()));
+            tt.setRemainStock(Integer.valueOf(body.get("totalStock").toString()));
+            ticketTypeMapper.insert(tt);
+        }
         return Result.success(tt);
     }
 
@@ -353,5 +351,44 @@ public class AdminController {
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         return Result.success(venueMapper.selectList(null));
+    }
+
+    @PostMapping("/venues/{id}/areas")
+    public Result<SeatTemplateResponse> createVenueArea(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        body.put("venueId", id);
+        return Result.success(seatTemplateService.createArea(body));
+    }
+
+    @GetMapping("/venues/{id}/areas")
+    public Result<List<VenueArea>> listVenueAreas(@PathVariable Long id, @RequestParam Long userId) {
+        return Result.success(seatTemplateService.listAreas(userId, id));
+    }
+
+    @PostMapping("/venue-applications")
+    public Result<VenueApplicationResponse> submitVenueApplication(@RequestBody VenueApplicationRequest request) {
+        return Result.success(VenueApplicationResponse.from(venueApplicationService.submit(request)));
+    }
+
+    @GetMapping("/venue-applications/my")
+    public Result<List<VenueApplicationResponse>> listMyVenueApplications(@RequestParam Long userId) {
+        return Result.success(venueApplicationService.listMine(userId));
+    }
+
+    @GetMapping("/venue-applications")
+    public Result<List<VenueApplicationResponse>> listVenueApplications(@RequestParam Long userId,
+                                                                         @RequestParam(required = false) Integer status) {
+        return Result.success(venueApplicationService.listAdmin(userId, status));
+    }
+
+    @PostMapping("/venue-applications/{id}/review")
+    public Result<VenueApplicationResponse> reviewVenueApplication(@PathVariable Long id,
+                                                                   @RequestBody VenueApplicationReviewRequest request) {
+        VenueApplication application;
+        if ("reject".equals(request.getAction())) {
+            application = venueApplicationService.reject(id, request.getUserId(), request.getReviewNote());
+        } else {
+            application = venueApplicationService.approve(id, request.getUserId(), request.getMode(), request.getVenueId(), request.getReviewNote());
+        }
+        return Result.success(VenueApplicationResponse.from(application));
     }
 }

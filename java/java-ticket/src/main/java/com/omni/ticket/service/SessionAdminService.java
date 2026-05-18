@@ -1,0 +1,258 @@
+package com.omni.ticket.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.SessionAdminResponse;
+import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.Session;
+import com.omni.ticket.entity.TicketType;
+import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.entity.Venue;
+import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.SessionMapper;
+import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.mapper.VenueMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+@Service
+public class SessionAdminService {
+
+    private final ActivityMapper activityMapper;
+    private final SessionMapper sessionMapper;
+    private final VenueMapper venueMapper;
+    private final UserRefMapper userRefMapper;
+    private final TicketTypeMapper ticketTypeMapper;
+    private final SessionSeatService sessionSeatService;
+
+    public SessionAdminService(ActivityMapper activityMapper,
+                                SessionMapper sessionMapper,
+                                VenueMapper venueMapper,
+                                UserRefMapper userRefMapper) {
+        this(activityMapper, sessionMapper, venueMapper, userRefMapper, null, null);
+    }
+
+    @Autowired
+    public SessionAdminService(ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               VenueMapper venueMapper,
+                               UserRefMapper userRefMapper,
+                               TicketTypeMapper ticketTypeMapper) {
+        this(activityMapper, sessionMapper, venueMapper, userRefMapper, ticketTypeMapper, null);
+    }
+
+    public SessionAdminService(ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               VenueMapper venueMapper,
+                               UserRefMapper userRefMapper,
+                               TicketTypeMapper ticketTypeMapper,
+                               SessionSeatService sessionSeatService) {
+        this.activityMapper = activityMapper;
+        this.sessionMapper = sessionMapper;
+        this.venueMapper = venueMapper;
+        this.userRefMapper = userRefMapper;
+        this.ticketTypeMapper = ticketTypeMapper;
+        this.sessionSeatService = sessionSeatService;
+    }
+
+    public Session createSession(Map<String, Object> body) {
+        Long userId = toLong(body.get("userId"));
+        Long activityId = toLong(body.get("activityId"));
+        Long venueId = toLong(body.get("venueId"));
+        LocalDateTime startTime = parseTime(body.get("startTime"));
+        LocalDateTime endTime = parseOptionalTime(body.get("endTime"));
+
+        String role = requireRole(userId);
+        Activity activity = requireManageableActivity(activityId, userId, role);
+        Venue venue = venueMapper.selectById(venueId);
+        if (venue == null || !Integer.valueOf(1).equals(venue.getStatus())) {
+            throw new BusinessException(400, "场馆不存在或已停用");
+        }
+        validateTime(startTime, endTime);
+        ensureNoVenueConflict(venueId, startTime, endTime, null);
+
+        Session session = new Session();
+        session.setActivityId(activity.getId());
+        session.setVenueId(venueId);
+        session.setStartTime(startTime);
+        session.setEndTime(endTime);
+        session.setStatus(1);
+        sessionMapper.insert(session);
+        if (sessionSeatService != null) {
+            sessionSeatService.generateForSession(session.getId());
+        }
+        return session;
+    }
+
+    public Session updateSession(Long id, Map<String, Object> body) {
+        Long userId = toLong(body.get("userId"));
+        String role = requireRole(userId);
+        Session session = sessionMapper.selectById(id);
+        if (session == null) {
+            throw new BusinessException(404, "场次不存在");
+        }
+        requireManageableActivity(session.getActivityId(), userId, role);
+
+        Long venueId = body.containsKey("venueId") ? toLong(body.get("venueId")) : session.getVenueId();
+        LocalDateTime startTime = body.containsKey("startTime") ? parseTime(body.get("startTime")) : session.getStartTime();
+        LocalDateTime endTime = body.containsKey("endTime") ? parseOptionalTime(body.get("endTime")) : session.getEndTime();
+        Venue venue = venueMapper.selectById(venueId);
+        if (venue == null || !Integer.valueOf(1).equals(venue.getStatus())) {
+            throw new BusinessException(400, "场馆不存在或已停用");
+        }
+        validateTime(startTime, endTime);
+        ensureNoVenueConflict(venueId, startTime, endTime, id);
+
+        session.setVenueId(venueId);
+        session.setStartTime(startTime);
+        session.setEndTime(endTime);
+        if (body.containsKey("status")) {
+            session.setStatus(Integer.valueOf(body.get("status").toString()));
+        }
+        sessionMapper.updateById(session);
+        return session;
+    }
+
+    public void deleteSession(Long userId, Long id) {
+        String role = requireRole(userId);
+        Session session = sessionMapper.selectById(id);
+        if (session == null) {
+            throw new BusinessException(404, "场次不存在");
+        }
+        requireManageableActivity(session.getActivityId(), userId, role);
+        sessionMapper.deleteById(id);
+    }
+
+    public Page<SessionAdminResponse> listSessions(Long userId, Integer page, Integer size, Long activityId, Long venueId, Integer status) {
+        String role = requireRole(userId);
+        LambdaQueryWrapper<Session> wrapper = new LambdaQueryWrapper<>();
+        if (activityId != null) {
+            wrapper.eq(Session::getActivityId, activityId);
+        }
+        if (venueId != null) {
+            wrapper.eq(Session::getVenueId, venueId);
+        }
+        if (status != null) {
+            wrapper.eq(Session::getStatus, status);
+        }
+        if ("organizer".equals(role)) {
+            List<Activity> activities = activityMapper.selectList(new LambdaQueryWrapper<Activity>().eq(Activity::getOrganizerId, userId));
+            List<Long> activityIds = activities.stream().map(Activity::getId).collect(Collectors.toList());
+            if (activityIds.isEmpty()) {
+                return new Page<>(page, size);
+            }
+            wrapper.in(Session::getActivityId, activityIds);
+        }
+        wrapper.orderByAsc(Session::getStartTime);
+        Page<Session> sessionPage = sessionMapper.selectPage(new Page<>(page, size), wrapper);
+        Page<SessionAdminResponse> responsePage = new Page<>(sessionPage.getCurrent(), sessionPage.getSize(), sessionPage.getTotal());
+        responsePage.setRecords(toResponses(sessionPage.getRecords()));
+        return responsePage;
+    }
+
+    private List<SessionAdminResponse> toResponses(List<Session> sessions) {
+        if (sessions == null || sessions.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Set<Long> activityIds = sessions.stream().map(Session::getActivityId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<Long> venueIds = sessions.stream().map(Session::getVenueId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<Long> sessionIds = sessions.stream().map(Session::getId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, Activity> activities = activityIds.isEmpty() ? Collections.emptyMap()
+                : activityMapper.selectBatchIds(activityIds).stream().collect(Collectors.toMap(Activity::getId, a -> a));
+        Map<Long, Venue> venues = venueIds.isEmpty() ? Collections.emptyMap()
+                : venueMapper.selectBatchIds(venueIds).stream().collect(Collectors.toMap(Venue::getId, v -> v));
+        Map<Long, List<TicketType>> ticketTypes = ticketTypeMapper == null || sessionIds.isEmpty() ? Collections.emptyMap()
+                : ticketTypeMapper.selectList(new LambdaQueryWrapper<TicketType>().in(TicketType::getSessionId, sessionIds))
+                .stream().collect(Collectors.groupingBy(TicketType::getSessionId));
+
+        return sessions.stream().map(session -> {
+            SessionAdminResponse response = SessionAdminResponse.from(session);
+            Activity activity = activities.get(session.getActivityId());
+            Venue venue = venues.get(session.getVenueId());
+            List<TicketType> types = ticketTypes.getOrDefault(session.getId(), Collections.emptyList());
+            int totalStock = types.stream().map(TicketType::getTotalStock).filter(Objects::nonNull).mapToInt(Integer::intValue).sum();
+            int remainStock = types.stream().map(TicketType::getRemainStock).filter(Objects::nonNull).mapToInt(Integer::intValue).sum();
+            response.setActivityName(activity == null ? null : activity.getName());
+            response.setVenueName(venue == null ? null : venue.getName());
+            response.setVenueCity(venue == null ? null : venue.getCity());
+            response.setTicketTypeCount(types.size());
+            response.setTotalStock(totalStock);
+            response.setRemainStock(remainStock);
+            response.setSoldStock(Math.max(0, totalStock - remainStock));
+            return response;
+        }).collect(Collectors.toList());
+    }
+
+    private void validateTime(LocalDateTime startTime, LocalDateTime endTime) {
+        if (startTime == null) {
+            throw new BusinessException(400, "开始时间不能为空");
+        }
+        if (endTime != null && !endTime.isAfter(startTime)) {
+            throw new BusinessException(400, "结束时间必须晚于开始时间");
+        }
+    }
+
+    private void ensureNoVenueConflict(Long venueId, LocalDateTime startTime, LocalDateTime endTime, Long excludeSessionId) {
+        LocalDateTime actualEnd = endTime == null ? startTime.plusHours(3) : endTime;
+        List<Session> sessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>()
+                .eq(Session::getVenueId, venueId)
+                .eq(Session::getStatus, 1));
+        for (Session session : sessions) {
+            if (excludeSessionId != null && excludeSessionId.equals(session.getId())) {
+                continue;
+            }
+            LocalDateTime existingStart = session.getStartTime();
+            LocalDateTime existingEnd = session.getEndTime() == null ? existingStart.plusHours(3) : session.getEndTime();
+            if (startTime.isBefore(existingEnd) && actualEnd.isAfter(existingStart)) {
+                throw new BusinessException(400, "同一场馆该时间段已有场次");
+            }
+        }
+    }
+
+    private Activity requireManageableActivity(Long activityId, Long userId, String role) {
+        Activity activity = activityMapper.selectById(activityId);
+        if (activity == null) {
+            throw new BusinessException(404, "活动不存在");
+        }
+        if ("organizer".equals(role) && !userId.equals(activity.getOrganizerId())) {
+            throw new BusinessException(403, "只能管理自己主办的场次");
+        }
+        return activity;
+    }
+
+    private String requireRole(Long userId) {
+        UserRef user = userRefMapper.selectById(userId);
+        if (user == null || (!"admin".equals(user.getRole()) && !"organizer".equals(user.getRole()))) {
+            throw new BusinessException(403, "无权限");
+        }
+        return user.getRole();
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            throw new BusinessException(400, "参数不能为空");
+        }
+        return Long.valueOf(value.toString());
+    }
+
+    private LocalDateTime parseTime(Object value) {
+        if (value == null || value.toString().trim().isEmpty()) {
+            return null;
+        }
+        return LocalDateTime.parse(value.toString().replace(" ", "T"));
+    }
+
+    private LocalDateTime parseOptionalTime(Object value) {
+        return parseTime(value);
+    }
+}

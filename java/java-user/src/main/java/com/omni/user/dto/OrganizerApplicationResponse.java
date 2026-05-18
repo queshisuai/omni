@@ -22,6 +22,8 @@ public class OrganizerApplicationResponse {
     private LocalDateTime reviewTime;
     private String phone;
     private String nickname;
+    private String role;
+    private Integer organizerStatus;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -76,4 +78,10 @@ public class OrganizerApplicationResponse {
 
     public String getNickname() { return nickname; }
     public void setNickname(String nickname) { this.nickname = nickname; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+
+    public Integer getOrganizerStatus() { return organizerStatus; }
+    public void setOrganizerStatus(Integer organizerStatus) { this.organizerStatus = organizerStatus; }
 }

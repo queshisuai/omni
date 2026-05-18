@@ -4,10 +4,11 @@ import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { getActivityDetail, createOrder, createAlipayPagePay, submitPayForm } from '@/lib/api'
+import { SeatMap } from '@/components/SeatMap'
+import { getActivityDetail, createOrder, createOrderWithSeats, createAlipayPagePay, submitPayForm, getSeatMap } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { sections } from '@/lib/mock-data'
-import type { ActivityDetailVO, SessionDetail, TicketTypeEntity } from '@/types/api'
+import type { ActivityDetailVO, SeatMapResponse, SessionDetail, SessionSeatVO, TicketTypeEntity } from '@/types/api'
 
 /** 从 mock 数据构造活动详情（后端不可用时的降级方案） */
 function buildMockDetail(id: string): ActivityDetailVO {
@@ -55,6 +56,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [orderError, setOrderError] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
   const [successOrderNo, setSuccessOrderNo] = useState('')
+  const [seatMap, setSeatMap] = useState<SeatMapResponse | null>(null)
+  const [seatMapLoading, setSeatMapLoading] = useState(false)
+  const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([])
 
   useEffect(() => {
     (async () => {
@@ -87,6 +91,20 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     })()
   }, [id])
 
+  useEffect(() => {
+    if (!selectedSession || !selectedTicket) {
+      setSeatMap(null)
+      setSelectedSeatIds([])
+      return
+    }
+    setSeatMapLoading(true)
+    setSelectedSeatIds([])
+    getSeatMap(selectedSession.session.id, selectedTicket.id)
+      .then(setSeatMap)
+      .catch(() => setSeatMap(null))
+      .finally(() => setSeatMapLoading(false))
+  }, [selectedSession, selectedTicket])
+
   const handleBuy = () => {
     if (!isAuthenticated()) {
       router.push(`/login?ru=/activity/${id}`)
@@ -97,6 +115,28 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setShowConfirm(true)
   }
 
+  const handleAutoSelectSeats = () => {
+    if (!seatMap) return
+    const available = seatMap.seats.filter(seat => seat.status === 1)
+    const byAreaRow = new Map<string, SessionSeatVO[]>()
+    for (const seat of available) {
+      const key = `${seat.areaId}-${seat.rowNo}`
+      byAreaRow.set(key, [...(byAreaRow.get(key) || []), seat])
+    }
+    for (const rowSeats of byAreaRow.values()) {
+      const sorted = rowSeats.sort((a, b) => a.seatNo - b.seatNo)
+      for (let i = 0; i <= sorted.length - quantity; i++) {
+        const candidate = sorted.slice(i, i + quantity)
+        const continuous = candidate.every((seat, index) => index === 0 || seat.seatNo === candidate[index - 1].seatNo + 1)
+        if (continuous) {
+          setSelectedSeatIds(candidate.map(seat => seat.id))
+          return
+        }
+      }
+    }
+    setSelectedSeatIds(available.slice(0, quantity).map(seat => seat.id))
+  }
+
   const handleConfirmOrder = async () => {
     if (!selectedSession || !selectedTicket) return
     const user = getUser()
@@ -105,13 +145,26 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setOrdering(true)
     setOrderError('')
     try {
-      const order = await createOrder({
-        userId: user.userId,
-        sessionId: selectedSession.session.id,
-        ticketTypeId: selectedTicket.id,
-        quantity,
-        unitPrice: selectedTicket.price,
-      })
+      const hasSeatMap = Boolean(seatMap && seatMap.seats.length > 0)
+      if (hasSeatMap && selectedSeatIds.length !== quantity) {
+        setOrderError('请选择对应数量的座位')
+        return
+      }
+      const order = hasSeatMap
+        ? await createOrderWithSeats({
+            userId: user.userId,
+            sessionId: selectedSession.session.id,
+            ticketTypeId: selectedTicket.id,
+            seatIds: selectedSeatIds,
+            unitPrice: selectedTicket.price,
+          })
+        : await createOrder({
+            userId: user.userId,
+            sessionId: selectedSession.session.id,
+            ticketTypeId: selectedTicket.id,
+            quantity,
+            unitPrice: selectedTicket.price,
+          })
       const pay = await createAlipayPagePay(order.id)
       submitPayForm(pay.payForm)
       setShowConfirm(false)
@@ -234,7 +287,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       selectedSession.ticketTypes.map((tt) => (
                         <button
                           key={tt.id}
-                          onClick={() => { setSelectedTicket(tt); setQuantity(1) }}
+                          onClick={() => { setSelectedTicket(tt); setQuantity(1); setSelectedSeatIds([]) }}
                           className="cursor-pointer border outline-none px-5 py-3 rounded text-sm transition-colors min-w-[100px]"
                           style={{
                             backgroundColor: selectedTicket?.id === tt.id ? '#fff0f5' : '#fff',
@@ -256,34 +309,50 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
                   {/* 数量选择 + 购买按钮 */}
                   {selectedTicket && selectedTicket.remainStock > 0 && (
-                    <div className="flex items-center gap-4 pt-4 border-t border-[#f0f0f0]">
-                      <span className="text-[14px] text-[#666]">数量</span>
-                      <div className="flex items-center border border-[#e5e5e5] rounded">
+                    <>
+                      <div className="mb-5">
+                        {seatMapLoading ? (
+                          <div className="rounded-lg border border-[#e5e5e5] p-6 text-center text-[13px] text-[#999]">正在加载座位图...</div>
+                        ) : seatMap && seatMap.seats.length > 0 ? (
+                          <div>
+                            <div className="mb-3 flex items-center justify-between">
+                              <div className="text-[14px] text-[#666]">已选 {selectedSeatIds.length} / {quantity} 座</div>
+                              <button onClick={handleAutoSelectSeats} className="rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">自动分配</button>
+                            </div>
+                            <SeatMap seats={seatMap.seats} areas={seatMap.areas} stageLabel={seatMap.stageLabel} maxSelectable={quantity} selectedSeatIds={selectedSeatIds} onChange={setSelectedSeatIds} />
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-4 pt-4 border-t border-[#f0f0f0]">
+                        <span className="text-[14px] text-[#666]">数量</span>
+                        <div className="flex items-center border border-[#e5e5e5] rounded">
+                          <button
+                            onClick={() => { setQuantity(Math.max(1, quantity - 1)); setSelectedSeatIds(ids => ids.slice(0, Math.max(1, quantity - 1))) }}
+                            className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
+                          >
+                            -
+                          </button>
+                          <span className="w-12 text-center text-[14px] text-[#111]">{quantity}</span>
+                          <button
+                            onClick={() => setQuantity(Math.min(selectedTicket.remainStock, quantity + 1))}
+                            className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <div className="text-[14px] text-[#666] ml-4">
+                          合计：<span className="text-[24px] text-[#ff1268] font-medium">¥{(selectedTicket.price * quantity).toFixed(2)}</span>
+                        </div>
                         <button
-                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                          className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
+                          onClick={handleBuy}
+                          disabled={Boolean(seatMap && seatMap.seats.length > 0 && selectedSeatIds.length !== quantity)}
+                          className="ml-auto cursor-pointer border-none outline-none text-white text-[16px] font-medium px-10 py-3 rounded disabled:cursor-not-allowed disabled:opacity-50"
+                          style={{ backgroundColor: '#ff1268' }}
                         >
-                          -
-                        </button>
-                        <span className="w-12 text-center text-[14px] text-[#111]">{quantity}</span>
-                        <button
-                          onClick={() => setQuantity(Math.min(selectedTicket.remainStock, quantity + 1))}
-                          className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
-                        >
-                          +
+                          立即购买
                         </button>
                       </div>
-                      <div className="text-[14px] text-[#666] ml-4">
-                        合计：<span className="text-[24px] text-[#ff1268] font-medium">¥{(selectedTicket.price * quantity).toFixed(2)}</span>
-                      </div>
-                      <button
-                        onClick={handleBuy}
-                        className="ml-auto cursor-pointer border-none outline-none text-white text-[16px] font-medium px-10 py-3 rounded"
-                        style={{ backgroundColor: '#ff1268' }}
-                      >
-                        立即购买
-                      </button>
-                    </div>
+                    </>
                   )}
                 </>
               )}
