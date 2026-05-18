@@ -3,10 +3,10 @@
 import type { FormEvent, ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Save, LockKeyhole, User, Mail, Image as ImageIcon } from 'lucide-react'
+import { Loader2, Save, LockKeyhole, User, Mail, Image as ImageIcon, MessageSquare } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { changePassword, getUserInfo, updateProfile } from '@/lib/api'
+import { changePassword, getUserInfo, sendSmsCode, updateProfile } from '@/lib/api'
 import { isAuthenticated, updateStoredUser } from '@/lib/auth'
 import type { UserInfo } from '@/types/api'
 
@@ -23,9 +23,10 @@ export default function ProfileAccountPage() {
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
+  const [sendingPasswordCode, setSendingPasswordCode] = useState(false)
   const [profileMessage, setProfileMessage] = useState('')
   const [passwordMessage, setPasswordMessage] = useState('')
-  const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' })
+  const [passwordForm, setPasswordForm] = useState({ oldPassword: '', smsCode: '', newPassword: '', confirmPassword: '' })
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -90,11 +91,28 @@ export default function ProfileAccountPage() {
     try {
       await changePassword(passwordForm)
       setPasswordMessage('密码修改成功')
-      setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' })
+      setPasswordForm({ oldPassword: '', smsCode: '', newPassword: '', confirmPassword: '' })
     } catch (err: unknown) {
       setPasswordMessage(err instanceof Error ? err.message : '修改密码失败')
     } finally {
       setSavingPassword(false)
+    }
+  }
+
+  const handleSendPasswordCode = async () => {
+    if (!user?.phone) {
+      setPasswordMessage('当前账号缺少手机号')
+      return
+    }
+    setSendingPasswordCode(true)
+    setPasswordMessage('')
+    try {
+      await sendSmsCode(user.phone)
+      setPasswordMessage('验证码已发送，Mock 验证码为 666666')
+    } catch (err: unknown) {
+      setPasswordMessage(err instanceof Error ? err.message : '发送验证码失败')
+    } finally {
+      setSendingPasswordCode(false)
     }
   }
 
@@ -192,6 +210,12 @@ export default function ProfileAccountPage() {
                     value={passwordForm.oldPassword}
                     onChange={(value) => setPasswordForm((prev) => ({ ...prev, oldPassword: value }))}
                   />
+                  <SmsCodeField
+                    value={passwordForm.smsCode}
+                    onChange={(value) => setPasswordForm((prev) => ({ ...prev, smsCode: value }))}
+                    onSend={handleSendPasswordCode}
+                    sending={sendingPasswordCode}
+                  />
                   <PasswordField
                     label="新密码"
                     value={passwordForm.newPassword}
@@ -253,6 +277,44 @@ function Field({
         placeholder={placeholder}
         className="w-full rounded-2xl border border-[#e8e8e8] bg-[#fafafa] px-4 py-3 text-sm text-[#111] outline-none transition-colors placeholder:text-[#aaa] focus:border-[#ff1268] focus:bg-white"
       />
+    </label>
+  )
+}
+
+function SmsCodeField({
+  value,
+  onChange,
+  onSend,
+  sending,
+}: {
+  value: string
+  onChange: (value: string) => void
+  onSend: () => void
+  sending: boolean
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 flex items-center gap-2 text-sm font-medium text-[#333]">
+        <MessageSquare className="h-4 w-4 text-[#ff1268]" />
+        短信验证码
+      </span>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="请输入验证码"
+          className="min-w-0 flex-1 rounded-2xl border border-[#e8e8e8] bg-[#fafafa] px-4 py-3 text-sm text-[#111] outline-none transition-colors placeholder:text-[#aaa] focus:border-[#ff1268] focus:bg-white"
+        />
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={sending}
+          className="shrink-0 rounded-2xl border border-[#ff1268] px-4 py-3 text-sm font-medium text-[#ff1268] transition-colors hover:bg-[#fff0f5] disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {sending ? '发送中' : '发送验证码'}
+        </button>
+      </div>
     </label>
   )
 }

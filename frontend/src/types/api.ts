@@ -41,6 +41,14 @@ export interface ResetPasswordRequest {
   confirmPassword: string
 }
 
+/** 修改密码请求 */
+export interface ChangePasswordRequest {
+  oldPassword: string
+  smsCode: string
+  newPassword: string
+  confirmPassword: string
+}
+
 /** 用户信息 */
 export interface UserInfo {
   id: number

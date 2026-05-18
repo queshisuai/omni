@@ -1,6 +1,7 @@
 package com.omni.user.service;
 
 import com.omni.exception.BusinessException;
+import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
 import com.omni.user.dto.ResetPasswordRequest;
@@ -156,6 +157,105 @@ class UserServiceTest {
         verify(userMapper).updateById(user);
     }
 
+    @Test
+    void changePasswordRejectsWrongOldPasswordWithoutCheckingSmsCodeOrUpdatingPassword() {
+        User user = existingUser();
+        user.setPassword("encoded-oldpass");
+        when(userMapper.selectById(2004L)).thenReturn(user);
+        when(passwordEncoder.matches("wrongpass", "encoded-oldpass")).thenReturn(false);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.changePassword(changePasswordRequest("wrongpass", "badcode", "newpass1", "newpass1"))
+        );
+
+        assertEquals("原密码错误", exception.getMessage());
+        verify(passwordEncoder, never()).encode(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void changePasswordRejectsWrongSmsCodeWithoutUpdatingPassword() {
+        User user = existingUser();
+        user.setPassword("encoded-oldpass");
+        when(userMapper.selectById(2004L)).thenReturn(user);
+        when(passwordEncoder.matches("oldpass", "encoded-oldpass")).thenReturn(true);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.changePassword(changePasswordRequest("oldpass", "123456", "newpass1", "newpass1"))
+        );
+
+        assertEquals("验证码错误", exception.getMessage());
+        verify(passwordEncoder, never()).encode(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void changePasswordRejectsBlankSmsCodeWithoutUpdatingPassword() {
+        User user = existingUser();
+        user.setPassword("encoded-oldpass");
+        when(userMapper.selectById(2004L)).thenReturn(user);
+        when(passwordEncoder.matches("oldpass", "encoded-oldpass")).thenReturn(true);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.changePassword(changePasswordRequest("oldpass", "  ", "newpass1", "newpass1"))
+        );
+
+        assertEquals("验证码不能为空", exception.getMessage());
+        verify(passwordEncoder, never()).encode(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void changePasswordRejectsBlankNewPasswordWithoutUpdatingPassword() {
+        User user = existingUser();
+        user.setPassword("encoded-oldpass");
+        when(userMapper.selectById(2004L)).thenReturn(user);
+        when(passwordEncoder.matches("oldpass", "encoded-oldpass")).thenReturn(true);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.changePassword(changePasswordRequest("oldpass", "666666", "  ", "newpass1"))
+        );
+
+        assertEquals("新密码不能为空", exception.getMessage());
+        verify(passwordEncoder, never()).encode(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void changePasswordRejectsBlankConfirmPasswordWithoutUpdatingPassword() {
+        User user = existingUser();
+        user.setPassword("encoded-oldpass");
+        when(userMapper.selectById(2004L)).thenReturn(user);
+        when(passwordEncoder.matches("oldpass", "encoded-oldpass")).thenReturn(true);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.changePassword(changePasswordRequest("oldpass", "666666", "newpass1", "  "))
+        );
+
+        assertEquals("确认密码不能为空", exception.getMessage());
+        verify(passwordEncoder, never()).encode(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void changePasswordUpdatesEncodedPasswordWhenSmsCodeAndPasswordAreValid() {
+        User user = existingUser();
+        user.setPassword("encoded-oldpass");
+        when(userMapper.selectById(2004L)).thenReturn(user);
+        when(passwordEncoder.matches("oldpass", "encoded-oldpass")).thenReturn(true);
+        when(passwordEncoder.encode("newpass1")).thenReturn("encoded-newpass1");
+
+        userService.changePassword(changePasswordRequest("oldpass", "666666", "newpass1", "newpass1"));
+
+        assertEquals("encoded-newpass1", user.getPassword());
+        verify(userMapper).updateById(user);
+    }
+
     private LoginRequest smsLoginRequest(String smsCode) {
         LoginRequest request = new LoginRequest();
         request.setLoginType("sms");
@@ -171,6 +271,16 @@ class UserServiceTest {
     private ResetPasswordRequest resetPasswordRequest(String phone, String smsCode, String newPassword, String confirmPassword) {
         ResetPasswordRequest request = new ResetPasswordRequest();
         request.setPhone(phone);
+        request.setSmsCode(smsCode);
+        request.setNewPassword(newPassword);
+        request.setConfirmPassword(confirmPassword);
+        return request;
+    }
+
+    private ChangePasswordRequest changePasswordRequest(String oldPassword, String smsCode, String newPassword, String confirmPassword) {
+        ChangePasswordRequest request = new ChangePasswordRequest();
+        request.setUserId(2004L);
+        request.setOldPassword(oldPassword);
         request.setSmsCode(smsCode);
         request.setNewPassword(newPassword);
         request.setConfirmPassword(confirmPassword);

@@ -208,12 +208,6 @@ public class UserService {
         if (request.getOldPassword() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "原密码不能为空");
         }
-        if (request.getNewPassword() == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码不能为空");
-        }
-        if (request.getConfirmPassword() == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "确认密码不能为空");
-        }
         User user = userMapper.selectById(request.getUserId());
         if (user == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
@@ -221,14 +215,31 @@ public class UserService {
         if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "原密码错误");
         }
-        if (request.getNewPassword().length() < 6) {
+
+        String smsCode = trimToNull(request.getSmsCode());
+        String newPassword = trimToNull(request.getNewPassword());
+        String confirmPassword = trimToNull(request.getConfirmPassword());
+
+        if (smsCode == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "验证码不能为空");
+        }
+        if (!MOCK_SMS_CODE.equals(smsCode)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "验证码错误");
+        }
+        if (newPassword == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码不能为空");
+        }
+        if (confirmPassword == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "确认密码不能为空");
+        }
+        if (newPassword.length() < 6) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "新密码长度不能少于6位");
         }
-        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+        if (!newPassword.equals(confirmPassword)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "两次密码输入不一致");
         }
 
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setPassword(passwordEncoder.encode(newPassword));
         userMapper.updateById(user);
     }
 
