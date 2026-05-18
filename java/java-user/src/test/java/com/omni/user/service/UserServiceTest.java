@@ -3,6 +3,7 @@ package com.omni.user.service;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
+import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.entity.User;
 import com.omni.user.mapper.UserMapper;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class UserServiceTest {
@@ -43,11 +47,133 @@ class UserServiceTest {
         assertNotNull(response.getToken());
     }
 
+    @Test
+    void resetPasswordRejectsWrongSmsCode() {
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.resetPassword(resetPasswordRequest("123456", "newpass1", "newpass1"))
+        );
+
+        assertEquals("手机号或验证码错误", exception.getMessage());
+        verify(userMapper, never()).selectOne(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void resetPasswordRejectsBlankInputWithoutQueryingUser() {
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.resetPassword(resetPasswordRequest("  ", " newpass1 ", " newpass1 "))
+        );
+
+        assertEquals("验证码不能为空", exception.getMessage());
+        verifyNoInteractions(userMapper);
+    }
+
+    @Test
+    void resetPasswordRejectsUnknownPhoneWithoutUpdatingPassword() {
+        when(userMapper.selectOne(any())).thenReturn(null);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.resetPassword(resetPasswordRequest("666666", "newpass1", "newpass1"))
+        );
+
+        assertEquals("手机号或验证码错误", exception.getMessage());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void resetPasswordRejectsMismatchedPasswords() {
+        when(userMapper.selectOne(any())).thenReturn(existingUser());
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.resetPassword(resetPasswordRequest("666666", "newpass1", "newpass2"))
+        );
+
+        assertEquals("两次密码输入不一致", exception.getMessage());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void resetPasswordRejectsShortPasswordForExistingPhoneWithoutUpdatingPassword() {
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.resetPassword(resetPasswordRequest("666666", "12345", "12345"))
+        );
+
+        assertEquals("新密码长度不能少于6位", exception.getMessage());
+        verify(userMapper, never()).selectOne(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void resetPasswordRejectsShortPasswordForUnknownPhoneWithSameMessage() {
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.resetPassword(resetPasswordRequest("18800000000", "666666", "12345", "12345"))
+        );
+
+        assertEquals("新密码长度不能少于6位", exception.getMessage());
+        verify(userMapper, never()).selectOne(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void resetPasswordRejectsMismatchedPasswordsForExistingPhoneBeforeQueryingUser() {
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.resetPassword(resetPasswordRequest("666666", "newpass1", "newpass2"))
+        );
+
+        assertEquals("两次密码输入不一致", exception.getMessage());
+        verify(userMapper, never()).selectOne(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void resetPasswordRejectsMismatchedPasswordsForUnknownPhoneWithSameMessage() {
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.resetPassword(resetPasswordRequest("18800000000", "666666", "newpass1", "newpass2"))
+        );
+
+        assertEquals("两次密码输入不一致", exception.getMessage());
+        verify(userMapper, never()).selectOne(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void resetPasswordUpdatesEncodedPasswordWhenSmsCodeIsCorrect() {
+        User user = existingUser();
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(passwordEncoder.encode("newpass1")).thenReturn("encoded-newpass1");
+
+        userService.resetPassword(resetPasswordRequest(" 666666 ", " newpass1 ", " newpass1 "));
+
+        assertEquals("encoded-newpass1", user.getPassword());
+        verify(userMapper).updateById(user);
+    }
+
     private LoginRequest smsLoginRequest(String smsCode) {
         LoginRequest request = new LoginRequest();
         request.setLoginType("sms");
         request.setAccount("13900000001");
         request.setSmsCode(smsCode);
+        return request;
+    }
+
+    private ResetPasswordRequest resetPasswordRequest(String smsCode, String newPassword, String confirmPassword) {
+        return resetPasswordRequest("13900000001", smsCode, newPassword, confirmPassword);
+    }
+
+    private ResetPasswordRequest resetPasswordRequest(String phone, String smsCode, String newPassword, String confirmPassword) {
+        ResetPasswordRequest request = new ResetPasswordRequest();
+        request.setPhone(phone);
+        request.setSmsCode(smsCode);
+        request.setNewPassword(newPassword);
+        request.setConfirmPassword(confirmPassword);
         return request;
     }
 

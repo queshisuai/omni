@@ -8,7 +8,11 @@ import { Mail, Lock, Phone, KeyRound, QrCode, ArrowRight } from 'lucide-react'
 
 type LoginTab = 'password' | 'sms' | 'qrcode'
 
-export function LoginForm() {
+interface LoginFormProps {
+  successMessage?: string
+}
+
+export function LoginForm({ successMessage = '' }: LoginFormProps) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<LoginTab>('password')
   const [account, setAccount] = useState('')
@@ -148,6 +152,13 @@ export function LoginForm() {
               </div>
             )}
 
+            {successMessage && (
+              <div className="mt-4 p-3 bg-green-50 text-green-600 rounded-lg text-sm border border-green-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                {successMessage}
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -201,6 +212,13 @@ export function LoginForm() {
               <div className="mt-4 p-3 bg-red-50 text-red-500 rounded-lg text-sm border border-red-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
                 {errorMsg}
+              </div>
+            )}
+
+            {successMessage && (
+              <div className="mt-4 p-3 bg-green-50 text-green-600 rounded-lg text-sm border border-green-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                {successMessage}
               </div>
             )}
 

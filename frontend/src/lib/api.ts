@@ -2,7 +2,7 @@
  * API 客户端 - fetch 封装
  */
 import { getToken } from './auth'
-import type { ApiResult, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, SubjectType, UserInfo } from '@/types/api'
+import type { ApiResult, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, ResetPasswordRequest, SubjectType, UserInfo } from '@/types/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -90,6 +90,13 @@ export async function updateProfile(params: { nickname?: string | null; email?: 
 export async function changePassword(params: { oldPassword: string; newPassword: string; confirmPassword: string }) {
   return request<void>('/api/user/password', {
     method: 'PUT',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function resetPassword(params: ResetPasswordRequest) {
+  return request<void>('/api/user/password/reset', {
+    method: 'POST',
     body: JSON.stringify(params),
   })
 }

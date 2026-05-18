@@ -9,6 +9,7 @@ import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
 import com.omni.user.dto.RegisterRequest;
+import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UpdateProfileRequest;
 import com.omni.user.dto.UserInfoResponse;
 import com.omni.user.entity.User;
@@ -228,6 +229,52 @@ public class UserService {
         }
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userMapper.updateById(user);
+    }
+
+    /**
+     * 找回密码重置
+     */
+    public void resetPassword(ResetPasswordRequest request) {
+        if (request == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "重置密码参数不能为空");
+        }
+        String phone = trimToNull(request.getPhone());
+        String smsCode = trimToNull(request.getSmsCode());
+        String newPassword = trimToNull(request.getNewPassword());
+        String confirmPassword = trimToNull(request.getConfirmPassword());
+
+        if (phone == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "手机号不能为空");
+        }
+        if (smsCode == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "验证码不能为空");
+        }
+        if (newPassword == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码不能为空");
+        }
+        if (confirmPassword == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "确认密码不能为空");
+        }
+
+        if (!MOCK_SMS_CODE.equals(smsCode)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "手机号或验证码错误");
+        }
+        if (newPassword.length() < 6) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码长度不能少于6位");
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "两次密码输入不一致");
+        }
+
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(User::getPhone, phone);
+        User user = userMapper.selectOne(wrapper);
+        if (user == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "手机号或验证码错误");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
         userMapper.updateById(user);
     }
 

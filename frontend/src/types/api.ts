@@ -33,6 +33,14 @@ export interface RegisterRequest {
   confirmPassword: string
 }
 
+/** 找回密码重置请求 */
+export interface ResetPasswordRequest {
+  phone: string
+  smsCode: string
+  newPassword: string
+  confirmPassword: string
+}
+
 /** 用户信息 */
 export interface UserInfo {
   id: number

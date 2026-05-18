@@ -11,6 +11,7 @@ import com.omni.user.dto.OrganizerApplicationRequest;
 import com.omni.user.dto.OrganizerApplicationResponse;
 import com.omni.user.dto.OrganizerApplicationReviewRequest;
 import com.omni.user.dto.RegisterRequest;
+import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UpdateProfileRequest;
 import com.omni.user.dto.UserInfoResponse;
 import com.omni.user.service.OrganizerApplicationService;
@@ -88,12 +89,21 @@ public class UserController {
      */
     @PutMapping("/password")
     public Result<Void> changePassword(@RequestHeader(value = "Authorization", required = false) String authorization,
-                                       @RequestBody ChangePasswordRequest request) {
+                                        @RequestBody ChangePasswordRequest request) {
         Long userId = requireAuthUserId(authorization);
         if (request != null) {
             request.setUserId(userId);
         }
         userService.changePassword(request);
+        return Result.success();
+    }
+
+    /**
+     * 找回密码重置
+     */
+    @PostMapping("/password/reset")
+    public Result<Void> resetPassword(@RequestBody ResetPasswordRequest request) {
+        userService.resetPassword(request);
         return Result.success();
     }
 

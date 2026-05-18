@@ -2,7 +2,14 @@ import { LoginHeader } from '@/components/LoginHeader'
 import { LoginForm } from '@/components/LoginForm'
 import { LoginFooter } from '@/components/LoginFooter'
 
-export default function LoginPage() {
+interface LoginPageProps {
+  searchParams?: Promise<{ message?: string }>
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const params = await searchParams
+  const successMessage = params?.message === 'password-reset' ? '密码已重置，请重新登录' : ''
+
   return (
     <div className="flex flex-col min-h-screen bg-[#f5f5f5]">
       <LoginHeader />
@@ -15,7 +22,7 @@ export default function LoginPage() {
         <div className="relative w-full max-w-[1200px] mx-auto px-5 flex items-center justify-end">
           {/* 右侧登录表单 */}
           <div className="w-full max-w-[420px] animate-in fade-in slide-in-from-right-10 duration-700">
-            <LoginForm />
+            <LoginForm successMessage={successMessage} />
           </div>
         </div>
       </div>
