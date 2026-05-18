@@ -27,7 +27,7 @@ export default function ActivitiesPage() {
   const handleToggleStatus = async (activity: ActivityEntity) => {
     const newStatus = activity.status === 1 ? 0 : 1
     if (newStatus === 0) {
-      const confirmed = confirm('下架后活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。请确认：同意下架并为所有已支付订单退款。')
+      const confirmed = confirm('下架后活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意下架并同意退款。')
       if (!confirmed) return
       const result = await deactivateActivity(activity.id, {
         userId,

@@ -107,8 +107,8 @@ export default function ProfileAccountPage() {
     setSendingPasswordCode(true)
     setPasswordMessage('')
     try {
-      await sendSmsCode(user.phone)
-      setPasswordMessage('验证码已发送，Mock 验证码为 666666')
+      const code = await sendSmsCode(user.phone)
+      setPasswordMessage(`演示环境不会发送真实短信，Mock 验证码为 ${code || '666666'}，修改时仍会由后端校验。`)
     } catch (err: unknown) {
       setPasswordMessage(err instanceof Error ? err.message : '发送验证码失败')
     } finally {
@@ -200,7 +200,7 @@ export default function ProfileAccountPage() {
                   </div>
                   <div>
                     <h2 className="text-[18px] font-semibold text-[#111]">修改密码</h2>
-                    <p className="text-sm text-[#666]">提交后即时生效，不会强制登出。</p>
+                    <p className="text-sm text-[#666]">提交后即时生效，不会强制登出；演示环境固定验证码 666666，由后端真实校验。</p>
                   </div>
                 </div>
 
@@ -228,7 +228,7 @@ export default function ProfileAccountPage() {
                   />
 
                   <div className="sm:col-span-2 flex flex-col gap-3 border-t border-[#f0f0f0] pt-4 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-[#666]">{passwordMessage || '密码长度建议不少于 6 位。'}</p>
+                    <p className="text-sm text-[#666]">{passwordMessage || '密码长度建议不少于 6 位；验证码使用演示环境固定值 666666。'}</p>
                     <button
                       type="submit"
                       disabled={savingPassword}
@@ -303,7 +303,7 @@ function SmsCodeField({
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="请输入验证码"
+          placeholder="演示验证码 666666"
           className="min-w-0 flex-1 rounded-2xl border border-[#e8e8e8] bg-[#fafafa] px-4 py-3 text-sm text-[#111] outline-none transition-colors placeholder:text-[#aaa] focus:border-[#ff1268] focus:bg-white"
         />
         <button

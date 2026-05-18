@@ -20,10 +20,13 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
   const [smsMobile, setSmsMobile] = useState('')
   const [smsCode, setSmsCode] = useState('')
   const [smsSent, setSmsSent] = useState(false)
+  const [smsSending, setSmsSending] = useState(false)
+  const [smsInfoMsg, setSmsInfoMsg] = useState('')
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
   const clearError = () => { if (errorMsg) setErrorMsg('') }
+  const clearSmsInfo = () => { if (smsInfoMsg) setSmsInfoMsg('') }
 
   const handlePasswordLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -51,7 +54,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
   const handleSmsLogin = async (e: FormEvent) => {
     e.preventDefault()
     if (!smsMobile.trim()) { setErrorMsg('请输入手机号'); return }
-    if (!smsCode.trim()) { setErrorMsg('请输入短信验证码'); return }
+    if (!smsCode.trim()) { setErrorMsg('请输入短信验证码。演示环境固定验证码为 666666，仍会提交后端校验。'); return }
 
     setLoading(true)
     setErrorMsg('')
@@ -73,14 +76,18 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
 
   const handleSendCode = async () => {
     if (!smsMobile.trim()) { setErrorMsg('请输入手机号'); return }
+    if (smsSending) return
+    setSmsSending(true)
     setErrorMsg('')
+    setSmsInfoMsg('')
     try {
       const code = await sendSmsCode(smsMobile.trim())
       setSmsSent(true)
-      setErrorMsg('')
-      alert(`验证码: ${code}`)
+      setSmsInfoMsg(`演示环境不会发送真实短信，验证码为 ${code || '666666'}，登录时仍会由后端校验。`)
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : '发送验证码失败')
+    } finally {
+      setSmsSending(false)
     }
   }
 
@@ -89,7 +96,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
       {/* Tabs */}
       <div className="flex gap-6 border-b border-gray-200/60 mb-8 relative">
         <button
-          onClick={() => { setActiveTab('password'); clearError() }}
+          onClick={() => { setActiveTab('password'); clearError(); clearSmsInfo() }}
           className={`pb-3 text-[16px] font-semibold transition-all duration-300 relative ${activeTab === 'password' ? 'text-[#ff1268]' : 'text-gray-400 hover:text-gray-600'}`}
         >
           密码登录
@@ -180,7 +187,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
                 </div>
                 <input
                   type="text" value={smsMobile}
-                  onChange={(e) => { setSmsMobile(e.target.value); clearError() }}
+                  onChange={(e) => { setSmsMobile(e.target.value); clearError(); clearSmsInfo() }}
                   placeholder="请输入手机号"
                   className="w-full bg-gray-50/50 border border-gray-200 text-gray-900 rounded-xl block pl-11 p-3.5 focus:ring-2 focus:ring-[#ff1268]/20 focus:border-[#ff1268] focus:bg-white outline-none transition-all placeholder:text-gray-400 font-medium"
                 />
@@ -194,24 +201,33 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
                   <input
                     type="text" value={smsCode}
                     onChange={(e) => { setSmsCode(e.target.value); clearError() }}
-                    placeholder="请输入验证码"
+                    placeholder="演示验证码 666666"
                     className="w-full bg-gray-50/50 border border-gray-200 text-gray-900 rounded-xl block pl-11 p-3.5 focus:ring-2 focus:ring-[#ff1268]/20 focus:border-[#ff1268] focus:bg-white outline-none transition-all placeholder:text-gray-400 font-medium"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={handleSendCode}
-                  className="px-5 py-3.5 bg-gray-100 hover:bg-gray-200 text-[#ff1268] font-medium rounded-xl transition-colors whitespace-nowrap text-sm"
+                  disabled={smsSending || loading}
+                  className="px-5 py-3.5 bg-gray-100 hover:bg-gray-200 text-[#ff1268] font-medium rounded-xl transition-colors whitespace-nowrap text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {smsSent ? '重新发送' : '获取验证码'}
+                  {smsSending ? '发送中...' : smsSent ? '重新获取' : '获取验证码'}
                 </button>
               </div>
+              <p className="text-xs leading-5 text-gray-500">演示环境使用 Mock 验证码，不会发送真实短信；固定验证码 666666 需通过后端校验。</p>
             </div>
 
             {errorMsg && (
               <div className="mt-4 p-3 bg-red-50 text-red-500 rounded-lg text-sm border border-red-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
                 {errorMsg}
+              </div>
+            )}
+
+            {smsInfoMsg && (
+              <div className="mt-4 p-3 bg-blue-50 text-blue-600 rounded-lg text-sm border border-blue-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                {smsInfoMsg}
               </div>
             )}
 

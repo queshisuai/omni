@@ -122,7 +122,7 @@ export default function OrganizerApplicationsPage() {
 
   const handleDeactivate = async (item: OrganizerApplicationVO) => {
     if (!user) return
-    const confirmed = confirm(`取消主办方资格后，${item.organizerName} 将降级为普通用户并无法继续访问后台；其旗下全部活动、场次、票档将下架，并直接为关联已支付订单发起真实支付宝退款。请确认：同意取消资格并为整批已支付订单退款。`)
+    const confirmed = confirm(`取消主办方资格后，${item.organizerName} 将降级为普通用户并无法继续访问后台；其旗下全部活动、场次、票档将下架，并直接为关联已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这批已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意取消资格并同意退款。`)
     if (!confirmed) return
     setSavingId(item.id)
     setError('')
