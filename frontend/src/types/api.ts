@@ -165,6 +165,12 @@ export interface SessionAdminVO extends SessionEntity {
   remainStock: number
 }
 
+export interface AdminSummaryVO {
+  activityCount: number
+  ticketTypeCount: number
+  paidOrderCount: number
+}
+
 /** 场馆 */
 export interface VenueEntity {
   id: number
@@ -211,6 +217,37 @@ export interface VenueAreaVO {
   status: number
 }
 
+export interface VenueSeatVO {
+  id: number
+  venueId: number
+  areaId: number
+  rowNo: number
+  seatNo: number
+  seatLabel?: string | null
+  x?: number | null
+  y?: number | null
+  status: number
+  createTime?: string | null
+}
+
+export interface VenueSeatRequest {
+  userId: number
+  venueId?: number
+  areaId: number
+  rowNo: number
+  seatNo: number
+  seatLabel?: string | null
+  x?: number | null
+  y?: number | null
+  status: number
+}
+
+export interface SeatTemplateSyncResponseVO {
+  syncedSessionCount: number
+  skippedSessionCount: number
+  skippedSessionIds: number[]
+}
+
 export interface SessionAreaStockVO extends VenueAreaVO {
   availableSeatCount: number
 }
@@ -228,6 +265,50 @@ export interface SessionSeatVO {
   lockExpireTime: string | null
   orderId: number | null
   ticketTypeId: number | null
+  layoutSectionId?: number | null
+}
+
+export type SeatCraftTemplateType = 'concert' | 'cinema' | 'custom'
+export type SeatCraftSectionType = 'core' | 'stand' | 'zone'
+export type SeatCraftSectionLayout = 'grid' | 'curved'
+
+export interface SeatCraftSectionVO {
+  id: number
+  sectionKey: string
+  name: string
+  rows: number
+  cols: number
+  x: number
+  y: number
+  color: string
+  type: SeatCraftSectionType
+  layout: SeatCraftSectionLayout
+  radius?: number | null
+  arcSpan?: number | null
+  rotation?: number | null
+  primeRowStart?: number | null
+  primeRowEnd?: number | null
+  primeColStart?: number | null
+  primeColEnd?: number | null
+  seatCount?: number | null
+  ticketTypeId?: number | null
+  price?: number | null
+}
+
+export interface SeatCraftLayoutVO {
+  id: number
+  venueId?: number | null
+  activityId?: number | null
+  sessionId?: number | null
+  layoutMode?: 'unified' | 'per_session' | null
+  name: string
+  templateType: SeatCraftTemplateType
+  stageTitle: string
+  stageX: number
+  stageY: number
+  canvasWidth: number
+  canvasHeight: number
+  sections: SeatCraftSectionVO[]
 }
 
 export interface SeatMapResponse {
@@ -238,11 +319,13 @@ export interface SeatMapResponse {
   stageLabel: string
   areas: VenueAreaVO[]
   seats: SessionSeatVO[]
+  layout?: SeatCraftLayoutVO | null
 }
 
 export interface SeatTemplateResponse {
   area: VenueAreaVO
   generatedSeatCount: number
+  syncResult?: SeatTemplateSyncResponseVO | null
 }
 
 /** 票档 */
@@ -330,6 +413,14 @@ export interface PagePayResponse {
   orderId: number
   orderNo: string
   payForm: string
+}
+
+export interface QrPayResponse {
+  orderId: number
+  orderNo: string
+  amount: number
+  subject: string
+  qrCode: string
 }
 
 export interface PaymentStatusResponse {

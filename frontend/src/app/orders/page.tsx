@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { listOrders, cancelOrder, createAlipayPagePay, submitPayForm, listMyRefunds, applyRefund } from '@/lib/api'
+import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
+import { listOrders, cancelOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import type { OrderEntity, RefundRequestVO, RefundStatus } from '@/types/api'
+import type { OrderEntity, QrPayResponse, RefundRequestVO, RefundStatus } from '@/types/api'
 
 type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled'
 
@@ -77,6 +78,8 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<StatusTab>('all')
   const [cancelling, setCancelling] = useState<number | null>(null)
   const [paying, setPaying] = useState<number | null>(null)
+  const [qrPay, setQrPay] = useState<QrPayResponse | null>(null)
+  const [refreshing, setRefreshing] = useState<number | null>(null)
   const [refunds, setRefunds] = useState<RefundRequestVO[]>([])
   const [refundTarget, setRefundTarget] = useState<EnrichedOrder | null>(null)
   const [refundReason, setRefundReason] = useState('')
@@ -128,14 +131,29 @@ export default function OrdersPage() {
   const handlePay = async (orderId: number) => {
     setPaying(orderId)
     try {
-      const pay = await createAlipayPagePay(orderId)
-      submitPayForm(pay.payForm)
-      window.setTimeout(() => {
-        setPaying((current) => (current === orderId ? null : current))
-      }, 3000)
+      const pay = await createAlipayQrPay(orderId)
+      setQrPay(pay)
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : '支付失败')
+    } finally {
       setPaying(null)
+    }
+  }
+
+  const handleRefreshPayment = async (orderId: number) => {
+    setRefreshing(orderId)
+    try {
+      const result = await syncAlipayPayment(orderId)
+      if (result.orderStatus === 2 || result.paymentStatus === 1) {
+        setOrders((prev) => prev.map((order) => (order.id === orderId ? { ...order, status: 2 } : order)))
+        setQrPay((current) => (current?.orderId === orderId ? null : current))
+      } else {
+        alert(result.message || '支付结果确认中')
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '刷新支付状态失败')
+    } finally {
+      setRefreshing(null)
     }
   }
 
@@ -293,17 +311,25 @@ export default function OrdersPage() {
                         <>
                           <button
                             onClick={() => handlePay(order.id)}
-                            disabled={paying === order.id}
+                            disabled={paying === order.id || refreshing === order.id || cancelling === order.id}
                             className="cursor-pointer border-none outline-none text-white text-[14px] px-6 py-2 rounded"
-                            style={{ backgroundColor: '#ff1268', opacity: paying === order.id ? 0.7 : 1 }}
+                            style={{ backgroundColor: '#ff1268', opacity: paying === order.id || refreshing === order.id || cancelling === order.id ? 0.7 : 1 }}
                           >
                             {paying === order.id ? '支付中...' : '去支付'}
                           </button>
                           <button
+                            onClick={() => handleRefreshPayment(order.id)}
+                            disabled={refreshing === order.id || paying === order.id || cancelling === order.id}
+                            className="cursor-pointer border border-[#ff1268] bg-white text-[#ff1268] text-[14px] px-6 py-2 rounded outline-none"
+                            style={{ opacity: refreshing === order.id || paying === order.id || cancelling === order.id ? 0.7 : 1 }}
+                          >
+                            {refreshing === order.id ? '刷新中...' : '刷新状态'}
+                          </button>
+                          <button
                             onClick={() => handleCancel(order.id)}
-                            disabled={cancelling === order.id}
+                            disabled={cancelling === order.id || paying === order.id || refreshing === order.id}
                             className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
-                            style={{ opacity: cancelling === order.id ? 0.7 : 1 }}
+                            style={{ opacity: cancelling === order.id || paying === order.id || refreshing === order.id ? 0.7 : 1 }}
                           >
                             {cancelling === order.id ? '取消中...' : '取消订单'}
                           </button>
@@ -344,6 +370,17 @@ export default function OrdersPage() {
           </div>
         )}
       </main>
+      {qrPay && (
+        <AlipayQrPayModal
+          pay={qrPay}
+          productName={orders.find((order) => order.id === qrPay.orderId)?.activityName || '万象票务订单'}
+          onClose={() => setQrPay(null)}
+          onPaid={(result) => {
+            setOrders((prev) => prev.map((order) => (order.id === result.orderId ? { ...order, status: 2 } : order)))
+            setQrPay(null)
+          }}
+        />
+      )}
       {refundTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
           <div className="w-full max-w-[420px] rounded-lg bg-white p-6 shadow-xl">

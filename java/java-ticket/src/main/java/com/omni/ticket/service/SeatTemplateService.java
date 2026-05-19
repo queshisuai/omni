@@ -2,6 +2,7 @@ package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.VenueSeatRequest;
 import com.omni.ticket.dto.SeatTemplateResponse;
 import com.omni.ticket.entity.UserRef;
 import com.omni.ticket.entity.Venue;
@@ -75,6 +76,56 @@ public class SeatTemplateService {
                 .orderByAsc(VenueSeat::getSeatNo));
     }
 
+    public VenueSeat createSeat(VenueSeatRequest request) {
+        validateSeatUserId(request == null ? null : request.getUserId());
+        requireAdmin(request.getUserId());
+        validateSeatRequest(request);
+        ensureNoActiveSeatConflict(null, request.getAreaId(), request.getRowNo(), request.getSeatNo());
+        VenueSeat disabledSeat = findDisabledSeat(request.getAreaId(), request.getRowNo(), request.getSeatNo());
+        if (disabledSeat != null) {
+            applySeatRequest(disabledSeat, request, true);
+            disabledSeat.setStatus(request.getStatus() == null ? 1 : request.getStatus());
+            venueSeatMapper.updateById(disabledSeat);
+            return disabledSeat;
+        }
+        VenueSeat seat = new VenueSeat();
+        applySeatRequest(seat, request, true);
+        seat.setCreateTime(LocalDateTime.now());
+        venueSeatMapper.insert(seat);
+        return seat;
+    }
+
+    public VenueSeat updateSeat(Long seatId, VenueSeatRequest request) {
+        validateSeatUserId(request == null ? null : request.getUserId());
+        requireAdmin(request.getUserId());
+        Long validSeatId = requirePositiveLong(seatId, "座位ID不正确");
+        validateSeatRequest(request);
+        VenueSeat seat = venueSeatMapper.selectById(validSeatId);
+        if (seat == null) {
+            throw new BusinessException(404, "座位不存在");
+        }
+        if (!request.getVenueId().equals(seat.getVenueId())) {
+            throw new BusinessException(400, "座位不能切换场馆");
+        }
+        ensureNoActiveSeatConflict(validSeatId, request.getAreaId(), request.getRowNo(), request.getSeatNo());
+        applySeatRequest(seat, request, false);
+        venueSeatMapper.updateById(seat);
+        return seat;
+    }
+
+    public VenueSeat deleteSeat(Long userId, Long seatId) {
+        validateSeatUserId(userId);
+        requireAdmin(userId);
+        Long validSeatId = requirePositiveLong(seatId, "座位ID不正确");
+        VenueSeat seat = venueSeatMapper.selectById(validSeatId);
+        if (seat == null) {
+            throw new BusinessException(404, "座位不存在");
+        }
+        seat.setStatus(0);
+        venueSeatMapper.updateById(seat);
+        return seat;
+    }
+
     private int generateSeats(VenueArea area) {
         int count = 0;
         for (int rowIndex = 0; rowIndex < area.getRowCount(); rowIndex++) {
@@ -96,6 +147,95 @@ public class SeatTemplateService {
             }
         }
         return count;
+    }
+
+    private void validateSeatRequest(VenueSeatRequest request) {
+        if (request == null) {
+            throw new BusinessException(400, "参数不能为空");
+        }
+        requirePositiveLong(request.getVenueId(), "场馆ID不正确");
+        requirePositiveLong(request.getAreaId(), "区域ID不正确");
+        requirePositiveInt(request.getRowNo(), "排号必须大于0");
+        requirePositiveInt(request.getSeatNo(), "座号必须大于0");
+        requireNonNegativeInt(request.getX(), "横坐标不能小于0");
+        requireNonNegativeInt(request.getY(), "纵坐标不能小于0");
+        if (request.getStatus() != null && !Integer.valueOf(0).equals(request.getStatus()) && !Integer.valueOf(1).equals(request.getStatus())) {
+            throw new BusinessException(400, "座位状态不正确");
+        }
+        Venue venue = venueMapper.selectById(request.getVenueId());
+        if (venue == null || !Integer.valueOf(1).equals(venue.getStatus())) {
+            throw new BusinessException(400, "场馆不存在或已停用");
+        }
+        VenueArea area = venueAreaMapper.selectById(request.getAreaId());
+        if (area == null || !request.getVenueId().equals(area.getVenueId())) {
+            throw new BusinessException(400, "区域不存在或不属于该场馆");
+        }
+    }
+
+    private void validateSeatUserId(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new BusinessException(400, "用户ID不正确");
+        }
+    }
+
+    private void applySeatRequest(VenueSeat seat, VenueSeatRequest request, boolean creating) {
+        seat.setVenueId(request.getVenueId());
+        seat.setAreaId(request.getAreaId());
+        seat.setRowNo(request.getRowNo());
+        seat.setSeatNo(request.getSeatNo());
+        String label = trim(request.getSeatLabel());
+        seat.setSeatLabel(label == null || label.isEmpty() ? request.getRowNo() + "排" + request.getSeatNo() + "座" : label);
+        seat.setX(request.getX() == null ? 0 : request.getX());
+        seat.setY(request.getY() == null ? 0 : request.getY());
+        if (request.getStatus() != null) {
+            seat.setStatus(request.getStatus());
+        } else if (creating) {
+            seat.setStatus(1);
+        }
+    }
+
+    private VenueSeat findDisabledSeat(Long areaId, Integer rowNo, Integer seatNo) {
+        List<VenueSeat> seats = venueSeatMapper.selectList(new LambdaQueryWrapper<VenueSeat>()
+                .eq(VenueSeat::getAreaId, areaId)
+                .eq(VenueSeat::getRowNo, rowNo)
+                .eq(VenueSeat::getSeatNo, seatNo)
+                .eq(VenueSeat::getStatus, 0));
+        return seats == null || seats.isEmpty() ? null : seats.get(0);
+    }
+
+    private void ensureNoActiveSeatConflict(Long currentSeatId, Long areaId, Integer rowNo, Integer seatNo) {
+        List<VenueSeat> seats = venueSeatMapper.selectList(new LambdaQueryWrapper<VenueSeat>()
+                .eq(VenueSeat::getAreaId, areaId)
+                .eq(VenueSeat::getRowNo, rowNo)
+                .eq(VenueSeat::getSeatNo, seatNo)
+                .eq(VenueSeat::getStatus, 1));
+        if (seats == null || seats.isEmpty()) {
+            return;
+        }
+        boolean conflict = seats.stream().anyMatch(seat -> currentSeatId == null || !currentSeatId.equals(seat.getId()));
+        if (conflict) {
+            throw new BusinessException(400, "同区域排座已存在");
+        }
+    }
+
+    private Long requirePositiveLong(Long value, String message) {
+        if (value == null || value <= 0) {
+            throw new BusinessException(400, message);
+        }
+        return value;
+    }
+
+    private Integer requirePositiveInt(Integer value, String message) {
+        if (value == null || value <= 0) {
+            throw new BusinessException(400, message);
+        }
+        return value;
+    }
+
+    private void requireNonNegativeInt(Integer value, String message) {
+        if (value != null && value < 0) {
+            throw new BusinessException(400, message);
+        }
     }
 
     private void requireAdmin(Long userId) {

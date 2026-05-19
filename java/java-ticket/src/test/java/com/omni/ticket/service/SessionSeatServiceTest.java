@@ -15,6 +15,7 @@ import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,12 +29,27 @@ class SessionSeatServiceTest {
     private VenueSeatMapper venueSeatMapper;
     @Mock
     private SessionSeatMapper sessionSeatMapper;
+    @Mock
+    private SessionSeatLayoutService sessionSeatLayoutService;
 
     private SessionSeatService service;
 
     @BeforeEach
     void setUp() {
         service = new SessionSeatService(sessionMapper, venueSeatMapper, sessionSeatMapper);
+    }
+
+    @Test
+    void generateForSessionDelegatesToLayoutServiceWhenHasLayout() {
+        when(sessionSeatLayoutService.hasLayout(101L)).thenReturn(true);
+        when(sessionSeatLayoutService.generateSessionSeats(101L)).thenReturn(42);
+        SessionSeatService serviceWithLayout = new SessionSeatService(sessionMapper, venueSeatMapper, sessionSeatMapper, sessionSeatLayoutService);
+
+        int result = serviceWithLayout.generateForSession(101L);
+
+        assertEquals(42, result);
+        verify(sessionSeatLayoutService).generateSessionSeats(101L);
+        verify(sessionMapper, never()).selectById(any());
     }
 
     @Test

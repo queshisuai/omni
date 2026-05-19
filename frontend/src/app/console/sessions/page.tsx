@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { createAdminSession, createAdminTicketType, listAdminActivities, listAdminSessions, listAdminVenues, listVenueAreas, updateAdminSession } from '@/lib/api'
+import { createAdminSession, createAdminTicketType, ensureSeatLayoutTemplates, getActivitySeatLayout, getSessionTicketDrafts, listAdminActivities, listAdminSessions, listAdminVenues, listVenueAreas, updateAdminSession } from '@/lib/api'
 import { Edit, Plus, RefreshCw, X } from 'lucide-react'
-import type { ActivityEntity, SessionAdminVO, VenueAreaVO, VenueEntity } from '@/types/api'
+import type { ActivityEntity, SeatCraftLayoutVO, SeatCraftSectionVO, SessionAdminVO, VenueAreaVO, VenueEntity } from '@/types/api'
 
 const PAGE_SIZE = 10
 
@@ -15,6 +16,9 @@ type SessionForm = {
   startTime: string
   endTime: string
   status: string
+  seatLayoutSource: 'none' | 'activity' | 'template'
+  templateId: string
+  activityLayoutId: string
 }
 
 const emptyForm: SessionForm = {
@@ -23,9 +27,21 @@ const emptyForm: SessionForm = {
   startTime: '',
   endTime: '',
   status: '1',
+  seatLayoutSource: 'none',
+  templateId: '',
+  activityLayoutId: '',
 }
 
 export default function SessionsPage() {
+  return (
+    <Suspense fallback={<div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>}>
+      <SessionsPageContent />
+    </Suspense>
+  )
+}
+
+function SessionsPageContent() {
+  const searchParams = useSearchParams()
   const [userId, setUserId] = useState(0)
   const [sessions, setSessions] = useState<SessionAdminVO[]>([])
   const [activities, setActivities] = useState<ActivityEntity[]>([])
@@ -40,6 +56,10 @@ export default function SessionsPage() {
   const [pages, setPages] = useState(1)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<SessionForm>(emptyForm)
+  const [activitySeatLayout, setActivitySeatLayout] = useState<SeatCraftLayoutVO | null>(null)
+  const [seatTemplates, setSeatTemplates] = useState<SeatCraftLayoutVO[]>([])
+  const [layoutLoading, setLayoutLoading] = useState(false)
+  const layoutRequestRef = useRef(0)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [ticketFormSession, setTicketFormSession] = useState<SessionAdminVO | null>(null)
@@ -47,9 +67,14 @@ export default function SessionsPage() {
   const [ticketName, setTicketName] = useState('')
   const [ticketPrice, setTicketPrice] = useState('')
   const [selectedAreaIds, setSelectedAreaIds] = useState<number[]>([])
+  const [ticketDrafts, setTicketDrafts] = useState<SeatCraftSectionVO[]>([])
+  const [selectedLayoutSectionIds, setSelectedLayoutSectionIds] = useState<number[]>([])
   const [ticketMessage, setTicketMessage] = useState('')
+  const ticketDraftRequestRef = useRef(0)
+  const rawActivityId = searchParams.get('activityId') || ''
+  const currentActivityId = isPositiveInteger(rawActivityId) ? rawActivityId : ''
 
-  const loadSessions = (nextPage = page) => {
+  const loadSessions = (nextPage = page, nextActivityFilter = activityFilter) => {
     const u = getUser()
     if (!u) return
     setUserId(u.userId)
@@ -58,7 +83,7 @@ export default function SessionsPage() {
     listAdminSessions(u.userId, {
       page: nextPage,
       size: PAGE_SIZE,
-      activityId: activityFilter ? Number(activityFilter) : undefined,
+      activityId: nextActivityFilter ? Number(nextActivityFilter) : undefined,
       venueId: venueFilter ? Number(venueFilter) : undefined,
       status: statusFilter === '' ? undefined : Number(statusFilter),
     }).then(res => {
@@ -77,10 +102,11 @@ export default function SessionsPage() {
     const u = getUser()
     if (!u) return
     setUserId(u.userId)
+    setActivityFilter(currentActivityId)
     listAdminActivities(u.userId, { page: 1, size: 100 }).then(res => setActivities(res.records)).catch(() => {})
     listAdminVenues(u.userId).then(setVenues).catch(() => {})
-    loadSessions(1)
-  }, [])
+    loadSessions(1, currentActivityId)
+  }, [currentActivityId])
 
   const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -90,6 +116,8 @@ export default function SessionsPage() {
 
   const openCreate = () => {
     setForm(emptyForm)
+    setActivitySeatLayout(null)
+    setSeatTemplates([])
     setFormError('')
     setFormOpen(true)
   }
@@ -102,14 +130,52 @@ export default function SessionsPage() {
       startTime: toInputTime(session.startTime),
       endTime: session.endTime ? toInputTime(session.endTime) : '',
       status: String(session.status),
+      seatLayoutSource: 'none',
+      templateId: '',
+      activityLayoutId: '',
     })
     setFormError('')
     setFormOpen(true)
   }
 
+  const loadSeatLayoutOptions = async (nextForm: SessionForm) => {
+    const requestId = layoutRequestRef.current + 1
+    layoutRequestRef.current = requestId
+    if (nextForm.id || !isPositiveInteger(nextForm.activityId) || !isPositiveInteger(nextForm.venueId)) {
+      setActivitySeatLayout(null)
+      setSeatTemplates([])
+      setLayoutLoading(false)
+      return
+    }
+    setLayoutLoading(true)
+    try {
+      const [activityLayout, templates] = await Promise.all([
+        getActivitySeatLayout(Number(nextForm.activityId), userId).catch(() => null),
+        ensureSeatLayoutTemplates(Number(nextForm.venueId), userId).catch(() => [] as SeatCraftLayoutVO[]),
+      ])
+      if (layoutRequestRef.current !== requestId) return
+      setActivitySeatLayout(activityLayout)
+      setSeatTemplates(templates)
+      setForm(current => {
+        if (current.id || current.activityId !== nextForm.activityId || current.venueId !== nextForm.venueId) return current
+        if (current.seatLayoutSource === 'activity' && activityLayout) {
+          return { ...current, activityLayoutId: String(activityLayout.id), templateId: '' }
+        }
+        if (current.seatLayoutSource === 'template' && templates.length > 0) {
+          return { ...current, templateId: String(templates[0].id), activityLayoutId: '' }
+        }
+        return current
+      })
+    } finally {
+      if (layoutRequestRef.current === requestId) setLayoutLoading(false)
+    }
+  }
+
   const validateForm = () => {
     if (!form.activityId) return '请选择活动'
+    if (!isPositiveInteger(form.activityId)) return '活动ID不正确'
     if (!form.venueId) return '请选择场馆'
+    if (!isPositiveInteger(form.venueId)) return '场馆ID不正确'
     if (!form.startTime) return '请选择开始时间'
     if (form.endTime && new Date(form.endTime).getTime() <= new Date(form.startTime).getTime()) {
       return '结束时间必须晚于开始时间'
@@ -134,6 +200,8 @@ export default function SessionsPage() {
         startTime: form.startTime,
         endTime: form.endTime || null,
         status: Number(form.status),
+        ...(form.seatLayoutSource === 'activity' && form.activityLayoutId ? { activityLayoutId: Number(form.activityLayoutId) } : {}),
+        ...(form.seatLayoutSource === 'template' && form.templateId ? { templateId: Number(form.templateId) } : {}),
       }
       if (form.id) {
         await updateAdminSession(form.id, body)
@@ -154,17 +222,48 @@ export default function SessionsPage() {
     setTicketName('')
     setTicketPrice('')
     setSelectedAreaIds([])
+    setSessionAreas([])
+    setTicketDrafts([])
+    setSelectedLayoutSectionIds([])
     setTicketMessage('')
-    listVenueAreas(session.venueId, userId).then(setSessionAreas).catch(() => setSessionAreas([]))
+    const requestId = ticketDraftRequestRef.current + 1
+    ticketDraftRequestRef.current = requestId
+    getSessionTicketDrafts(session.id, userId)
+      .then(drafts => {
+        if (ticketDraftRequestRef.current !== requestId) return
+        setTicketDrafts(drafts)
+        setSelectedLayoutSectionIds(drafts.filter(draft => !draft.ticketTypeId).map(draft => draft.id))
+        if (drafts.length === 0) {
+          listVenueAreas(session.venueId, userId).then(areas => {
+            if (ticketDraftRequestRef.current === requestId) setSessionAreas(areas)
+          }).catch(() => {
+            if (ticketDraftRequestRef.current === requestId) setSessionAreas([])
+          })
+        }
+      })
+      .catch(() => {
+        if (ticketDraftRequestRef.current !== requestId) return
+        setTicketDrafts([])
+        listVenueAreas(session.venueId, userId).then(areas => {
+          if (ticketDraftRequestRef.current === requestId) setSessionAreas(areas)
+        }).catch(() => {
+          if (ticketDraftRequestRef.current === requestId) setSessionAreas([])
+        })
+      })
   }
 
   const toggleArea = (areaId: number) => {
     setSelectedAreaIds(current => current.includes(areaId) ? current.filter(id => id !== areaId) : [...current, areaId])
   }
 
-  const estimatedStock = sessionAreas
-    .filter(area => selectedAreaIds.includes(area.id))
-    .reduce((sum, area) => sum + area.rowCount * area.seatsPerRow, 0)
+  const toggleLayoutSection = (sectionId: number) => {
+    setSelectedLayoutSectionIds(current => current.includes(sectionId) ? current.filter(id => id !== sectionId) : [...current, sectionId])
+  }
+
+  const usingSeatCraftDrafts = ticketDrafts.length > 0
+  const estimatedStock = usingSeatCraftDrafts
+    ? ticketDrafts.filter(section => selectedLayoutSectionIds.includes(section.id)).reduce((sum, section) => sum + (section.seatCount || section.rows * section.cols), 0)
+    : sessionAreas.filter(area => selectedAreaIds.includes(area.id)).reduce((sum, area) => sum + area.rowCount * area.seatsPerRow, 0)
 
   const handleCreateTicketType = async () => {
     if (!ticketFormSession) return
@@ -176,7 +275,11 @@ export default function SessionsPage() {
       setTicketMessage('请填写有效票价')
       return
     }
-    if (selectedAreaIds.length === 0) {
+    if (usingSeatCraftDrafts && selectedLayoutSectionIds.length === 0) {
+      setTicketMessage('请选择绑定分区')
+      return
+    }
+    if (!usingSeatCraftDrafts && selectedAreaIds.length === 0) {
       setTicketMessage('请选择绑定区域')
       return
     }
@@ -186,9 +289,12 @@ export default function SessionsPage() {
         sessionId: ticketFormSession.id,
         name: ticketName.trim(),
         price: Number(ticketPrice),
-        areaIds: selectedAreaIds,
+        totalStock: estimatedStock,
+        ...(usingSeatCraftDrafts ? { layoutSectionIds: selectedLayoutSectionIds } : { areaIds: selectedAreaIds }),
       })
       setTicketMessage('票档已创建，库存已按区域座位自动计算')
+      setSelectedLayoutSectionIds([])
+      setTicketDrafts(current => current.map(section => selectedLayoutSectionIds.includes(section.id) ? { ...section, ticketTypeId: -1 } : section))
       loadSessions(page)
     } catch (err) {
       setTicketMessage(err instanceof Error ? err.message : '创建票档失败')
@@ -233,14 +339,22 @@ export default function SessionsPage() {
           <div className="grid gap-3 lg:grid-cols-2">
             <label className="block text-[13px] text-[#666]">
               活动 *
-              <select value={form.activityId} disabled={Boolean(form.id)} onChange={event => setForm({ ...form, activityId: event.target.value })} className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]">
+              <select value={form.activityId} disabled={Boolean(form.id)} onChange={event => {
+                const nextForm = { ...form, activityId: event.target.value, seatLayoutSource: 'none' as const, activityLayoutId: '', templateId: '' }
+                setForm(nextForm)
+                loadSeatLayoutOptions(nextForm)
+              }} className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]">
                 <option value="">请选择活动</option>
                 {activities.map(activity => <option key={activity.id} value={activity.id}>{activity.name}</option>)}
               </select>
             </label>
             <label className="block text-[13px] text-[#666]">
               场馆 *
-              <select value={form.venueId} onChange={event => setForm({ ...form, venueId: event.target.value })} className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
+              <select value={form.venueId} onChange={event => {
+                const nextForm = { ...form, venueId: event.target.value, seatLayoutSource: 'none' as const, activityLayoutId: '', templateId: '' }
+                setForm(nextForm)
+                loadSeatLayoutOptions(nextForm)
+              }} className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
                 <option value="">请选择场馆</option>
                 {venues.map(venue => <option key={venue.id} value={venue.id}>{venue.name} ({venue.city})</option>)}
               </select>
@@ -261,6 +375,29 @@ export default function SessionsPage() {
               </select>
             </label>
           </div>
+          {!form.id && (
+            <div className="mt-4 rounded-xl border border-[#f0f0f0] bg-[#fafafa] p-4">
+              <div className="mb-3 text-[13px] font-semibold text-[#333]">SeatCraft 座位图来源</div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <label className={`rounded-lg border p-3 text-[12px] ${form.seatLayoutSource === 'none' ? 'border-[#ff1268] bg-white' : 'border-[#e5e5e5]'}`}>
+                  <input type="radio" checked={form.seatLayoutSource === 'none'} onChange={() => setForm({ ...form, seatLayoutSource: 'none', activityLayoutId: '', templateId: '' })} /> 不复制座位图
+                </label>
+                <label className={`rounded-lg border p-3 text-[12px] ${form.seatLayoutSource === 'activity' ? 'border-[#ff1268] bg-white' : 'border-[#e5e5e5]'}`}>
+                  <input type="radio" disabled={!activitySeatLayout || layoutLoading} checked={form.seatLayoutSource === 'activity'} onChange={() => setForm({ ...form, seatLayoutSource: 'activity', activityLayoutId: activitySeatLayout ? String(activitySeatLayout.id) : '', templateId: '' })} /> 从活动统一图复制
+                  <div className="mt-1 text-[#999]">{activitySeatLayout ? activitySeatLayout.name : '当前活动无统一图'}</div>
+                </label>
+                <label className={`rounded-lg border p-3 text-[12px] ${form.seatLayoutSource === 'template' ? 'border-[#ff1268] bg-white' : 'border-[#e5e5e5]'}`}>
+                  <input type="radio" disabled={seatTemplates.length === 0 || layoutLoading} checked={form.seatLayoutSource === 'template'} onChange={() => setForm({ ...form, seatLayoutSource: 'template', templateId: seatTemplates[0] ? String(seatTemplates[0].id) : '', activityLayoutId: '' })} /> 从场馆模板复制
+                  <div className="mt-1 text-[#999]">{seatTemplates.length} 个可用模板</div>
+                </label>
+              </div>
+              {form.seatLayoutSource === 'template' && (
+                <select value={form.templateId} onChange={event => setForm({ ...form, templateId: event.target.value })} className="mt-3 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
+                  {seatTemplates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
+                </select>
+              )}
+            </div>
+          )}
           {formError && <div className="mt-3 text-[13px] text-[#ef4444]">{formError}</div>}
           <div className="mt-4 flex justify-end gap-2">
             <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666]">取消</button>
@@ -344,16 +481,22 @@ export default function SessionsPage() {
             <input value={ticketName} onChange={event => setTicketName(event.target.value)} className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="票档名称，如 VIP" />
             <input type="number" value={ticketPrice} onChange={event => setTicketPrice(event.target.value)} className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="票价" />
           </div>
-          <div className="mb-3 text-[13px] text-[#666]">选择区域后，库存由该场次区域可售座位自动计算。预计库存：{estimatedStock}</div>
+          <div className="mb-3 text-[13px] text-[#666]">{usingSeatCraftDrafts ? '选择 SeatCraft 分区后，库存由分区座位自动计算。' : '选择区域后，库存由该场次区域可售座位自动计算。'}预计库存：{estimatedStock}</div>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {sessionAreas.map(area => (
+            {usingSeatCraftDrafts ? ticketDrafts.map(section => (
+              <label key={section.id} className={`cursor-pointer rounded-lg border p-3 text-[13px] ${selectedLayoutSectionIds.includes(section.id) ? 'border-[#ff1268] bg-[#fff7fa]' : 'border-[#f0f0f0]'}`}>
+                <div className="flex items-center gap-2 font-medium text-[#333]"><input type="checkbox" checked={selectedLayoutSectionIds.includes(section.id)} onChange={() => toggleLayoutSection(section.id)} disabled={Boolean(section.ticketTypeId)} />{section.name}</div>
+                <div className="mt-1 text-[#666]">{section.rows} 排 × 每排 {section.cols} 座</div>
+                {section.ticketTypeId && <div className="mt-1 text-[#999]">已绑定票档 #{section.ticketTypeId}</div>}
+              </label>
+            )) : sessionAreas.map(area => (
               <label key={area.id} className={`cursor-pointer rounded-lg border p-3 text-[13px] ${selectedAreaIds.includes(area.id) ? 'border-[#ff1268] bg-[#fff7fa]' : 'border-[#f0f0f0]'}`}>
                 <div className="flex items-center gap-2 font-medium text-[#333]"><input type="checkbox" checked={selectedAreaIds.includes(area.id)} onChange={() => toggleArea(area.id)} />{area.name}</div>
                 <div className="mt-1 text-[#666]">{area.rowCount} 排 × 每排 {area.seatsPerRow} 座</div>
               </label>
             ))}
           </div>
-          {sessionAreas.length === 0 && <div className="rounded-lg border border-[#f0f0f0] p-4 text-[13px] text-[#999]">当前场馆还没有配置座位区域，请先到场馆管理配置。</div>}
+          {!usingSeatCraftDrafts && sessionAreas.length === 0 && <div className="rounded-lg border border-[#f0f0f0] p-4 text-[13px] text-[#999]">当前场馆还没有配置座位区域，请先到场馆管理配置。</div>}
           {ticketMessage && <div className="mt-3 text-[13px] text-[#666]">{ticketMessage}</div>}
           <button onClick={handleCreateTicketType} className="mt-4 rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">创建票档</button>
         </div>
@@ -368,4 +511,8 @@ function toInputTime(value: string) {
 
 function formatTime(value: string) {
   return value ? value.replace('T', ' ').substring(0, 16) : '-'
+}
+
+function isPositiveInteger(value: string) {
+  return /^[1-9]\d*$/.test(value)
 }

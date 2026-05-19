@@ -15,6 +15,7 @@ public class SeatMapResponse {
     private String stageLabel;
     private List<VenueArea> areas;
     private List<SessionSeat> seats;
+    private SeatCraftLayoutDtos.LayoutResponse layout;
 
     public static SeatMapResponse of(Long sessionId, TicketType ticketType, List<VenueArea> areas, List<SessionSeat> seats) {
         SeatMapResponse response = new SeatMapResponse();
@@ -42,4 +43,6 @@ public class SeatMapResponse {
     public void setAreas(List<VenueArea> areas) { this.areas = areas; }
     public List<SessionSeat> getSeats() { return seats; }
     public void setSeats(List<SessionSeat> seats) { this.seats = seats; }
+    public SeatCraftLayoutDtos.LayoutResponse getLayout() { return layout; }
+    public void setLayout(SeatCraftLayoutDtos.LayoutResponse layout) { this.layout = layout; }
 }

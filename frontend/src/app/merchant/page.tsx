@@ -37,6 +37,12 @@ function statusMeta(status: OrganizerApplicationStatus) {
   return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
 }
 
+function currentQualificationMeta(isCancelled: boolean, application?: OrganizerApplicationVO | null) {
+  if (isCancelled) return { text: '主办方资格已取消', color: '#7c3aed', bg: '#f5f3ff' }
+  if (!application) return null
+  return statusMeta(application.status)
+}
+
 function roleLabel(role?: UserRole | null) {
   if (role === 'admin') return '平台管理员'
   if (role === 'organizer') return '商户账号'
@@ -118,12 +124,8 @@ export default function MerchantPage() {
     }
   }, [router])
 
-  const statusInfo = useMemo(() => {
-    if (!application) return null
-    return statusMeta(application.status)
-  }, [application])
-
   const isCancelledOrganizer = userInfo?.organizerStatus === 3 && userInfo?.role === 'user'
+  const statusInfo = useMemo(() => currentQualificationMeta(isCancelledOrganizer, application), [application, isCancelledOrganizer])
   const canEditForm = isCancelledOrganizer || !application || application.status === 0 || application.status === 2
   const isApproved = !isCancelledOrganizer && application?.status === 1
 
@@ -293,10 +295,10 @@ export default function MerchantPage() {
                       当前状态：{statusInfo?.text}
                     </div>
                     <div className="mt-1 text-[#666]">
-                      {application.status === 1
-                        ? isCancelledOrganizer
-                          ? '主办方资格已取消，可重新提交入驻申请。'
-                          : '已通过，可进入后台。'
+                      {isCancelledOrganizer
+                        ? '主办方资格已取消，可重新提交入驻申请。'
+                        : application.status === 1
+                          ? '已通过，可进入后台。'
                         : application.status === 2
                           ? '驳回后可修改后重新提交。'
                           : '资料正在审核中。'}
@@ -429,6 +431,7 @@ export default function MerchantPage() {
                     <StateItem label="0 待审核" desc="申请已提交，等待平台审核。" color="#ff7a00" />
                     <StateItem label="1 已通过" desc="可以直接进入商户后台。" color="#16a34a" />
                     <StateItem label="2 已驳回" desc="查看驳回原因并修改后重新提交。" color="#ef4444" />
+                    <StateItem label="3 已取消资格" desc="账号已降级为普通用户，可重新提交入驻申请。" color="#7c3aed" />
                   </div>
                 </section>
 

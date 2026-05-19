@@ -8,6 +8,7 @@ public class PaymentStatusResponse {
     private Integer paymentStatus;
     private String tradeNo;
     private String message;
+    private Boolean statusConfirmed;
 
     public Long getOrderId() {
         return orderId;
@@ -55,5 +56,13 @@ public class PaymentStatusResponse {
 
     public void setMessage(String message) {
         this.message = message;
+    }
+
+    public Boolean getStatusConfirmed() {
+        return statusConfirmed;
+    }
+
+    public void setStatusConfirmed(Boolean statusConfirmed) {
+        this.statusConfirmed = statusConfirmed;
     }
 }

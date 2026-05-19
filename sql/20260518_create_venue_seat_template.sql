@@ -30,4 +30,4 @@ CREATE INDEX idx_venue_area_venue ON venue_area(venue_id);
 CREATE INDEX idx_venue_area_status ON venue_area(status);
 CREATE INDEX idx_venue_seat_venue ON venue_seat(venue_id);
 CREATE INDEX idx_venue_seat_area ON venue_seat(area_id);
-CREATE UNIQUE INDEX idx_venue_seat_area_position ON venue_seat(area_id, row_no, seat_no);
+CREATE UNIQUE INDEX idx_venue_seat_area_position ON venue_seat(area_id, row_no, seat_no) WHERE status = 1;

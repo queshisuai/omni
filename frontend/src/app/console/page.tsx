@@ -2,20 +2,27 @@
 
 import { useEffect, useState } from 'react'
 import { getUser } from '@/lib/auth'
-import { listAdminActivities } from '@/lib/api'
+import { getAdminSummary } from '@/lib/api'
 import { CalendarDays, ShoppingCart, Ticket } from 'lucide-react'
 
 export default function ConsoleHome() {
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null)
-  const [stats, setStats] = useState({ activityCount: 0 })
+  const [stats, setStats] = useState<{ activityCount: number; ticketTypeCount: number; paidOrderCount: number } | null>(null)
+  const [statsError, setStatsError] = useState('')
 
   useEffect(() => {
     const u = getUser()
     setUser(u)
     if (u) {
-      listAdminActivities(u.userId, { page: 1, size: 1 }).then(res => {
-        setStats({ activityCount: res.total })
-      }).catch(() => {})
+      setStats(null)
+      setStatsError('')
+      getAdminSummary(u.userId)
+        .then(res => {
+          setStats(res)
+        })
+        .catch(() => {
+          setStatsError('统计加载失败')
+        })
     }
   }, [])
 
@@ -32,8 +39,9 @@ export default function ConsoleHome() {
               <CalendarDays className="w-6 h-6 text-[#ff1268]" />
             </div>
             <div>
-              <div className="text-[28px] font-bold text-[#1a1a2e]">{stats.activityCount}</div>
+              <div className="text-[28px] font-bold text-[#1a1a2e]">{statsError ? '加载失败' : stats?.activityCount ?? '-'}</div>
               <div className="text-[13px] text-[#999]">我的活动</div>
+              {statsError ? <div className="mt-1 text-[12px] text-[#ef4444]">{statsError}</div> : null}
             </div>
           </div>
         </div>
@@ -44,8 +52,9 @@ export default function ConsoleHome() {
               <Ticket className="w-6 h-6 text-[#3b82f6]" />
             </div>
             <div>
-              <div className="text-[28px] font-bold text-[#1a1a2e]">-</div>
+              <div className="text-[28px] font-bold text-[#1a1a2e]">{statsError ? '加载失败' : stats?.ticketTypeCount ?? '-'}</div>
               <div className="text-[13px] text-[#999]">总票档数</div>
+              {statsError ? <div className="mt-1 text-[12px] text-[#ef4444]">{statsError}</div> : null}
             </div>
           </div>
         </div>
@@ -56,8 +65,9 @@ export default function ConsoleHome() {
               <ShoppingCart className="w-6 h-6 text-[#22c55e]" />
             </div>
             <div>
-              <div className="text-[28px] font-bold text-[#1a1a2e]">-</div>
-              <div className="text-[13px] text-[#999]">总订单数</div>
+              <div className="text-[28px] font-bold text-[#1a1a2e]">{statsError ? '加载失败' : stats?.paidOrderCount ?? '-'}</div>
+              <div className="text-[13px] text-[#999]">已支付订单数</div>
+              {statsError ? <div className="mt-1 text-[12px] text-[#ef4444]">{statsError}</div> : null}
             </div>
           </div>
         </div>

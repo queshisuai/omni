@@ -4,7 +4,9 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.entity.Order;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -22,4 +24,16 @@ public interface OrderMapper extends BaseMapper<Order> {
             "WHERE o.user_id = #{userId} " +
             "ORDER BY o.create_time DESC")
     List<OrderListItemResponse> selectOrderListItems(Long userId);
+
+    @Select({"<script>",
+            "SELECT COUNT(*) FROM \"order\" WHERE status = 2",
+            "AND session_id IN",
+            "<foreach collection='sessionIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    Long countPaidOrdersBySessions(@Param("sessionIds") List<Long> sessionIds);
+
+    @Update("UPDATE \"order\" SET status = #{nextStatus}, update_time = CURRENT_TIMESTAMP WHERE id = #{id} AND status = #{expectedStatus}")
+    int updateStatusIfCurrent(@Param("id") Long id,
+                              @Param("expectedStatus") Integer expectedStatus,
+                              @Param("nextStatus") Integer nextStatus);
 }

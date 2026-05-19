@@ -14,6 +14,7 @@ public class SessionSeat {
     private Long venueId;
     private Long areaId;
     private Long venueSeatId;
+    private Long layoutSectionId;
     private Integer rowNo;
     private Integer seatNo;
     private String seatLabel;
@@ -34,6 +35,8 @@ public class SessionSeat {
     public void setAreaId(Long areaId) { this.areaId = areaId; }
     public Long getVenueSeatId() { return venueSeatId; }
     public void setVenueSeatId(Long venueSeatId) { this.venueSeatId = venueSeatId; }
+    public Long getLayoutSectionId() { return layoutSectionId; }
+    public void setLayoutSectionId(Long layoutSectionId) { this.layoutSectionId = layoutSectionId; }
     public Integer getRowNo() { return rowNo; }
     public void setRowNo(Integer rowNo) { this.rowNo = rowNo; }
     public Integer getSeatNo() { return seatNo; }

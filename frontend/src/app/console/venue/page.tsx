@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
-import { createAdminVenue, createVenueArea, listAdminVenues, listVenueAreas } from '@/lib/api'
+import { createAdminVenue, listAdminVenues } from '@/lib/api'
 import { ClipboardList, Plus } from 'lucide-react'
-import type { VenueAreaVO, VenueEntity } from '@/types/api'
+import type { VenueEntity } from '@/types/api'
 
 export default function VenuePage() {
   const [venues, setVenues] = useState<VenueEntity[]>([])
@@ -15,18 +15,6 @@ export default function VenuePage() {
   const [city, setCity] = useState('')
   const [address, setAddress] = useState('')
   const [capacity, setCapacity] = useState('')
-  const [selectedVenueId, setSelectedVenueId] = useState<number | null>(null)
-  const [areas, setAreas] = useState<VenueAreaVO[]>([])
-  const [areaMessage, setAreaMessage] = useState('')
-  const [areaForm, setAreaForm] = useState({
-    name: '',
-    rowCount: '2',
-    seatsPerRow: '10',
-    rowStart: '1',
-    seatStart: '1',
-    color: '#ff1268',
-    sort: '0',
-  })
 
   const loadData = () => {
     const u = getUser()
@@ -44,40 +32,6 @@ export default function VenuePage() {
     setName(''); setCity(''); setAddress(''); setCapacity('')
     setShowForm(false)
     loadData()
-  }
-
-  const openSeatTemplate = async (venueId: number) => {
-    const u = getUser()
-    if (!u) return
-    setSelectedVenueId(venueId)
-    setAreaMessage('')
-    listVenueAreas(venueId, u.userId).then(setAreas).catch(() => setAreas([]))
-  }
-
-  const handleCreateArea = async () => {
-    const u = getUser()
-    if (!u || !selectedVenueId) return
-    if (!areaForm.name.trim()) {
-      setAreaMessage('请填写区域名称')
-      return
-    }
-    try {
-      const response = await createVenueArea(selectedVenueId, {
-        userId: u.userId,
-        name: areaForm.name.trim(),
-        rowCount: Number(areaForm.rowCount),
-        seatsPerRow: Number(areaForm.seatsPerRow),
-        rowStart: Number(areaForm.rowStart),
-        seatStart: Number(areaForm.seatStart),
-        color: areaForm.color,
-        sort: Number(areaForm.sort),
-      })
-      setAreaMessage(`已生成 ${response.generatedSeatCount} 个座位`)
-      setAreaForm({ name: '', rowCount: '2', seatsPerRow: '10', rowStart: '1', seatStart: '1', color: '#ff1268', sort: '0' })
-      openSeatTemplate(selectedVenueId)
-    } catch (err) {
-      setAreaMessage(err instanceof Error ? err.message : '创建区域失败')
-    }
   }
 
   return (
@@ -141,7 +95,7 @@ export default function VenuePage() {
                 <td className="p-3 text-[#666]">{v.capacity ?? '-'}</td>
                 {role === 'admin' && (
                   <td className="p-3 text-center">
-                    <button onClick={() => openSeatTemplate(v.id)} className="rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">配置区域</button>
+                    <Link href={`/console/venue/${v.id}/seats`} className="inline-block rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">配置区域</Link>
                   </td>
                 )}
               </tr>
@@ -149,35 +103,6 @@ export default function VenuePage() {
           </tbody>
         </table>
       </div>
-
-      {role === 'admin' && selectedVenueId && (
-        <div className="mt-5 rounded-xl border border-[#e5e5e5] bg-white p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-[16px] font-bold text-[#1a1a2e]">座位区域模板</h2>
-            <button onClick={() => setSelectedVenueId(null)} className="text-[13px] text-[#999]">关闭</button>
-          </div>
-          <div className="mb-4 grid gap-3 lg:grid-cols-7">
-            <input value={areaForm.name} onChange={e => setAreaForm({ ...areaForm, name: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="区域名称" />
-            <input type="number" value={areaForm.rowCount} onChange={e => setAreaForm({ ...areaForm, rowCount: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="排数" />
-            <input type="number" value={areaForm.seatsPerRow} onChange={e => setAreaForm({ ...areaForm, seatsPerRow: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="每排座位数" />
-            <input type="number" value={areaForm.rowStart} onChange={e => setAreaForm({ ...areaForm, rowStart: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="起始排号" />
-            <input type="number" value={areaForm.seatStart} onChange={e => setAreaForm({ ...areaForm, seatStart: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="起始座号" />
-            <input value={areaForm.color} onChange={e => setAreaForm({ ...areaForm, color: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="颜色" />
-            <input type="number" value={areaForm.sort} onChange={e => setAreaForm({ ...areaForm, sort: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="排序" />
-          </div>
-          <button onClick={handleCreateArea} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">生成区域座位</button>
-          {areaMessage && <span className="ml-3 text-[13px] text-[#666]">{areaMessage}</span>}
-          <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {areas.map(area => (
-              <div key={area.id} className="rounded-lg border border-[#f0f0f0] p-3 text-[13px] text-[#666]">
-                <div className="mb-1 flex items-center gap-2 font-medium text-[#333]"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: area.color || '#ff1268' }} />{area.name}</div>
-                <div>{area.rowCount} 排 × 每排 {area.seatsPerRow} 座</div>
-                <div>起始：{area.rowStart} 排 {area.seatStart} 座，排序 {area.sort}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

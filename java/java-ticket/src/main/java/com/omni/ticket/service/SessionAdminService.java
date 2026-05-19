@@ -16,6 +16,7 @@ import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -34,12 +35,21 @@ public class SessionAdminService {
     private final UserRefMapper userRefMapper;
     private final TicketTypeMapper ticketTypeMapper;
     private final SessionSeatService sessionSeatService;
+    private final SessionSeatLayoutService sessionSeatLayoutService;
 
     public SessionAdminService(ActivityMapper activityMapper,
                                 SessionMapper sessionMapper,
                                 VenueMapper venueMapper,
                                 UserRefMapper userRefMapper) {
-        this(activityMapper, sessionMapper, venueMapper, userRefMapper, null, null);
+        this(activityMapper, sessionMapper, venueMapper, userRefMapper, null, null, null);
+    }
+
+    public SessionAdminService(ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               VenueMapper venueMapper,
+                               UserRefMapper userRefMapper,
+                               TicketTypeMapper ticketTypeMapper) {
+        this(activityMapper, sessionMapper, venueMapper, userRefMapper, ticketTypeMapper, null, null);
     }
 
     @Autowired
@@ -47,28 +57,23 @@ public class SessionAdminService {
                                SessionMapper sessionMapper,
                                VenueMapper venueMapper,
                                UserRefMapper userRefMapper,
-                               TicketTypeMapper ticketTypeMapper) {
-        this(activityMapper, sessionMapper, venueMapper, userRefMapper, ticketTypeMapper, null);
-    }
-
-    public SessionAdminService(ActivityMapper activityMapper,
-                               SessionMapper sessionMapper,
-                               VenueMapper venueMapper,
-                               UserRefMapper userRefMapper,
                                TicketTypeMapper ticketTypeMapper,
-                               SessionSeatService sessionSeatService) {
+                               SessionSeatService sessionSeatService,
+                               SessionSeatLayoutService sessionSeatLayoutService) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.venueMapper = venueMapper;
         this.userRefMapper = userRefMapper;
         this.ticketTypeMapper = ticketTypeMapper;
         this.sessionSeatService = sessionSeatService;
+        this.sessionSeatLayoutService = sessionSeatLayoutService;
     }
 
+    @Transactional
     public Session createSession(Map<String, Object> body) {
-        Long userId = toLong(body.get("userId"));
-        Long activityId = toLong(body.get("activityId"));
-        Long venueId = toLong(body.get("venueId"));
+        Long userId = toPositiveLong(body.get("userId"), "用户ID不正确");
+        Long activityId = toPositiveLong(body.get("activityId"), "活动ID不正确");
+        Long venueId = toPositiveLong(body.get("venueId"), "场馆ID不正确");
         LocalDateTime startTime = parseTime(body.get("startTime"));
         LocalDateTime endTime = parseOptionalTime(body.get("endTime"));
 
@@ -88,14 +93,31 @@ public class SessionAdminService {
         session.setEndTime(endTime);
         session.setStatus(1);
         sessionMapper.insert(session);
-        if (sessionSeatService != null) {
+        boolean hasSeatCraftLayout = false;
+        if (sessionSeatLayoutService != null) {
+            Object templateId = body.get("templateId");
+            Object activityLayoutId = body.get("activityLayoutId");
+            if (templateId != null) {
+                sessionSeatLayoutService.copyFromTemplate(userId, session.getId(), toPositiveLong(templateId, "模板ID不正确"));
+                hasSeatCraftLayout = true;
+            } else if (activityLayoutId != null) {
+                sessionSeatLayoutService.copyFromActivityLayout(userId, session.getId(), toPositiveLong(activityLayoutId, "活动座位图ID不正确"));
+                hasSeatCraftLayout = true;
+            }
+        }
+        if (hasSeatCraftLayout) {
+            sessionSeatLayoutService.generateSessionSeats(session.getId());
+        } else if (sessionSeatService != null) {
             sessionSeatService.generateForSession(session.getId());
         }
         return session;
     }
 
     public Session updateSession(Long id, Map<String, Object> body) {
-        Long userId = toLong(body.get("userId"));
+        if (id == null || id <= 0) {
+            throw new BusinessException(400, "场次ID不正确");
+        }
+        Long userId = toPositiveLong(body.get("userId"), "用户ID不正确");
         String role = requireRole(userId);
         Session session = sessionMapper.selectById(id);
         if (session == null) {
@@ -103,7 +125,7 @@ public class SessionAdminService {
         }
         requireManageableActivity(session.getActivityId(), userId, role);
 
-        Long venueId = body.containsKey("venueId") ? toLong(body.get("venueId")) : session.getVenueId();
+        Long venueId = body.containsKey("venueId") ? toPositiveLong(body.get("venueId"), "场馆ID不正确") : session.getVenueId();
         LocalDateTime startTime = body.containsKey("startTime") ? parseTime(body.get("startTime")) : session.getStartTime();
         LocalDateTime endTime = body.containsKey("endTime") ? parseOptionalTime(body.get("endTime")) : session.getEndTime();
         Venue venue = venueMapper.selectById(venueId);
@@ -123,17 +145,34 @@ public class SessionAdminService {
         return session;
     }
 
+    @Transactional
     public void deleteSession(Long userId, Long id) {
+        if (userId == null || userId <= 0) {
+            throw new BusinessException(400, "用户ID不正确");
+        }
+        if (id == null || id <= 0) {
+            throw new BusinessException(400, "场次ID不正确");
+        }
         String role = requireRole(userId);
         Session session = sessionMapper.selectById(id);
         if (session == null) {
             throw new BusinessException(404, "场次不存在");
         }
         requireManageableActivity(session.getActivityId(), userId, role);
+        sessionSeatService.deleteBySessionId(id);
         sessionMapper.deleteById(id);
     }
 
     public Page<SessionAdminResponse> listSessions(Long userId, Integer page, Integer size, Long activityId, Long venueId, Integer status) {
+        if (userId == null || userId <= 0) {
+            throw new BusinessException(400, "用户ID不正确");
+        }
+        if (activityId != null && activityId <= 0) {
+            throw new BusinessException(400, "活动ID不正确");
+        }
+        if (venueId != null && venueId <= 0) {
+            throw new BusinessException(400, "场馆ID不正确");
+        }
         String role = requireRole(userId);
         LambdaQueryWrapper<Session> wrapper = new LambdaQueryWrapper<>();
         if (activityId != null) {
@@ -238,11 +277,19 @@ public class SessionAdminService {
         return user.getRole();
     }
 
-    private Long toLong(Object value) {
+    private Long toPositiveLong(Object value, String message) {
         if (value == null) {
-            throw new BusinessException(400, "参数不能为空");
+            throw new BusinessException(400, message);
         }
-        return Long.valueOf(value.toString());
+        try {
+            Long parsed = Long.valueOf(value.toString());
+            if (parsed <= 0) {
+                throw new BusinessException(400, message);
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new BusinessException(400, message);
+        }
     }
 
     private LocalDateTime parseTime(Object value) {

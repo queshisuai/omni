@@ -5,8 +5,10 @@ import com.alipay.api.AlipayClient;
 import com.alipay.api.DefaultAlipayClient;
 import com.alipay.api.internal.util.AlipaySignature;
 import com.alipay.api.request.AlipayTradePagePayRequest;
+import com.alipay.api.request.AlipayTradePrecreateRequest;
 import com.alipay.api.request.AlipayTradeQueryRequest;
 import com.alipay.api.response.AlipayTradePagePayResponse;
+import com.alipay.api.response.AlipayTradePrecreateResponse;
 import com.alipay.api.response.AlipayTradeQueryResponse;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.Result;
@@ -16,11 +18,14 @@ import com.omni.payment.client.OrderClient;
 import com.omni.payment.config.AlipayProperties;
 import com.omni.payment.dto.OrderInfoResponse;
 import com.omni.payment.dto.PagePayResponse;
+import com.omni.payment.dto.PaymentSyncDecisionResponse;
 import com.omni.payment.dto.PaymentStatusResponse;
+import com.omni.payment.dto.QrPayResponse;
 import com.omni.payment.entity.Payment;
 import com.omni.payment.mapper.PaymentMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -31,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * 支付宝沙盒支付核心服务
@@ -45,20 +51,34 @@ public class AlipayService {
     private static final String PAYMENT_METHOD = "ALIPAY_SANDBOX";
     private static final String TRADE_SUCCESS = "TRADE_SUCCESS";
     private static final String TRADE_FINISHED = "TRADE_FINISHED";
+    private static final String TRADE_NOT_EXIST = "ACQ.TRADE_NOT_EXIST";
+    private static final int QRCODE_QUERY_MAX_ATTEMPTS = 3;
+    private static final long QRCODE_QUERY_RETRY_DELAY_MS = 300L;
 
     private final AlipayProperties alipayProperties;
     private final OrderClient orderClient;
     private final PaymentMapper paymentMapper;
     private final String internalApiToken;
+    private final Supplier<AlipayClient> alipayClientFactory;
 
+    @Autowired
     public AlipayService(AlipayProperties alipayProperties,
                           OrderClient orderClient,
                           PaymentMapper paymentMapper,
                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+        this(alipayProperties, orderClient, paymentMapper, internalApiToken, null);
+    }
+
+    public AlipayService(AlipayProperties alipayProperties,
+                          OrderClient orderClient,
+                          PaymentMapper paymentMapper,
+                          String internalApiToken,
+                          Supplier<AlipayClient> alipayClientFactory) {
         this.alipayProperties = alipayProperties;
         this.orderClient = orderClient;
         this.paymentMapper = paymentMapper;
         this.internalApiToken = internalApiToken;
+        this.alipayClientFactory = alipayClientFactory;
     }
 
     public PagePayResponse createPagePay(Long orderId) {
@@ -114,6 +134,93 @@ public class AlipayService {
             markPaymentFailed(payment, "生成支付宝支付表单异常");
             log.error("生成支付宝支付表单失败: orderId={}", orderId, e);
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付表单失败");
+        }
+    }
+
+    public QrPayResponse createQrPay(Long orderId) {
+        validateConfig();
+        OrderInfoResponse order = getOrderOrThrow(orderId);
+        if (ORDER_STATUS_PAID.equals(order.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单已支付");
+        }
+        if (!ORDER_STATUS_PENDING.equals(order.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前订单状态不允许支付");
+        }
+
+        String orderNo = requireText(order.getOrderNo(), "订单号不能为空");
+        BigDecimal amount = normalizeAmount(order.getAmount());
+        Payment payment = getLatestPaymentByOutTradeNo(orderNo);
+        if (payment != null) {
+            if (PaymentService.STATUS_SUCCESS == payment.getStatus()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "订单已支付");
+            }
+            if (PaymentService.STATUS_PENDING != payment.getStatus()) {
+                payment = null;
+            }
+        }
+        if (payment == null) {
+            payment = createPendingPayment(order);
+        }
+
+        String subject = "万象票务订单 " + orderNo;
+        AlipayTradePrecreateRequest request = new AlipayTradePrecreateRequest();
+        if (StringUtils.hasText(alipayProperties.getNotifyUrl())) {
+            request.setNotifyUrl(alipayProperties.getNotifyUrl());
+        }
+        Map<String, String> bizContent = new LinkedHashMap<>();
+        bizContent.put("out_trade_no", orderNo);
+        bizContent.put("total_amount", amount.toPlainString());
+        bizContent.put("subject", subject);
+        bizContent.put("timeout_express", "15m");
+        request.setBizContent(buildJson(bizContent));
+
+        try {
+            AlipayClient client = createClient();
+            AlipayTradePrecreateResponse alipayResponse = client.execute(request);
+            if (alipayResponse == null || !alipayResponse.isSuccess() || !StringUtils.hasText(alipayResponse.getQrCode())) {
+                markPaymentFailed(payment, "支付宝二维码响应为空或失败");
+                throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付二维码失败");
+            }
+            waitUntilPrecreatedTradeQueryable(client, orderNo);
+            QrPayResponse response = new QrPayResponse();
+            response.setOrderId(orderId);
+            response.setOrderNo(orderNo);
+            response.setAmount(amount);
+            response.setSubject(subject);
+            response.setQrCode(alipayResponse.getQrCode());
+            return response;
+        } catch (AlipayApiException e) {
+            markPaymentFailed(payment, "生成支付宝支付二维码异常");
+            log.error("生成支付宝支付二维码失败: orderId={}", orderId, e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付二维码失败");
+        }
+    }
+
+    private void waitUntilPrecreatedTradeQueryable(AlipayClient client, String orderNo) throws AlipayApiException {
+        for (int attempt = 1; attempt <= QRCODE_QUERY_MAX_ATTEMPTS; attempt++) {
+            AlipayTradeQueryRequest queryRequest = new AlipayTradeQueryRequest();
+            Map<String, String> bizContent = new LinkedHashMap<>();
+            bizContent.put("out_trade_no", orderNo);
+            queryRequest.setBizContent(buildJson(bizContent));
+            AlipayTradeQueryResponse queryResponse = client.execute(queryRequest);
+            if (queryResponse != null && queryResponse.isSuccess()) {
+                return;
+            }
+            if (queryResponse == null || !TRADE_NOT_EXIST.equals(queryResponse.getSubCode())) {
+                return;
+            }
+            if (attempt < QRCODE_QUERY_MAX_ATTEMPTS) {
+                sleepBeforeQrQueryRetry(orderNo, attempt);
+            }
+        }
+    }
+
+    private void sleepBeforeQrQueryRetry(String orderNo, int attempt) {
+        try {
+            Thread.sleep(QRCODE_QUERY_RETRY_DELAY_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("等待支付宝二维码交易可查询时被中断: outTradeNo={}, attempt={}", orderNo, attempt);
         }
     }
 
@@ -208,13 +315,30 @@ public class AlipayService {
                         order,
                         payment,
                         payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING,
-                        "订单已支付，支付流水待补偿"
+                        "订单已支付，支付流水待补偿",
+                        false
                 );
             }
-            return buildStatusResponse(order, payment, PaymentService.STATUS_SUCCESS, "支付成功");
+            return buildStatusResponse(order, payment, PaymentService.STATUS_SUCCESS, "支付成功", true);
         }
 
         return queryAndCompletePayment(order, payment);
+    }
+
+    public PaymentSyncDecisionResponse syncDecisionForCancel(Long orderId) {
+        PaymentStatusResponse status = syncByOrderId(orderId);
+        PaymentSyncDecisionResponse response = new PaymentSyncDecisionResponse();
+        response.setOrderId(status.getOrderId());
+        response.setOrderNo(status.getOrderNo());
+        response.setOrderStatus(status.getOrderStatus());
+        response.setPaymentStatus(status.getPaymentStatus());
+        response.setTradeNo(status.getTradeNo());
+        response.setMessage(status.getMessage());
+        boolean paid = PaymentService.STATUS_SUCCESS == status.getPaymentStatus()
+                || ORDER_STATUS_PAID.equals(status.getOrderStatus());
+        response.setPaid(paid);
+        response.setSafeToCancel(!paid && Boolean.TRUE.equals(status.getStatusConfirmed()));
+        return response;
     }
 
     private PaymentStatusResponse queryAndCompletePayment(OrderInfoResponse order, Payment payment) {
@@ -234,12 +358,15 @@ public class AlipayService {
                 }
                 completePayment(payment, response.getTradeNo(), response.getBuyerUserId(), response.getBody(), response.getBody());
                 OrderInfoResponse paidOrder = getOrderOrThrow(order.getId());
-                return buildStatusResponse(paidOrder, payment, PaymentService.STATUS_SUCCESS, "支付成功");
+                return buildStatusResponse(paidOrder, payment, PaymentService.STATUS_SUCCESS, "支付成功", true);
             }
-            return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中");
+            if (!response.isSuccess() && TRADE_NOT_EXIST.equals(response.getSubCode())) {
+                return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付宝未查询到支付交易", true);
+            }
+            return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
         } catch (AlipayApiException e) {
             log.warn("查询支付宝支付结果失败: orderId={}, outTradeNo={}", order.getId(), order.getOrderNo(), e);
-            return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中");
+            return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
         }
     }
 
@@ -321,7 +448,7 @@ public class AlipayService {
         return paymentMapper.selectOne(wrapper);
     }
 
-    private PaymentStatusResponse buildStatusResponse(OrderInfoResponse order, Payment payment, Integer paymentStatus, String message) {
+    private PaymentStatusResponse buildStatusResponse(OrderInfoResponse order, Payment payment, Integer paymentStatus, String message, boolean statusConfirmed) {
         PaymentStatusResponse response = new PaymentStatusResponse();
         response.setOrderId(order.getId());
         response.setOrderNo(order.getOrderNo());
@@ -329,10 +456,14 @@ public class AlipayService {
         response.setPaymentStatus(paymentStatus);
         response.setTradeNo(payment != null ? payment.getTradeNo() : null);
         response.setMessage(message);
+        response.setStatusConfirmed(statusConfirmed);
         return response;
     }
 
     private AlipayClient createClient() {
+        if (alipayClientFactory != null) {
+            return alipayClientFactory.get();
+        }
         return new DefaultAlipayClient(
                 alipayProperties.getGatewayUrl(),
                 alipayProperties.getAppId(),

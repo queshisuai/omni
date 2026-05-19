@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SeatMap } from '@/components/SeatMap'
-import { getActivityDetail, createOrder, createOrderWithSeats, createAlipayPagePay, submitPayForm, getSeatMap } from '@/lib/api'
+import { SeatSelectionMap } from '@/components/seatcraft/SeatSelectionMap'
+import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
+import { getActivityDetail, createOrder, createOrderWithSeats, createAlipayQrPay, getSeatMap } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { sections } from '@/lib/mock-data'
-import type { ActivityDetailVO, SeatMapResponse, SessionDetail, SessionSeatVO, TicketTypeEntity } from '@/types/api'
+import type { ActivityDetailVO, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, TicketTypeEntity } from '@/types/api'
 
 /** 从 mock 数据构造活动详情（后端不可用时的降级方案） */
 function buildMockDetail(id: string): ActivityDetailVO {
@@ -56,6 +58,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [orderError, setOrderError] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
   const [successOrderNo, setSuccessOrderNo] = useState('')
+  const [qrPay, setQrPay] = useState<QrPayResponse | null>(null)
   const [seatMap, setSeatMap] = useState<SeatMapResponse | null>(null)
   const [seatMapLoading, setSeatMapLoading] = useState(false)
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([])
@@ -118,19 +121,38 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const handleAutoSelectSeats = () => {
     if (!seatMap) return
     const available = seatMap.seats.filter(seat => seat.status === 1)
-    const byAreaRow = new Map<string, SessionSeatVO[]>()
-    for (const seat of available) {
-      const key = `${seat.areaId}-${seat.rowNo}`
-      byAreaRow.set(key, [...(byAreaRow.get(key) || []), seat])
-    }
-    for (const rowSeats of byAreaRow.values()) {
-      const sorted = rowSeats.sort((a, b) => a.seatNo - b.seatNo)
-      for (let i = 0; i <= sorted.length - quantity; i++) {
-        const candidate = sorted.slice(i, i + quantity)
-        const continuous = candidate.every((seat, index) => index === 0 || seat.seatNo === candidate[index - 1].seatNo + 1)
-        if (continuous) {
-          setSelectedSeatIds(candidate.map(seat => seat.id))
-          return
+    if (seatMap.layout && seatMap.layout.sections.length > 0) {
+      const bySection = new Map<string, SessionSeatVO[]>()
+      for (const seat of available) {
+        const key = seat.layoutSectionId != null ? `L-${seat.layoutSectionId}-${seat.rowNo}` : `${seat.areaId}-${seat.rowNo}`
+        bySection.set(key, [...(bySection.get(key) || []), seat])
+      }
+      for (const rowSeats of bySection.values()) {
+        const sorted = rowSeats.sort((a, b) => a.seatNo - b.seatNo)
+        for (let i = 0; i <= sorted.length - quantity; i++) {
+          const candidate = sorted.slice(i, i + quantity)
+          const continuous = candidate.every((seat, index) => index === 0 || seat.seatNo === candidate[index - 1].seatNo + 1)
+          if (continuous) {
+            setSelectedSeatIds(candidate.map(seat => seat.id))
+            return
+          }
+        }
+      }
+    } else {
+      const byAreaRow = new Map<string, SessionSeatVO[]>()
+      for (const seat of available) {
+        const key = `${seat.areaId}-${seat.rowNo}`
+        byAreaRow.set(key, [...(byAreaRow.get(key) || []), seat])
+      }
+      for (const rowSeats of byAreaRow.values()) {
+        const sorted = rowSeats.sort((a, b) => a.seatNo - b.seatNo)
+        for (let i = 0; i <= sorted.length - quantity; i++) {
+          const candidate = sorted.slice(i, i + quantity)
+          const continuous = candidate.every((seat, index) => index === 0 || seat.seatNo === candidate[index - 1].seatNo + 1)
+          if (continuous) {
+            setSelectedSeatIds(candidate.map(seat => seat.id))
+            return
+          }
         }
       }
     }
@@ -165,8 +187,8 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             quantity,
             unitPrice: selectedTicket.price,
           })
-      const pay = await createAlipayPagePay(order.id)
-      submitPayForm(pay.payForm)
+      const pay = await createAlipayQrPay(order.id)
+      setQrPay(pay)
       setShowConfirm(false)
     } catch (err: unknown) {
       setOrderError(err instanceof Error ? err.message : '下单失败，请确认已登录并重试')
@@ -313,6 +335,20 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       <div className="mb-5">
                         {seatMapLoading ? (
                           <div className="rounded-lg border border-[#e5e5e5] p-6 text-center text-[13px] text-[#999]">正在加载座位图...</div>
+                        ) : seatMap && seatMap.layout && seatMap.layout.sections.length > 0 ? (
+                          <div>
+                            <div className="mb-3 flex items-center justify-between">
+                              <div className="text-[14px] text-[#666]">已选 {selectedSeatIds.length} / {quantity} 座</div>
+                              <button onClick={handleAutoSelectSeats} className="rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">自动分配</button>
+                            </div>
+                            <SeatSelectionMap
+                              layout={seatMap.layout}
+                              seats={seatMap.seats}
+                              ticketTypeId={selectedTicket.id}
+                              selectedSeatIds={selectedSeatIds}
+                              onChange={setSelectedSeatIds}
+                            />
+                          </div>
                         ) : seatMap && seatMap.seats.length > 0 ? (
                           <div>
                             <div className="mb-3 flex items-center justify-between">
@@ -562,6 +598,19 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             </div>
           </div>
         </div>
+      )}
+
+      {qrPay && (
+        <AlipayQrPayModal
+          pay={qrPay}
+          productName={activity.name}
+          onClose={() => setQrPay(null)}
+          onPaid={(result) => {
+            setSuccessOrderNo(result.orderNo || qrPay.orderNo)
+            setQrPay(null)
+            setShowSuccess(true)
+          }}
+        />
       )}
     </>
   )

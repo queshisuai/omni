@@ -1,6 +1,10 @@
 package com.omni.order.service;
 
+import com.omni.common.result.Result;
+import com.omni.exception.BusinessException;
+import com.omni.order.client.PaymentInternalClient;
 import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.PaymentSyncDecisionResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.entity.OrderSeat;
 import com.omni.order.entity.SessionSeat;
@@ -22,7 +26,10 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -78,19 +85,52 @@ class OrderSeatServiceTest {
         OrderSeat orderSeat = lockedOrderSeat(9001L, order.getId(), 3001L, 101L, 2001L);
         SessionSeat sessionSeat = lockedSessionSeat(3001L, 101L, 2001L, order.getId());
         when(orderMapper.selectById(order.getId())).thenReturn(order);
+        when(orderMapper.updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED)).thenReturn(1);
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(orderSeat));
-        when(sessionSeatMapper.selectById(3001L)).thenReturn(sessionSeat);
+        when(sessionSeatMapper.releaseLockedSeatForOrder(3001L, order.getId())).thenReturn(1);
 
         service.cancelOrder(order.getId());
 
         assertEquals(OrderService.STATUS_CANCELLED, order.getStatus());
         assertEquals(4, orderSeat.getStatus());
-        assertEquals(1, sessionSeat.getStatus());
-        assertEquals(null, sessionSeat.getOrderId());
-        assertEquals(null, sessionSeat.getTicketTypeId());
-        assertEquals(null, sessionSeat.getLockExpireTime());
-        verify(orderMapper).updateById(order);
-        verify(sessionSeatMapper).updateById(sessionSeat);
+        verify(orderMapper).updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED);
+        verify(sessionSeatMapper).releaseLockedSeatForOrder(3001L, order.getId());
+    }
+
+    @Test
+    void cancelOrderRejectsWhenPaymentServiceSaysPaid() {
+        PaymentInternalClient paymentClient = mock(PaymentInternalClient.class);
+        OrderService service = new OrderService(orderMapper, orderSeatMapper, sessionSeatMapper, ticketTypeMapper, paymentClient, "internal-token");
+        Order order = new Order();
+        order.setId(88L);
+        order.setOrderNo("DM88");
+        order.setStatus(OrderService.STATUS_PENDING);
+        when(orderMapper.selectById(88L)).thenReturn(order);
+        PaymentSyncDecisionResponse decision = new PaymentSyncDecisionResponse();
+        decision.setPaid(true);
+        decision.setSafeToCancel(false);
+        decision.setMessage("支付成功");
+        when(paymentClient.syncOrderForCancel(88L, "internal-token")).thenReturn(Result.success(decision));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.cancelOrder(88L));
+
+        assertEquals("订单已支付，不能取消", error.getMessage());
+        verify(orderMapper, never()).updateById(any());
+    }
+
+    @Test
+    void markPaidDoesNotSellSeatsWhenStatusChangedConcurrently() {
+        Order order = pendingOrder(1005L, 105L, 2005L);
+        Order cancelled = pendingOrder(1005L, 105L, 2005L);
+        cancelled.setStatus(OrderService.STATUS_CANCELLED);
+        when(orderMapper.selectById(1005L)).thenReturn(order, cancelled);
+        when(orderMapper.updateStatusIfCurrent(1005L, OrderService.STATUS_PENDING, OrderService.STATUS_PAID)).thenReturn(0);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.markPaid(1005L));
+
+        assertEquals("订单状态已变化，不能标记为已支付", error.getMessage());
+        verify(orderSeatMapper, never()).selectList(any());
+        verify(sessionSeatMapper, never()).updateById(any());
     }
 
     @Test
@@ -101,19 +141,16 @@ class OrderSeatServiceTest {
         SessionSeat sessionSeat = lockedSessionSeat(3002L, 102L, 2002L, order.getId());
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(expiredSeat));
         when(orderMapper.selectById(order.getId())).thenReturn(order);
-        when(sessionSeatMapper.selectById(3002L)).thenReturn(sessionSeat);
+        when(orderMapper.updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED)).thenReturn(1);
+        when(sessionSeatMapper.releaseLockedSeatForOrder(3002L, order.getId())).thenReturn(1);
 
         int released = service.releaseExpiredSeatLocks();
 
         assertEquals(1, released);
         assertEquals(OrderService.STATUS_CANCELLED, order.getStatus());
         assertEquals(4, expiredSeat.getStatus());
-        assertEquals(1, sessionSeat.getStatus());
-        assertEquals(null, sessionSeat.getOrderId());
-        assertEquals(null, sessionSeat.getTicketTypeId());
-        assertEquals(null, sessionSeat.getLockExpireTime());
-        verify(orderMapper).updateById(order);
-        verify(sessionSeatMapper).updateById(sessionSeat);
+        verify(orderMapper).updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED);
+        verify(sessionSeatMapper).releaseLockedSeatForOrder(3002L, order.getId());
     }
 
     @Test

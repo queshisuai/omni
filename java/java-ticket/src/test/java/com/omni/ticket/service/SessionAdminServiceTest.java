@@ -5,6 +5,7 @@ import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.UserRef;
 import com.omni.ticket.entity.Venue;
+import com.omni.ticket.service.SessionSeatLayoutService;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.UserRefMapper;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -27,6 +29,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith(MockitoExtension.class)
 class SessionAdminServiceTest {
@@ -41,12 +44,14 @@ class SessionAdminServiceTest {
     private UserRefMapper userRefMapper;
     @Mock
     private SessionSeatService sessionSeatService;
+    @Mock
+    private SessionSeatLayoutService sessionSeatLayoutService;
 
     private SessionAdminService service;
 
     @BeforeEach
     void setUp() {
-        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userRefMapper, null, sessionSeatService);
+        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userRefMapper, null, sessionSeatService, sessionSeatLayoutService);
     }
 
     @Test
@@ -65,6 +70,59 @@ class SessionAdminServiceTest {
 
         verify(sessionMapper).insert(session);
         verify(sessionSeatService).generateForSession(501L);
+    }
+
+    @Test
+    void createSessionCopiesTemplateWhenTemplateIdProvided() {
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(venueMapper.selectById(101L)).thenReturn(venue(101L));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+        doAnswer(invocation -> {
+            Session inserted = invocation.getArgument(0);
+            inserted.setId(601L);
+            return 1;
+        }).when(sessionMapper).insert(any());
+
+        Map<String, Object> body = baseBody();
+        body.put("templateId", 88L);
+
+        service.createSession(body);
+
+        verify(sessionSeatLayoutService).copyFromTemplate(2003L, 601L, 88L);
+        verify(sessionSeatLayoutService, never()).copyFromActivityLayout(any(), any(), any());
+        verify(sessionSeatLayoutService).generateSessionSeats(601L);
+        verify(sessionSeatService, never()).generateForSession(601L);
+    }
+
+    @Test
+    void createSessionCopiesActivityLayoutWhenActivityLayoutIdProvided() {
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(venueMapper.selectById(101L)).thenReturn(venue(101L));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+        doAnswer(invocation -> {
+            Session inserted = invocation.getArgument(0);
+            inserted.setId(602L);
+            return 1;
+        }).when(sessionMapper).insert(any());
+
+        Map<String, Object> body = baseBody();
+        body.put("activityLayoutId", 77L);
+
+        service.createSession(body);
+
+        verify(sessionSeatLayoutService).copyFromActivityLayout(2003L, 602L, 77L);
+        verify(sessionSeatLayoutService, never()).copyFromTemplate(any(), any(), any());
+        verify(sessionSeatLayoutService).generateSessionSeats(602L);
+        verify(sessionSeatService, never()).generateForSession(602L);
+    }
+
+    @Test
+    void createSessionIsTransactional() throws NoSuchMethodException {
+        assertTrue(SessionAdminService.class
+                .getMethod("createSession", Map.class)
+                .isAnnotationPresent(Transactional.class));
     }
 
     @Test
@@ -99,6 +157,31 @@ class SessionAdminServiceTest {
 
         assertEquals("同一场馆该时间段已有场次", error.getMessage());
         verify(sessionMapper, never()).insert(any());
+    }
+
+    @Test
+    void deleteSessionDeletesSeatsThenSession() {
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        Session session = new Session();
+        session.setId(50L);
+        session.setActivityId(10L);
+        session.setVenueId(101L);
+        session.setStartTime(LocalDateTime.of(2026, 6, 1, 20, 0));
+        session.setEndTime(LocalDateTime.of(2026, 6, 1, 22, 0));
+        when(sessionMapper.selectById(50L)).thenReturn(session);
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+
+        service.deleteSession(2003L, 50L);
+
+        verify(sessionSeatService).deleteBySessionId(50L);
+        verify(sessionMapper).deleteById(50L);
+    }
+
+    @Test
+    void deleteSessionIsTransactional() throws NoSuchMethodException {
+        assertTrue(SessionAdminService.class
+                .getMethod("deleteSession", Long.class, Long.class)
+                .isAnnotationPresent(Transactional.class));
     }
 
     private Map<String, Object> baseBody() {

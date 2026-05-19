@@ -1,11 +1,14 @@
 package com.omni.order.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
+import com.omni.order.client.PaymentInternalClient;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.OrderListItemResponse;
+import com.omni.order.dto.PaymentSyncDecisionResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.entity.OrderSeat;
 import com.omni.order.entity.SessionSeat;
@@ -17,7 +20,10 @@ import com.omni.order.mapper.TicketTypeMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -52,24 +58,37 @@ public class OrderService {
     private final OrderSeatMapper orderSeatMapper;
     private final SessionSeatMapper sessionSeatMapper;
     private final TicketTypeMapper ticketTypeMapper;
+    private final PaymentInternalClient paymentInternalClient;
+    private final String internalApiToken;
 
     public OrderService(OrderMapper orderMapper) {
         this(orderMapper, null);
     }
 
     public OrderService(OrderMapper orderMapper, OrderSeatMapper orderSeatMapper) {
-        this(orderMapper, orderSeatMapper, null, null);
+        this(orderMapper, orderSeatMapper, null, null, null, null);
     }
 
     @Autowired
     public OrderService(OrderMapper orderMapper,
                         OrderSeatMapper orderSeatMapper,
                         SessionSeatMapper sessionSeatMapper,
-                        TicketTypeMapper ticketTypeMapper) {
+                        TicketTypeMapper ticketTypeMapper,
+                        PaymentInternalClient paymentInternalClient,
+                        @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.orderMapper = orderMapper;
         this.orderSeatMapper = orderSeatMapper;
         this.sessionSeatMapper = sessionSeatMapper;
         this.ticketTypeMapper = ticketTypeMapper;
+        this.paymentInternalClient = paymentInternalClient;
+        this.internalApiToken = internalApiToken;
+    }
+
+    public OrderService(OrderMapper orderMapper,
+                        OrderSeatMapper orderSeatMapper,
+                        SessionSeatMapper sessionSeatMapper,
+                        TicketTypeMapper ticketTypeMapper) {
+        this(orderMapper, orderSeatMapper, sessionSeatMapper, ticketTypeMapper, null, "test-internal-token");
     }
 
     /**
@@ -99,6 +118,7 @@ public class OrderService {
     /**
      * 标记订单为已支付
      */
+    @Transactional
     public Order markPaid(Long id) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
@@ -110,9 +130,16 @@ public class OrderService {
         if (order.getStatus() != STATUS_PENDING) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许支付");
         }
+        int updated = orderMapper.updateStatusIfCurrent(id, STATUS_PENDING, STATUS_PAID);
+        if (updated != 1) {
+            Order latest = orderMapper.selectById(id);
+            if (latest != null && latest.getStatus() == STATUS_PAID) {
+                return latest;
+            }
+            throw new BusinessException(ResultCode.CONFLICT, "订单状态已变化，不能标记为已支付");
+        }
         order.setStatus(STATUS_PAID);
         order.setUpdateTime(LocalDateTime.now());
-        orderMapper.updateById(order);
         markSeatsSold(order);
         log.info("订单已标记为已支付: id={}, orderNo={}", id, order.getOrderNo());
         return order;
@@ -256,6 +283,14 @@ public class OrderService {
         return orderMapper.selectOrderListItems(userId);
     }
 
+    public Long countPaidOrdersBySessions(List<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return 0L;
+        }
+        Long count = orderMapper.countPaidOrdersBySessions(sessionIds);
+        return count != null ? count : 0L;
+    }
+
     public List<Order> listPaidOrdersBySessions(List<Long> sessionIds) {
         if (sessionIds == null || sessionIds.isEmpty()) {
             return java.util.Collections.emptyList();
@@ -281,6 +316,7 @@ public class OrderService {
     /**
      * 取消订单
      */
+    @Transactional
     public void cancelOrder(Long id) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
@@ -289,13 +325,13 @@ public class OrderService {
         if (order.getStatus() != STATUS_PENDING) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "只能取消待支付状态的订单");
         }
-        order.setStatus(STATUS_CANCELLED);
-        order.setUpdateTime(LocalDateTime.now());
-        orderMapper.updateById(order);
+        assertPendingOrderSafeToCancel(order);
+        cancelPendingOrderOrThrow(order);
         releaseLockedSeats(order);
         log.info("订单已取消: orderNo={}", order.getOrderNo());
     }
 
+    @Transactional
     public int releaseExpiredSeatLocks() {
         if (orderSeatMapper == null || sessionSeatMapper == null) {
             return 0;
@@ -309,15 +345,62 @@ public class OrderService {
         int released = 0;
         for (OrderSeat orderSeat : expiredSeats) {
             Order order = orderMapper.selectById(orderSeat.getOrderId());
-            if (order != null && order.getStatus() == STATUS_PENDING) {
-                order.setStatus(STATUS_CANCELLED);
-                order.setUpdateTime(LocalDateTime.now());
-                orderMapper.updateById(order);
+            if (order == null) {
+                continue;
+            }
+            if (order.getStatus() == STATUS_PENDING) {
+                try {
+                    assertPendingOrderSafeToCancel(order);
+                    cancelPendingOrderOrThrow(order);
+                } catch (BusinessException e) {
+                    log.warn("过期锁释放前确认支付状态失败，跳过释放: orderId={}, orderNo={}, message={}", order.getId(), order.getOrderNo(), e.getMessage());
+                    continue;
+                }
+            } else if (order.getStatus() != STATUS_CANCELLED) {
+                continue;
             }
             releaseLockedSeat(orderSeat);
             released++;
         }
         return released;
+    }
+
+    private void assertPendingOrderSafeToCancel(Order order) {
+        if (paymentInternalClient == null) {
+            if (StringUtils.hasText(internalApiToken) && "test-internal-token".equals(internalApiToken)) {
+                return;
+            }
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "支付状态确认客户端未配置");
+        }
+        if (!StringUtils.hasText(internalApiToken)) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "内部接口令牌未配置，无法确认支付状态");
+        }
+        Result<PaymentSyncDecisionResponse> result;
+        try {
+            result = paymentInternalClient.syncOrderForCancel(order.getId(), internalApiToken);
+        } catch (RuntimeException e) {
+            log.warn("取消订单前确认支付状态失败: orderId={}, orderNo={}", order.getId(), order.getOrderNo(), e);
+            throw new BusinessException(ResultCode.CONFLICT, "支付状态确认中，请稍后刷新后再操作");
+        }
+        if (result == null || result.getCode() != 200 || result.getData() == null) {
+            throw new BusinessException(ResultCode.CONFLICT, "支付状态确认中，请稍后刷新后再操作");
+        }
+        PaymentSyncDecisionResponse decision = result.getData();
+        if (Boolean.TRUE.equals(decision.getPaid())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单已支付，不能取消");
+        }
+        if (!Boolean.TRUE.equals(decision.getSafeToCancel())) {
+            throw new BusinessException(ResultCode.CONFLICT, "支付状态确认中，请稍后刷新后再操作");
+        }
+    }
+
+    private void cancelPendingOrderOrThrow(Order order) {
+        int updated = orderMapper.updateStatusIfCurrent(order.getId(), STATUS_PENDING, STATUS_CANCELLED);
+        if (updated != 1) {
+            throw new BusinessException(ResultCode.CONFLICT, "订单状态已变化，请刷新后重试");
+        }
+        order.setStatus(STATUS_CANCELLED);
+        order.setUpdateTime(LocalDateTime.now());
     }
 
     private void releaseLockedSeats(Order order) {
@@ -336,19 +419,14 @@ public class OrderService {
     }
 
     private void releaseLockedSeat(OrderSeat orderSeat) {
+        int released = sessionSeatMapper.releaseLockedSeatForOrder(orderSeat.getSessionSeatId(), orderSeat.getOrderId());
+        if (released != 1) {
+            log.warn("释放座位锁失败，座位状态或订单归属已变化: orderSeatId={}, sessionSeatId={}, orderId={}", orderSeat.getId(), orderSeat.getSessionSeatId(), orderSeat.getOrderId());
+            return;
+        }
         orderSeat.setStatus(ORDER_SEAT_RELEASED);
         orderSeat.setUpdateTime(LocalDateTime.now());
         orderSeatMapper.updateById(orderSeat);
-        SessionSeat sessionSeat = sessionSeatMapper.selectById(orderSeat.getSessionSeatId());
-        if (sessionSeat == null) {
-            return;
-        }
-        sessionSeat.setStatus(SESSION_SEAT_AVAILABLE);
-        sessionSeat.setOrderId(null);
-        sessionSeat.setTicketTypeId(null);
-        sessionSeat.setLockExpireTime(null);
-        sessionSeat.setUpdateTime(LocalDateTime.now());
-        sessionSeatMapper.updateById(sessionSeat);
     }
 
     private void restoreSeatsAfterRefund(Order order) {

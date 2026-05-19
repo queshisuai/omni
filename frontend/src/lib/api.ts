@@ -214,6 +214,13 @@ export async function createAlipayPagePay(orderId: number) {
   })
 }
 
+export async function createAlipayQrPay(orderId: number) {
+  return request<import('@/types/api').QrPayResponse>('/api/payment/alipay/qr-pay', {
+    method: 'POST',
+    body: JSON.stringify({ orderId }),
+  })
+}
+
 export async function syncAlipayPayment(orderId: number) {
   return request<import('@/types/api').PaymentStatusResponse>(`/api/payment/alipay/sync/${orderId}`)
 }
@@ -265,6 +272,10 @@ export function submitPayForm(payForm: string) {
 
 // ========== B端管理接口 ==========
 
+export async function getAdminSummary(userId: number) {
+  return request<import('@/types/api').AdminSummaryVO>(`/api/ticket/admin/summary?userId=${userId}`)
+}
+
 export async function listAdminActivities(userId: number, params: { page?: number; size?: number; keyword?: string; status?: number } = {}) {
   const searchParams = new URLSearchParams({ userId: String(userId) })
   searchParams.set('page', String(params.page || 1))
@@ -274,6 +285,10 @@ export async function listAdminActivities(userId: number, params: { page?: numbe
   return request<import('@/types/api').PageResult<import('@/types/api').ActivityEntity>>(
     `/api/ticket/admin/activities?${searchParams.toString()}`
   )
+}
+
+export async function getAdminActivity(id: number, userId: number) {
+  return request<import('@/types/api').ActivityEntity>(`/api/ticket/admin/activities/${id}?userId=${userId}`)
 }
 
 export async function createAdminActivity(body: Record<string, unknown>) {
@@ -378,6 +393,66 @@ export async function createVenueArea(id: number, body: Record<string, unknown>)
 
 export async function listVenueAreas(id: number, userId: number) {
   return request<import('@/types/api').VenueAreaVO[]>(`/api/ticket/admin/venues/${id}/areas?userId=${userId}`)
+}
+
+export async function listVenueSeats(venueId: number, userId: number) {
+  return request<import('@/types/api').VenueSeatVO[]>(`/api/ticket/admin/venues/${venueId}/seats?userId=${userId}`)
+}
+
+export async function createVenueSeat(venueId: number, body: import('@/types/api').VenueSeatRequest) {
+  return request<import('@/types/api').SeatTemplateSyncResponseVO>(`/api/ticket/admin/venues/${venueId}/seats`, {
+    method: 'POST', body: JSON.stringify(body),
+  })
+}
+
+export async function updateVenueSeat(seatId: number, body: import('@/types/api').VenueSeatRequest) {
+  return request<import('@/types/api').SeatTemplateSyncResponseVO>(`/api/ticket/admin/venue-seats/${seatId}`, {
+    method: 'PUT', body: JSON.stringify(body),
+  })
+}
+
+export async function deleteVenueSeat(seatId: number, userId: number) {
+  return request<import('@/types/api').SeatTemplateSyncResponseVO>(`/api/ticket/admin/venue-seats/${seatId}?userId=${userId}`, { method: 'DELETE' })
+}
+
+export async function ensureSeatLayoutTemplates(venueId: number, userId: number) {
+  return request<import('@/types/api').SeatCraftLayoutVO[]>(`/api/ticket/admin/venues/${venueId}/seat-layout-templates/defaults?userId=${userId}`, { method: 'POST' })
+}
+
+export async function listSeatLayoutTemplates(venueId: number, userId: number) {
+  return request<import('@/types/api').SeatCraftLayoutVO[]>(`/api/ticket/admin/venues/${venueId}/seat-layout-templates?userId=${userId}`)
+}
+
+export async function createActivitySeatLayoutFromTemplate(activityId: number, body: { userId: number; templateId: number; layoutMode: 'unified' | 'per_session' }) {
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/activities/${activityId}/seat-layout/from-template`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export async function getActivitySeatLayout(activityId: number, userId: number) {
+  return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/activities/${activityId}/seat-layout?userId=${userId}`)
+}
+
+export async function updateActivitySeatLayout(activityId: number, body: { userId: number; layout: import('@/types/api').SeatCraftLayoutVO }) {
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/activities/${activityId}/seat-layout`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export async function createSessionSeatLayoutFromTemplate(sessionId: number, body: { userId: number; templateId: number }) {
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/sessions/${sessionId}/seat-layout/from-template`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export async function createSessionSeatLayoutFromActivity(sessionId: number, body: { userId: number; activityLayoutId: number }) {
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/sessions/${sessionId}/seat-layout/from-activity`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export async function getSessionSeatLayout(sessionId: number, userId: number) {
+  return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/sessions/${sessionId}/seat-layout?userId=${userId}`)
+}
+
+export async function updateSessionSeatLayout(sessionId: number, body: { userId: number; layout: import('@/types/api').SeatCraftLayoutVO }) {
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/sessions/${sessionId}/seat-layout`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export async function getSessionTicketDrafts(sessionId: number, userId: number) {
+  return request<import('@/types/api').SeatCraftSectionVO[]>(`/api/ticket/admin/sessions/${sessionId}/seat-layout/ticket-drafts?userId=${userId}`)
 }
 
 export async function submitVenueApplication(body: Record<string, unknown>) {
