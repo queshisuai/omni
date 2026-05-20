@@ -23,7 +23,7 @@ import static org.mockito.Mockito.when;
 class OrderListServiceTest {
 
     @Test
-    void listOrderItemsReturnsRealActivityTicketAndVenueData() {
+    void listOrderItemsReturnsSnapshotActivityTicketAndVenueData() {
         OrderMapper orderMapper = mock(OrderMapper.class);
         OrderListItemResponse item = new OrderListItemResponse();
         item.setId(10L);

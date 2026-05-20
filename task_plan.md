@@ -1,176 +1,177 @@
-# 个人中心与账号信息完善计划
+# 真正微服务低耦合推进计划
 
 ## 目标
 
-在支付流程已完成的基础上，补齐 C 端与 B 端个人中心能力。C 端用户中心聚焦个人资料、账号安全、订单、退款；B 端个人中心聚焦商户主体信息、运营账号、安全设置、后台快捷入口、经营概览。主办方申请与后台入口不放入 C 端个人中心，统一收敛到首页底部“商户入驻”流程。
-
-## 范围
-
-- 新增 C 端个人中心页面与账号设置页面。
-- 新增 B 端个人中心页面与商户账号设置页面。
-- 完善用户资料查看与编辑能力。
-- 完善商户主体信息、主办方名称、联系人信息展示与维护。
-- 增加账号安全信息展示与密码修改能力。
-- 将订单、退款整合进统一个人中心导航。
-- 完善首页底部“商户入驻”入口，在商户入驻流程中提供主办方申请与后台入口。
-- 商户入驻改为 admin 审核制，不再自动通过。
-- 新增 admin 入驻审核页面 `/console/organizer-applications`，仅 admin 可见。
-- 不引入评价/动态系统，继续遵守项目现有约定。
-- 不处理头像文件上传到对象存储，本期可支持头像 URL 或默认头像。
+将 Omni 从“共享数据库里的逻辑边界”推进到“可本地验证 schema isolation、代码边界可执行守护、服务通过内部 API 协作”的低耦合微服务形态。当前阶段不做生产物理拆库，不移除生产外键，不引入 MQ/outbox。
 
 ## 当前状态
 
-- 支付宝支付流程已完成。
-- 用户当前可登录、注册、查看订单、申请退款。
-- 前端已有 `/orders`，但缺少统一个人中心。
-- 前端已有 `/console` 后台布局和概览页，但缺少 B 端个人中心。
-- 后端 `java-user` 已有 `/api/user/info?userId=` 和 `/api/user/organizer/apply`。
-- 当前 `applyOrganizer` 是沙盒自动通过，需改造为申请表 + admin 审核。
-- `User` 实体已有 `phone`、`nickname`、`email`、`avatar`、`role`、`organizerStatus`、`organizerName`、`createTime`、`updateTime` 字段。
+- H1/H2/H3/I1/I2/J1/J2/K1/K2 已完成。
+- `java-order` 已不直接依赖 ticket-owned `TicketType`/`SessionSeat` Entity/Mapper。
+- `java-payment` 已不直接依赖 user/ticket ref mapper。
+- `java-notification` 已纳入 copied id 边界策略。
+- `scripts/check-service-boundaries.ps1` 可检查服务代码边界。
+- `scripts/check-cross-owner-fks.ps1` 可盘点跨 owner FK。
+- `scripts/verify-microservice-boundaries.ps1` 可一键运行边界守护、FK 清单与关键 Java 测试。
+- `sql/local/20260520_drop_cross_owner_fks_local_only.sql` 是本地 disposable database 用 FK 删除候选。
+- `java-order`、`java-payment` 已有 `application-local-schema.yml` 试点配置。
 
-## 阶段
+## 已完成阶段
 
-### 阶段 1：现状梳理与接口设计
+### H1：Order User Validation
 
-状态：进行中
+状态：完成
 
-- 梳理当前用户接口、前端认证存储、订单/退款接口。
-- 确认新增接口 DTO 与返回字段，避免直接把 `password` 返回给前端。
-- 明确个人中心页面信息架构。
+- 订单创建通过 `java-user` internal API 校验用户存在与状态。
+- 覆盖用户不存在、禁用、用户服务异常映射测试。
 
-### 阶段 2：后端用户与商户入驻接口补齐
+### H2：Payment Order Validation
 
-状态：待开始
+状态：完成
 
-- 新增安全的用户信息 VO，替代直接返回 `User` 实体。
-- 新增更新个人资料接口：昵称、邮箱、头像。
-- 新增修改密码接口：旧密码、新密码、确认密码。
-- 保留主办方申请接口，并在首页底部“商户入驻”中复用。
-- 新增或复用商户资料更新能力：主办方名称、联系人昵称、邮箱、头像。
-- 新增 `organizer_application` 入驻申请表。
-- 新增商户入驻申请提交/更新接口。
-- 新增我的入驻申请查询接口。
-- 新增 admin 入驻申请列表、通过、驳回接口。
-- 审核通过后更新 `user.role=organizer`、`organizer_status=1`、`organizer_name`。
-- 对手机号、邮箱、密码做基础校验。
+- 支付创建通过 `java-order` internal API 加载/校验订单。
+- 覆盖订单不存在、已支付、服务异常映射测试。
 
-### 阶段 3：C 端个人中心框架
+### H3：Notification Copied Id Policy
 
-状态：待开始
+状态：完成
 
-- 新增 `/profile` 页面，作为个人中心首页。
-- 设计用户卡片、账号概览、订单统计、退款统计、角色信息。
-- 增加快捷入口：我的订单、退款记录、账号设置。
-- 未登录访问时跳转 `/login`。
+- 新增 `docs/microservices/notification-boundary.md`。
+- 边界脚本检查 notification 不直接访问 user/order 表。
 
-### 阶段 4：C 端账号设置与安全页面
+### I1：Cross-Owner FK Check Script
 
-状态：待开始
+状态：完成
 
-- 新增 `/account` 或 `/profile/account` 页面。
-- 支持编辑昵称、邮箱、头像 URL。
-- 支持修改密码。
-- 更新成功后同步 `localStorage` 用户信息。
-- 清晰展示保存中、成功、失败状态。
+- 新增 `scripts/check-cross-owner-fks.ps1`。
+- 当前识别：22 cross-owner、76 same-owner、7 legacy。
 
-### 阶段 5：B 端个人中心与商户资料
+### I2：Local-Only FK Drop Candidate
 
-状态：待开始
+状态：完成
 
-- 新增 `/console/profile` 页面，挂在 B 端后台侧边栏。
-- 展示当前登录账号、角色、手机号、邮箱、头像、创建时间、最近更新时间。
-- organizer 展示主办方名称、入驻状态、当前可管理活动数量、退款待审核数量。
-- admin 展示平台管理员身份、平台管理范围、进入各管理模块快捷入口。
-- admin 侧边栏新增 `/console/organizer-applications` 入驻审核入口。
-- 支持编辑 B 端账号基础资料：昵称、邮箱、头像。
-- 支持编辑 organizer 的商户资料：主办方名称。
-- C 端个人中心和 B 端个人中心共用后端安全用户资料接口，前端页面分开。
+- 新增 `sql/local/20260520_drop_cross_owner_fks_local_only.sql`。
+- 只用于本地 disposable database，不进入生产迁移。
 
-### 阶段 6：B 端账号安全
+### J1：Schema Isolation Runbook
 
-状态：待开始
+状态：完成
 
-- 在 `/console/profile` 或 `/console/account` 中提供修改密码能力。
-- 显示登录账号安全提示：手机号、角色、密码更新时间占位。
-- 后续可扩展操作日志、登录日志，本期不新增表。
-- 修改密码成功后提示重新登录或保持当前会话，具体实现与 C 端保持一致。
+- 新增/完善 `docs/microservices/schema-isolation-runbook.md`。
+- 记录 schema 映射、search-path 设计、回滚与验证步骤。
 
-### 阶段 7：订单与退款整合
+### J2：Local Schema Pilot
 
-状态：待开始
+状态：完成
 
-- 保留 `/orders` 页面作为订单详情列表。
-- 在个人中心显示最近订单与退款申请摘要。
-- 退款记录可从个人中心跳转到订单页对应信息，或新增独立退款区域。
-- 避免退款接口失败影响个人中心主信息展示。
-- B 端个人中心展示退款待审核摘要，并跳转 `/console/refunds`。
+- 新增 `java/java-order/src/main/resources/application-local-schema.yml`。
+- 新增 `java/java-payment/src/main/resources/application-local-schema.yml`。
+- 默认 `application.yml` 不变。
 
-### 阶段 8：首页底部商户入驻完善
+### K1：Internal Client Error Mapping
 
-状态：待开始
+状态：完成
 
-- 在首页底部完善“商户入驻”模块。
-- 普通用户可从商户入驻入口发起主办方申请，申请字段包含主办方名称、主体类型、联系人姓名、联系电话、联系邮箱、营业执照号、经营范围、申请说明。
-- 待审核时用户可修改申请。
-- 驳回后用户可查看驳回原因并重新提交。
-- 已是 organizer/admin 的用户可从商户入驻入口进入后台。
-- C 端个人中心不展示主办方申请和后台入口。
-- 商户入驻页或弹窗需说明平台规则、入驻收益、审核/开通状态。
-- 商户入驻成功后引导进入 `/console/profile` 完善商户资料。
+- order/payment 内部 API 失败映射为确定性业务异常。
+- 关键测试通过。
 
-### 阶段 9：验证与收尾
+### K2：Integration Verification Script
 
-状态：待开始
+状态：完成
 
-- 后端执行 `mvn clean package -pl java-user -am -DskipTests`。
-- 前端执行 `npm run typecheck` 或 `pnpm typecheck`。
-- 若全局类型检查仍受既有 `VenueEntity.capacity` 阻塞，单独记录为已知问题。
-- 手动验证普通用户、organizer、admin 三类账号展示。
+- 新增 `scripts/verify-microservice-boundaries.ps1`。
+- 更新 `docs/microservices/service-boundaries.md`。
 
-## 页面结构建议
+## 下一阶段计划
 
-- `/profile`：个人中心首页。
-- `/profile/account`：账号资料与安全设置。
-- `/orders`：我的订单，保留现有支付/退款入口。
-- 首页底部“商户入驻”：主办方申请与后台入口统一入口。
-- `/console`：organizer/admin 后台页面，入口不放在 C 端个人中心。
-- `/console/profile`：B 端个人中心，展示商户/管理员账号资料与经营概览。
-- `/console/organizer-applications`：admin 入驻审核页。
-- `/console/account`：可选，如安全设置从 B 端个人中心拆出时使用。
+### L1：全业务服务 Local Schema Profile 扩展
 
-## 后端接口建议
+状态：完成
 
-- `GET /api/user/me?userId={userId}`：返回安全用户资料。
-- `PUT /api/user/profile`：更新昵称、邮箱、头像。
-- `PUT /api/user/organizer/profile`：更新主办方名称等商户资料，或复用 `PUT /api/user/profile` 支持 `organizerName`。
-- `PUT /api/user/password`：修改密码。
-- `POST /api/user/organizer/applications`：提交或更新入驻申请。
-- `GET /api/user/organizer/applications/my?userId={userId}`：查询我的入驻申请。
-- `GET /api/user/organizer/applications/admin`：admin 查询入驻申请列表。
-- `POST /api/user/organizer/applications/{id}/approve`：admin 审核通过。
-- `POST /api/user/organizer/applications/{id}/reject`：admin 驳回。
-- 现有 `GET /api/user/info` 可保留，但前端新页面优先使用安全 VO 接口。
+- 给 `java-user`、`java-ticket`、`java-notification` 增加 `application-local-schema.yml`。
+- 继续不改默认配置。
+- 在 runbook 中记录全部服务 profile 启用命令。
 
-## 数据库变更
+### L2：Local Schema Profile 配置验收
 
-- 用户资料与 B 端个人中心复用 `user` 表已有字段。
-- 商户入驻审核新增 `organizer_application` 表。
-- 如后续需要收货人/实名观演人/常用联系人，再新增独立表。
+状态：完成
 
-## 验收标准
+- 编译并测试所有业务服务资源加载。
+- 用一键脚本验证默认行为不回归。
+- 增加 `scripts/check-local-schema-profiles.ps1`，确认 local schema profile 文件存在且 currentSchema 正确。
 
-- 登录后可进入个人中心，看到手机号、昵称、角色、注册时间、订单摘要。
-- 用户可修改昵称、邮箱、头像 URL。
-- 用户可修改密码，旧密码错误时给出明确提示。
-- C 端个人中心不展示主办方申请和后台入口。
-- B 端 `/console/profile` 可查看并编辑后台账号基础资料。
-- organizer 可在 B 端个人中心查看并编辑主办方名称。
-- admin 可在 B 端个人中心看到平台管理员身份和后台快捷入口。
-- 首页底部“商户入驻”可展示主办方申请入口。
-- 入驻申请需经过 admin 审核，通过后才成为 organizer。
-- 待审核申请允许用户修改；驳回后允许重新提交。
-- admin 可在 `/console/organizer-applications` 查看、通过、驳回入驻申请。
-- organizer/admin 可从“商户入驻”进入后台。
-- 订单与退款信息入口清晰，不破坏现有支付/退款流程。
-- 后端构建通过。
-- 前端新增代码无新增类型错误。
+### M1：跨服务数据库访问守护增强
+
+状态：完成
+
+- 扩展 `check-service-boundaries.ps1`，覆盖更多常见 SQL 访问形态：XML mapper、注解 SQL、字符串拼接中的 FROM/JOIN。
+- 检查新增 Java Entity/Mapper 是否越过 service ownership。
+- 保持 allowlist 最小化。
+
+完成记录：
+
+- `check-service-boundaries.ps1` 已从只扫描 `src/main/java/*.java` 扩展为扫描服务 `src` 下的 `*.java` 与 `*.xml`。
+- 已用临时 `BoundaryViolationFixture.xml` 验证 RED：旧脚本漏抓 `FROM session_seat`，增强后能失败并指出文件行号。
+- 临时测试文件已删除，最终一键验证通过。
+
+### M2：生产迁移安全声明
+
+状态：完成
+
+- 在 `docs/microservices/service-boundaries.md` 与 runbook 中加入明确生产禁令。
+- 明确什么时候才允许进入物理拆库：本地 schema isolation 实测通过、所有服务 local profile 可启动、无跨 owner Mapper/SQL、关键集成流通过。
+
+完成记录：
+
+- `docs/microservices/service-boundaries.md` 已新增 Production Migration Safety Gate 和 Explicitly Forbidden Until Gate Passes。
+- `docs/microservices/schema-isolation-runbook.md` 已新增生产迁移安全声明。
+- `docs/microservices/cross-service-db-constraints.md` 已引用生产门禁。
+
+### N1：Disposable Local Schema Isolation SQL 准备
+
+状态：完成
+
+- 新增 `sql/local/20260520_move_tables_to_service_schemas_local_only.sql`。
+- 新增 `scripts/apply-local-schema-isolation.ps1`，要求显式本地确认和环境变量确认。
+- 新增 `scripts/check-local-schema-sql.ps1`，静态检查本地 schema SQL 不含破坏性或数据修改语句。
+- 一键验证脚本已纳入 local schema SQL safety 检查。
+
+### N2：Disposable Local Schema Isolation 实测
+
+状态：完成
+
+- 已确认本地 `omni_ticket` 可丢弃，并在执行前生成备份：`backups/omni_ticket_before_schema_isolation_20260520-184757.dump`，大小 `250006` 字节。
+- 已执行 `scripts/apply-local-schema-isolation.ps1`，完成本地 cross-owner FK drop 候选和 service schema 搬表候选。
+- 执行过程中 `IF EXISTS` 安全忽略当前本地库不存在的表：`venue_seat_layout_template`、`venue_seat_layout_template_section`、`layout_section`、`order_snapshot`。
+- 当前本地 service schema 表数量：`user_service=4`、`ticket_service=27`、`order_service=2`、`payment_service=2`、`notification_service=1`。
+- 重新运行一键边界验收通过，输出 `All microservice boundary checks passed.`。
+
+## 验证命令
+
+从仓库根目录：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1
+```
+
+单独运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/check-service-boundaries.ps1
+powershell -ExecutionPolicy Bypass -File scripts/check-cross-owner-fks.ps1
+```
+
+从 `java/` 目录：
+
+```powershell
+mvn test -pl java-payment,java-ticket,java-order -am --% -Dsurefire.failIfNoSpecifiedTests=false
+```
+
+## 当前验收标准
+
+- 一键边界验证脚本通过：已于 2026-05-20 18:55 重新验证，`BUILD SUCCESS`，`All microservice boundary checks passed.`。
+- 所有新增 local-schema profile 不影响默认配置。
+- 不新增跨 owner FK。
+- 不新增跨服务 Entity/Mapper/SQL 依赖。
+- 不修改生产迁移链路。
+- 下一验收重点是启动五个服务的 `local-schema` profile，并验证登录、票务查询、下单、支付、退款、通知关键链路。

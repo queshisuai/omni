@@ -3,17 +3,21 @@ package com.omni.order.service;
 import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.order.client.PaymentInternalClient;
+import com.omni.order.client.TicketSalesInternalClient;
+import com.omni.order.client.UserInternalClient;
+import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.PaymentSyncDecisionResponse;
+import com.omni.order.dto.TicketSalesLockRequest;
+import com.omni.order.dto.TicketSalesOrderRequest;
+import com.omni.order.dto.TicketSalesQuoteRequest;
+import com.omni.order.dto.TicketSalesQuoteResponse;
+import com.omni.order.dto.TicketSalesSeatLockResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.entity.OrderSeat;
-import com.omni.order.entity.SessionSeat;
-import com.omni.order.entity.TicketType;
 import com.omni.order.mapper.OrderMapper;
 import com.omni.order.mapper.OrderSeatMapper;
-import com.omni.order.mapper.SessionSeatMapper;
-import com.omni.order.mapper.TicketTypeMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +33,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -45,16 +51,26 @@ class OrderSeatServiceTest {
     private OrderSeatMapper orderSeatMapper;
 
     @Mock
-    private SessionSeatMapper sessionSeatMapper;
+    private PaymentInternalClient paymentInternalClient;
 
     @Mock
-    private TicketTypeMapper ticketTypeMapper;
+    private TicketSalesInternalClient ticketSalesInternalClient;
+
+    @Mock
+    private UserInternalClient userInternalClient;
 
     private OrderService service;
 
     @BeforeEach
     void setUp() {
-        service = new OrderService(orderMapper, orderSeatMapper, sessionSeatMapper, ticketTypeMapper);
+        service = new OrderService(orderMapper, orderSeatMapper, paymentInternalClient, ticketSalesInternalClient);
+    }
+
+    private PaymentSyncDecisionResponse safeToCancelDecision() {
+        PaymentSyncDecisionResponse decision = new PaymentSyncDecisionResponse();
+        decision.setPaid(false);
+        decision.setSafeToCancel(true);
+        return decision;
     }
 
     @Test
@@ -65,12 +81,19 @@ class OrderSeatServiceTest {
         request.setTicketTypeId(1001L);
         request.setSeatIds(Arrays.asList(11L, 12L));
         request.setUnitPrice(new BigDecimal("280.00"));
-        TicketType ticketType = new TicketType();
-        ticketType.setId(1001L);
-        ticketType.setPrice(new BigDecimal("280.00"));
-        when(ticketTypeMapper.selectById(1001L)).thenReturn(ticketType);
-        when(sessionSeatMapper.selectById(11L)).thenReturn(availableSessionSeat(11L, 101L));
-        when(sessionSeatMapper.selectById(12L)).thenReturn(availableSessionSeat(12L, 101L));
+
+        TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
+        quote.setUnitPrice(new BigDecimal("280.00"));
+        quote.setTicketName("看台A");
+        quote.setSeatBased(true);
+        quote.setQuantity(2);
+        when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success(quote));
+
+        TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
+        lockResponse.setLockedSeatIds(Arrays.asList(11L, 12L));
+        when(ticketSalesInternalClient.lockSeats(any(TicketSalesLockRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success(lockResponse));
 
         Order order = service.createOrderWithSeats(request);
 
@@ -88,17 +111,21 @@ class OrderSeatServiceTest {
         request.setTicketTypeId(1001L);
         request.setQuantity(2);
         request.setUnitPrice(new BigDecimal("1.00"));
-        TicketType ticketType = new TicketType();
-        ticketType.setId(1001L);
-        ticketType.setPrice(new BigDecimal("180.00"));
-        when(ticketTypeMapper.selectById(1001L)).thenReturn(ticketType);
-        when(ticketTypeMapper.decreaseRemainStockIfEnough(1001L, 2)).thenReturn(1);
+
+        TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
+        quote.setUnitPrice(new BigDecimal("180.00"));
+        quote.setQuantity(2);
+        when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success(quote));
+
+        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
 
         Order order = service.createOrder(request);
 
         assertEquals(2, order.getQuantity());
         assertEquals(new BigDecimal("360.00"), order.getAmount());
-        verify(ticketTypeMapper).decreaseRemainStockIfEnough(1001L, 2);
+        verify(ticketSalesInternalClient).lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token"));
         verify(orderMapper).insert(order);
     }
 
@@ -109,15 +136,64 @@ class OrderSeatServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1001L);
         request.setQuantity(2);
-        TicketType ticketType = new TicketType();
-        ticketType.setId(1001L);
-        ticketType.setPrice(new BigDecimal("180.00"));
-        when(ticketTypeMapper.selectById(1001L)).thenReturn(ticketType);
-        when(ticketTypeMapper.decreaseRemainStockIfEnough(1001L, 2)).thenReturn(0);
+
+        TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
+        quote.setUnitPrice(new BigDecimal("180.00"));
+        quote.setQuantity(2);
+        when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success(quote));
+
+        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.fail(400, "票档库存不足"));
 
         BusinessException error = assertThrows(BusinessException.class, () -> service.createOrder(request));
 
         assertEquals("票档库存不足", error.getMessage());
+        verify(orderMapper, never()).insert(any());
+    }
+
+    @Test
+    void createOrderRejectsMissingUserBeforeTicketLock() {
+        UserInternalClient userClient = mock(UserInternalClient.class);
+        OrderService svc = new OrderService(orderMapper, orderSeatMapper, paymentInternalClient, ticketSalesInternalClient, userClient);
+
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(99999L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1001L);
+        request.setQuantity(2);
+
+        when(userClient.getUserRef(eq(99999L), anyString())).thenReturn(Result.fail(404, "用户不存在"));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> svc.createOrder(request));
+
+        assertEquals("用户不存在", error.getMessage());
+        verify(ticketSalesInternalClient, never()).quote(any(), any());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), any());
+        verify(orderMapper, never()).insert(any());
+    }
+
+    @Test
+    void createOrderRejectsDisabledUserBeforeTicketLock() {
+        UserInternalClient userClient = mock(UserInternalClient.class);
+        OrderService svc = new OrderService(orderMapper, orderSeatMapper, paymentInternalClient, ticketSalesInternalClient, userClient);
+
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1001L);
+        request.setQuantity(2);
+
+        InternalUserRefResponse disabledUser = new InternalUserRefResponse();
+        disabledUser.setId(2004L);
+        disabledUser.setStatus(0);
+        when(userClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(disabledUser));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> svc.createOrder(request));
+
+        assertEquals("用户状态不可用", error.getMessage());
+        verify(ticketSalesInternalClient, never()).quote(any(), any());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), any());
         verify(orderMapper, never()).insert(any());
     }
 
@@ -128,19 +204,23 @@ class OrderSeatServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1001L);
         request.setQuantity(3);
-        TicketType ticketType = new TicketType();
-        ticketType.setId(1001L);
-        ticketType.setPrice(new BigDecimal("180.00"));
-        when(ticketTypeMapper.selectById(1001L)).thenReturn(ticketType);
-        when(ticketTypeMapper.decreaseRemainStockIfEnough(1001L, 3)).thenReturn(1);
+
+        TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
+        quote.setUnitPrice(new BigDecimal("180.00"));
+        quote.setQuantity(3);
+        when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success(quote));
+
+        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
 
         Order order = service.createOrderWithSeats(request);
 
         assertEquals(3, order.getQuantity());
         assertEquals(new BigDecimal("540.00"), order.getAmount());
         assertEquals(OrderService.STATUS_PENDING, order.getStatus());
-        verify(ticketTypeMapper).decreaseRemainStockIfEnough(1001L, 3);
-        verify(sessionSeatMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient).lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token"));
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), any());
         verify(orderSeatMapper, never()).insert(any());
     }
 
@@ -151,11 +231,15 @@ class OrderSeatServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1001L);
         request.setQuantity(3);
-        TicketType ticketType = new TicketType();
-        ticketType.setId(1001L);
-        ticketType.setPrice(new BigDecimal("180.00"));
-        when(ticketTypeMapper.selectById(1001L)).thenReturn(ticketType);
-        when(ticketTypeMapper.decreaseRemainStockIfEnough(1001L, 3)).thenReturn(0);
+
+        TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
+        quote.setUnitPrice(new BigDecimal("180.00"));
+        quote.setQuantity(3);
+        when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success(quote));
+
+        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.fail(400, "票档库存不足"));
 
         BusinessException error = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
 
@@ -167,18 +251,20 @@ class OrderSeatServiceTest {
     void cancelOrderReleasesLockedSeats() {
         Order order = pendingOrder(1001L, 101L, 2001L);
         OrderSeat orderSeat = lockedOrderSeat(9001L, order.getId(), 3001L, 101L, 2001L);
-        SessionSeat sessionSeat = lockedSessionSeat(3001L, 101L, 2001L, order.getId());
         when(orderMapper.selectById(order.getId())).thenReturn(order);
+        when(paymentInternalClient.syncOrderForCancel(order.getId(), "test-internal-token"))
+                .thenReturn(Result.success(safeToCancelDecision()));
         when(orderMapper.updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED)).thenReturn(1);
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(orderSeat));
-        when(sessionSeatMapper.releaseLockedSeatForOrder(3001L, order.getId())).thenReturn(1);
+        when(ticketSalesInternalClient.release(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
 
         service.cancelOrder(order.getId());
 
         assertEquals(OrderService.STATUS_CANCELLED, order.getStatus());
         assertEquals(4, orderSeat.getStatus());
         verify(orderMapper).updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED);
-        verify(sessionSeatMapper).releaseLockedSeatForOrder(3001L, order.getId());
+        verify(ticketSalesInternalClient).release(any(TicketSalesOrderRequest.class), eq("test-internal-token"));
     }
 
     @Test
@@ -186,19 +272,24 @@ class OrderSeatServiceTest {
         Order order = pendingOrder(1006L, 106L, 2006L);
         order.setQuantity(3);
         when(orderMapper.selectById(order.getId())).thenReturn(order);
+        when(paymentInternalClient.syncOrderForCancel(order.getId(), "test-internal-token"))
+                .thenReturn(Result.success(safeToCancelDecision()));
         when(orderMapper.updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED)).thenReturn(1);
         when(orderSeatMapper.selectList(any())).thenReturn(List.of());
+        when(ticketSalesInternalClient.release(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
 
         service.cancelOrder(order.getId());
 
         assertEquals(OrderService.STATUS_CANCELLED, order.getStatus());
-        verify(ticketTypeMapper).increaseRemainStock(2006L, 3);
+        verify(ticketSalesInternalClient).release(any(TicketSalesOrderRequest.class), eq("test-internal-token"));
     }
 
     @Test
     void cancelOrderRejectsWhenPaymentServiceSaysPaid() {
         PaymentInternalClient paymentClient = mock(PaymentInternalClient.class);
-        OrderService service = new OrderService(orderMapper, orderSeatMapper, sessionSeatMapper, ticketTypeMapper, paymentClient, "internal-token");
+        TicketSalesInternalClient ticketClient = mock(TicketSalesInternalClient.class);
+        OrderService service = new OrderService(orderMapper, orderSeatMapper, paymentClient, ticketClient);
         Order order = new Order();
         order.setId(88L);
         order.setOrderNo("DM88");
@@ -208,7 +299,7 @@ class OrderSeatServiceTest {
         decision.setPaid(true);
         decision.setSafeToCancel(false);
         decision.setMessage("支付成功");
-        when(paymentClient.syncOrderForCancel(88L, "internal-token")).thenReturn(Result.success(decision));
+        when(paymentClient.syncOrderForCancel(88L, "test-internal-token")).thenReturn(Result.success(decision));
 
         BusinessException error = assertThrows(BusinessException.class, () -> service.cancelOrder(88L));
 
@@ -227,8 +318,7 @@ class OrderSeatServiceTest {
         BusinessException error = assertThrows(BusinessException.class, () -> service.markPaid(1005L));
 
         assertEquals("订单状态已变化，不能标记为已支付", error.getMessage());
-        verify(orderSeatMapper, never()).selectList(any());
-        verify(sessionSeatMapper, never()).updateById(any());
+        verify(ticketSalesInternalClient, never()).confirmSold(any(), any());
     }
 
     @Test
@@ -236,11 +326,13 @@ class OrderSeatServiceTest {
         Order order = pendingOrder(1002L, 102L, 2002L);
         OrderSeat expiredSeat = lockedOrderSeat(9002L, order.getId(), 3002L, 102L, 2002L);
         expiredSeat.setLockExpireTime(LocalDateTime.now().minusMinutes(1));
-        SessionSeat sessionSeat = lockedSessionSeat(3002L, 102L, 2002L, order.getId());
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(expiredSeat));
         when(orderMapper.selectById(order.getId())).thenReturn(order);
+        when(paymentInternalClient.syncOrderForCancel(order.getId(), "test-internal-token"))
+                .thenReturn(Result.success(safeToCancelDecision()));
         when(orderMapper.updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED)).thenReturn(1);
-        when(sessionSeatMapper.releaseLockedSeatForOrder(3002L, order.getId())).thenReturn(1);
+        when(ticketSalesInternalClient.release(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
 
         int released = service.releaseExpiredSeatLocks();
 
@@ -248,49 +340,58 @@ class OrderSeatServiceTest {
         assertEquals(OrderService.STATUS_CANCELLED, order.getStatus());
         assertEquals(4, expiredSeat.getStatus());
         verify(orderMapper).updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED);
-        verify(sessionSeatMapper).releaseLockedSeatForOrder(3002L, order.getId());
+        verify(ticketSalesInternalClient).release(any(TicketSalesOrderRequest.class), eq("test-internal-token"));
     }
 
     @Test
-    void markRefundedRestoresSoldSeatsWhenSessionStartsAfterTwentyFourHours() {
+    void markRefundedRestoresSoldSeats() {
         Order order = paidOrder(1003L, 103L, 2003L);
         OrderSeat soldSeat = soldOrderSeat(9003L, order.getId(), 3003L, 103L, 2003L);
-        SessionSeat sessionSeat = soldSessionSeat(3003L, 103L, 2003L, order.getId());
         when(orderMapper.selectById(order.getId())).thenReturn(order);
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(soldSeat));
-        when(sessionSeatMapper.selectById(3003L)).thenReturn(sessionSeat);
-        when(sessionSeatMapper.selectSessionStartTime(103L)).thenReturn(LocalDateTime.now().plusHours(25));
-        when(sessionSeatMapper.selectSessionSellable(103L)).thenReturn(true);
-        when(ticketTypeMapper.selectTicketTypeSellable(2003L)).thenReturn(true);
+        when(ticketSalesInternalClient.refund(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
 
         service.markRefunded(order.getId());
 
-        assertEquals(1, sessionSeat.getStatus());
-        assertEquals(null, sessionSeat.getOrderId());
-        assertEquals(null, sessionSeat.getTicketTypeId());
         ArgumentCaptor<OrderSeat> captor = ArgumentCaptor.forClass(OrderSeat.class);
-        verify(orderSeatMapper).updateById(captor.capture());
+        verify(orderSeatMapper, times(1)).updateById(captor.capture());
         assertEquals(3, captor.getValue().getStatus());
-        verify(sessionSeatMapper).updateById(sessionSeat);
-        verify(ticketTypeMapper).increaseRemainStock(2003L, 1);
+        verify(ticketSalesInternalClient).refund(any(TicketSalesOrderRequest.class), eq("test-internal-token"));
     }
 
     @Test
-    void markRefundedDoesNotRestoreSoldSeatsWithinTwentyFourHours() {
+    void markRefundedDoesNothingWhenNoOrderSeats() {
         Order order = paidOrder(1004L, 104L, 2004L);
-        OrderSeat soldSeat = soldOrderSeat(9004L, order.getId(), 3004L, 104L, 2004L);
-        SessionSeat sessionSeat = soldSessionSeat(3004L, 104L, 2004L, order.getId());
         when(orderMapper.selectById(order.getId())).thenReturn(order);
-        when(orderSeatMapper.selectList(any())).thenReturn(List.of(soldSeat));
-        when(sessionSeatMapper.selectById(3004L)).thenReturn(sessionSeat);
-        when(sessionSeatMapper.selectSessionStartTime(104L)).thenReturn(LocalDateTime.now().plusHours(23));
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of());
+        when(ticketSalesInternalClient.refund(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
 
         service.markRefunded(order.getId());
 
-        assertEquals(4, sessionSeat.getStatus());
-        assertEquals(order.getId(), sessionSeat.getOrderId());
-        verify(sessionSeatMapper).updateById(sessionSeat);
-        verify(ticketTypeMapper, times(0)).increaseRemainStock(2004L, 1);
+        verify(ticketSalesInternalClient).refund(any(TicketSalesOrderRequest.class), eq("test-internal-token"));
+    }
+
+    @Test
+    void createOrderMapsUserServiceExceptionBeforeTicketLock() {
+        UserInternalClient userClient = mock(UserInternalClient.class);
+        OrderService svc = new OrderService(orderMapper, orderSeatMapper, paymentInternalClient, ticketSalesInternalClient, userClient);
+
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1001L);
+        request.setQuantity(2);
+
+        when(userClient.getUserRef(eq(2004L), anyString())).thenThrow(new RuntimeException("timeout"));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> svc.createOrder(request));
+
+        assertEquals("用户服务无响应", error.getMessage());
+        verify(ticketSalesInternalClient, never()).quote(any(), any());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), any());
+        verify(orderMapper, never()).insert(any());
     }
 
     private Order pendingOrder(Long id, Long sessionId, Long ticketTypeId) {
@@ -337,34 +438,6 @@ class OrderSeatServiceTest {
         seat.setSessionSeatId(sessionSeatId);
         seat.setSessionId(sessionId);
         seat.setTicketTypeId(ticketTypeId);
-        return seat;
-    }
-
-    private SessionSeat lockedSessionSeat(Long id, Long sessionId, Long ticketTypeId, Long orderId) {
-        SessionSeat seat = sessionSeat(id, sessionId, ticketTypeId, orderId);
-        seat.setStatus(2);
-        seat.setLockExpireTime(LocalDateTime.now().plusMinutes(15));
-        return seat;
-    }
-
-    private SessionSeat availableSessionSeat(Long id, Long sessionId) {
-        SessionSeat seat = sessionSeat(id, sessionId, null, null);
-        seat.setStatus(1);
-        return seat;
-    }
-
-    private SessionSeat soldSessionSeat(Long id, Long sessionId, Long ticketTypeId, Long orderId) {
-        SessionSeat seat = sessionSeat(id, sessionId, ticketTypeId, orderId);
-        seat.setStatus(3);
-        return seat;
-    }
-
-    private SessionSeat sessionSeat(Long id, Long sessionId, Long ticketTypeId, Long orderId) {
-        SessionSeat seat = new SessionSeat();
-        seat.setId(id);
-        seat.setSessionId(sessionId);
-        seat.setTicketTypeId(ticketTypeId);
-        seat.setOrderId(orderId);
         return seat;
     }
 }

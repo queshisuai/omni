@@ -48,8 +48,9 @@ Omni/
 │           ├── orders/             # 订单查看
 │           └── venue/              # 场馆管理
 ├── sql/
-│   ├── init.sql                   # 建表（18张表）
-│   └── seed.sql                   # 种子数据
+│   ├── init.sql                   # 共享数据库阶段建表
+│   ├── seed.sql                   # 种子数据
+│   └── local/                     # 仅本地 disposable DB 的 schema isolation 实验 SQL
 ├── design-assets/                 # 设计素材（1.png 等品牌图片）
 └── docs/specs/                    # 设计文档
 ```
@@ -62,6 +63,9 @@ Omni/
 - **注意**：表名无前缀，保留字表名用双引号（如 `"user"`、`"order"`）
 - **角色字段**：`user.role` = `user` / `organizer` / `admin`
 - **`order` 表外键**：`user_id` 引用 `"user"(id)`，下单必须用数据库中真实存在的用户
+- **默认模式**：默认 `application.yml` 仍面向共享数据库阶段；不要改默认 datasource 指向 service schema。
+- **本地 schema isolation**：只在 disposable local DB 使用 `local-schema` profile，服务 schema 为 `user_service`、`ticket_service`、`order_service`、`payment_service`、`notification_service`。
+- **本地隔离 SQL**：`sql/local/*` 只能用于本地 disposable DB，禁止接入 staging / production 迁移链路。
 
 ## 启动顺序
 
@@ -69,7 +73,11 @@ Omni/
 2. **后端服务**：java-gateway → java-user → java-ticket → java-order → java-payment → java-notification
 3. **前端**：`cd frontend && pnpm dev`
 
-每个 Java 服务启动命令：`cd java/<模块> && mvn spring-boot:run`
+每个 Java 服务默认启动命令：`cd java/<模块> && mvn spring-boot:run`
+
+本地 schema isolation 启动命令：`cd java/<模块> && mvn spring-boot:run -Dspring-boot.run.profiles=local-schema`
+
+> `spring-boot:run` 是长运行进程，前台启动时不会自动退出。联调时五个业务服务必须统一使用同一种 profile，禁止默认 profile 与 `local-schema` 混用。
 
 > ⚠️ **重要**：后端代码修改后需重新编译并**重启对应服务**才能生效。编译命令：
 > ```bash
@@ -116,7 +124,8 @@ Omni/
 → 选择场次 → 选择票档 → 立即购买
 → 确认订单弹窗 → 确认支付
 → 后端创建订单（java-order: POST /api/order/create）
-→ 沙盒支付（java-order: POST /api/order/{id}/pay，自动将订单状态改为已支付）
+→ 支付宝沙盒支付（java-payment: POST /api/payment/alipay/qr-pay 或 page-pay）
+→ 支付同步/回调（java-payment 通过 java-order internal API 标记订单状态）
 → 显示"支付成功"弹窗（含订单号）
 → 可选：继续浏览 或 查看订单（跳转 /orders）
 ```
@@ -146,11 +155,21 @@ Omni/
 - 使用 MyBatis-Plus `LambdaQueryWrapper` 构建查询
 - 统一响应格式：`Result<T>`（code/message/data），成功 code=200
 - JWT Token 包含 userId、phone、role
-- java-ticket 中 `UserRefMapper` 用于跨模块查用户角色（避免 Feign 调用）
+- 服务间业务协作通过 internal API + Feign，同步调用使用 `X-Internal-Token`
+- `java-order` 不直接访问 ticket/user 表；下单通过 `java-ticket` internal API 报价、锁库存/座位、确认售出，通过 `java-user` internal API 校验用户
+- `java-payment` 不直接访问 order/user/ticket 表；支付通过 `java-order` internal API 获取/更新订单，退款审核通过 `java-user` 和 `java-ticket` internal API 校验
+- `java-notification` 的 `userId` / `orderId` 是 copied id，不拥有 user/order 数据，不直接查 user/order 表
 - AdminController 中 admin 全权限，organizer 仅能操作 `organizer_id = userId` 的数据
-- `OrderService` 关键方法：`createOrder()`（含 unitPrice 字段）、`markPaid()`（沙盒支付直接更新状态）
+- `OrderService` 关键方法：`createOrder()`（写 order-owned `order_snapshot`）、`markPaid()`、`markRefunded()`
 - `ActivityService.listActivities()` 已优化：批量查询替代 N+1 循环（约 181→5 次 DB 查询）
 - `CreateOrderRequest` 含 `unitPrice` 字段，前端传入真实票价，后端计算总金额
+- 不允许新增跨服务 Mapper、Entity、XML mapper 或 SQL join；改动后运行 `scripts/verify-microservice-boundaries.ps1`
+
+### 微服务边界验收
+- 一键验收：`powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1`
+- 单项检查：`scripts/check-service-boundaries.ps1`、`scripts/check-cross-owner-fks.ps1`、`scripts/check-local-schema-profiles.ps1`、`scripts/check-local-schema-sql.ps1`
+- 当前已验证：五个业务服务可用 `local-schema` profile 启动，登录、票务 quote、下单、支付 QR、支付同步、订单详情、通知发送/列表在本地 schema isolation 环境下通过。
+- 当前阶段仍不是生产物理拆库；生产迁移必须先通过 `docs/microservices/service-boundaries.md` 的 Production Migration Safety Gate。
 
 ### 前端
 - 使用 `'use client'` 组件 + React hooks
@@ -171,8 +190,9 @@ Omni/
 | 问题 | 原因 | 解决 |
 |:---|:---|:---|
 | 下单报 500（外键约束） | 登录用户的 userId 不在数据库 `user` 表中 | 用上方测试账号重新登录 |
-| 支付后订单状态仍"待支付" | java-order 服务未重启，旧代码没有 `markPaid()` | 重新编译并重启 java-order |
+| local-schema 下单报 `order_snapshot` 不存在 | 本地 disposable DB 缺少 order-owned 快照表 | 重新执行受保护的 `scripts/apply-local-schema-isolation.ps1`，或确认 `order_service.order_snapshot` 已创建 |
+| 支付后订单状态仍"待支付" | java-order/java-payment 服务未重启或支付同步未触发 | 重新编译并重启 java-order/java-payment，检查 `/api/payment/alipay/sync/{orderId}` |
 | Gateway 503 | 缺少 `spring-cloud-starter-loadbalancer` | 已添加（无需操作） |
 | Nacos 启动失败（Java 17） | `-Djava.ext.dirs` 参数不兼容 | 移除该参数 |
 | NoSuchMethodError | 修改 java-common 后未重新安装 | `mvn install -pl java-common -am` |
-| 前端 API 超时/离线 | 后端未启动或 5 秒冷却期 | 确保全部后端服务已启动 |
+| 前端 API 超时/离线 | 后端未启动、profile 混用或 5 秒冷却期 | 确保全部后端服务已启动，schema isolation 联调时五个业务服务统一使用 `local-schema` |

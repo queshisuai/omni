@@ -3,7 +3,12 @@ package com.omni.user.controller;
 import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.service.OrganizerApplicationService;
 import com.omni.user.service.UserService;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
+import java.lang.reflect.Constructor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -56,5 +61,17 @@ class UserControllerInternalTest {
 
         assertEquals(403, result.getCode());
         assertNull(result.getData());
+    }
+
+    @Test
+    void springUsesConstructorWithInternalTokenValue() {
+        Constructor<?> constructor = Assertions.assertDoesNotThrow(() -> UserController.class.getConstructor(
+                UserService.class,
+                OrganizerApplicationService.class,
+                String.class
+        ));
+
+        Assertions.assertNotNull(constructor.getAnnotation(Autowired.class));
+        Assertions.assertNotNull(constructor.getParameters()[2].getAnnotation(Value.class));
     }
 }

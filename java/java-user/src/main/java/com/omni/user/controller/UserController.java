@@ -16,6 +16,7 @@ import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UpdateProfileRequest;
 import com.omni.user.dto.UserInfoResponse;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.omni.user.service.OrganizerApplicationService;
 import com.omni.user.service.UserService;
 import io.jsonwebtoken.Claims;
@@ -43,9 +44,10 @@ public class UserController {
         this(userService, organizerApplicationService, "");
     }
 
+    @Autowired
     public UserController(UserService userService,
-                          OrganizerApplicationService organizerApplicationService,
-                          @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+                           OrganizerApplicationService organizerApplicationService,
+                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.userService = userService;
         this.organizerApplicationService = organizerApplicationService;
         this.internalApiToken = internalApiToken;

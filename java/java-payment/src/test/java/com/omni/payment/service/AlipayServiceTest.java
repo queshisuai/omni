@@ -147,6 +147,47 @@ class AlipayServiceTest {
         assertEquals("支付宝未查询到支付交易", result.getMessage());
     }
 
+    @Test
+    void createQrPayRejectsMissingOrderBeforePaymentInsert() throws Exception {
+        when(orderClient.getOrder(20L, "internal-token")).thenReturn(Result.fail(404, "订单不存在"));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createQrPay(20L));
+        assertEquals("订单不存在", error.getMessage());
+        verify(paymentMapper, never()).insert(any());
+        verify(alipayClient, never()).execute(any(AlipayTradePrecreateRequest.class));
+    }
+
+    @Test
+    void createQrPayRejectsOrderServiceFailureBeforePaymentInsert() throws Exception {
+        when(orderClient.getOrder(21L, "internal-token")).thenReturn(null);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createQrPay(21L));
+        assertEquals("订单不存在", error.getMessage());
+        verify(paymentMapper, never()).insert(any());
+        verify(alipayClient, never()).execute(any(AlipayTradePrecreateRequest.class));
+    }
+
+    @Test
+    void createQrPayRejectsNonPendingOrderBeforePaymentInsert() throws Exception {
+        OrderInfoResponse order = order(22L, "DM1006", new BigDecimal("180.00"), 3);
+        when(orderClient.getOrder(22L, "internal-token")).thenReturn(Result.success(order));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createQrPay(22L));
+        assertEquals("当前订单状态不允许支付", error.getMessage());
+        verify(paymentMapper, never()).insert(any());
+        verify(alipayClient, never()).execute(any(AlipayTradePrecreateRequest.class));
+    }
+
+    @Test
+    void createQrPayMapsOrderServiceExceptionBeforePaymentInsert() throws Exception {
+        when(orderClient.getOrder(30L, "internal-token")).thenThrow(new RuntimeException("timeout"));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createQrPay(30L));
+        assertEquals("订单服务无响应", error.getMessage());
+        verify(paymentMapper, never()).insert(any());
+        verify(alipayClient, never()).execute(any(AlipayTradePrecreateRequest.class));
+    }
+
     private OrderInfoResponse order(Long id, String orderNo, BigDecimal amount, Integer status) {
         OrderInfoResponse order = new OrderInfoResponse();
         order.setId(id);

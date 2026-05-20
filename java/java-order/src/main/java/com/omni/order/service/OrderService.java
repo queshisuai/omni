@@ -5,18 +5,24 @@ import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.order.client.PaymentInternalClient;
+import com.omni.order.client.TicketSalesInternalClient;
+import com.omni.order.client.UserInternalClient;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.PaymentSyncDecisionResponse;
+import com.omni.order.dto.TicketSalesLockRequest;
+import com.omni.order.dto.TicketSalesOrderRequest;
+import com.omni.order.dto.TicketSalesQuoteRequest;
+import com.omni.order.dto.TicketSalesQuoteResponse;
+import com.omni.order.dto.InternalUserRefResponse;
+import com.omni.order.dto.TicketSalesSeatLockResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.entity.OrderSeat;
-import com.omni.order.entity.SessionSeat;
-import com.omni.order.entity.TicketType;
+import com.omni.order.entity.OrderSnapshot;
 import com.omni.order.mapper.OrderMapper;
 import com.omni.order.mapper.OrderSeatMapper;
-import com.omni.order.mapper.SessionSeatMapper;
-import com.omni.order.mapper.TicketTypeMapper;
+import com.omni.order.mapper.OrderSnapshotMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,19 +34,16 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
-/**
- * 订单服务
- */
 @Service
 public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
-    private static final BigDecimal MOCK_TICKET_PRICE = new BigDecimal("280.00");
 
-    /** 订单状态 */
     public static final int STATUS_PENDING = 1;
     public static final int STATUS_PAID = 2;
     public static final int STATUS_CANCELLED = 3;
@@ -49,72 +52,85 @@ public class OrderService {
     private static final int ORDER_SEAT_SOLD = 2;
     private static final int ORDER_SEAT_REFUNDED = 3;
     private static final int ORDER_SEAT_RELEASED = 4;
-    private static final int SESSION_SEAT_AVAILABLE = 1;
-    private static final int SESSION_SEAT_LOCKED = 2;
-    private static final int SESSION_SEAT_SOLD = 3;
-    private static final int SESSION_SEAT_REFUNDED_UNAVAILABLE = 4;
 
     private final OrderMapper orderMapper;
     private final OrderSeatMapper orderSeatMapper;
-    private final SessionSeatMapper sessionSeatMapper;
-    private final TicketTypeMapper ticketTypeMapper;
+    private final OrderSnapshotMapper orderSnapshotMapper;
     private final PaymentInternalClient paymentInternalClient;
+    private final TicketSalesInternalClient ticketSalesInternalClient;
+    private final UserInternalClient userInternalClient;
     private final String internalApiToken;
 
     public OrderService(OrderMapper orderMapper) {
-        this(orderMapper, null);
+        this(orderMapper, null, null, null, null, null, null);
     }
 
     public OrderService(OrderMapper orderMapper, OrderSeatMapper orderSeatMapper) {
-        this(orderMapper, orderSeatMapper, null, null, null, null);
+        this(orderMapper, orderSeatMapper, null, null, null, null, null);
     }
 
     @Autowired
     public OrderService(OrderMapper orderMapper,
                         OrderSeatMapper orderSeatMapper,
-                        SessionSeatMapper sessionSeatMapper,
-                        TicketTypeMapper ticketTypeMapper,
+                        OrderSnapshotMapper orderSnapshotMapper,
                         PaymentInternalClient paymentInternalClient,
+                        TicketSalesInternalClient ticketSalesInternalClient,
+                        UserInternalClient userInternalClient,
                         @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.orderMapper = orderMapper;
         this.orderSeatMapper = orderSeatMapper;
-        this.sessionSeatMapper = sessionSeatMapper;
-        this.ticketTypeMapper = ticketTypeMapper;
+        this.orderSnapshotMapper = orderSnapshotMapper;
         this.paymentInternalClient = paymentInternalClient;
+        this.ticketSalesInternalClient = ticketSalesInternalClient;
+        this.userInternalClient = userInternalClient;
         this.internalApiToken = internalApiToken;
     }
 
     public OrderService(OrderMapper orderMapper,
                         OrderSeatMapper orderSeatMapper,
-                        SessionSeatMapper sessionSeatMapper,
-                        TicketTypeMapper ticketTypeMapper) {
-        this(orderMapper, orderSeatMapper, sessionSeatMapper, ticketTypeMapper, null, "test-internal-token");
+                        OrderSnapshotMapper orderSnapshotMapper,
+                        PaymentInternalClient paymentInternalClient,
+                        TicketSalesInternalClient ticketSalesInternalClient,
+                        UserInternalClient userInternalClient) {
+        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, "test-internal-token");
     }
 
-    /**
-     * 创建订单
-     */
+    public OrderService(OrderMapper orderMapper,
+                        OrderSeatMapper orderSeatMapper,
+                        PaymentInternalClient paymentInternalClient,
+                        TicketSalesInternalClient ticketSalesInternalClient,
+                        UserInternalClient userInternalClient) {
+        this(orderMapper, orderSeatMapper, null, paymentInternalClient, ticketSalesInternalClient, userInternalClient, "test-internal-token");
+    }
+
+    public OrderService(OrderMapper orderMapper,
+                        OrderSeatMapper orderSeatMapper,
+                        OrderSnapshotMapper orderSnapshotMapper,
+                        PaymentInternalClient paymentInternalClient,
+                        TicketSalesInternalClient ticketSalesInternalClient) {
+        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, null, "test-internal-token");
+    }
+
+    @Deprecated
+    public OrderService(OrderMapper orderMapper,
+                        OrderSeatMapper orderSeatMapper,
+                        PaymentInternalClient paymentInternalClient,
+                        TicketSalesInternalClient ticketSalesInternalClient) {
+        this(orderMapper, orderSeatMapper, null, paymentInternalClient, ticketSalesInternalClient, null, "test-internal-token");
+    }
+
     public Order createOrder(CreateOrderRequest request) {
         int quantity = requirePositiveQuantity(request.getQuantity());
-        BigDecimal unitPrice = request.getUnitPrice();
-        if (ticketTypeMapper != null) {
-            TicketType ticketType = ticketTypeMapper.selectById(request.getTicketTypeId());
-            if (ticketType == null) {
-                throw new BusinessException(ResultCode.NOT_FOUND, "票档不存在");
-            }
-            unitPrice = ticketType.getPrice();
-            lockTicketStock(request.getTicketTypeId(), quantity);
-        }
-        Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity,
-                unitPrice != null ? unitPrice : MOCK_TICKET_PRICE);
+        validateUserExists(request.getUserId());
+        TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), null, quantity);
+        Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity, quote.getUnitPrice());
+        lockStockForOrder(order);
         orderMapper.insert(order);
+        writeSnapshot(order, quote);
         log.info("订单创建成功: orderNo={}, userId={}, amount={}", order.getOrderNo(), request.getUserId(), order.getAmount());
         return order;
     }
 
-    /**
-     * 标记订单为已支付
-     */
     @Transactional
     public Order markPaid(Long id) {
         Order order = orderMapper.selectById(id);
@@ -137,7 +153,7 @@ public class OrderService {
         }
         order.setStatus(STATUS_PAID);
         order.setUpdateTime(LocalDateTime.now());
-        markSeatsSold(order);
+        confirmTicketsSold(order);
         log.info("订单已标记为已支付: id={}, orderNo={}", id, order.getOrderNo());
         return order;
     }
@@ -145,26 +161,28 @@ public class OrderService {
     public Order createOrderWithSeats(LockSeatsRequest request) {
         boolean hasSeatIds = request.getSeatIds() != null && !request.getSeatIds().isEmpty();
         int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
-        BigDecimal unitPrice = request.getUnitPrice();
-        if (ticketTypeMapper != null) {
-            TicketType ticketType = ticketTypeMapper.selectById(request.getTicketTypeId());
-            if (ticketType == null) {
-                throw new BusinessException(ResultCode.NOT_FOUND, "票档不存在");
-            }
-            unitPrice = ticketType.getPrice();
-        }
-        if (hasSeatIds && sessionSeatMapper != null) {
-            validateAndLockSeats(request);
-        } else if (!hasSeatIds) {
-            lockTicketStock(request.getTicketTypeId(), quantity);
+        validateUserExists(request.getUserId());
+        TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
+        if (hasSeatIds) {
+            TicketSalesLockRequest lockRequest = new TicketSalesLockRequest();
+            lockRequest.setOrderId(0L);
+            lockRequest.setSessionId(request.getSessionId());
+            lockRequest.setTicketTypeId(request.getTicketTypeId());
+            lockRequest.setSeatIds(request.getSeatIds());
+            lockRequest.setQuantity(quantity);
+            lockRequest.setLockExpireTime(LocalDateTime.now().plusMinutes(15));
+            lockSeats(lockRequest);
+        } else {
+            lockStockForTicketType(request.getTicketTypeId(), quantity);
         }
         Order order = buildPendingOrder(
                 request.getUserId(),
                 request.getSessionId(),
                 request.getTicketTypeId(),
                 quantity,
-                unitPrice != null ? unitPrice : MOCK_TICKET_PRICE);
+                quote.getUnitPrice());
         orderMapper.insert(order);
+        writeSnapshot(order, quote);
         if (hasSeatIds && orderSeatMapper != null) {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime expireTime = now.plusMinutes(15);
@@ -184,88 +202,6 @@ public class OrderService {
         return order;
     }
 
-    private int requirePositiveQuantity(Integer quantity) {
-        if (quantity == null || quantity <= 0) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "购买数量不正确");
-        }
-        return quantity;
-    }
-
-    private void lockTicketStock(Long ticketTypeId, int quantity) {
-        if (ticketTypeMapper == null) {
-            return;
-        }
-        int locked = ticketTypeMapper.decreaseRemainStockIfEnough(ticketTypeId, quantity);
-        if (locked != 1) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
-        }
-    }
-
-    private void validateAndLockSeats(LockSeatsRequest request) {
-        LocalDateTime expireTime = LocalDateTime.now().plusMinutes(15);
-        for (Long seatId : request.getSeatIds()) {
-            SessionSeat seat = sessionSeatMapper.selectById(seatId);
-            if (seat == null || !request.getSessionId().equals(seat.getSessionId()) || !Integer.valueOf(SESSION_SEAT_AVAILABLE).equals(seat.getStatus())) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "座位已锁定或不可售");
-            }
-            seat.setStatus(SESSION_SEAT_LOCKED);
-            seat.setTicketTypeId(request.getTicketTypeId());
-            seat.setLockExpireTime(expireTime);
-            seat.setUpdateTime(LocalDateTime.now());
-            sessionSeatMapper.updateById(seat);
-        }
-    }
-
-    private void markSeatsSold(Order order) {
-        if (orderSeatMapper == null || sessionSeatMapper == null) {
-            return;
-        }
-        List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
-                .eq(OrderSeat::getOrderId, order.getId())
-                .eq(OrderSeat::getStatus, ORDER_SEAT_LOCKED));
-        if (orderSeats == null || orderSeats.isEmpty()) {
-            return;
-        }
-        LocalDateTime now = LocalDateTime.now();
-        for (OrderSeat orderSeat : orderSeats) {
-            orderSeat.setStatus(ORDER_SEAT_SOLD);
-            orderSeat.setUpdateTime(now);
-            orderSeatMapper.updateById(orderSeat);
-            SessionSeat sessionSeat = sessionSeatMapper.selectById(orderSeat.getSessionSeatId());
-            if (sessionSeat != null) {
-                sessionSeat.setStatus(SESSION_SEAT_SOLD);
-                sessionSeat.setOrderId(order.getId());
-                sessionSeat.setTicketTypeId(order.getTicketTypeId());
-                sessionSeat.setUpdateTime(now);
-                sessionSeatMapper.updateById(sessionSeat);
-            }
-        }
-        if (ticketTypeMapper != null) {
-            TicketType ticketType = ticketTypeMapper.selectById(order.getTicketTypeId());
-            if (ticketType != null) {
-                ticketType.setRemainStock(Math.max(0, ticketType.getRemainStock() - orderSeats.size()));
-                ticketTypeMapper.updateById(ticketType);
-            }
-        }
-    }
-
-    private Order buildPendingOrder(Long userId, Long sessionId, Long ticketTypeId, Integer quantity, BigDecimal unitPrice) {
-        String orderNo = "DM" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-                + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-        Order order = new Order();
-        order.setOrderNo(orderNo);
-        order.setUserId(userId);
-        order.setSessionId(sessionId);
-        order.setTicketTypeId(ticketTypeId);
-        order.setQuantity(quantity);
-        order.setAmount(unitPrice.multiply(BigDecimal.valueOf(quantity)));
-        order.setStatus(STATUS_PENDING);
-        return order;
-    }
-
-    /**
-     * 标记订单为已退款
-     */
     public Order markRefunded(Long id) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
@@ -278,15 +214,12 @@ public class OrderService {
             order.setStatus(STATUS_REFUNDED);
             order.setUpdateTime(LocalDateTime.now());
             orderMapper.updateById(order);
-            restoreSeatsAfterRefund(order);
+            refundTickets(order);
             return order;
         }
         throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许退款");
     }
 
-    /**
-     * 用户订单列表
-     */
     public List<Order> listOrders(Long userId) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Order::getUserId, userId)
@@ -360,9 +293,6 @@ public class OrderService {
         return orderMapper.selectList(wrapper);
     }
 
-    /**
-     * 订单详情
-     */
     public Order getOrderDetail(Long id) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
@@ -371,9 +301,6 @@ public class OrderService {
         return order;
     }
 
-    /**
-     * 取消订单
-     */
     @Transactional
     public void cancelOrder(Long id) {
         Order order = orderMapper.selectById(id);
@@ -385,14 +312,13 @@ public class OrderService {
         }
         assertPendingOrderSafeToCancel(order);
         cancelPendingOrderOrThrow(order);
-        releaseLockedSeats(order);
-        restoreStockForStockOnlyOrder(order);
+        releaseLockedResources(order);
         log.info("订单已取消: orderNo={}", order.getOrderNo());
     }
 
     @Transactional
     public int releaseExpiredSeatLocks() {
-        if (orderSeatMapper == null || sessionSeatMapper == null) {
+        if (orderSeatMapper == null) {
             return 0;
         }
         List<OrderSeat> expiredSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
@@ -418,10 +344,243 @@ public class OrderService {
             } else if (order.getStatus() != STATUS_CANCELLED) {
                 continue;
             }
-            releaseLockedSeat(orderSeat);
+            releaseSingleLockedSeat(orderSeat);
             released++;
         }
         return released;
+    }
+
+    private void writeSnapshot(Order order, TicketSalesQuoteResponse quote) {
+        if (orderSnapshotMapper == null || order == null || quote == null) {
+            return;
+        }
+        OrderSnapshot snapshot = new OrderSnapshot();
+        snapshot.setOrderId(order.getId());
+        snapshot.setActivityId(quote.getActivityId());
+        snapshot.setActivityName(quote.getActivityName());
+        snapshot.setActivityPoster(quote.getActivityPoster());
+        snapshot.setTourId(quote.getTourId());
+        snapshot.setStationId(quote.getStationId());
+        snapshot.setSessionId(order.getSessionId());
+        snapshot.setSessionTime(quote.getSessionTime());
+        snapshot.setVenueName(quote.getVenueName());
+        snapshot.setTicketTypeId(order.getTicketTypeId());
+        snapshot.setTicketName(quote.getTicketName());
+        snapshot.setUnitPrice(quote.getUnitPrice());
+        snapshot.setQuantity(order.getQuantity());
+        snapshot.setSeatLabels(quote.getSeatLabels());
+        LocalDateTime now = LocalDateTime.now();
+        snapshot.setCreateTime(now);
+        snapshot.setUpdateTime(now);
+        orderSnapshotMapper.insert(snapshot);
+    }
+
+    // --- Internal helpers ---
+
+    private void validateUserExists(Long userId) {
+        if (userInternalClient == null) {
+            return;
+        }
+        if (userId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        String token = requireInternalApiToken("用户服务接口令牌未配置");
+        Result<InternalUserRefResponse> result;
+        try {
+            result = userInternalClient.getUserRef(userId, token);
+        } catch (RuntimeException e) {
+            log.error("用户服务调用失败: userId={}", userId, e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "用户服务无响应");
+        }
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户不存在");
+        }
+        Integer status = result.getData().getStatus();
+        if (status == null || status != 1) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户状态不可用");
+        }
+    }
+
+    private int requirePositiveQuantity(Integer quantity) {
+        if (quantity == null || quantity <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "购买数量不正确");
+        }
+        return quantity;
+    }
+
+    private TicketSalesQuoteResponse quoteTickets(Long sessionId, Long ticketTypeId, List<Long> seatIds, int quantity) {
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
+        TicketSalesQuoteRequest request = new TicketSalesQuoteRequest();
+        request.setSessionId(sessionId);
+        request.setTicketTypeId(ticketTypeId);
+        request.setSeatIds(seatIds);
+        request.setQuantity(quantity);
+        Result<TicketSalesQuoteResponse> result = ticketSalesInternalClient.quote(request, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
+        }
+        return result.getData();
+    }
+
+    private void lockStockForOrder(Order order) {
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
+        TicketSalesLockRequest request = new TicketSalesLockRequest();
+        request.setOrderId(order.getId() != null ? order.getId() : 0L);
+        request.setSessionId(order.getSessionId());
+        request.setTicketTypeId(order.getTicketTypeId());
+        request.setQuantity(order.getQuantity());
+        Result<Void> result = ticketSalesInternalClient.lockStock(request, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
+        }
+    }
+
+    private void lockStockForTicketType(Long ticketTypeId, int quantity) {
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
+        TicketSalesLockRequest request = new TicketSalesLockRequest();
+        request.setOrderId(0L);
+        request.setTicketTypeId(ticketTypeId);
+        request.setQuantity(quantity);
+        Result<Void> result = ticketSalesInternalClient.lockStock(request, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
+        }
+    }
+
+    private TicketSalesSeatLockResponse lockSeats(TicketSalesLockRequest lockRequest) {
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
+        Result<TicketSalesSeatLockResponse> result = ticketSalesInternalClient.lockSeats(lockRequest, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
+        }
+        return result.getData();
+    }
+
+    private void confirmTicketsSold(Order order) {
+        if (orderSeatMapper == null) {
+            return;
+        }
+        List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
+                .eq(OrderSeat::getOrderId, order.getId())
+                .eq(OrderSeat::getStatus, ORDER_SEAT_LOCKED));
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setOrderId(order.getId());
+        request.setSessionId(order.getSessionId());
+        request.setTicketTypeId(order.getTicketTypeId());
+        request.setQuantity(order.getQuantity());
+        if (orderSeats != null && !orderSeats.isEmpty()) {
+            LocalDateTime now = LocalDateTime.now();
+            List<Long> seatIds = new ArrayList<>();
+            for (OrderSeat orderSeat : orderSeats) {
+                orderSeat.setStatus(ORDER_SEAT_SOLD);
+                orderSeat.setUpdateTime(now);
+                orderSeatMapper.updateById(orderSeat);
+                seatIds.add(orderSeat.getSessionSeatId());
+            }
+            request.setSeatIds(seatIds);
+        }
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
+        Result<Void> result = ticketSalesInternalClient.confirmSold(request, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
+        }
+    }
+
+    private void releaseLockedResources(Order order) {
+        if (orderSeatMapper == null || order == null || order.getId() == null) {
+            return;
+        }
+        List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
+                .eq(OrderSeat::getOrderId, order.getId())
+                .eq(OrderSeat::getStatus, ORDER_SEAT_LOCKED));
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setOrderId(order.getId());
+        request.setSessionId(order.getSessionId());
+        request.setTicketTypeId(order.getTicketTypeId());
+        request.setQuantity(order.getQuantity());
+        if (orderSeats != null && !orderSeats.isEmpty()) {
+            List<Long> seatIds = new ArrayList<>();
+            for (OrderSeat orderSeat : orderSeats) {
+                seatIds.add(orderSeat.getSessionSeatId());
+            }
+            request.setSeatIds(seatIds);
+        }
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
+        Result<Void> result = ticketSalesInternalClient.release(request, token);
+        if (result != null && result.getCode() == ResultCode.SUCCESS.getCode()) {
+            if (orderSeats != null) {
+                LocalDateTime now = LocalDateTime.now();
+                for (OrderSeat orderSeat : orderSeats) {
+                    orderSeat.setStatus(ORDER_SEAT_RELEASED);
+                    orderSeat.setUpdateTime(now);
+                    orderSeatMapper.updateById(orderSeat);
+                }
+            }
+        } else {
+            log.warn("释放票务资源失败: orderId={}", order.getId());
+        }
+    }
+
+    private void releaseSingleLockedSeat(OrderSeat orderSeat) {
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setOrderId(orderSeat.getOrderId());
+        request.setSessionId(orderSeat.getSessionId());
+        request.setTicketTypeId(orderSeat.getTicketTypeId());
+        request.setSeatIds(List.of(orderSeat.getSessionSeatId()));
+        request.setQuantity(1);
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
+        Result<Void> result = ticketSalesInternalClient.release(request, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+            log.warn("释放座位锁失败，票务服务拒绝: orderSeatId={}, sessionSeatId={}, orderId={}",
+                    orderSeat.getId(), orderSeat.getSessionSeatId(), orderSeat.getOrderId());
+            return;
+        }
+        orderSeat.setStatus(ORDER_SEAT_RELEASED);
+        orderSeat.setUpdateTime(LocalDateTime.now());
+        orderSeatMapper.updateById(orderSeat);
+    }
+
+    private void refundTickets(Order order) {
+        if (orderSeatMapper == null || order == null || order.getId() == null) {
+            return;
+        }
+        List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
+                .eq(OrderSeat::getOrderId, order.getId())
+                .eq(OrderSeat::getStatus, ORDER_SEAT_SOLD));
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setOrderId(order.getId());
+        request.setSessionId(order.getSessionId());
+        request.setTicketTypeId(order.getTicketTypeId());
+        request.setQuantity(order.getQuantity());
+        if (orderSeats != null && !orderSeats.isEmpty()) {
+            LocalDateTime now = LocalDateTime.now();
+            List<Long> seatIds = orderSeats.stream().map(OrderSeat::getSessionSeatId).collect(Collectors.toList());
+            request.setSeatIds(seatIds);
+            for (OrderSeat orderSeat : orderSeats) {
+                orderSeat.setStatus(ORDER_SEAT_REFUNDED);
+                orderSeat.setUpdateTime(now);
+                orderSeatMapper.updateById(orderSeat);
+            }
+        }
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
+        Result<Void> result = ticketSalesInternalClient.refund(request, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+            log.warn("退款恢复票务资源失败: orderId={}", order.getId());
+        }
+    }
+
+    private Order buildPendingOrder(Long userId, Long sessionId, Long ticketTypeId, Integer quantity, BigDecimal unitPrice) {
+        String orderNo = "DM" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        Order order = new Order();
+        order.setOrderNo(orderNo);
+        order.setUserId(userId);
+        order.setSessionId(sessionId);
+        order.setTicketTypeId(ticketTypeId);
+        order.setQuantity(quantity);
+        order.setAmount(unitPrice.multiply(BigDecimal.valueOf(quantity)));
+        order.setStatus(STATUS_PENDING);
+        return order;
     }
 
     private void assertPendingOrderSafeToCancel(Order order) {
@@ -462,95 +621,10 @@ public class OrderService {
         order.setUpdateTime(LocalDateTime.now());
     }
 
-    private void releaseLockedSeats(Order order) {
-        if (orderSeatMapper == null || sessionSeatMapper == null || order == null || order.getId() == null) {
-            return;
+    private String requireInternalApiToken(String message) {
+        if (!StringUtils.hasText(internalApiToken)) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, message);
         }
-        List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
-                .eq(OrderSeat::getOrderId, order.getId())
-                .eq(OrderSeat::getStatus, ORDER_SEAT_LOCKED));
-        if (orderSeats == null || orderSeats.isEmpty()) {
-            return;
-        }
-        for (OrderSeat orderSeat : orderSeats) {
-            releaseLockedSeat(orderSeat);
-        }
-    }
-
-    private void restoreStockForStockOnlyOrder(Order order) {
-        if (ticketTypeMapper == null || order == null || order.getQuantity() == null || order.getQuantity() <= 0) {
-            return;
-        }
-        if (orderSeatMapper == null || order.getId() == null) {
-            ticketTypeMapper.increaseRemainStock(order.getTicketTypeId(), order.getQuantity());
-            return;
-        }
-        List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
-                .eq(OrderSeat::getOrderId, order.getId()));
-        if (orderSeats == null || orderSeats.isEmpty()) {
-            ticketTypeMapper.increaseRemainStock(order.getTicketTypeId(), order.getQuantity());
-        }
-    }
-
-    private void releaseLockedSeat(OrderSeat orderSeat) {
-        int released = sessionSeatMapper.releaseLockedSeatForOrder(orderSeat.getSessionSeatId(), orderSeat.getOrderId());
-        if (released != 1) {
-            log.warn("释放座位锁失败，座位状态或订单归属已变化: orderSeatId={}, sessionSeatId={}, orderId={}", orderSeat.getId(), orderSeat.getSessionSeatId(), orderSeat.getOrderId());
-            return;
-        }
-        orderSeat.setStatus(ORDER_SEAT_RELEASED);
-        orderSeat.setUpdateTime(LocalDateTime.now());
-        orderSeatMapper.updateById(orderSeat);
-    }
-
-    private void restoreSeatsAfterRefund(Order order) {
-        if (orderSeatMapper == null || sessionSeatMapper == null || order == null || order.getId() == null) {
-            return;
-        }
-        List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
-                .eq(OrderSeat::getOrderId, order.getId())
-                .eq(OrderSeat::getStatus, ORDER_SEAT_SOLD));
-        if (orderSeats == null || orderSeats.isEmpty()) {
-            return;
-        }
-        boolean canResell = canResellRefundedSeats(order);
-        int restored = 0;
-        LocalDateTime now = LocalDateTime.now();
-        for (OrderSeat orderSeat : orderSeats) {
-            orderSeat.setStatus(ORDER_SEAT_REFUNDED);
-            orderSeat.setUpdateTime(now);
-            orderSeatMapper.updateById(orderSeat);
-
-            SessionSeat sessionSeat = sessionSeatMapper.selectById(orderSeat.getSessionSeatId());
-            if (sessionSeat == null) {
-                continue;
-            }
-            if (canResell) {
-                sessionSeat.setStatus(SESSION_SEAT_AVAILABLE);
-                sessionSeat.setOrderId(null);
-                sessionSeat.setTicketTypeId(null);
-                sessionSeat.setLockExpireTime(null);
-                restored++;
-            } else {
-                sessionSeat.setStatus(SESSION_SEAT_REFUNDED_UNAVAILABLE);
-            }
-            sessionSeat.setUpdateTime(now);
-            sessionSeatMapper.updateById(sessionSeat);
-        }
-        if (restored > 0 && ticketTypeMapper != null) {
-            ticketTypeMapper.increaseRemainStock(order.getTicketTypeId(), restored);
-        }
-    }
-
-    private boolean canResellRefundedSeats(Order order) {
-        if (sessionSeatMapper == null || ticketTypeMapper == null) {
-            return false;
-        }
-        LocalDateTime startTime = sessionSeatMapper.selectSessionStartTime(order.getSessionId());
-        if (startTime == null || !startTime.isAfter(LocalDateTime.now().plusHours(24))) {
-            return false;
-        }
-        return Boolean.TRUE.equals(sessionSeatMapper.selectSessionSellable(order.getSessionId()))
-                && Boolean.TRUE.equals(ticketTypeMapper.selectTicketTypeSellable(order.getTicketTypeId()));
+        return internalApiToken;
     }
 }

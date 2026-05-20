@@ -19,6 +19,10 @@ spring:
         server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
         file-extension: yaml
 
+internal:
+  api:
+    token: ${INTERNAL_API_TOKEN:omni-local-internal-token}
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

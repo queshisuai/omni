@@ -11,20 +11,18 @@ import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.payment.client.OrderClient;
+import com.omni.payment.client.TicketRefundReviewInternalClient;
+import com.omni.payment.client.UserInternalClient;
 import com.omni.payment.config.AlipayProperties;
 import com.omni.payment.dto.DirectRefundResponse;
+import com.omni.payment.dto.InternalUserRefResponse;
 import com.omni.payment.dto.OrderInfoResponse;
 import com.omni.payment.dto.RefundRequestVO;
-import com.omni.payment.entity.ActivityRef;
+import com.omni.payment.dto.TicketRefundReviewPermissionResponse;
 import com.omni.payment.entity.Payment;
 import com.omni.payment.entity.RefundRequest;
-import com.omni.payment.entity.SessionRef;
-import com.omni.payment.entity.UserRef;
-import com.omni.payment.mapper.ActivityRefMapper;
 import com.omni.payment.mapper.PaymentMapper;
 import com.omni.payment.mapper.RefundRequestMapper;
-import com.omni.payment.mapper.SessionRefMapper;
-import com.omni.payment.mapper.UserRefMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -41,9 +39,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class RefundService {
+
+    private static final Logger log = LoggerFactory.getLogger(RefundService.class);
 
     private static final Integer ORDER_STATUS_PAID = 2;
     private static final Integer REFUND_STATUS_PENDING = 0;
@@ -62,26 +64,23 @@ public class RefundService {
     private final OrderClient orderClient;
     private final RefundRequestMapper refundRequestMapper;
     private final PaymentMapper paymentMapper;
-    private final UserRefMapper userRefMapper;
-    private final SessionRefMapper sessionRefMapper;
-    private final ActivityRefMapper activityRefMapper;
+    private final UserInternalClient userInternalClient;
+    private final TicketRefundReviewInternalClient ticketRefundReviewInternalClient;
     private final String internalApiToken;
 
     public RefundService(AlipayProperties alipayProperties,
                          OrderClient orderClient,
                          RefundRequestMapper refundRequestMapper,
                          PaymentMapper paymentMapper,
-                         UserRefMapper userRefMapper,
-                         SessionRefMapper sessionRefMapper,
-                         ActivityRefMapper activityRefMapper,
+                         UserInternalClient userInternalClient,
+                         TicketRefundReviewInternalClient ticketRefundReviewInternalClient,
                          @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.alipayProperties = alipayProperties;
         this.orderClient = orderClient;
         this.refundRequestMapper = refundRequestMapper;
         this.paymentMapper = paymentMapper;
-        this.userRefMapper = userRefMapper;
-        this.sessionRefMapper = sessionRefMapper;
-        this.activityRefMapper = activityRefMapper;
+        this.userInternalClient = userInternalClient;
+        this.ticketRefundReviewInternalClient = ticketRefundReviewInternalClient;
         this.internalApiToken = internalApiToken;
     }
 
@@ -145,7 +144,7 @@ public class RefundService {
     }
 
     public List<RefundRequestVO> listAdminRefunds(Long reviewerId, Integer status) {
-        UserRef reviewer = requireReviewer(reviewerId);
+        InternalUserRefResponse reviewer = requireReviewer(reviewerId);
         LambdaQueryWrapper<RefundRequest> wrapper = new LambdaQueryWrapper<>();
         if (status != null) {
             wrapper.eq(RefundRequest::getStatus, status);
@@ -427,7 +426,13 @@ public class RefundService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "订单ID不能为空");
         }
         String token = requireInternalApiToken();
-        Result<OrderInfoResponse> result = orderClient.getOrder(orderId, token);
+        Result<OrderInfoResponse> result;
+        try {
+            result = orderClient.getOrder(orderId, token);
+        } catch (RuntimeException e) {
+            log.error("订单服务调用失败: orderId={}", orderId, e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "订单服务无响应");
+        }
         if (result == null) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "加载订单失败: 订单服务无响应");
         }
@@ -452,14 +457,21 @@ public class RefundService {
         return refund;
     }
 
-    private UserRef requireReviewer(Long reviewerId) {
+    private InternalUserRefResponse requireReviewer(Long reviewerId) {
         if (reviewerId == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "审核人ID不能为空");
         }
-        UserRef reviewer = userRefMapper.selectById(reviewerId);
-        if (reviewer == null) {
+        Result<InternalUserRefResponse> result;
+        try {
+            result = userInternalClient.getUserRef(reviewerId, internalApiToken);
+        } catch (RuntimeException e) {
+            log.error("用户服务调用失败: reviewerId={}", reviewerId, e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "用户服务无响应");
+        }
+        if (result == null || result.getCode() != 200 || result.getData() == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "审核人不存在");
         }
+        InternalUserRefResponse reviewer = result.getData();
         if (!ROLE_ADMIN.equals(reviewer.getRole()) && !ROLE_ORGANIZER.equals(reviewer.getRole())) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无退款审核权限");
         }
@@ -467,7 +479,7 @@ public class RefundService {
     }
 
     private void requireReviewPermission(Long reviewerId, OrderInfoResponse order) {
-        UserRef reviewer = requireReviewer(reviewerId);
+        InternalUserRefResponse reviewer = requireReviewer(reviewerId);
         if (ROLE_ADMIN.equals(reviewer.getRole())) {
             return;
         }
@@ -480,12 +492,18 @@ public class RefundService {
         if (order == null || order.getSessionId() == null) {
             return false;
         }
-        SessionRef session = sessionRefMapper.selectById(order.getSessionId());
-        if (session == null || session.getActivityId() == null) {
-            return false;
+        try {
+            Result<TicketRefundReviewPermissionResponse> result =
+                    ticketRefundReviewInternalClient.checkPermission(
+                            order.getSessionId(), reviewerId, internalApiToken);
+            if (result == null || result.getCode() != 200 || result.getData() == null) {
+                return false;
+            }
+            return Boolean.TRUE.equals(result.getData().getAllowed());
+        } catch (RuntimeException e) {
+            log.error("票务服务调用失败: sessionId={}, reviewerId={}", order.getSessionId(), reviewerId, e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "票务服务无响应");
         }
-        ActivityRef activity = activityRefMapper.selectById(session.getActivityId());
-        return activity != null && reviewerId.equals(activity.getOrganizerId());
     }
 
     private void requirePending(RefundRequest refund) {

@@ -422,7 +422,13 @@ public class AlipayService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "订单ID不能为空");
         }
         String token = requireInternalApiToken();
-        Result<OrderInfoResponse> result = orderClient.getOrder(orderId, token);
+        Result<OrderInfoResponse> result;
+        try {
+            result = orderClient.getOrder(orderId, token);
+        } catch (RuntimeException e) {
+            log.error("订单服务调用失败: orderId={}", orderId, e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "订单服务无响应");
+        }
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
         }
