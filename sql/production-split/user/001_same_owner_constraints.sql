@@ -1,16 +1,25 @@
 -- owner: java-user
 
-ALTER TABLE organizer_application
-    ADD CONSTRAINT fk_organizer_application_user
-    FOREIGN KEY (user_id) REFERENCES "user"(id);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_organizer_application_user') THEN
+        ALTER TABLE organizer_application
+            ADD CONSTRAINT fk_organizer_application_user
+            FOREIGN KEY (user_id) REFERENCES "user"(id);
+    END IF;
 
-ALTER TABLE organizer_application
-    ADD CONSTRAINT fk_organizer_application_reviewer
-    FOREIGN KEY (reviewer_id) REFERENCES "user"(id);
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_organizer_application_reviewer') THEN
+        ALTER TABLE organizer_application
+            ADD CONSTRAINT fk_organizer_application_reviewer
+            FOREIGN KEY (reviewer_id) REFERENCES "user"(id);
+    END IF;
 
-ALTER TABLE user_auth
-    ADD CONSTRAINT fk_user_auth_user
-    FOREIGN KEY (user_id) REFERENCES "user"(id);
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user_auth_user') THEN
+        ALTER TABLE user_auth
+            ADD CONSTRAINT fk_user_auth_user
+            FOREIGN KEY (user_id) REFERENCES "user"(id);
+    END IF;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_phone ON "user"(phone);
 CREATE INDEX IF NOT EXISTS idx_user_auth_user ON user_auth(user_id);

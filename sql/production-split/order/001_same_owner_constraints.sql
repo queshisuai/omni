@@ -1,12 +1,19 @@
 -- owner: java-order
 
-ALTER TABLE order_seat
-    ADD CONSTRAINT fk_order_seat_order
-    FOREIGN KEY (order_id) REFERENCES "order"(id);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_order_seat_order') THEN
+        ALTER TABLE order_seat
+            ADD CONSTRAINT fk_order_seat_order
+            FOREIGN KEY (order_id) REFERENCES "order"(id);
+    END IF;
 
-ALTER TABLE order_snapshot
-    ADD CONSTRAINT fk_order_snapshot_order
-    FOREIGN KEY (order_id) REFERENCES "order"(id) ON DELETE CASCADE;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_order_snapshot_order') THEN
+        ALTER TABLE order_snapshot
+            ADD CONSTRAINT fk_order_snapshot_order
+            FOREIGN KEY (order_id) REFERENCES "order"(id) ON DELETE CASCADE;
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_order_user ON "order"(user_id);
 CREATE INDEX IF NOT EXISTS idx_order_no ON "order"(order_no);

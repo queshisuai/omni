@@ -1,8 +1,13 @@
 -- owner: java-payment
 
-ALTER TABLE refund_request
-    ADD CONSTRAINT fk_refund_request_payment
-    FOREIGN KEY (payment_id) REFERENCES payment(id);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_refund_request_payment') THEN
+        ALTER TABLE refund_request
+            ADD CONSTRAINT fk_refund_request_payment
+            FOREIGN KEY (payment_id) REFERENCES payment(id);
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_payment_order ON payment(order_id);
 CREATE INDEX IF NOT EXISTS idx_payment_no ON payment(payment_no);
