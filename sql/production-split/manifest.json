@@ -1,0 +1,40 @@
+{
+  "sourceDatabase": "omni_ticket",
+  "services": [
+    {
+      "service": "java-user",
+      "key": "user",
+      "targetInstance": "pg-user",
+      "targetDatabase": "omni_user",
+      "tables": ["user", "user_auth", "sms_code", "organizer_application"]
+    },
+    {
+      "service": "java-ticket",
+      "key": "ticket",
+      "targetInstance": "pg-ticket",
+      "targetDatabase": "omni_ticket",
+      "tables": ["category", "artist", "tour", "station", "activity", "venue", "venue_application", "session", "ticket_type", "ticket_type_area", "session_seat", "venue_area", "venue_seat", "reservation", "seat", "stock_log", "venue_seat_layout_template", "venue_seat_layout_template_section", "venue_default_layout", "venue_default_layout_section", "activity_seat_layout", "activity_seat_layout_section", "session_seat_layout", "session_seat_layout_section", "seat_block", "seat_override", "ticket_group", "layout_section"]
+    },
+    {
+      "service": "java-order",
+      "key": "order",
+      "targetInstance": "pg-order",
+      "targetDatabase": "omni_order",
+      "tables": ["order", "order_seat", "order_snapshot"]
+    },
+    {
+      "service": "java-payment",
+      "key": "payment",
+      "targetInstance": "pg-payment",
+      "targetDatabase": "omni_payment",
+      "tables": ["payment", "refund_request"]
+    },
+    {
+      "service": "java-notification",
+      "key": "notification",
+      "targetInstance": "pg-notification",
+      "targetDatabase": "omni_notification",
+      "tables": ["notification"]
+    }
+  ]
+}
