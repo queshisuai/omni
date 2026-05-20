@@ -171,6 +171,15 @@ Omni/
 - 当前已验证：五个业务服务可用 `local-schema` profile 启动，登录、票务 quote、下单、支付 QR、支付同步、订单详情、通知发送/列表在本地 schema isolation 环境下通过。
 - 当前阶段仍不是生产物理拆库；生产迁移必须先通过 `docs/microservices/service-boundaries.md` 的 Production Migration Safety Gate。
 
+### 生产物理拆库
+- **目标拓扑**：`java-user`、`java-ticket`、`java-order`、`java-payment`、`java-notification` 分别连接各自生产服务数据库，`java-gateway` 不拥有业务数据库。
+- **已批准设计**：`docs/superpowers/specs/2026-05-20-production-physical-db-split-design.md`。
+- **实施计划**：`docs/superpowers/plans/2026-05-20-production-physical-db-split-implementation.md`。
+- **迁移资产**：生产拆库 SQL 位于 `sql/production-split/`，以 `sql/production-split/manifest.json` 为执行清单；不得复用 `sql/local/*` 作为生产迁移 SQL。
+- **运行配置**：生产拆库切换使用 `prod-split` profile 或等价环境变量注入 datasource；不要改变默认 `application.yml` 面向共享数据库阶段的说明。
+- **禁止混用**：五个业务服务必须统一使用生产拆库配置，禁止共享库和拆分库混用，禁止仅部分服务切换后开放业务流量。
+- **开放流量门禁**：开放业务流量前必须完成 `docs/operations/production-db-split-cutover-checklist.md`，并通过 `scripts/verify-production-split-runtime.ps1` runtime verifier。
+
 ### 前端
 - 使用 `'use client'` 组件 + React hooks
 - API 调用统一通过 `@/lib/api.ts` 的 `request<T>()` 封装

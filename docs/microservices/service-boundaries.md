@@ -48,6 +48,22 @@
 
 在以上条件满足前，`sql/local/*` 文件只能用于本地 disposable database，不得进入生产迁移链路。
 
+## Production Physical Split Assets
+
+生产物理拆库只能在 Production Migration Safety Gate 通过后执行，并以以下已批准资产为准：
+
+- 设计规格：`docs/superpowers/specs/2026-05-20-production-physical-db-split-design.md`。
+- 实施计划：`docs/superpowers/plans/2026-05-20-production-physical-db-split-implementation.md`。
+- 迁移清单：`sql/production-split/manifest.json`。
+- 生产拆库 SQL：`sql/production-split/user/`、`sql/production-split/ticket/`、`sql/production-split/order/`、`sql/production-split/payment/`、`sql/production-split/notification/`。
+- SQL 检查脚本：`scripts/check-production-split-sql.ps1`。
+- 数据导出脚本：`scripts/export-production-split.ps1`。
+- 数据导入脚本：`scripts/import-production-split.ps1`。
+- 运行时验证脚本：`scripts/verify-production-split-runtime.ps1`。
+- 切换清单：`docs/operations/production-db-split-cutover-checklist.md`。
+
+生产迁移 SQL 禁止复用 `sql/local/*`；本地 schema isolation SQL 只服务 disposable local database，不是 staging / production migration 的输入。五个业务服务切换生产物理拆库时，必须统一使用 `prod-split` profile 或等价环境变量配置，确保 user/ticket/order/payment/notification 同时指向拆分后的服务数据库。禁止共享库和拆分库混用，也禁止仅切换部分服务后开放业务流量。
+
 ## Explicitly Forbidden Until Gate Passes
 
 - 不允许删除 staging / production FK。
