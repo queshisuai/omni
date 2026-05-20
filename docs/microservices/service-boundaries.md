@@ -50,7 +50,7 @@
 
 ## Production Physical Split Assets
 
-生产物理拆库只能在 Production Migration Safety Gate 通过后执行，并以以下已批准资产为准：
+生产物理拆库只能在 Production Migration Safety Gate 通过后执行，并以以下已批准资产为准。当前资产已准备且可用于受控预演，但这不等于允许 staging / production cutover；实际 cutover 仍必须完成门禁清单并获得明确批准。
 
 - 设计规格：`docs/superpowers/specs/2026-05-20-production-physical-db-split-design.md`。
 - 实施计划：`docs/superpowers/plans/2026-05-20-production-physical-db-split-implementation.md`。

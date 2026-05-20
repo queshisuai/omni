@@ -12,6 +12,76 @@ if (-not (Test-Path -LiteralPath $manifestFile)) {
 $manifest = Get-Content -Raw -LiteralPath $manifestFile | ConvertFrom-Json
 $expectedKeys = @("user", "ticket", "order", "payment", "notification")
 
+function New-ColumnSet([string[]] $columns) {
+    $set = @{}
+    foreach ($column in $columns) {
+        $set[$column.ToLower()] = $true
+    }
+    return $set
+}
+
+function Normalize-Identifier([string] $identifier) {
+    $value = $identifier.Trim()
+    if ($value.Contains('.')) {
+        $value = ($value -split '\.')[-1]
+    }
+    return $value.Trim('"').ToLower()
+}
+
+function Get-IdentifierFromMatch($match, [int] $quotedGroup, [int] $bareGroup) {
+    $value = $match.Groups[$quotedGroup].Value
+    if (-not $value) {
+        $value = $match.Groups[$bareGroup].Value
+    }
+    return (Normalize-Identifier $value)
+}
+
+function Get-ColumnList([string] $columns) {
+    $result = @()
+    foreach ($column in ($columns -split ',')) {
+        $result += (Normalize-Identifier $column)
+    }
+    return $result
+}
+
+$schemaColumns = @{
+    "activity" = New-ColumnSet @("id", "category_id", "artist_id")
+    "activity_seat_layout" = New-ColumnSet @("id", "activity_id", "source_venue_layout_id")
+    "activity_seat_layout_section" = New-ColumnSet @("id", "activity_layout_id")
+    "artist" = New-ColumnSet @("id")
+    "category" = New-ColumnSet @("id")
+    "notification" = New-ColumnSet @("id")
+    "order" = New-ColumnSet @("id")
+    "order_seat" = New-ColumnSet @("id", "order_id")
+    "order_snapshot" = New-ColumnSet @("id", "order_id")
+    "organizer_application" = New-ColumnSet @("id", "user_id", "reviewer_id")
+    "payment" = New-ColumnSet @("id")
+    "refund_request" = New-ColumnSet @("id", "payment_id")
+    "reservation" = New-ColumnSet @("id", "session_id")
+    "seat" = New-ColumnSet @("id", "session_id", "ticket_type_id")
+    "seat_block" = New-ColumnSet @("id")
+    "seat_override" = New-ColumnSet @("id", "block_id")
+    "session" = New-ColumnSet @("id", "activity_id", "venue_id")
+    "session_seat" = New-ColumnSet @("id", "session_id", "venue_id", "area_id", "venue_seat_id", "ticket_type_id", "layout_section_id")
+    "session_seat_layout" = New-ColumnSet @("id", "session_id", "activity_layout_id")
+    "session_seat_layout_section" = New-ColumnSet @("id", "session_layout_id", "activity_layout_section_id", "ticket_type_id")
+    "sms_code" = New-ColumnSet @("id")
+    "station" = New-ColumnSet @("id", "tour_id")
+    "stock_log" = New-ColumnSet @("id", "session_id", "ticket_type_id")
+    "ticket_group" = New-ColumnSet @("id")
+    "ticket_type" = New-ColumnSet @("id", "session_id")
+    "ticket_type_area" = New-ColumnSet @("id", "ticket_type_id", "session_id", "area_id")
+    "tour" = New-ColumnSet @("id")
+    "user" = New-ColumnSet @("id")
+    "user_auth" = New-ColumnSet @("id", "user_id")
+    "venue" = New-ColumnSet @("id")
+    "venue_application" = New-ColumnSet @("id", "venue_id")
+    "venue_area" = New-ColumnSet @("id", "venue_id")
+    "venue_default_layout" = New-ColumnSet @("id", "venue_id")
+    "venue_default_layout_section" = New-ColumnSet @("id", "layout_id")
+    "venue_seat" = New-ColumnSet @("id", "venue_id", "area_id")
+}
+
 foreach ($key in $expectedKeys) {
     $dir = Join-Path -Path $splitRoot -ChildPath $key
     if (-not (Test-Path -LiteralPath $dir)) {
@@ -24,6 +94,10 @@ $tableOwner = @{}
 foreach ($service in $manifest.services) {
     foreach ($table in $service.tables) {
         $normalized = $table.ToLower()
+        if (-not $schemaColumns.ContainsKey($normalized)) {
+            Write-Host "FAIL manifest references unknown production table '$table' for service $($service.key)"
+            exit 1
+        }
         if ($tableOwner.ContainsKey($normalized)) {
             Write-Host "FAIL table assigned to multiple services: $table"
             exit 1
@@ -80,21 +154,15 @@ foreach ($file in $sqlFiles) {
 }
 
 $identifierPattern = '(?:(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*)?(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))'
-$fkPattern = 'ALTER\s+TABLE\s+' + $identifierPattern + '\s+ADD\s+CONSTRAINT\s+(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s+FOREIGN\s+KEY\s*\([\s\S]*?\)\s+REFERENCES\s+' + $identifierPattern + '\s*\('
+$fkPattern = 'ALTER\s+TABLE\s+' + $identifierPattern + '\s+ADD\s+CONSTRAINT\s+(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s+FOREIGN\s+KEY\s*\(([^\)]+)\)\s+REFERENCES\s+' + $identifierPattern + '\s*\(([^\)]+)\)'
 foreach ($file in $sqlFiles) {
     $serviceKey = Split-Path -Leaf (Split-Path -Parent $file.FullName)
     $content = Get-Content -Raw -LiteralPath $file.FullName
     foreach ($match in [regex]::Matches($content, $fkPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
-        $child = $match.Groups[1].Value
-        if (-not $child) {
-            $child = $match.Groups[2].Value
-        }
-        $referenced = $match.Groups[3].Value
-        if (-not $referenced) {
-            $referenced = $match.Groups[4].Value
-        }
-        $child = $child.ToLower()
-        $referenced = $referenced.ToLower()
+        $child = Get-IdentifierFromMatch $match 1 2
+        $childColumns = Get-ColumnList $match.Groups[3].Value
+        $referenced = Get-IdentifierFromMatch $match 4 5
+        $referencedColumns = Get-ColumnList $match.Groups[6].Value
         $childOwner = $tableOwner[$child]
         $owner = $tableOwner[$referenced]
         $lineNumber = 1 + ($content.Substring(0, $match.Index).Split("`n").Count - 1)
@@ -113,6 +181,18 @@ foreach ($file in $sqlFiles) {
         if ($owner -ne $serviceKey) {
             Write-Host "FAIL cross-owner FK in production split SQL: $($file.FullName):$lineNumber references $referenced owned by $owner"
             exit 1
+        }
+        foreach ($column in $childColumns) {
+            if (-not $schemaColumns[$child].ContainsKey($column)) {
+                Write-Host "FAIL FK uses unknown child column '$child.$column' in $($file.FullName):$lineNumber"
+                exit 1
+            }
+        }
+        foreach ($column in $referencedColumns) {
+            if (-not $schemaColumns[$referenced].ContainsKey($column)) {
+                Write-Host "FAIL FK references unknown column '$referenced.$column' in $($file.FullName):$lineNumber"
+                exit 1
+            }
         }
     }
 }
