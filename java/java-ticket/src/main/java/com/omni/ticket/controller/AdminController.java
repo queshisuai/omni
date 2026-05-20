@@ -10,26 +10,30 @@ import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.AdminSummaryResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
-import com.omni.ticket.dto.SeatTemplateSyncResponse;
 import com.omni.ticket.dto.SeatTemplateResponse;
+import com.omni.ticket.dto.SeatTemplateSyncResponse;
 import com.omni.ticket.dto.SessionAdminResponse;
 import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.dto.VenueApplicationResponse;
 import com.omni.ticket.dto.VenueApplicationReviewRequest;
 import com.omni.ticket.dto.VenueSeatRequest;
+import com.omni.ticket.dto.OrderInfoResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
-import com.omni.ticket.service.SeatCraftTemplateService;
+import com.omni.ticket.service.VenueDefaultLayoutService;
 import com.omni.ticket.service.SeatTemplateService;
 import com.omni.ticket.service.SessionAdminService;
 import com.omni.ticket.service.SessionSeatLayoutService;
 import com.omni.ticket.service.SessionSeatService;
 import com.omni.ticket.service.TicketTypeAreaService;
+import com.omni.ticket.service.TourStationService;
 import com.omni.ticket.service.VenueApplicationService;
+import com.omni.ticket.service.OrderAdminQueryService;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,9 +68,11 @@ public class AdminController {
     private final TicketTypeAreaService ticketTypeAreaService;
     private final AdminSummaryService adminSummaryService;
     private final SessionSeatService sessionSeatService;
-    private final SeatCraftTemplateService seatCraftTemplateService;
+    private final VenueDefaultLayoutService venueDefaultLayoutService;
     private final ActivitySeatLayoutService activitySeatLayoutService;
     private final SessionSeatLayoutService sessionSeatLayoutService;
+    private final TourStationService tourStationService;
+    private final OrderAdminQueryService orderAdminQueryService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -77,11 +83,11 @@ public class AdminController {
                               SeatTemplateService seatTemplateService,
                                 TicketTypeAreaService ticketTypeAreaService,
                                 AdminSummaryService adminSummaryService,
-                                SessionSeatService sessionSeatService,
-                                SeatCraftTemplateService seatCraftTemplateService) {
+                                 SessionSeatService sessionSeatService,
+                                 VenueDefaultLayoutService venueDefaultLayoutService) {
         this(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userRefMapper, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
-                adminSummaryService, sessionSeatService, seatCraftTemplateService, null, null);
+                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null);
     }
 
     @Autowired
@@ -94,10 +100,12 @@ public class AdminController {
                               SeatTemplateService seatTemplateService,
                                TicketTypeAreaService ticketTypeAreaService,
                                AdminSummaryService adminSummaryService,
-                                SessionSeatService sessionSeatService,
-                                SeatCraftTemplateService seatCraftTemplateService,
-                                ActivitySeatLayoutService activitySeatLayoutService,
-                                SessionSeatLayoutService sessionSeatLayoutService) {
+                                 SessionSeatService sessionSeatService,
+                                  VenueDefaultLayoutService venueDefaultLayoutService,
+                                  ActivitySeatLayoutService activitySeatLayoutService,
+                                  SessionSeatLayoutService sessionSeatLayoutService,
+                                  TourStationService tourStationService,
+                                  OrderAdminQueryService orderAdminQueryService) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
@@ -110,14 +118,47 @@ public class AdminController {
         this.ticketTypeAreaService = ticketTypeAreaService;
         this.adminSummaryService = adminSummaryService;
         this.sessionSeatService = sessionSeatService;
-        this.seatCraftTemplateService = seatCraftTemplateService;
+        this.venueDefaultLayoutService = venueDefaultLayoutService;
         this.activitySeatLayoutService = activitySeatLayoutService;
         this.sessionSeatLayoutService = sessionSeatLayoutService;
+        this.tourStationService = tourStationService;
+        this.orderAdminQueryService = orderAdminQueryService;
     }
 
     @GetMapping("/summary")
     public Result<AdminSummaryResponse> getAdminSummary(@RequestParam Long userId) {
         return Result.success(adminSummaryService.getSummary(userId));
+    }
+
+    @GetMapping("/orders")
+    public Result<List<OrderInfoResponse>> listAdminOrders(@RequestParam Long userId,
+                                                           @RequestParam(defaultValue = "false") Boolean paidOnly) {
+        return Result.success(orderAdminQueryService.listOrders(userId, paidOnly));
+    }
+
+    @PostMapping("/tours/draft")
+    public Result<Tour> createTourDraft(@RequestBody Map<String, Object> body) {
+        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
+        return Result.success(tourStationService.createTourDraft(userId, body));
+    }
+
+    @GetMapping("/tours")
+    public Result<Page<Tour>> listTours(@RequestParam Long userId,
+                                        @RequestParam(defaultValue = "1") Integer page,
+                                        @RequestParam(defaultValue = "10") Integer size) {
+        return Result.success(tourStationService.listManageableTours(userId, page, size));
+    }
+
+    @PostMapping("/tours/{tourId}/stations/draft")
+    public Result<Station> createStationDraft(@PathVariable Long tourId, @RequestBody Map<String, Object> body) {
+        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
+        return Result.success(tourStationService.createStationDraft(userId, tourId, body));
+    }
+
+    @PostMapping("/stations/{stationId}/publish")
+    public Result<Map<String, Object>> publishStation(@PathVariable Long stationId, @RequestBody Map<String, Object> body) {
+        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
+        return Result.success(tourStationService.publishStation(userId, stationId, body));
     }
 
     /** 获取用户角色，非admin/organizer返回null并拒绝 */
@@ -154,6 +195,10 @@ public class AdminController {
         Activity activity = new Activity();
         activity.setCategoryId(categoryId);
         activity.setArtistId(artistId);
+        activity.setTourId(parsePositiveLong(body.get("tourId")));
+        activity.setStationId(parsePositiveLong(body.get("stationId")));
+        activity.setVenueApplicationId(parsePositiveLong(body.get("venueApplicationId")));
+        activity.setPublishStatus(body.get("publishStatus") != null ? body.get("publishStatus").toString() : "draft");
         activity.setName(name);
         activity.setDescription(body.get("description") != null ? body.get("description").toString() : null);
         activity.setPoster(body.get("poster") != null ? body.get("poster").toString() : null);
@@ -226,15 +271,6 @@ public class AdminController {
     public Result<RefundImpactResponse> deactivateActivity(@PathVariable Long id,
                                                              @RequestBody DeactivateActivityRequest request) {
         return Result.success(activityAdminService.deactivateActivity(id, request));
-    }
-
-    @PostMapping("/activities/{activityId}/seat-layout/from-template")
-    public Result<SeatCraftLayoutDtos.LayoutResponse> createActivitySeatLayout(@PathVariable Long activityId,
-                                                                                @RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body.get("userId"));
-        Long templateId = parsePositiveLong(body.get("templateId"));
-        String layoutMode = body.get("layoutMode") == null ? "unified" : body.get("layoutMode").toString();
-        return Result.success(activitySeatLayoutService.copyFromTemplate(userId, activityId, templateId, layoutMode));
     }
 
     @GetMapping("/activities/{activityId}/seat-layout")
@@ -364,22 +400,6 @@ public class AdminController {
         return Result.success(sessionAdminService.listSessions(userId, page, size, activityId, venueId, status));
     }
 
-    @PostMapping("/sessions/{sessionId}/seat-layout/from-template")
-    public Result<SeatCraftLayoutDtos.LayoutResponse> createSessionLayoutFromTemplate(@PathVariable Long sessionId,
-                                                                                       @RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
-        Long templateId = parsePositiveLong(body == null ? null : body.get("templateId"));
-        return Result.success(sessionSeatLayoutService.copyFromTemplate(userId, sessionId, templateId));
-    }
-
-    @PostMapping("/sessions/{sessionId}/seat-layout/from-activity")
-    public Result<SeatCraftLayoutDtos.LayoutResponse> createSessionLayoutFromActivity(@PathVariable Long sessionId,
-                                                                                       @RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
-        Long activityLayoutId = parsePositiveLong(body == null ? null : body.get("activityLayoutId"));
-        return Result.success(sessionSeatLayoutService.copyFromActivityLayout(userId, sessionId, activityLayoutId));
-    }
-
     @GetMapping("/sessions/{sessionId}/seat-layout")
     public Result<SeatCraftLayoutDtos.LayoutResponse> getSessionSeatLayout(@PathVariable Long sessionId,
                                                                             @RequestParam Long userId) {
@@ -494,18 +514,25 @@ public class AdminController {
 
     @PostMapping("/venues")
     public Result<Venue> createVenue(@RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+        Long userId = parsePositiveLong(body.get("userId"));
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         if ("organizer".equals(role)) return Result.fail(403, "仅平台管理员可创建场馆");
 
         Venue venue = new Venue();
-        venue.setName(body.get("name").toString());
+        venue.setName(parseNonBlankString(body.get("name")));
         venue.setCity(body.get("city") != null ? body.get("city").toString() : null);
         venue.setAddress(body.get("address") != null ? body.get("address").toString() : null);
         venue.setCapacity(body.get("capacity") != null ? Integer.valueOf(body.get("capacity").toString()) : null);
         venue.setStatus(1);
         venueMapper.insert(venue);
+
+        if (body.containsKey("layout") && body.get("layout") != null) {
+            ObjectMapper objectMapper = new ObjectMapper();
+            SeatCraftLayoutDtos.LayoutResponse layout = objectMapper.convertValue(body.get("layout"), SeatCraftLayoutDtos.LayoutResponse.class);
+            venueDefaultLayoutService.saveLayout(userId, venue.getId(), layout);
+        }
+
         return Result.success(venue);
     }
 
@@ -551,14 +578,16 @@ public class AdminController {
         return Result.success(seatTemplateService.listSeats(userId, id));
     }
 
-    @PostMapping("/venues/{venueId}/seat-layout-templates/defaults")
-    public Result<List<VenueSeatLayoutTemplate>> ensureSeatLayoutDefaults(@PathVariable Long venueId, @RequestParam Long userId) {
-        return Result.success(seatCraftTemplateService.ensureDefaults(userId, venueId));
+    @GetMapping("/venues/{venueId}/default-layout")
+    public Result<SeatCraftLayoutDtos.LayoutResponse> getVenueDefaultLayout(@PathVariable Long venueId) {
+        SeatCraftLayoutDtos.LayoutResponse layout = venueDefaultLayoutService.getLayout(venueId);
+        return Result.success(layout);
     }
 
-    @GetMapping("/venues/{venueId}/seat-layout-templates")
-    public Result<List<SeatCraftLayoutDtos.LayoutResponse>> listSeatLayoutTemplates(@PathVariable Long venueId, @RequestParam Long userId) {
-        return Result.success(seatCraftTemplateService.listTemplates(userId, venueId));
+    @PutMapping("/venues/{venueId}/default-layout")
+    public Result<SeatCraftLayoutDtos.LayoutResponse> updateVenueDefaultLayout(@PathVariable Long venueId,
+                                                                                @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
+        return Result.success(venueDefaultLayoutService.saveLayout(request.getUserId(), venueId, request.getLayout()));
     }
 
     @PostMapping("/venues/{id}/seats")

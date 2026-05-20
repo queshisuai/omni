@@ -5,7 +5,6 @@ import com.omni.common.util.JwtUtil;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
-import com.omni.ticket.dto.SeatTemplateSyncResponse;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
@@ -15,12 +14,13 @@ import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
-import com.omni.ticket.service.SeatCraftTemplateService;
+import com.omni.ticket.service.VenueDefaultLayoutService;
 import com.omni.ticket.service.SeatTemplateService;
 import com.omni.ticket.service.SessionAdminService;
 import com.omni.ticket.service.SessionSeatLayoutService;
 import com.omni.ticket.service.SessionSeatService;
 import com.omni.ticket.service.TicketTypeAreaService;
+import com.omni.ticket.service.TourStationService;
 import com.omni.ticket.service.VenueApplicationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +38,7 @@ import java.util.Collections;
 import java.util.Map;
 
 import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.entity.Tour;
 
 @ExtendWith(MockitoExtension.class)
 class AdminControllerTest {
@@ -67,11 +68,13 @@ class AdminControllerTest {
     @Mock
     private SessionSeatService sessionSeatService;
     @Mock
-    private SeatCraftTemplateService seatCraftTemplateService;
+    private VenueDefaultLayoutService venueDefaultLayoutService;
     @Mock
     private ActivitySeatLayoutService activitySeatLayoutService;
     @Mock
     private SessionSeatLayoutService sessionSeatLayoutService;
+    @Mock
+    private TourStationService tourStationService;
 
     @Test
     void deactivateOrganizerUsesAuthorizationTokenAsOperator() {
@@ -106,7 +109,7 @@ class AdminControllerTest {
     void createVenueSeatRejectsEmptyRequestBody() {
         AdminController controller = controller();
 
-        Result<SeatTemplateSyncResponse> result = controller.createVenueSeat(1L, null);
+        Result<?> result = controller.createVenueSeat(1L, null);
 
         assertEquals(400, result.getCode());
         assertEquals("座位参数不能为空", result.getMessage());
@@ -143,7 +146,21 @@ class AdminControllerTest {
         assertEquals(400, result.getCode());
     }
 
+    @Test
+    void createTourDraftDelegatesToService() {
+        AdminController controller = controller();
+        Tour tour = new Tour();
+        tour.setId(20L);
+        when(tourStationService.createTourDraft(any(), any())).thenReturn(tour);
+
+        Result<Tour> result = controller.createTourDraft(Map.of("userId", 2003L, "title", "巡演"));
+
+        assertEquals(200, result.getCode());
+        assertEquals(20L, result.getData().getId());
+        verify(tourStationService).createTourDraft(2003L, Map.of("userId", 2003L, "title", "巡演"));
+    }
+
     private AdminController controller() {
-        return new AdminController(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userRefMapper, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, seatCraftTemplateService, activitySeatLayoutService, sessionSeatLayoutService);
+        return new AdminController(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userRefMapper, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null);
     }
 }

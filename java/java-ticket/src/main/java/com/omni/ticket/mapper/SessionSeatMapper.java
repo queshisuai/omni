@@ -37,5 +37,11 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
             "AND layout_section_id = #{layoutSectionId} AND status = 1 AND order_id IS NULL " +
             "AND NOT EXISTS (SELECT 1 FROM order_seat os WHERE os.session_seat_id = session_seat.id)")
     Long countAvailableByLayoutSection(@Param("sessionId") Long sessionId,
-                                       @Param("layoutSectionId") Long layoutSectionId);
+                                        @Param("layoutSectionId") Long layoutSectionId);
+
+    @Select("SELECT COUNT(*) FROM session_seat WHERE session_id = #{sessionId} " +
+            "AND ticket_group_key = #{ticketGroupKey} AND status = 1 AND order_id IS NULL " +
+            "AND NOT EXISTS (SELECT 1 FROM order_seat os WHERE os.session_seat_id = session_seat.id)")
+    Long countAvailableByTicketGroupKey(@Param("sessionId") Long sessionId,
+                                        @Param("ticketGroupKey") String ticketGroupKey);
 }

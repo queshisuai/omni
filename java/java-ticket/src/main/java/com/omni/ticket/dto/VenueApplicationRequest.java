@@ -1,5 +1,7 @@
 package com.omni.ticket.dto;
 
+import java.time.LocalDateTime;
+
 public class VenueApplicationRequest {
     private Long userId;
     private String venueName;
@@ -11,6 +13,13 @@ public class VenueApplicationRequest {
     private String qualificationNo;
     private String businessScope;
     private String description;
+    private LocalDateTime validFrom;
+    private LocalDateTime validTo;
+    private String proofNote;
+    private String proofFileUrl;
+    private String layoutSnapshot;
+    private SeatCraftBlockDtos.LayoutRequest layout;
+    private Boolean setAsRecommendedLayout;
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
@@ -32,4 +41,18 @@ public class VenueApplicationRequest {
     public void setBusinessScope(String businessScope) { this.businessScope = businessScope; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public LocalDateTime getValidFrom() { return validFrom; }
+    public void setValidFrom(LocalDateTime validFrom) { this.validFrom = validFrom; }
+    public LocalDateTime getValidTo() { return validTo; }
+    public void setValidTo(LocalDateTime validTo) { this.validTo = validTo; }
+    public String getProofNote() { return proofNote; }
+    public void setProofNote(String proofNote) { this.proofNote = proofNote; }
+    public String getProofFileUrl() { return proofFileUrl; }
+    public void setProofFileUrl(String proofFileUrl) { this.proofFileUrl = proofFileUrl; }
+    public String getLayoutSnapshot() { return layoutSnapshot; }
+    public void setLayoutSnapshot(String layoutSnapshot) { this.layoutSnapshot = layoutSnapshot; }
+    public SeatCraftBlockDtos.LayoutRequest getLayout() { return layout; }
+    public void setLayout(SeatCraftBlockDtos.LayoutRequest layout) { this.layout = layout; }
+    public Boolean getSetAsRecommendedLayout() { return setAsRecommendedLayout; }
+    public void setSetAsRecommendedLayout(Boolean setAsRecommendedLayout) { this.setAsRecommendedLayout = setAsRecommendedLayout; }
 }

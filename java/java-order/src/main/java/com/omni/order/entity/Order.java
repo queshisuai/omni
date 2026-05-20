@@ -23,6 +23,9 @@ public class Order {
     private BigDecimal amount;
     /** 状态: 1=PENDING, 2=PAID, 3=CANCELLED, 4=REFUNDED */
     private Integer status;
+    private Boolean userHidden;
+    private LocalDateTime userDeletedAt;
+    private LocalDateTime userDeleteExpiresAt;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -42,6 +45,12 @@ public class Order {
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
+    public Boolean getUserHidden() { return userHidden; }
+    public void setUserHidden(Boolean userHidden) { this.userHidden = userHidden; }
+    public LocalDateTime getUserDeletedAt() { return userDeletedAt; }
+    public void setUserDeletedAt(LocalDateTime userDeletedAt) { this.userDeletedAt = userDeletedAt; }
+    public LocalDateTime getUserDeleteExpiresAt() { return userDeleteExpiresAt; }
+    public void setUserDeleteExpiresAt(LocalDateTime userDeleteExpiresAt) { this.userDeleteExpiresAt = userDeleteExpiresAt; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getUpdateTime() { return updateTime; }

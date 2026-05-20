@@ -2,6 +2,7 @@ package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.ActivitySeatLayout;
@@ -14,8 +15,6 @@ import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.UserRef;
 import com.omni.ticket.entity.VenueArea;
 import com.omni.ticket.entity.VenueSeat;
-import com.omni.ticket.entity.VenueSeatLayoutTemplate;
-import com.omni.ticket.entity.VenueSeatLayoutTemplateSection;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutSectionMapper;
@@ -26,9 +25,8 @@ import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueAreaMapper;
-import com.omni.ticket.mapper.VenueSeatLayoutTemplateMapper;
-import com.omni.ticket.mapper.VenueSeatLayoutTemplateSectionMapper;
 import com.omni.ticket.mapper.VenueSeatMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,8 +41,6 @@ public class SessionSeatLayoutService {
     private final SessionMapper sessionMapper;
     private final ActivityMapper activityMapper;
     private final UserRefMapper userRefMapper;
-    private final VenueSeatLayoutTemplateMapper templateMapper;
-    private final VenueSeatLayoutTemplateSectionMapper templateSectionMapper;
     private final ActivitySeatLayoutMapper activityLayoutMapper;
     private final ActivitySeatLayoutSectionMapper activitySectionMapper;
     private final SessionSeatLayoutMapper sessionLayoutMapper;
@@ -53,12 +49,45 @@ public class SessionSeatLayoutService {
     private final TicketTypeMapper ticketTypeMapper;
     private final VenueAreaMapper venueAreaMapper;
     private final VenueSeatMapper venueSeatMapper;
+    private final SeatCraftBlockLayoutService blockLayoutService;
+    private final SessionBlockTicketStockService blockTicketStockService;
 
     public SessionSeatLayoutService(SessionMapper sessionMapper,
                                     ActivityMapper activityMapper,
                                     UserRefMapper userRefMapper,
-                                    VenueSeatLayoutTemplateMapper templateMapper,
-                                    VenueSeatLayoutTemplateSectionMapper templateSectionMapper,
+                                    ActivitySeatLayoutMapper activityLayoutMapper,
+                                    ActivitySeatLayoutSectionMapper activitySectionMapper,
+                                    SessionSeatLayoutMapper sessionLayoutMapper,
+                                    SessionSeatLayoutSectionMapper sessionSectionMapper,
+                                     SessionSeatMapper sessionSeatMapper,
+                                     TicketTypeMapper ticketTypeMapper,
+                                     VenueAreaMapper venueAreaMapper,
+                                     VenueSeatMapper venueSeatMapper) {
+        this(sessionMapper, activityMapper, userRefMapper, activityLayoutMapper, activitySectionMapper,
+                sessionLayoutMapper, sessionSectionMapper, sessionSeatMapper, ticketTypeMapper, venueAreaMapper, venueSeatMapper, null);
+    }
+
+    public SessionSeatLayoutService(SessionMapper sessionMapper,
+                                    ActivityMapper activityMapper,
+                                    UserRefMapper userRefMapper,
+                                    ActivitySeatLayoutMapper activityLayoutMapper,
+                                    ActivitySeatLayoutSectionMapper activitySectionMapper,
+                                    SessionSeatLayoutMapper sessionLayoutMapper,
+                                    SessionSeatLayoutSectionMapper sessionSectionMapper,
+                                    SessionSeatMapper sessionSeatMapper,
+                                    TicketTypeMapper ticketTypeMapper,
+                                     VenueAreaMapper venueAreaMapper,
+                                     VenueSeatMapper venueSeatMapper,
+                                     SeatCraftBlockLayoutService blockLayoutService) {
+        this(sessionMapper, activityMapper, userRefMapper, activityLayoutMapper, activitySectionMapper,
+                sessionLayoutMapper, sessionSectionMapper, sessionSeatMapper, ticketTypeMapper, venueAreaMapper, venueSeatMapper,
+                blockLayoutService, null);
+    }
+
+    @Autowired
+    public SessionSeatLayoutService(SessionMapper sessionMapper,
+                                    ActivityMapper activityMapper,
+                                    UserRefMapper userRefMapper,
                                     ActivitySeatLayoutMapper activityLayoutMapper,
                                     ActivitySeatLayoutSectionMapper activitySectionMapper,
                                     SessionSeatLayoutMapper sessionLayoutMapper,
@@ -66,12 +95,12 @@ public class SessionSeatLayoutService {
                                     SessionSeatMapper sessionSeatMapper,
                                     TicketTypeMapper ticketTypeMapper,
                                     VenueAreaMapper venueAreaMapper,
-                                    VenueSeatMapper venueSeatMapper) {
+                                    VenueSeatMapper venueSeatMapper,
+                                    SeatCraftBlockLayoutService blockLayoutService,
+                                    SessionBlockTicketStockService blockTicketStockService) {
         this.sessionMapper = sessionMapper;
         this.activityMapper = activityMapper;
         this.userRefMapper = userRefMapper;
-        this.templateMapper = templateMapper;
-        this.templateSectionMapper = templateSectionMapper;
         this.activityLayoutMapper = activityLayoutMapper;
         this.activitySectionMapper = activitySectionMapper;
         this.sessionLayoutMapper = sessionLayoutMapper;
@@ -80,31 +109,8 @@ public class SessionSeatLayoutService {
         this.ticketTypeMapper = ticketTypeMapper;
         this.venueAreaMapper = venueAreaMapper;
         this.venueSeatMapper = venueSeatMapper;
-    }
-
-    @Transactional
-    public SeatCraftLayoutDtos.LayoutResponse copyFromTemplate(Long userId, Long sessionId, Long templateId) {
-        Session session = requireManageableSession(userId, sessionId);
-        rejectLegacySnapshot(sessionId);
-        VenueSeatLayoutTemplate template = requireTemplate(templateId);
-        if (!session.getVenueId().equals(template.getVenueId())) {
-            throw new BusinessException(400, "座位图模板不属于该场馆");
-        }
-        List<VenueSeatLayoutTemplateSection> sourceSections = templateSectionMapper.selectList(new LambdaQueryWrapper<VenueSeatLayoutTemplateSection>()
-                .eq(VenueSeatLayoutTemplateSection::getTemplateId, templateId)
-                .eq(VenueSeatLayoutTemplateSection::getStatus, 1)
-                .orderByAsc(VenueSeatLayoutTemplateSection::getSort)
-                .orderByAsc(VenueSeatLayoutTemplateSection::getId));
-
-        LocalDateTime now = LocalDateTime.now();
-        SessionSeatLayout layout = upsertLayout(session.getId(), null, template.getId(), template.getName(), template.getTemplateType(),
-                template.getStageTitle(), template.getStageX(), template.getStageY(), template.getCanvasWidth(), template.getCanvasHeight(), now);
-        disableSections(layout.getId(), now);
-        List<SessionSeatLayoutSection> sections = sourceSections.stream()
-                .map(section -> copySection(layout.getId(), section, now))
-                .collect(Collectors.toList());
-        sections.forEach(sessionSectionMapper::insert);
-        return toLayoutResponse(layout, sections);
+        this.blockLayoutService = blockLayoutService;
+        this.blockTicketStockService = blockTicketStockService;
     }
 
     @Transactional
@@ -125,7 +131,7 @@ public class SessionSeatLayoutService {
                 .orderByAsc(ActivitySeatLayoutSection::getId));
 
         LocalDateTime now = LocalDateTime.now();
-        SessionSeatLayout layout = upsertLayout(session.getId(), activityLayout.getId(), activityLayout.getSourceTemplateId(),
+        SessionSeatLayout layout = upsertLayout(session.getId(), activityLayout.getId(),
                 activityLayout.getName(), activityLayout.getTemplateType(), activityLayout.getStageTitle(), activityLayout.getStageX(),
                 activityLayout.getStageY(), activityLayout.getCanvasWidth(), activityLayout.getCanvasHeight(), now);
         disableSections(layout.getId(), now);
@@ -133,7 +139,25 @@ public class SessionSeatLayoutService {
                 .map(section -> copySection(layout.getId(), section, now))
                 .collect(Collectors.toList());
         sections.forEach(sessionSectionMapper::insert);
+        if (blockLayoutService != null) {
+            SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayoutService.getLayout("activity", activityLayout.getActivityId());
+            if (blockLayout != null) {
+                blockLayoutService.replaceLayout("session", session.getId(), blockLayout);
+            }
+        }
         return toLayoutResponse(layout, sections);
+    }
+
+    public SeatCraftLayoutDtos.LayoutResponse copyFromActivity(Long userId, Long sessionId, Long activityId) {
+        ActivitySeatLayout activityLayout = activityLayoutMapper.selectOne(new LambdaQueryWrapper<ActivitySeatLayout>()
+                .eq(ActivitySeatLayout::getActivityId, activityId)
+                .eq(ActivitySeatLayout::getStatus, 1)
+                .orderByDesc(ActivitySeatLayout::getId)
+                .last("LIMIT 1"));
+        if (activityLayout == null) {
+            throw new BusinessException(404, "活动座位图不存在");
+        }
+        return copyFromActivityLayout(userId, sessionId, activityLayout.getId());
     }
 
     public SeatCraftLayoutDtos.LayoutResponse getLayout(Long userId, Long sessionId) {
@@ -222,6 +246,10 @@ public class SessionSeatLayoutService {
         if (layout == null) {
             throw new BusinessException(404, "场次座位图不存在");
         }
+        if (blockLayoutService != null && blockTicketStockService != null
+                && blockLayoutService.getLayout("session", sessionId) != null) {
+            return blockTicketStockService.generateForSession(sessionId);
+        }
         List<SessionSeatLayoutSection> sections = findActiveSections(layout.getId());
         LocalDateTime now = LocalDateTime.now();
         int generated = 0;
@@ -281,7 +309,7 @@ public class SessionSeatLayoutService {
         return venueSeat;
     }
 
-    private SessionSeatLayout upsertLayout(Long sessionId, Long activityLayoutId, Long sourceTemplateId, String name, String templateType,
+    private SessionSeatLayout upsertLayout(Long sessionId, Long activityLayoutId, String name, String templateType,
                                            String stageTitle, Integer stageX, Integer stageY, Integer canvasWidth, Integer canvasHeight,
                                            LocalDateTime now) {
         List<SessionSeatLayout> activeLayouts = sessionLayoutMapper.selectList(new LambdaQueryWrapper<SessionSeatLayout>()
@@ -296,7 +324,6 @@ public class SessionSeatLayoutService {
             layout.setCreateTime(now);
         }
         layout.setActivityLayoutId(activityLayoutId);
-        layout.setSourceTemplateId(sourceTemplateId);
         layout.setName(name);
         layout.setTemplateType(templateType);
         layout.setStageTitle(stageTitle);
@@ -345,17 +372,6 @@ public class SessionSeatLayoutService {
             section.setUpdateTime(now);
             sessionSectionMapper.updateById(section);
         });
-    }
-
-    private SessionSeatLayoutSection copySection(Long sessionLayoutId, VenueSeatLayoutTemplateSection source, LocalDateTime now) {
-        SessionSeatLayoutSection section = new SessionSeatLayoutSection();
-        section.setSessionLayoutId(sessionLayoutId);
-        section.setSourceTemplateSectionId(source.getId());
-        copyCommonSectionFields(section, source.getSectionKey(), source.getName(), source.getRows(), source.getCols(), source.getX(),
-                source.getY(), source.getColor(), source.getType(), source.getLayout(), source.getRadius(), source.getArcSpan(),
-                source.getRotation(), source.getPrimeRowStart(), source.getPrimeRowEnd(), source.getPrimeColStart(),
-                source.getPrimeColEnd(), source.getSort(), now);
-        return section;
     }
 
     private SessionSeatLayoutSection copySection(Long sessionLayoutId, ActivitySeatLayoutSection source, LocalDateTime now) {
@@ -425,6 +441,9 @@ public class SessionSeatLayoutService {
         response.setCanvasWidth(layout.getCanvasWidth());
         response.setCanvasHeight(layout.getCanvasHeight());
         response.setSections(sections.stream().map(this::toSectionResponse).collect(Collectors.toList()));
+        if (blockLayoutService != null) {
+            response.setBlockLayout(blockLayoutService.getLayout("session", layout.getSessionId()));
+        }
         return response;
     }
 
@@ -469,14 +488,6 @@ public class SessionSeatLayoutService {
             throw new BusinessException(403, "只能操作自己主办的场次");
         }
         return session;
-    }
-
-    private VenueSeatLayoutTemplate requireTemplate(Long templateId) {
-        VenueSeatLayoutTemplate template = templateMapper.selectById(templateId);
-        if (template == null || !Integer.valueOf(1).equals(template.getStatus())) {
-            throw new BusinessException(404, "座位图模板不存在");
-        }
-        return template;
     }
 
     private String seatLabel(Integer row, Integer col) {

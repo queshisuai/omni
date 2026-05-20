@@ -4,6 +4,7 @@ import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.order.client.PaymentInternalClient;
 import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.PaymentSyncDecisionResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.entity.OrderSeat;
@@ -80,6 +81,89 @@ class OrderSeatServiceTest {
     }
 
     @Test
+    void createOrderUsesBackendTicketPriceAndLocksTicketStock() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1001L);
+        request.setQuantity(2);
+        request.setUnitPrice(new BigDecimal("1.00"));
+        TicketType ticketType = new TicketType();
+        ticketType.setId(1001L);
+        ticketType.setPrice(new BigDecimal("180.00"));
+        when(ticketTypeMapper.selectById(1001L)).thenReturn(ticketType);
+        when(ticketTypeMapper.decreaseRemainStockIfEnough(1001L, 2)).thenReturn(1);
+
+        Order order = service.createOrder(request);
+
+        assertEquals(2, order.getQuantity());
+        assertEquals(new BigDecimal("360.00"), order.getAmount());
+        verify(ticketTypeMapper).decreaseRemainStockIfEnough(1001L, 2);
+        verify(orderMapper).insert(order);
+    }
+
+    @Test
+    void createOrderRejectsWhenTicketStockInsufficient() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1001L);
+        request.setQuantity(2);
+        TicketType ticketType = new TicketType();
+        ticketType.setId(1001L);
+        ticketType.setPrice(new BigDecimal("180.00"));
+        when(ticketTypeMapper.selectById(1001L)).thenReturn(ticketType);
+        when(ticketTypeMapper.decreaseRemainStockIfEnough(1001L, 2)).thenReturn(0);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        assertEquals("票档库存不足", error.getMessage());
+        verify(orderMapper, never()).insert(any());
+    }
+
+    @Test
+    void createOrderWithSeatsAllowsStandingTicketWithoutSeatIdsAndLocksStock() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1001L);
+        request.setQuantity(3);
+        TicketType ticketType = new TicketType();
+        ticketType.setId(1001L);
+        ticketType.setPrice(new BigDecimal("180.00"));
+        when(ticketTypeMapper.selectById(1001L)).thenReturn(ticketType);
+        when(ticketTypeMapper.decreaseRemainStockIfEnough(1001L, 3)).thenReturn(1);
+
+        Order order = service.createOrderWithSeats(request);
+
+        assertEquals(3, order.getQuantity());
+        assertEquals(new BigDecimal("540.00"), order.getAmount());
+        assertEquals(OrderService.STATUS_PENDING, order.getStatus());
+        verify(ticketTypeMapper).decreaseRemainStockIfEnough(1001L, 3);
+        verify(sessionSeatMapper, never()).selectById(any());
+        verify(orderSeatMapper, never()).insert(any());
+    }
+
+    @Test
+    void createOrderWithSeatsRejectsStandingTicketWhenStockInsufficient() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1001L);
+        request.setQuantity(3);
+        TicketType ticketType = new TicketType();
+        ticketType.setId(1001L);
+        ticketType.setPrice(new BigDecimal("180.00"));
+        when(ticketTypeMapper.selectById(1001L)).thenReturn(ticketType);
+        when(ticketTypeMapper.decreaseRemainStockIfEnough(1001L, 3)).thenReturn(0);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
+
+        assertEquals("票档库存不足", error.getMessage());
+        verify(orderMapper, never()).insert(any());
+    }
+
+    @Test
     void cancelOrderReleasesLockedSeats() {
         Order order = pendingOrder(1001L, 101L, 2001L);
         OrderSeat orderSeat = lockedOrderSeat(9001L, order.getId(), 3001L, 101L, 2001L);
@@ -95,6 +179,20 @@ class OrderSeatServiceTest {
         assertEquals(4, orderSeat.getStatus());
         verify(orderMapper).updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED);
         verify(sessionSeatMapper).releaseLockedSeatForOrder(3001L, order.getId());
+    }
+
+    @Test
+    void cancelOrderRestoresStandingTicketStockWhenNoSeatsWereLocked() {
+        Order order = pendingOrder(1006L, 106L, 2006L);
+        order.setQuantity(3);
+        when(orderMapper.selectById(order.getId())).thenReturn(order);
+        when(orderMapper.updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED)).thenReturn(1);
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of());
+
+        service.cancelOrder(order.getId());
+
+        assertEquals(OrderService.STATUS_CANCELLED, order.getStatus());
+        verify(ticketTypeMapper).increaseRemainStock(2006L, 3);
     }
 
     @Test

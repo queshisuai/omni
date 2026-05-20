@@ -1,19 +1,20 @@
 package com.omni.ticket.service;
 
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.ActivitySeatLayout;
 import com.omni.ticket.entity.ActivitySeatLayoutSection;
 import com.omni.ticket.entity.UserRef;
-import com.omni.ticket.entity.VenueSeatLayoutTemplate;
-import com.omni.ticket.entity.VenueSeatLayoutTemplateSection;
+import com.omni.ticket.entity.VenueDefaultLayout;
+import com.omni.ticket.entity.VenueDefaultLayoutSection;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutSectionMapper;
 import com.omni.ticket.mapper.UserRefMapper;
-import com.omni.ticket.mapper.VenueSeatLayoutTemplateMapper;
-import com.omni.ticket.mapper.VenueSeatLayoutTemplateSectionMapper;
+import com.omni.ticket.mapper.VenueDefaultLayoutMapper;
+import com.omni.ticket.mapper.VenueDefaultLayoutSectionMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,8 +25,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -41,10 +45,10 @@ class ActivitySeatLayoutServiceTest {
     private UserRefMapper userRefMapper;
 
     @Mock
-    private VenueSeatLayoutTemplateMapper templateMapper;
+    private VenueDefaultLayoutMapper venueDefaultLayoutMapper;
 
     @Mock
-    private VenueSeatLayoutTemplateSectionMapper templateSectionMapper;
+    private VenueDefaultLayoutSectionMapper venueSectionMapper;
 
     @Mock
     private ActivitySeatLayoutMapper activityLayoutMapper;
@@ -52,52 +56,52 @@ class ActivitySeatLayoutServiceTest {
     @Mock
     private ActivitySeatLayoutSectionMapper activitySectionMapper;
 
+    @Mock
+    private SeatCraftBlockLayoutService blockLayoutService;
+
     private ActivitySeatLayoutService service;
 
     @BeforeEach
     void setUp() {
-        service = new ActivitySeatLayoutService(activityMapper, userRefMapper, templateMapper, templateSectionMapper,
-                activityLayoutMapper, activitySectionMapper);
+        service = new ActivitySeatLayoutService(activityMapper, userRefMapper, venueDefaultLayoutMapper, venueSectionMapper,
+                activityLayoutMapper, activitySectionMapper, blockLayoutService);
     }
 
     @Test
-    void organizerCopiesTemplateToOwnActivityLayout() {
+    void organizerCreatesFromVenueDefaultForOwnActivity() {
         when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(templateMapper.selectById(7L)).thenReturn(template(7L, 1L, "concert"));
+        when(venueDefaultLayoutMapper.selectById(7L)).thenReturn(venueLayout(7L, 1L, "concert"));
         when(activityLayoutMapper.selectList(any())).thenReturn(List.of());
-        when(templateSectionMapper.selectList(any())).thenReturn(List.of(section(70L, "floor", "池座内场", 12, 24)));
+        when(venueSectionMapper.selectList(any())).thenReturn(List.of(venueSection(70L, "floor", "池座内场", 12, 24)));
 
-        SeatCraftLayoutDtos.LayoutResponse layout = service.copyFromTemplate(2003L, 10L, 7L, "unified");
+        SeatCraftLayoutDtos.LayoutResponse layout = service.createFromVenueDefault(2003L, 10L, 7L);
 
         assertEquals(10L, layout.getActivityId());
-        assertEquals("unified", layout.getLayoutMode());
         assertEquals(1, layout.getSections().size());
 
         ArgumentCaptor<ActivitySeatLayout> layoutCaptor = ArgumentCaptor.forClass(ActivitySeatLayout.class);
         verify(activityLayoutMapper).insert(layoutCaptor.capture());
         assertEquals(10L, layoutCaptor.getValue().getActivityId());
-        assertEquals("unified", layoutCaptor.getValue().getLayoutMode());
+        assertEquals(7L, layoutCaptor.getValue().getSourceVenueLayoutId());
 
         ArgumentCaptor<ActivitySeatLayoutSection> sectionCaptor = ArgumentCaptor.forClass(ActivitySeatLayoutSection.class);
         verify(activitySectionMapper).insert(sectionCaptor.capture());
         assertEquals("floor", sectionCaptor.getValue().getSectionKey());
-        assertEquals(70L, sectionCaptor.getValue().getSourceTemplateSectionId());
     }
 
     @Test
-    void copyFromTemplateDisablesExistingActiveLayoutsBeforeInsertingNewLayout() {
+    void createFromVenueDefaultDisablesExistingActiveLayoutsBeforeInsertingNewLayout() {
         ActivitySeatLayout oldLayout = activeLayout(99L, 10L);
         when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(templateMapper.selectById(7L)).thenReturn(template(7L, 1L, "concert"));
+        when(venueDefaultLayoutMapper.selectById(7L)).thenReturn(venueLayout(7L, 1L, "concert"));
         when(activityLayoutMapper.selectList(any())).thenReturn(List.of(oldLayout));
-        when(templateSectionMapper.selectList(any())).thenReturn(List.of(section(70L, "floor", "池座内场", 12, 24)));
+        when(venueSectionMapper.selectList(any())).thenReturn(List.of(venueSection(70L, "floor", "池座内场", 12, 24)));
 
-        SeatCraftLayoutDtos.LayoutResponse layout = service.copyFromTemplate(2003L, 10L, 7L, "unified");
+        SeatCraftLayoutDtos.LayoutResponse layout = service.createFromVenueDefault(2003L, 10L, 7L);
 
         assertEquals(10L, layout.getActivityId());
-        assertEquals("unified", layout.getLayoutMode());
 
         ArgumentCaptor<ActivitySeatLayout> updateCaptor = ArgumentCaptor.forClass(ActivitySeatLayout.class);
         verify(activityLayoutMapper).updateById(updateCaptor.capture());
@@ -108,16 +112,16 @@ class ActivitySeatLayoutServiceTest {
     }
 
     @Test
-    void copyFromTemplateDisablesAllExistingActiveLayoutsAndInsertsOneActiveLayout() {
+    void createFromVenueDefaultDisablesAllExistingActiveLayoutsAndInsertsOneActiveLayout() {
         ActivitySeatLayout firstOldLayout = activeLayout(99L, 10L);
         ActivitySeatLayout secondOldLayout = activeLayout(100L, 10L);
         when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(templateMapper.selectById(7L)).thenReturn(template(7L, 1L, "concert"));
+        when(venueDefaultLayoutMapper.selectById(7L)).thenReturn(venueLayout(7L, 1L, "concert"));
         when(activityLayoutMapper.selectList(any())).thenReturn(List.of(firstOldLayout, secondOldLayout));
-        when(templateSectionMapper.selectList(any())).thenReturn(List.of(section(70L, "floor", "池座内场", 12, 24)));
+        when(venueSectionMapper.selectList(any())).thenReturn(List.of(venueSection(70L, "floor", "池座内场", 12, 24)));
 
-        service.copyFromTemplate(2003L, 10L, 7L, "unified");
+        service.createFromVenueDefault(2003L, 10L, 7L);
 
         ArgumentCaptor<ActivitySeatLayout> updateCaptor = ArgumentCaptor.forClass(ActivitySeatLayout.class);
         verify(activityLayoutMapper, times(2)).updateById(updateCaptor.capture());
@@ -130,12 +134,30 @@ class ActivitySeatLayoutServiceTest {
     }
 
     @Test
-    void organizerCannotCopyTemplateToOthersActivity() {
+    void createFromVenueDefaultCopiesVenueBlockLayoutToActivity() {
+        SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(venueDefaultLayoutMapper.selectById(7L)).thenReturn(venueLayout(7L, 1L, "concert"));
+        when(activityLayoutMapper.selectList(any())).thenReturn(List.of());
+        when(venueSectionMapper.selectList(any())).thenReturn(List.of());
+        when(blockLayoutService.getLayout("venue", 1L)).thenReturn(blockLayout);
+        when(blockLayoutService.getLayout("activity", 10L)).thenReturn(blockLayout);
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.createFromVenueDefault(2003L, 10L, 7L);
+
+        verify(blockLayoutService).getLayout("venue", 1L);
+        verify(blockLayoutService).replaceLayout(eq("activity"), eq(10L), same(blockLayout));
+        assertSame(blockLayout, response.getBlockLayout());
+    }
+
+    @Test
+    void organizerCannotCreateFromVenueDefaultForOthersActivity() {
         when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 9999L));
 
         BusinessException error = assertThrows(BusinessException.class,
-                () -> service.copyFromTemplate(2003L, 10L, 7L, "unified"));
+                () -> service.createFromVenueDefault(2003L, 10L, 7L));
 
         assertEquals(403, error.getCode());
         verify(activityLayoutMapper, never()).insert(any());
@@ -145,7 +167,6 @@ class ActivitySeatLayoutServiceTest {
     @Test
     void updateLayoutReplacesExistingSectionsWithRequestSections() {
         ActivitySeatLayout existingLayout = activeLayout(88L, 10L);
-        existingLayout.setLayoutMode("unified");
         existingLayout.setName("旧座位图");
         existingLayout.setTemplateType("concert");
         existingLayout.setStageTitle("旧舞台");
@@ -162,7 +183,6 @@ class ActivitySeatLayoutServiceTest {
         requestLayout.setStageY(80);
         requestLayout.setCanvasWidth(1200);
         requestLayout.setCanvasHeight(900);
-        requestLayout.setLayoutMode("unified");
         requestLayout.setSections(List.of(sectionRequest("floor", "池座", 12, 24)));
 
         when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
@@ -194,6 +214,38 @@ class ActivitySeatLayoutServiceTest {
         assertEquals(1, insertCaptor.getValue().getStatus());
     }
 
+    @Test
+    void updateLayoutPersistsBlockLayoutForActivity() {
+        ActivitySeatLayout existingLayout = activeLayout(88L, 10L);
+        SeatCraftLayoutDtos.LayoutResponse requestLayout = baseLayoutRequest();
+        SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
+        requestLayout.setBlockLayout(blockLayout);
+
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(activityLayoutMapper.selectOne(any())).thenReturn(existingLayout);
+        when(activitySectionMapper.selectList(any())).thenReturn(List.of());
+
+        service.updateLayout(2003L, 10L, requestLayout);
+
+        verify(blockLayoutService).replaceLayout(eq("activity"), eq(10L), same(blockLayout));
+    }
+
+    @Test
+    void getLayoutIncludesBlockLayout() {
+        ActivitySeatLayout existingLayout = activeLayout(88L, 10L);
+        SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(activityLayoutMapper.selectOne(any())).thenReturn(existingLayout);
+        when(activitySectionMapper.selectList(any())).thenReturn(List.of());
+        when(blockLayoutService.getLayout("activity", 10L)).thenReturn(blockLayout);
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.getLayout(2003L, 10L);
+
+        assertSame(blockLayout, response.getBlockLayout());
+    }
+
     private UserRef user(Long id, String role) {
         UserRef user = new UserRef();
         user.setId(id);
@@ -217,25 +269,25 @@ class ActivitySeatLayoutServiceTest {
         return layout;
     }
 
-    private VenueSeatLayoutTemplate template(Long id, Long venueId, String templateType) {
-        VenueSeatLayoutTemplate template = new VenueSeatLayoutTemplate();
-        template.setId(id);
-        template.setVenueId(venueId);
-        template.setName("默认模板");
-        template.setTemplateType(templateType);
-        template.setStageTitle("演出舞台 / STAGE");
-        template.setStageX(500);
-        template.setStageY(50);
-        template.setCanvasWidth(1000);
-        template.setCanvasHeight(800);
-        template.setStatus(1);
-        return template;
+    private VenueDefaultLayout venueLayout(Long id, Long venueId, String templateType) {
+        VenueDefaultLayout layout = new VenueDefaultLayout();
+        layout.setId(id);
+        layout.setVenueId(venueId);
+        layout.setName("默认布局");
+        layout.setTemplateType(templateType);
+        layout.setStageTitle("演出舞台 / STAGE");
+        layout.setStageX(500);
+        layout.setStageY(50);
+        layout.setCanvasWidth(1000);
+        layout.setCanvasHeight(800);
+        layout.setStatus(1);
+        return layout;
     }
 
-    private VenueSeatLayoutTemplateSection section(Long id, String key, String name, Integer rows, Integer cols) {
-        VenueSeatLayoutTemplateSection section = new VenueSeatLayoutTemplateSection();
+    private VenueDefaultLayoutSection venueSection(Long id, String key, String name, Integer rows, Integer cols) {
+        VenueDefaultLayoutSection section = new VenueDefaultLayoutSection();
         section.setId(id);
-        section.setTemplateId(7L);
+        section.setLayoutId(7L);
         section.setSectionKey(key);
         section.setName(name);
         section.setRows(rows);
@@ -282,5 +334,18 @@ class ActivitySeatLayoutServiceTest {
         section.setLayout("grid");
         section.setRotation(0);
         return section;
+    }
+
+    private SeatCraftLayoutDtos.LayoutResponse baseLayoutRequest() {
+        SeatCraftLayoutDtos.LayoutResponse requestLayout = new SeatCraftLayoutDtos.LayoutResponse();
+        requestLayout.setName("新座位图");
+        requestLayout.setTemplateType("concert");
+        requestLayout.setStageTitle("新舞台");
+        requestLayout.setStageX(500);
+        requestLayout.setStageY(80);
+        requestLayout.setCanvasWidth(1200);
+        requestLayout.setCanvasHeight(900);
+        requestLayout.setSections(List.of());
+        return requestLayout;
     }
 }

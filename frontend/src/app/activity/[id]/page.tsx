@@ -7,7 +7,7 @@ import { Footer } from '@/components/Footer'
 import { SeatMap } from '@/components/SeatMap'
 import { SeatSelectionMap } from '@/components/seatcraft/SeatSelectionMap'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
-import { getActivityDetail, createOrder, createOrderWithSeats, createAlipayQrPay, getSeatMap } from '@/lib/api'
+import { getActivityDetail, createOrderWithSeats, createAlipayQrPay, getSeatMap } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { sections } from '@/lib/mock-data'
 import type { ActivityDetailVO, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, TicketTypeEntity } from '@/types/api'
@@ -172,15 +172,15 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         setOrderError('请选择对应数量的座位')
         return
       }
-      const order = hasSeatMap
-        ? await createOrderWithSeats({
+      const order = await createOrderWithSeats(hasSeatMap
+        ? {
             userId: user.userId,
             sessionId: selectedSession.session.id,
             ticketTypeId: selectedTicket.id,
             seatIds: selectedSeatIds,
             unitPrice: selectedTicket.price,
-          })
-        : await createOrder({
+          }
+        : {
             userId: user.userId,
             sessionId: selectedSession.session.id,
             ticketTypeId: selectedTicket.id,

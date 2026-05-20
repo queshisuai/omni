@@ -3,14 +3,13 @@ package com.omni.ticket.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-
 import java.time.LocalDateTime;
 
-@TableName("venue_seat_layout_template_section")
-public class VenueSeatLayoutTemplateSection {
+@TableName("venue_default_layout_section")
+public class VenueDefaultLayoutSection {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private Long templateId;
+    private Long layoutId;
     private String sectionKey;
     private String name;
     private Integer rows;
@@ -34,8 +33,8 @@ public class VenueSeatLayoutTemplateSection {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-    public Long getTemplateId() { return templateId; }
-    public void setTemplateId(Long templateId) { this.templateId = templateId; }
+    public Long getLayoutId() { return layoutId; }
+    public void setLayoutId(Long layoutId) { this.layoutId = layoutId; }
     public String getSectionKey() { return sectionKey; }
     public void setSectionKey(String sectionKey) { this.sectionKey = sectionKey; }
     public String getName() { return name; }

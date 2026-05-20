@@ -6,9 +6,12 @@ import com.omni.ticket.dto.ActivityDetailVO;
 import com.omni.ticket.dto.ActivityVO;
 import com.omni.ticket.entity.Category;
 import com.omni.ticket.service.ActivityService;
+import com.omni.ticket.service.TourStationService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 活动接口
@@ -18,9 +21,16 @@ import java.util.List;
 public class ActivityController {
 
     private final ActivityService activityService;
+    private final TourStationService tourStationService;
 
     public ActivityController(ActivityService activityService) {
+        this(activityService, null);
+    }
+
+    @Autowired
+    public ActivityController(ActivityService activityService, TourStationService tourStationService) {
         this.activityService = activityService;
+        this.tourStationService = tourStationService;
     }
 
     /**
@@ -42,6 +52,11 @@ public class ActivityController {
     public Result<ActivityDetailVO> getActivityDetail(@PathVariable Long id) {
         ActivityDetailVO detail = activityService.getActivityDetail(id);
         return Result.success(detail);
+    }
+
+    @GetMapping("/tours/{id}")
+    public Result<Map<String, Object>> getTourDetail(@PathVariable Long id) {
+        return Result.success(tourStationService.getTourDetail(id));
     }
 
     /**

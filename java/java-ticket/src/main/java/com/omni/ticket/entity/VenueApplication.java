@@ -21,6 +21,12 @@ public class VenueApplication {
     private String qualificationNo;
     private String businessScope;
     private String description;
+    private LocalDateTime validFrom;
+    private LocalDateTime validTo;
+    private String proofNote;
+    private String proofFileUrl;
+    private String layoutSnapshot;
+    private Boolean setAsRecommendedLayout;
     private Integer status;
     private Long reviewerId;
     private String reviewNote;
@@ -52,6 +58,18 @@ public class VenueApplication {
     public void setBusinessScope(String businessScope) { this.businessScope = businessScope; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public LocalDateTime getValidFrom() { return validFrom; }
+    public void setValidFrom(LocalDateTime validFrom) { this.validFrom = validFrom; }
+    public LocalDateTime getValidTo() { return validTo; }
+    public void setValidTo(LocalDateTime validTo) { this.validTo = validTo; }
+    public String getProofNote() { return proofNote; }
+    public void setProofNote(String proofNote) { this.proofNote = proofNote; }
+    public String getProofFileUrl() { return proofFileUrl; }
+    public void setProofFileUrl(String proofFileUrl) { this.proofFileUrl = proofFileUrl; }
+    public String getLayoutSnapshot() { return layoutSnapshot; }
+    public void setLayoutSnapshot(String layoutSnapshot) { this.layoutSnapshot = layoutSnapshot; }
+    public Boolean getSetAsRecommendedLayout() { return setAsRecommendedLayout; }
+    public void setSetAsRecommendedLayout(Boolean setAsRecommendedLayout) { this.setAsRecommendedLayout = setAsRecommendedLayout; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public Long getReviewerId() { return reviewerId; }

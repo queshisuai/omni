@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
-import { listOrders, cancelOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund } from '@/lib/api'
+import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import type { OrderEntity, QrPayResponse, RefundRequestVO, RefundStatus } from '@/types/api'
 
-type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled'
+type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled' | 'trash'
 
 const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> = {
   1: { label: '待支付', color: '#ff1268', bg: '#fff0f5' },
@@ -84,6 +84,10 @@ export default function OrdersPage() {
   const [refundTarget, setRefundTarget] = useState<EnrichedOrder | null>(null)
   const [refundReason, setRefundReason] = useState('')
   const [refundSubmitting, setRefundSubmitting] = useState(false)
+  const [trashOrders, setTrashOrders] = useState<EnrichedOrder[]>([])
+  const [hiding, setHiding] = useState<number | null>(null)
+  const [restoring, setRestoring] = useState<number | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -95,12 +99,17 @@ export default function OrdersPage() {
       router.replace('/login?ru=/orders')
       return
     }
+    setCurrentUserId(user.userId)
 
     ;(async () => {
-        setLoading(true)
-        try {
-          const orderData = await listOrders(user.userId)
-          setOrders(enrichOrders(orderData))
+      setLoading(true)
+      try {
+        const [orderData, trashData] = await Promise.all([
+          listOrders(user.userId),
+          listTrashOrders(user.userId),
+        ])
+        setOrders(enrichOrders(orderData))
+        setTrashOrders(enrichOrders(trashData))
         try {
           const refundData = await listMyRefunds()
           setRefunds(refundData)
@@ -137,6 +146,45 @@ export default function OrdersPage() {
       alert(err instanceof Error ? err.message : '支付失败')
     } finally {
       setPaying(null)
+    }
+  }
+
+  const handleHide = async (orderId: number) => {
+    if (!currentUserId || !confirm('确定删除该订单吗？删除后 7 天内可在回收站恢复。')) return
+    setHiding(orderId)
+    try {
+      await hideOrder(orderId, currentUserId)
+      const target = orders.find((order) => order.id === orderId)
+      setOrders((prev) => prev.filter((order) => order.id !== orderId))
+      if (target) {
+        const now = new Date()
+        const expires = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+        setTrashOrders((prev) => [
+          { ...target, userHidden: true, userDeletedAt: now.toISOString(), userDeleteExpiresAt: expires.toISOString() },
+          ...prev,
+        ])
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '删除失败')
+    } finally {
+      setHiding(null)
+    }
+  }
+
+  const handleRestore = async (orderId: number) => {
+    if (!currentUserId) return
+    setRestoring(orderId)
+    try {
+      await restoreOrder(orderId, currentUserId)
+      const target = trashOrders.find((order) => order.id === orderId)
+      setTrashOrders((prev) => prev.filter((order) => order.id !== orderId))
+      if (target) {
+        setOrders((prev) => [{ ...target, userHidden: false, userDeletedAt: null, userDeleteExpiresAt: null }, ...prev])
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '恢复失败')
+    } finally {
+      setRestoring(null)
     }
   }
 
@@ -185,9 +233,11 @@ export default function OrdersPage() {
 
   const refundMap = buildRefundMap(refunds)
 
-  const filteredOrders = activeTab === 'all'
-    ? orders
-    : orders.filter((o) => {
+  const filteredOrders = activeTab === 'trash'
+    ? trashOrders
+    : activeTab === 'all'
+      ? orders
+      : orders.filter((o) => {
         if (activeTab === 'unpaid') return o.status === 1
         if (activeTab === 'paid') return o.status === 2
         return o.status === 3 || o.status === 4
@@ -198,6 +248,7 @@ export default function OrdersPage() {
     { key: 'unpaid', label: '待支付' },
     { key: 'paid', label: '已支付' },
     { key: 'cancelled', label: '已取消' },
+    { key: 'trash', label: '回收站' },
   ]
 
   return (
@@ -205,6 +256,11 @@ export default function OrdersPage() {
       <Header />
       <main className="max-w-[1200px] mx-auto px-5 py-8" style={{ minHeight: 'calc(100vh - 200px)' }}>
         <h1 className="text-[24px] text-[#111] font-medium mb-6">我的订单</h1>
+        {activeTab === 'trash' && (
+          <div className="mb-4 rounded bg-[#fff7e6] px-4 py-3 text-[13px] text-[#8a5a00]">
+            回收站订单保留 7 天，超过后用户侧不再展示；后台仍保留完整订单记录。
+          </div>
+        )}
 
         {/* 状态 Tab */}
         <div className="flex gap-0 mb-6 border-b border-[#e5e5e5]">
@@ -242,7 +298,6 @@ export default function OrdersPage() {
         ) : (
           <div className="flex flex-col gap-4">
             {filteredOrders.map((order) => {
-              const statusInfo = STATUS_MAP[order.status] || STATUS_MAP[3]
               const refundInfo = refundMap[order.id]
               const activeRefund = refundInfo?.active
               const latestRefund = refundInfo?.latest
@@ -307,7 +362,7 @@ export default function OrdersPage() {
 
                     {/* 操作按钮 */}
                     <div className="flex-shrink-0 flex flex-col gap-2 ml-6">
-                      {order.status === 1 && (
+                      {activeTab !== 'trash' && order.status === 1 && (
                         <>
                           <button
                             onClick={() => handlePay(order.id)}
@@ -335,7 +390,16 @@ export default function OrdersPage() {
                           </button>
                         </>
                       )}
-                      {order.status === 2 && (
+                      {activeTab === 'trash' ? (
+                        <button
+                          onClick={() => handleRestore(order.id)}
+                          disabled={restoring === order.id}
+                          className="cursor-pointer border border-[#ff1268] bg-white text-[#ff1268] text-[14px] px-6 py-2 rounded outline-none"
+                          style={{ opacity: restoring === order.id ? 0.7 : 1 }}
+                        >
+                          {restoring === order.id ? '恢复中...' : '恢复订单'}
+                        </button>
+                      ) : order.status === 2 && (
                         <>
                           {activeRefund ? (
                             <span
@@ -359,8 +423,28 @@ export default function OrdersPage() {
                           )}
                         </>
                       )}
-                      {(order.status === 3 || order.status === 4) && (
-                        <span className="text-[13px] text-[#999]">{STATUS_MAP[order.status]?.label || '已取消'}</span>
+                      {activeTab !== 'trash' && (order.status === 3 || order.status === 4) && (
+                        <>
+                          <span className="text-[13px] text-[#999]">{STATUS_MAP[order.status]?.label || '已取消'}</span>
+                          <button
+                            onClick={() => handleHide(order.id)}
+                            disabled={hiding === order.id}
+                            className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
+                            style={{ opacity: hiding === order.id ? 0.7 : 1 }}
+                          >
+                            {hiding === order.id ? '删除中...' : '删除订单'}
+                          </button>
+                        </>
+                      )}
+                      {order.status === 1 && activeTab !== 'trash' && (
+                        <button
+                          onClick={() => handleHide(order.id)}
+                          disabled={hiding === order.id || cancelling === order.id || paying === order.id || refreshing === order.id}
+                          className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
+                          style={{ opacity: hiding === order.id || cancelling === order.id || paying === order.id || refreshing === order.id ? 0.7 : 1 }}
+                        >
+                          {hiding === order.id ? '删除中...' : '删除订单'}
+                        </button>
                       )}
                     </div>
                   </div>

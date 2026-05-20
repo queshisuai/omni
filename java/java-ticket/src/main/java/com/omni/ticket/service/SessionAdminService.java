@@ -95,12 +95,8 @@ public class SessionAdminService {
         sessionMapper.insert(session);
         boolean hasSeatCraftLayout = false;
         if (sessionSeatLayoutService != null) {
-            Object templateId = body.get("templateId");
             Object activityLayoutId = body.get("activityLayoutId");
-            if (templateId != null) {
-                sessionSeatLayoutService.copyFromTemplate(userId, session.getId(), toPositiveLong(templateId, "模板ID不正确"));
-                hasSeatCraftLayout = true;
-            } else if (activityLayoutId != null) {
+            if (activityLayoutId != null) {
                 sessionSeatLayoutService.copyFromActivityLayout(userId, session.getId(), toPositiveLong(activityLayoutId, "活动座位图ID不正确"));
                 hasSeatCraftLayout = true;
             }

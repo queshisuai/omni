@@ -54,6 +54,23 @@ public class OrderController {
         return Result.success(orders);
     }
 
+    @GetMapping("/user/{userId}/trash")
+    public Result<List<OrderListItemResponse>> listTrashOrders(@PathVariable Long userId) {
+        return Result.success(orderService.listTrashOrderItems(userId));
+    }
+
+    @PostMapping("/{id}/hide")
+    public Result<Void> hideOrder(@PathVariable Long id, @RequestParam Long userId) {
+        orderService.hideOrder(id, userId);
+        return Result.success();
+    }
+
+    @PostMapping("/{id}/restore")
+    public Result<Void> restoreOrder(@PathVariable Long id, @RequestParam Long userId) {
+        orderService.restoreOrder(id, userId);
+        return Result.success();
+    }
+
     /**
      * 订单详情
      */
@@ -84,7 +101,8 @@ public class OrderController {
             return Result.fail(403, "无权限");
         }
         List<Long> sessionIds = request != null ? request.getSessionIds() : java.util.Collections.emptyList();
-        return Result.success(orderService.listPaidOrdersBySessions(sessionIds));
+        boolean paidOnly = request == null || !Boolean.FALSE.equals(request.getPaidOnly());
+        return Result.success(orderService.listOrdersBySessions(sessionIds, paidOnly));
     }
 
     @PostMapping("/internal/paid-count-by-sessions")

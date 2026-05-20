@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { getActivitySeatLayout, updateActivitySeatLayout } from '@/lib/api'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
+import { toSeatCraftLayoutPayload } from '@/components/seatcraft/block-layout'
 import { toSeatCraftLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
 
 export default function ActivitySeatLayoutPage() {
@@ -76,40 +77,7 @@ export default function ActivitySeatLayoutPage() {
     try {
       const response = await updateActivitySeatLayout(activityId, {
         userId: user.userId,
-        layout: {
-          id: layout.id ?? activityId,
-          venueId: layout.venueId,
-          activityId: layout.activityId,
-          sessionId: layout.sessionId,
-          layoutMode: layout.layoutMode,
-          name: layout.name,
-          templateType: layout.templateType,
-          stageTitle: layout.stage.title,
-          stageX: layout.stage.x,
-          stageY: layout.stage.y,
-          canvasWidth: layout.canvasWidth,
-          canvasHeight: layout.canvasHeight,
-          sections: layout.sections.map(section => ({
-            id: Number(section.id),
-            sectionKey: section.sectionKey,
-            name: section.name,
-            rows: section.rows,
-            cols: section.cols,
-            x: section.x,
-            y: section.y,
-            color: section.color,
-            type: section.type,
-            layout: section.layout,
-            radius: section.radius ?? null,
-            arcSpan: section.arcSpan ?? null,
-            rotation: section.rotation ?? null,
-            primeRowStart: section.primeRowStart ?? null,
-            primeRowEnd: section.primeRowEnd ?? null,
-            primeColStart: section.primeColStart ?? null,
-            primeColEnd: section.primeColEnd ?? null,
-            ticketTypeId: section.ticketTypeId ?? null,
-          })),
-        },
+        layout: toSeatCraftLayoutPayload({ ...layout, id: layout.id ?? activityId }),
       })
       setLayout(toSeatCraftLayoutDraft(response))
       setMessage('座位图已保存')

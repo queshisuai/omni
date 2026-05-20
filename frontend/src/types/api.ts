@@ -171,6 +171,46 @@ export interface AdminSummaryVO {
   paidOrderCount: number
 }
 
+export interface TourEntity {
+  id: number
+  title: string
+  artistId?: number | null
+  categoryId?: number | null
+  poster?: string | null
+  description?: string | null
+  organizerId: number
+  reviewStatus: string
+  status: number
+  createTime?: string | null
+  updateTime?: string | null
+}
+
+export interface StationEntity {
+  id: number
+  tourId: number
+  city: string
+  stationName: string
+  poster?: string | null
+  description?: string | null
+  venueApplicationId?: number | null
+  publishStatus: string
+  status: number
+  createTime?: string | null
+  updateTime?: string | null
+}
+
+export interface TourDetailVO {
+  tour: TourEntity
+  stations: StationEntity[]
+  stationDetails?: StationPurchaseDetail[]
+}
+
+export interface StationPurchaseDetail {
+  station: StationEntity
+  activity?: ActivityEntity | null
+  sessions: SessionEntity[]
+}
+
 /** 场馆 */
 export interface VenueEntity {
   id: number
@@ -196,6 +236,10 @@ export interface VenueApplicationVO {
   qualificationNo: string | null
   businessScope: string | null
   description: string | null
+  validFrom?: string | null
+  validTo?: string | null
+  proofNote?: string | null
+  proofFileUrl?: string | null
   status: VenueApplicationStatus
   reviewerId: number | null
   reviewNote: string | null
@@ -271,6 +315,51 @@ export interface SessionSeatVO {
 export type SeatCraftTemplateType = 'concert' | 'cinema' | 'custom'
 export type SeatCraftSectionType = 'core' | 'stand' | 'zone'
 export type SeatCraftSectionLayout = 'grid' | 'curved'
+export type SeatCraftBlockType = 'gridBlock' | 'arcBlock' | 'standingBlock'
+
+export interface SeatCraftBlockVO {
+  id: string | number
+  blockKey: string
+  name: string
+  blockType: SeatCraftBlockType
+  ticketGroupKey: string
+  x: number
+  y: number
+  rotation: number
+  scale: number
+  rows?: number | null
+  cols?: number | null
+  seatsPerRow?: number | null
+  rowSpacing?: number | null
+  seatSpacing?: number | null
+  innerRadius?: number | null
+  arcStartAngle?: number | null
+  arcEndAngle?: number | null
+  width?: number | null
+  height?: number | null
+  capacity?: number | null
+  color: string
+  sort: number
+}
+
+export interface SeatOverrideVO {
+  blockKey: string
+  rowNo: number
+  seatNo: number
+  status: 'visible' | 'hidden' | 'deleted'
+  dx?: number | null
+  dy?: number | null
+  customLabel?: string | null
+}
+
+export interface TicketGroupVO {
+  groupKey: string
+  name: string
+  defaultPrice?: number | null
+  activityPrice?: number | null
+  sourceBlockKeys: string[]
+  sort: number
+}
 
 export interface SeatCraftSectionVO {
   id: number
@@ -300,7 +389,6 @@ export interface SeatCraftLayoutVO {
   venueId?: number | null
   activityId?: number | null
   sessionId?: number | null
-  layoutMode?: 'unified' | 'per_session' | null
   name: string
   templateType: SeatCraftTemplateType
   stageTitle: string
@@ -309,6 +397,17 @@ export interface SeatCraftLayoutVO {
   canvasWidth: number
   canvasHeight: number
   sections: SeatCraftSectionVO[]
+  blocks?: SeatCraftBlockVO[]
+  overrides?: SeatOverrideVO[]
+  ticketGroups?: TicketGroupVO[]
+  blockLayout?: {
+    name?: string | null
+    canvasWidth?: number | null
+    canvasHeight?: number | null
+    blocks?: SeatCraftBlockVO[]
+    overrides?: SeatOverrideVO[]
+    ticketGroups?: TicketGroupVO[]
+  } | null
 }
 
 export interface SeatMapResponse {
@@ -372,6 +471,9 @@ export interface OrderEntity {
   quantity: number
   amount: number
   status: number
+  userHidden?: boolean | null
+  userDeletedAt?: string | null
+  userDeleteExpiresAt?: string | null
   createTime: string
   activityId?: number | null
   activityName?: string | null

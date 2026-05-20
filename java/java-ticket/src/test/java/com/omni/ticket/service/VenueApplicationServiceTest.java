@@ -1,5 +1,7 @@
 package com.omni.ticket.service;
 
+import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.UserRef;
@@ -14,8 +16,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
+import java.math.BigDecimal;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
@@ -54,9 +62,40 @@ class VenueApplicationServiceTest {
         assertEquals(18000, saved.getCapacity());
         assertEquals("张三", saved.getContactName());
         assertEquals("13800000002", saved.getContactPhone());
+        assertEquals(LocalDateTime.parse("2026-06-01T00:00:00"), saved.getValidFrom());
+        assertEquals(LocalDateTime.parse("2026-06-30T23:59:00"), saved.getValidTo());
+        assertEquals("已取得场地授权", saved.getProofNote());
+        assertEquals("https://example.com/proof.pdf", saved.getProofFileUrl());
+        assertTrue(saved.getLayoutSnapshot().contains("\"blockKey\":\"block-a\""));
+        assertTrue(saved.getLayoutSnapshot().contains("\"groupKey\":\"vip\""));
+        assertEquals(Boolean.TRUE, saved.getSetAsRecommendedLayout());
         assertEquals(0, saved.getStatus());
         assertNull(saved.getVenueId());
         assertEquals(saved, result);
+    }
+
+    @Test
+    void submitRejectsMissingUsageProof() {
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        VenueApplicationRequest request = request();
+        request.setProofNote(null);
+        request.setProofFileUrl(null);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.submit(request));
+
+        assertEquals(400, error.getCode());
+    }
+
+    @Test
+    void submitRejectsLayoutWithoutTicketGroup() {
+        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        VenueApplicationRequest request = request();
+        request.getLayout().setTicketGroups(List.of());
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.submit(request));
+
+        assertEquals(400, error.getCode());
+        assertEquals("请至少配置一个票档组", error.getMessage());
     }
 
     @Test
@@ -112,7 +151,39 @@ class VenueApplicationServiceTest {
         request.setQualificationNo("VENUE-001");
         request.setBusinessScope("演唱会、体育赛事");
         request.setDescription("申请加入平台公共场馆库");
+        request.setValidFrom(LocalDateTime.parse("2026-06-01T00:00:00"));
+        request.setValidTo(LocalDateTime.parse("2026-06-30T23:59:00"));
+        request.setProofNote("已取得场地授权");
+        request.setProofFileUrl("https://example.com/proof.pdf");
+        request.setLayout(layout());
+        request.setSetAsRecommendedLayout(true);
         return request;
+    }
+
+    private SeatCraftBlockDtos.LayoutRequest layout() {
+        SeatCraftBlockDtos.LayoutRequest layout = new SeatCraftBlockDtos.LayoutRequest();
+        layout.setName("国家体育馆座位图");
+        layout.setCanvasWidth(1000);
+        layout.setCanvasHeight(800);
+
+        SeatCraftBlockDtos.BlockRequest block = new SeatCraftBlockDtos.BlockRequest();
+        block.setBlockKey("block-a");
+        block.setName("A 区");
+        block.setBlockType("gridBlock");
+        block.setTicketGroupKey("vip");
+        block.setX(new BigDecimal("100"));
+        block.setY(new BigDecimal("200"));
+        block.setRows(2);
+        block.setCols(3);
+        layout.setBlocks(List.of(block));
+
+        SeatCraftBlockDtos.TicketGroupRequest group = new SeatCraftBlockDtos.TicketGroupRequest();
+        group.setGroupKey("vip");
+        group.setName("VIP");
+        group.setDefaultPrice(new BigDecimal("680.00"));
+        group.setSourceBlockKeys(List.of("block-a"));
+        layout.setTicketGroups(List.of(group));
+        return layout;
     }
 
     private VenueApplication pendingApplication() {

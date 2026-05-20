@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { createAdminSession, createAdminTicketType, ensureSeatLayoutTemplates, getActivitySeatLayout, getSessionTicketDrafts, listAdminActivities, listAdminSessions, listAdminVenues, listVenueAreas, updateAdminSession } from '@/lib/api'
+import { createAdminSession, createAdminTicketType, getActivitySeatLayout, getSessionTicketDrafts, listAdminActivities, listAdminSessions, listAdminVenues, listVenueAreas, updateAdminSession } from '@/lib/api'
 import { Edit, Plus, RefreshCw, X } from 'lucide-react'
 import type { ActivityEntity, SeatCraftLayoutVO, SeatCraftSectionVO, SessionAdminVO, VenueAreaVO, VenueEntity } from '@/types/api'
 
@@ -16,8 +16,6 @@ type SessionForm = {
   startTime: string
   endTime: string
   status: string
-  seatLayoutSource: 'none' | 'activity' | 'template'
-  templateId: string
   activityLayoutId: string
 }
 
@@ -27,8 +25,6 @@ const emptyForm: SessionForm = {
   startTime: '',
   endTime: '',
   status: '1',
-  seatLayoutSource: 'none',
-  templateId: '',
   activityLayoutId: '',
 }
 
@@ -57,7 +53,7 @@ function SessionsPageContent() {
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<SessionForm>(emptyForm)
   const [activitySeatLayout, setActivitySeatLayout] = useState<SeatCraftLayoutVO | null>(null)
-  const [seatTemplates, setSeatTemplates] = useState<SeatCraftLayoutVO[]>([])
+
   const [layoutLoading, setLayoutLoading] = useState(false)
   const layoutRequestRef = useRef(0)
   const [submitting, setSubmitting] = useState(false)
@@ -117,7 +113,6 @@ function SessionsPageContent() {
   const openCreate = () => {
     setForm(emptyForm)
     setActivitySeatLayout(null)
-    setSeatTemplates([])
     setFormError('')
     setFormOpen(true)
   }
@@ -130,8 +125,6 @@ function SessionsPageContent() {
       startTime: toInputTime(session.startTime),
       endTime: session.endTime ? toInputTime(session.endTime) : '',
       status: String(session.status),
-      seatLayoutSource: 'none',
-      templateId: '',
       activityLayoutId: '',
     })
     setFormError('')
@@ -143,29 +136,20 @@ function SessionsPageContent() {
     layoutRequestRef.current = requestId
     if (nextForm.id || !isPositiveInteger(nextForm.activityId) || !isPositiveInteger(nextForm.venueId)) {
       setActivitySeatLayout(null)
-      setSeatTemplates([])
       setLayoutLoading(false)
       return
     }
     setLayoutLoading(true)
     try {
-      const [activityLayout, templates] = await Promise.all([
-        getActivitySeatLayout(Number(nextForm.activityId), userId).catch(() => null),
-        ensureSeatLayoutTemplates(Number(nextForm.venueId), userId).catch(() => [] as SeatCraftLayoutVO[]),
-      ])
+      const activityLayout = await getActivitySeatLayout(Number(nextForm.activityId), userId).catch(() => null)
       if (layoutRequestRef.current !== requestId) return
       setActivitySeatLayout(activityLayout)
-      setSeatTemplates(templates)
-      setForm(current => {
-        if (current.id || current.activityId !== nextForm.activityId || current.venueId !== nextForm.venueId) return current
-        if (current.seatLayoutSource === 'activity' && activityLayout) {
-          return { ...current, activityLayoutId: String(activityLayout.id), templateId: '' }
-        }
-        if (current.seatLayoutSource === 'template' && templates.length > 0) {
-          return { ...current, templateId: String(templates[0].id), activityLayoutId: '' }
-        }
-        return current
-      })
+      if (activityLayout) {
+        setForm(current => {
+          if (current.id || current.activityId !== nextForm.activityId || current.venueId !== nextForm.venueId) return current
+          return { ...current, activityLayoutId: String(activityLayout.id) }
+        })
+      }
     } finally {
       if (layoutRequestRef.current === requestId) setLayoutLoading(false)
     }
@@ -200,8 +184,7 @@ function SessionsPageContent() {
         startTime: form.startTime,
         endTime: form.endTime || null,
         status: Number(form.status),
-        ...(form.seatLayoutSource === 'activity' && form.activityLayoutId ? { activityLayoutId: Number(form.activityLayoutId) } : {}),
-        ...(form.seatLayoutSource === 'template' && form.templateId ? { templateId: Number(form.templateId) } : {}),
+        ...(form.activityLayoutId ? { activityLayoutId: Number(form.activityLayoutId) } : {}),
       }
       if (form.id) {
         await updateAdminSession(form.id, body)
@@ -340,7 +323,7 @@ function SessionsPageContent() {
             <label className="block text-[13px] text-[#666]">
               活动 *
               <select value={form.activityId} disabled={Boolean(form.id)} onChange={event => {
-                const nextForm = { ...form, activityId: event.target.value, seatLayoutSource: 'none' as const, activityLayoutId: '', templateId: '' }
+                const nextForm = { ...form, activityId: event.target.value, activityLayoutId: '' }
                 setForm(nextForm)
                 loadSeatLayoutOptions(nextForm)
               }} className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]">
@@ -351,7 +334,7 @@ function SessionsPageContent() {
             <label className="block text-[13px] text-[#666]">
               场馆 *
               <select value={form.venueId} onChange={event => {
-                const nextForm = { ...form, venueId: event.target.value, seatLayoutSource: 'none' as const, activityLayoutId: '', templateId: '' }
+                const nextForm = { ...form, venueId: event.target.value, activityLayoutId: '' }
                 setForm(nextForm)
                 loadSeatLayoutOptions(nextForm)
               }} className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
@@ -375,29 +358,7 @@ function SessionsPageContent() {
               </select>
             </label>
           </div>
-          {!form.id && (
-            <div className="mt-4 rounded-xl border border-[#f0f0f0] bg-[#fafafa] p-4">
-              <div className="mb-3 text-[13px] font-semibold text-[#333]">SeatCraft 座位图来源</div>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <label className={`rounded-lg border p-3 text-[12px] ${form.seatLayoutSource === 'none' ? 'border-[#ff1268] bg-white' : 'border-[#e5e5e5]'}`}>
-                  <input type="radio" checked={form.seatLayoutSource === 'none'} onChange={() => setForm({ ...form, seatLayoutSource: 'none', activityLayoutId: '', templateId: '' })} /> 不复制座位图
-                </label>
-                <label className={`rounded-lg border p-3 text-[12px] ${form.seatLayoutSource === 'activity' ? 'border-[#ff1268] bg-white' : 'border-[#e5e5e5]'}`}>
-                  <input type="radio" disabled={!activitySeatLayout || layoutLoading} checked={form.seatLayoutSource === 'activity'} onChange={() => setForm({ ...form, seatLayoutSource: 'activity', activityLayoutId: activitySeatLayout ? String(activitySeatLayout.id) : '', templateId: '' })} /> 从活动统一图复制
-                  <div className="mt-1 text-[#999]">{activitySeatLayout ? activitySeatLayout.name : '当前活动无统一图'}</div>
-                </label>
-                <label className={`rounded-lg border p-3 text-[12px] ${form.seatLayoutSource === 'template' ? 'border-[#ff1268] bg-white' : 'border-[#e5e5e5]'}`}>
-                  <input type="radio" disabled={seatTemplates.length === 0 || layoutLoading} checked={form.seatLayoutSource === 'template'} onChange={() => setForm({ ...form, seatLayoutSource: 'template', templateId: seatTemplates[0] ? String(seatTemplates[0].id) : '', activityLayoutId: '' })} /> 从场馆模板复制
-                  <div className="mt-1 text-[#999]">{seatTemplates.length} 个可用模板</div>
-                </label>
-              </div>
-              {form.seatLayoutSource === 'template' && (
-                <select value={form.templateId} onChange={event => setForm({ ...form, templateId: event.target.value })} className="mt-3 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
-                  {seatTemplates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
-                </select>
-              )}
-            </div>
-          )}
+
           {formError && <div className="mt-3 text-[13px] text-[#ef4444]">{formError}</div>}
           <div className="mt-4 flex justify-end gap-2">
             <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666]">取消</button>

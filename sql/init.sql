@@ -225,6 +225,9 @@ CREATE TABLE "order" (
     quantity INTEGER DEFAULT 1,
     amount DECIMAL(10, 2) NOT NULL,
     status SMALLINT DEFAULT 1,
+    user_hidden BOOLEAN DEFAULT FALSE,
+    user_deleted_at TIMESTAMP,
+    user_delete_expires_at TIMESTAMP,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

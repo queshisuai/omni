@@ -2,19 +2,23 @@ package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.ActivitySeatLayout;
 import com.omni.ticket.entity.ActivitySeatLayoutSection;
 import com.omni.ticket.entity.UserRef;
-import com.omni.ticket.entity.VenueSeatLayoutTemplate;
-import com.omni.ticket.entity.VenueSeatLayoutTemplateSection;
+import com.omni.ticket.entity.VenueApplication;
+import com.omni.ticket.entity.VenueDefaultLayout;
+import com.omni.ticket.entity.VenueDefaultLayoutSection;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutSectionMapper;
 import com.omni.ticket.mapper.UserRefMapper;
-import com.omni.ticket.mapper.VenueSeatLayoutTemplateMapper;
-import com.omni.ticket.mapper.VenueSeatLayoutTemplateSectionMapper;
+import com.omni.ticket.mapper.VenueApplicationMapper;
+import com.omni.ticket.mapper.VenueDefaultLayoutMapper;
+import com.omni.ticket.mapper.VenueDefaultLayoutSectionMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,66 +28,133 @@ import java.util.stream.Collectors;
 
 @Service
 public class ActivitySeatLayoutService {
-    private static final String MODE_UNIFIED = "unified";
-    private static final String MODE_PER_SESSION = "per_session";
 
     private final ActivityMapper activityMapper;
     private final UserRefMapper userRefMapper;
-    private final VenueSeatLayoutTemplateMapper templateMapper;
-    private final VenueSeatLayoutTemplateSectionMapper templateSectionMapper;
+    private final VenueDefaultLayoutMapper venueDefaultLayoutMapper;
+    private final VenueDefaultLayoutSectionMapper venueSectionMapper;
     private final ActivitySeatLayoutMapper activityLayoutMapper;
     private final ActivitySeatLayoutSectionMapper activitySectionMapper;
+    private final SeatCraftBlockLayoutService blockLayoutService;
+    private final VenueApplicationMapper venueApplicationMapper;
+
+    public ActivitySeatLayoutService(ActivityMapper activityMapper,
+                                      UserRefMapper userRefMapper,
+                                      VenueDefaultLayoutMapper venueDefaultLayoutMapper,
+                                      VenueDefaultLayoutSectionMapper venueSectionMapper,
+                                      ActivitySeatLayoutMapper activityLayoutMapper,
+                                      ActivitySeatLayoutSectionMapper activitySectionMapper) {
+        this(activityMapper, userRefMapper, venueDefaultLayoutMapper, venueSectionMapper,
+                activityLayoutMapper, activitySectionMapper, null, null);
+    }
 
     public ActivitySeatLayoutService(ActivityMapper activityMapper,
                                      UserRefMapper userRefMapper,
-                                     VenueSeatLayoutTemplateMapper templateMapper,
-                                     VenueSeatLayoutTemplateSectionMapper templateSectionMapper,
+                                     VenueDefaultLayoutMapper venueDefaultLayoutMapper,
+                                     VenueDefaultLayoutSectionMapper venueSectionMapper,
                                      ActivitySeatLayoutMapper activityLayoutMapper,
-                                     ActivitySeatLayoutSectionMapper activitySectionMapper) {
+                                     ActivitySeatLayoutSectionMapper activitySectionMapper,
+                                     SeatCraftBlockLayoutService blockLayoutService) {
+        this(activityMapper, userRefMapper, venueDefaultLayoutMapper, venueSectionMapper,
+                activityLayoutMapper, activitySectionMapper, blockLayoutService, null);
+    }
+
+    @Autowired
+    public ActivitySeatLayoutService(ActivityMapper activityMapper,
+                                     UserRefMapper userRefMapper,
+                                     VenueDefaultLayoutMapper venueDefaultLayoutMapper,
+                                     VenueDefaultLayoutSectionMapper venueSectionMapper,
+                                     ActivitySeatLayoutMapper activityLayoutMapper,
+                                     ActivitySeatLayoutSectionMapper activitySectionMapper,
+                                     SeatCraftBlockLayoutService blockLayoutService,
+                                     VenueApplicationMapper venueApplicationMapper) {
         this.activityMapper = activityMapper;
         this.userRefMapper = userRefMapper;
-        this.templateMapper = templateMapper;
-        this.templateSectionMapper = templateSectionMapper;
+        this.venueDefaultLayoutMapper = venueDefaultLayoutMapper;
+        this.venueSectionMapper = venueSectionMapper;
         this.activityLayoutMapper = activityLayoutMapper;
         this.activitySectionMapper = activitySectionMapper;
+        this.blockLayoutService = blockLayoutService;
+        this.venueApplicationMapper = venueApplicationMapper;
     }
 
     @Transactional
-    public SeatCraftLayoutDtos.LayoutResponse copyFromTemplate(Long userId, Long activityId, Long templateId, String layoutMode) {
-        String normalizedMode = normalizeLayoutMode(layoutMode);
+    public SeatCraftLayoutDtos.LayoutResponse createFromVenueDefault(Long userId, Long activityId, Long venueLayoutId) {
         Activity activity = requireManageableActivity(userId, activityId);
-        VenueSeatLayoutTemplate template = requireTemplate(templateId);
-        List<VenueSeatLayoutTemplateSection> templateSections = templateSectionMapper.selectList(new LambdaQueryWrapper<VenueSeatLayoutTemplateSection>()
-                .eq(VenueSeatLayoutTemplateSection::getTemplateId, templateId)
-                .eq(VenueSeatLayoutTemplateSection::getStatus, 1)
-                .orderByAsc(VenueSeatLayoutTemplateSection::getSort)
-                .orderByAsc(VenueSeatLayoutTemplateSection::getId));
+        VenueDefaultLayout venueLayout = venueDefaultLayoutMapper.selectById(venueLayoutId);
+        if (venueLayout == null || !Integer.valueOf(1).equals(venueLayout.getStatus())) {
+            throw new BusinessException(404, "场馆默认座位图不存在");
+        }
+        List<VenueDefaultLayoutSection> venueSections = venueSectionMapper.selectList(new LambdaQueryWrapper<VenueDefaultLayoutSection>()
+                .eq(VenueDefaultLayoutSection::getLayoutId, venueLayoutId)
+                .eq(VenueDefaultLayoutSection::getStatus, 1)
+                .orderByAsc(VenueDefaultLayoutSection::getSort)
+                .orderByAsc(VenueDefaultLayoutSection::getId));
 
         LocalDateTime now = LocalDateTime.now();
         disableActiveLayouts(activity.getId(), now);
 
         ActivitySeatLayout layout = new ActivitySeatLayout();
         layout.setActivityId(activity.getId());
-        layout.setSourceTemplateId(template.getId());
-        layout.setLayoutMode(normalizedMode);
-        layout.setName(template.getName());
-        layout.setTemplateType(template.getTemplateType());
-        layout.setStageTitle(template.getStageTitle());
-        layout.setStageX(template.getStageX());
-        layout.setStageY(template.getStageY());
-        layout.setCanvasWidth(template.getCanvasWidth());
-        layout.setCanvasHeight(template.getCanvasHeight());
+        layout.setSourceVenueLayoutId(venueLayout.getId());
+        layout.setName(venueLayout.getName());
+        layout.setTemplateType(venueLayout.getTemplateType());
+        layout.setStageTitle(venueLayout.getStageTitle());
+        layout.setStageX(venueLayout.getStageX());
+        layout.setStageY(venueLayout.getStageY());
+        layout.setCanvasWidth(venueLayout.getCanvasWidth());
+        layout.setCanvasHeight(venueLayout.getCanvasHeight());
         layout.setStatus(1);
         layout.setCreateTime(now);
         layout.setUpdateTime(now);
         activityLayoutMapper.insert(layout);
 
-        List<ActivitySeatLayoutSection> sections = templateSections.stream()
+        List<ActivitySeatLayoutSection> sections = venueSections.stream()
                 .map(section -> copySection(layout.getId(), section, now))
                 .collect(Collectors.toList());
         sections.forEach(activitySectionMapper::insert);
+        if (blockLayoutService != null) {
+            SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayoutService.getLayout("venue", venueLayout.getVenueId());
+            if (blockLayout != null) {
+                blockLayoutService.replaceLayout("activity", activity.getId(), blockLayout);
+            }
+        }
 
         return toLayoutResponse(layout, sections);
+    }
+
+    @Transactional
+    public SeatCraftLayoutDtos.LayoutResponse copyFromVenueApplication(Long userId, Long activityId, Long venueApplicationId) {
+        Activity activity = requireManageableActivity(userId, activityId);
+        if (venueApplicationMapper != null) {
+            VenueApplication application = venueApplicationMapper.selectById(venueApplicationId);
+            if (application == null || !Integer.valueOf(1).equals(application.getStatus())) {
+                throw new BusinessException(404, "场地申请未审核通过");
+            }
+        }
+        LocalDateTime now = LocalDateTime.now();
+        disableActiveLayouts(activity.getId(), now);
+        ActivitySeatLayout layout = new ActivitySeatLayout();
+        layout.setActivityId(activity.getId());
+        layout.setName(defaultText(activity.getName(), "活动座位图"));
+        layout.setTemplateType("concert");
+        layout.setStageTitle("舞台");
+        layout.setStageX(0);
+        layout.setStageY(0);
+        layout.setCanvasWidth(800);
+        layout.setCanvasHeight(600);
+        layout.setStatus(1);
+        layout.setCreateTime(now);
+        layout.setUpdateTime(now);
+        activityLayoutMapper.insert(layout);
+        if (blockLayoutService != null) {
+            SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayoutService.getLayout("venue_application", venueApplicationId);
+            if (blockLayout == null) {
+                throw new BusinessException(400, "场地申请缺少SeatCraft座位图");
+            }
+            blockLayoutService.replaceLayout("activity", activity.getId(), blockLayout);
+        }
+        return toLayoutResponse(layout, java.util.Collections.emptyList());
     }
 
     public SeatCraftLayoutDtos.LayoutResponse getLayout(Long userId, Long activityId) {
@@ -122,7 +193,6 @@ public class ActivitySeatLayoutService {
         LocalDateTime now = LocalDateTime.now();
         layout.setName(requireText(request.getName(), "座位图名称不能为空"));
         layout.setTemplateType(requireText(request.getTemplateType(), "座位图类型不能为空"));
-        layout.setLayoutMode(normalizeLayoutMode(request.getLayoutMode()));
         layout.setStageTitle(requireText(request.getStageTitle(), "舞台名称不能为空"));
         layout.setStageX(requireNumber(request.getStageX(), "舞台X坐标不能为空"));
         layout.setStageY(requireNumber(request.getStageY(), "舞台Y坐标不能为空"));
@@ -136,6 +206,9 @@ public class ActivitySeatLayoutService {
                 .map(section -> buildSection(layout.getId(), section, now))
                 .collect(Collectors.toList());
         sections.forEach(activitySectionMapper::insert);
+        if (request.getBlockLayout() != null && blockLayoutService != null) {
+            blockLayoutService.replaceLayout("activity", activityId, request.getBlockLayout());
+        }
         return toLayoutResponse(layout, sections);
     }
 
@@ -190,10 +263,10 @@ public class ActivitySeatLayoutService {
         return section;
     }
 
-    private ActivitySeatLayoutSection copySection(Long activityLayoutId, VenueSeatLayoutTemplateSection source, LocalDateTime now) {
+    private ActivitySeatLayoutSection copySection(Long activityLayoutId, VenueDefaultLayoutSection source, LocalDateTime now) {
         ActivitySeatLayoutSection section = new ActivitySeatLayoutSection();
         section.setActivityLayoutId(activityLayoutId);
-        section.setSourceTemplateSectionId(source.getId());
+        section.setSourceTemplateSectionId(null);
         section.setSectionKey(source.getSectionKey());
         section.setName(source.getName());
         section.setRows(source.getRows());
@@ -221,7 +294,6 @@ public class ActivitySeatLayoutService {
         SeatCraftLayoutDtos.LayoutResponse response = new SeatCraftLayoutDtos.LayoutResponse();
         response.setId(layout.getId());
         response.setActivityId(layout.getActivityId());
-        response.setLayoutMode(layout.getLayoutMode());
         response.setName(layout.getName());
         response.setTemplateType(layout.getTemplateType());
         response.setStageTitle(layout.getStageTitle());
@@ -230,6 +302,9 @@ public class ActivitySeatLayoutService {
         response.setCanvasWidth(layout.getCanvasWidth());
         response.setCanvasHeight(layout.getCanvasHeight());
         response.setSections(sections.stream().map(this::toSectionResponse).collect(Collectors.toList()));
+        if (blockLayoutService != null) {
+            response.setBlockLayout(blockLayoutService.getLayout("activity", layout.getActivityId()));
+        }
         return response;
     }
 
@@ -256,19 +331,15 @@ public class ActivitySeatLayoutService {
         return response;
     }
 
-    private String normalizeLayoutMode(String layoutMode) {
-        String value = layoutMode == null ? MODE_UNIFIED : layoutMode;
-        if (!MODE_UNIFIED.equals(value) && !MODE_PER_SESSION.equals(value)) {
-            throw new BusinessException(400, "座位图模式不正确");
-        }
-        return value;
-    }
-
     private String requireText(String value, String message) {
         if (value == null || value.trim().isEmpty()) {
             throw new BusinessException(400, message);
         }
         return value.trim();
+    }
+
+    private String defaultText(String value, String fallback) {
+        return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
     private Integer requireNumber(Integer value, String message) {
@@ -298,13 +369,5 @@ public class ActivitySeatLayoutService {
             throw new BusinessException(403, "只能操作自己主办的活动");
         }
         return activity;
-    }
-
-    private VenueSeatLayoutTemplate requireTemplate(Long templateId) {
-        VenueSeatLayoutTemplate template = templateMapper.selectById(templateId);
-        if (template == null || !Integer.valueOf(1).equals(template.getStatus())) {
-            throw new BusinessException(404, "座位图模板不存在");
-        }
-        return template;
     }
 }

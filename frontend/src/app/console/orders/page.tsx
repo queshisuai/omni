@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { getUser } from '@/lib/auth'
-import { listOrders } from '@/lib/api'
+import { listConsoleOrders } from '@/lib/api'
 import type { OrderEntity } from '@/types/api'
 
 export default function ConsoleOrdersPage() {
@@ -12,8 +12,7 @@ export default function ConsoleOrdersPage() {
   useEffect(() => {
     const u = getUser()
     if (!u) return
-    // 简单加载当前用户订单（后续可扩展为按活动筛选）
-    listOrders(u.userId).then(setOrders).catch(() => {}).finally(() => setLoading(false))
+    listConsoleOrders(u.userId, { paidOnly: false }).then(setOrders).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
   const statusLabels: Record<number, string> = { 1: '待支付', 2: '已支付', 3: '已取消', 4: '已退款' }
@@ -22,7 +21,7 @@ export default function ConsoleOrdersPage() {
     <div>
       <h1 className="text-[22px] font-bold text-[#1a1a2e] mb-5">订单查看</h1>
       <div className="text-[13px] text-[#666] bg-[#e3f2fd] border border-[#bbdefb] rounded-lg p-3 mb-4">
-        此处显示您名下的订单。后续将支持按活动筛选订单。
+        此处按后台权限展示订单：平台管理员查看全部活动订单，主办方仅查看自己活动订单；用户侧回收站隐藏不影响这里。
       </div>
 
       {loading ? (

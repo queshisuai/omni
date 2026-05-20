@@ -17,9 +17,13 @@ public class Activity {
     private Long categoryId;
     private Long artistId;
     private Long organizerId;
+    private Long tourId;
+    private Long stationId;
+    private Long venueApplicationId;
     private String name;
     private String description;
     private String poster;
+    private String publishStatus;
     private Integer status;
     private LocalDateTime createTime;
 
@@ -31,12 +35,20 @@ public class Activity {
     public void setArtistId(Long artistId) { this.artistId = artistId; }
     public Long getOrganizerId() { return organizerId; }
     public void setOrganizerId(Long organizerId) { this.organizerId = organizerId; }
+    public Long getTourId() { return tourId; }
+    public void setTourId(Long tourId) { this.tourId = tourId; }
+    public Long getStationId() { return stationId; }
+    public void setStationId(Long stationId) { this.stationId = stationId; }
+    public Long getVenueApplicationId() { return venueApplicationId; }
+    public void setVenueApplicationId(Long venueApplicationId) { this.venueApplicationId = venueApplicationId; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
     public String getPoster() { return poster; }
     public void setPoster(String poster) { this.poster = poster; }
+    public String getPublishStatus() { return publishStatus; }
+    public void setPublishStatus(String publishStatus) { this.publishStatus = publishStatus; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public LocalDateTime getCreateTime() { return createTime; }

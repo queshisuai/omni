@@ -73,29 +73,6 @@ class SessionAdminServiceTest {
     }
 
     @Test
-    void createSessionCopiesTemplateWhenTemplateIdProvided() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
-        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(venueMapper.selectById(101L)).thenReturn(venue(101L));
-        when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
-        doAnswer(invocation -> {
-            Session inserted = invocation.getArgument(0);
-            inserted.setId(601L);
-            return 1;
-        }).when(sessionMapper).insert(any());
-
-        Map<String, Object> body = baseBody();
-        body.put("templateId", 88L);
-
-        service.createSession(body);
-
-        verify(sessionSeatLayoutService).copyFromTemplate(2003L, 601L, 88L);
-        verify(sessionSeatLayoutService, never()).copyFromActivityLayout(any(), any(), any());
-        verify(sessionSeatLayoutService).generateSessionSeats(601L);
-        verify(sessionSeatService, never()).generateForSession(601L);
-    }
-
-    @Test
     void createSessionCopiesActivityLayoutWhenActivityLayoutIdProvided() {
         when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
@@ -113,7 +90,6 @@ class SessionAdminServiceTest {
         service.createSession(body);
 
         verify(sessionSeatLayoutService).copyFromActivityLayout(2003L, 602L, 77L);
-        verify(sessionSeatLayoutService, never()).copyFromTemplate(any(), any(), any());
         verify(sessionSeatLayoutService).generateSessionSeats(602L);
         verify(sessionSeatService, never()).generateForSession(602L);
     }

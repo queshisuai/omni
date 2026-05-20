@@ -95,23 +95,20 @@ public class OrderService {
      * 创建订单
      */
     public Order createOrder(CreateOrderRequest request) {
-        // 生成订单号
-        String orderNo = "DM" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-                + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-
-        Order order = new Order();
-        order.setOrderNo(orderNo);
-        order.setUserId(request.getUserId());
-        order.setSessionId(request.getSessionId());
-        order.setTicketTypeId(request.getTicketTypeId());
-        order.setQuantity(request.getQuantity());
-        order.setAmount(request.getUnitPrice() != null
-                ? request.getUnitPrice().multiply(BigDecimal.valueOf(request.getQuantity()))
-                : MOCK_TICKET_PRICE.multiply(BigDecimal.valueOf(request.getQuantity())));
-        order.setStatus(STATUS_PENDING);
-
+        int quantity = requirePositiveQuantity(request.getQuantity());
+        BigDecimal unitPrice = request.getUnitPrice();
+        if (ticketTypeMapper != null) {
+            TicketType ticketType = ticketTypeMapper.selectById(request.getTicketTypeId());
+            if (ticketType == null) {
+                throw new BusinessException(ResultCode.NOT_FOUND, "票档不存在");
+            }
+            unitPrice = ticketType.getPrice();
+            lockTicketStock(request.getTicketTypeId(), quantity);
+        }
+        Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity,
+                unitPrice != null ? unitPrice : MOCK_TICKET_PRICE);
         orderMapper.insert(order);
-        log.info("订单创建成功: orderNo={}, userId={}, amount={}", orderNo, request.getUserId(), order.getAmount());
+        log.info("订单创建成功: orderNo={}, userId={}, amount={}", order.getOrderNo(), request.getUserId(), order.getAmount());
         return order;
     }
 
@@ -146,9 +143,8 @@ public class OrderService {
     }
 
     public Order createOrderWithSeats(LockSeatsRequest request) {
-        if (request.getSeatIds() == null || request.getSeatIds().isEmpty()) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "请选择座位");
-        }
+        boolean hasSeatIds = request.getSeatIds() != null && !request.getSeatIds().isEmpty();
+        int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
         BigDecimal unitPrice = request.getUnitPrice();
         if (ticketTypeMapper != null) {
             TicketType ticketType = ticketTypeMapper.selectById(request.getTicketTypeId());
@@ -157,17 +153,19 @@ public class OrderService {
             }
             unitPrice = ticketType.getPrice();
         }
-        if (sessionSeatMapper != null) {
+        if (hasSeatIds && sessionSeatMapper != null) {
             validateAndLockSeats(request);
+        } else if (!hasSeatIds) {
+            lockTicketStock(request.getTicketTypeId(), quantity);
         }
         Order order = buildPendingOrder(
                 request.getUserId(),
                 request.getSessionId(),
                 request.getTicketTypeId(),
-                request.getSeatIds().size(),
+                quantity,
                 unitPrice != null ? unitPrice : MOCK_TICKET_PRICE);
         orderMapper.insert(order);
-        if (orderSeatMapper != null) {
+        if (hasSeatIds && orderSeatMapper != null) {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime expireTime = now.plusMinutes(15);
             for (Long seatId : request.getSeatIds()) {
@@ -184,6 +182,23 @@ public class OrderService {
             }
         }
         return order;
+    }
+
+    private int requirePositiveQuantity(Integer quantity) {
+        if (quantity == null || quantity <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "购买数量不正确");
+        }
+        return quantity;
+    }
+
+    private void lockTicketStock(Long ticketTypeId, int quantity) {
+        if (ticketTypeMapper == null) {
+            return;
+        }
+        int locked = ticketTypeMapper.decreaseRemainStockIfEnough(ticketTypeId, quantity);
+        if (locked != 1) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
+        }
     }
 
     private void validateAndLockSeats(LockSeatsRequest request) {
@@ -280,7 +295,44 @@ public class OrderService {
     }
 
     public List<OrderListItemResponse> listOrderItems(Long userId) {
-        return orderMapper.selectOrderListItems(userId);
+        return orderMapper.selectVisibleOrderListItems(userId);
+    }
+
+    public List<OrderListItemResponse> listTrashOrderItems(Long userId) {
+        return orderMapper.selectTrashOrderListItems(userId);
+    }
+
+    public void hideOrder(Long id, Long userId) {
+        Order order = getUserOwnedOrder(id, userId);
+        if (order.getStatus() == STATUS_PAID) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "已支付订单退款完成前不能删除");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        order.setUserHidden(true);
+        order.setUserDeletedAt(now);
+        order.setUserDeleteExpiresAt(now.plusDays(7));
+        order.setUpdateTime(now);
+        orderMapper.updateById(order);
+    }
+
+    public void restoreOrder(Long id, Long userId) {
+        Order order = getUserOwnedOrder(id, userId);
+        order.setUserHidden(false);
+        order.setUserDeletedAt(null);
+        order.setUserDeleteExpiresAt(null);
+        order.setUpdateTime(LocalDateTime.now());
+        orderMapper.updateById(order);
+    }
+
+    private Order getUserOwnedOrder(Long id, Long userId) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
+        }
+        if (userId == null || !userId.equals(order.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权限操作该订单");
+        }
+        return order;
     }
 
     public Long countPaidOrdersBySessions(List<Long> sessionIds) {
@@ -292,13 +344,19 @@ public class OrderService {
     }
 
     public List<Order> listPaidOrdersBySessions(List<Long> sessionIds) {
+        return listOrdersBySessions(sessionIds, true);
+    }
+
+    public List<Order> listOrdersBySessions(List<Long> sessionIds, boolean paidOnly) {
         if (sessionIds == null || sessionIds.isEmpty()) {
             return java.util.Collections.emptyList();
         }
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
-        wrapper.in(Order::getSessionId, sessionIds)
-                .eq(Order::getStatus, STATUS_PAID)
-                .orderByAsc(Order::getId);
+        wrapper.in(Order::getSessionId, sessionIds);
+        if (paidOnly) {
+            wrapper.eq(Order::getStatus, STATUS_PAID);
+        }
+        wrapper.orderByAsc(Order::getId);
         return orderMapper.selectList(wrapper);
     }
 
@@ -328,6 +386,7 @@ public class OrderService {
         assertPendingOrderSafeToCancel(order);
         cancelPendingOrderOrThrow(order);
         releaseLockedSeats(order);
+        restoreStockForStockOnlyOrder(order);
         log.info("订单已取消: orderNo={}", order.getOrderNo());
     }
 
@@ -415,6 +474,21 @@ public class OrderService {
         }
         for (OrderSeat orderSeat : orderSeats) {
             releaseLockedSeat(orderSeat);
+        }
+    }
+
+    private void restoreStockForStockOnlyOrder(Order order) {
+        if (ticketTypeMapper == null || order == null || order.getQuantity() == null || order.getQuantity() <= 0) {
+            return;
+        }
+        if (orderSeatMapper == null || order.getId() == null) {
+            ticketTypeMapper.increaseRemainStock(order.getTicketTypeId(), order.getQuantity());
+            return;
+        }
+        List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
+                .eq(OrderSeat::getOrderId, order.getId()));
+        if (orderSeats == null || orderSeats.isEmpty()) {
+            ticketTypeMapper.increaseRemainStock(order.getTicketTypeId(), order.getQuantity());
         }
     }
 

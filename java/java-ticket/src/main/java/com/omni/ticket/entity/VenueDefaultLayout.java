@@ -3,11 +3,10 @@ package com.omni.ticket.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-
 import java.time.LocalDateTime;
 
-@TableName("venue_seat_layout_template")
-public class VenueSeatLayoutTemplate {
+@TableName("venue_default_layout")
+public class VenueDefaultLayout {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long venueId;

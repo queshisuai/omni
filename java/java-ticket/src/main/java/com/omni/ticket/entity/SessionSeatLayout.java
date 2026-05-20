@@ -12,7 +12,6 @@ public class SessionSeatLayout {
     private Long id;
     private Long sessionId;
     private Long activityLayoutId;
-    private Long sourceTemplateId;
     private String name;
     private String templateType;
     private String stageTitle;
@@ -30,8 +29,6 @@ public class SessionSeatLayout {
     public void setSessionId(Long sessionId) { this.sessionId = sessionId; }
     public Long getActivityLayoutId() { return activityLayoutId; }
     public void setActivityLayoutId(Long activityLayoutId) { this.activityLayoutId = activityLayoutId; }
-    public Long getSourceTemplateId() { return sourceTemplateId; }
-    public void setSourceTemplateId(Long sourceTemplateId) { this.sourceTemplateId = sourceTemplateId; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getTemplateType() { return templateType; }

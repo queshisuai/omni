@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, ensureSeatLayoutTemplates, createActivitySeatLayoutFromTemplate, deleteAdminActivity } from '@/lib/api'
+import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, getVenueDefaultLayout, updateActivitySeatLayout } from '@/lib/api'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatCraftLayoutVO } from '@/types/api'
 
@@ -40,10 +40,8 @@ export default function NewActivityPage() {
 
   // 步骤2：场次
   const [sessions, setSessions] = useState<SessionDraft[]>([{ key: 's1', venueId: null, startTime: '', endTime: '' }])
-  const [seatLayoutMode, setSeatLayoutMode] = useState<'unified' | 'per_session'>('unified')
-  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
-  const [seatTemplates, setSeatTemplates] = useState<SeatCraftLayoutVO[]>([])
-  const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [venueDefaultLayout, setVenueDefaultLayout] = useState<SeatCraftLayoutVO | null>(null)
+  const [loadingDefaultLayout, setLoadingDefaultLayout] = useState(false)
 
   // 步骤3：票档
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDraft[]>([
@@ -62,33 +60,25 @@ export default function NewActivityPage() {
   useEffect(() => {
     const u = getUser()
     if (!u || !primaryVenueId) {
-      setSeatTemplates([])
-      setSelectedTemplateId(null)
-      setLoadingTemplates(false)
+      setVenueDefaultLayout(null)
       return
     }
     let cancelled = false
-    setSeatTemplates([])
-    setSelectedTemplateId(null)
-    setLoadingTemplates(true)
-    ensureSeatLayoutTemplates(primaryVenueId, u.userId)
-      .then(templates => {
+    setLoadingDefaultLayout(true)
+    getVenueDefaultLayout(primaryVenueId)
+      .then(layout => {
         if (cancelled) return
-        setSeatTemplates(templates)
-        setSelectedTemplateId(templates[0]?.id ?? null)
+        setVenueDefaultLayout(layout)
       })
       .catch(() => {
         if (cancelled) return
-        setSeatTemplates([])
-        setSelectedTemplateId(null)
+        setVenueDefaultLayout(null)
       })
       .finally(() => {
-        if (!cancelled) setLoadingTemplates(false)
+        if (!cancelled) setLoadingDefaultLayout(false)
       })
 
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [primaryVenueId])
 
   const addSession = () => {
@@ -122,12 +112,6 @@ export default function NewActivityPage() {
   const handleSubmit = async () => {
     const u = getUser()
     if (!u || !categoryId || !name.trim()) return
-    const selectedTemplate = seatTemplates.find(template => template.id === selectedTemplateId)
-    if (seatLayoutMode === 'unified' && (loadingTemplates || !selectedTemplate || selectedTemplate.venueId !== primaryVenueId)) {
-      alert(loadingTemplates ? '座位图模板加载中，请稍后再提交' : primaryVenueId ? '请选择当前场馆的座位图模板' : '请先为场次选择场馆并加载座位图模板')
-      return
-    }
-
     setSubmitting(true)
     try {
       // 1. 创建活动（artistId用1占位，实际产品可传自定义艺人）
@@ -140,12 +124,11 @@ export default function NewActivityPage() {
         poster,
       })
 
-      if (seatLayoutMode === 'unified' && selectedTemplate) {
+      if (venueDefaultLayout) {
         try {
-          await createActivitySeatLayoutFromTemplate(activity.id, {
+          await updateActivitySeatLayout(activity.id, {
             userId: u.userId,
-            templateId: selectedTemplate.id,
-            layoutMode: 'unified',
+            layout: venueDefaultLayout,
           })
         } catch (err) {
           await deleteAdminActivity(activity.id, u.userId).catch(() => {})
@@ -248,42 +231,23 @@ export default function NewActivityPage() {
         {/* 步骤2：场次 */}
         {step === 2 && (
           <div>
-            <div className="mb-5 rounded-xl border border-[#ffe1ec] bg-[#fff7fa] p-4">
-              <div className="mb-3 text-[14px] font-semibold text-[#1a1a2e]">座位图配置方式</div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setSeatLayoutMode('unified')}
-                  className={`rounded-lg border p-4 text-left transition-colors ${seatLayoutMode === 'unified' ? 'border-[#ff1268] bg-white shadow-sm' : 'border-[#f0c9d8] bg-transparent hover:bg-white'}`}
-                >
-                  <div className="text-[13px] font-semibold text-[#333]">统一座位图</div>
-                  <div className="mt-1 text-[12px] leading-5 text-[#777]">多个场次默认使用同一套座位图，可为单场复制后修改。</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSeatLayoutMode('per_session')}
-                  className={`rounded-lg border p-4 text-left transition-colors ${seatLayoutMode === 'per_session' ? 'border-[#ff1268] bg-white shadow-sm' : 'border-[#f0c9d8] bg-transparent hover:bg-white'}`}
-                >
-                  <div className="text-[13px] font-semibold text-[#333]">每场单独配置</div>
-                  <div className="mt-1 text-[12px] leading-5 text-[#777]">每个场次创建时单独选择模板和编辑座位图。</div>
-                </button>
+            {primaryVenueId && (
+              <div className="mb-5 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4">
+                <div className="mb-2 text-[14px] font-semibold text-[#1a1a2e]">场馆默认座位图</div>
+                {loadingDefaultLayout ? (
+                  <div className="text-[13px] text-[#999]">加载中...</div>
+                ) : venueDefaultLayout ? (
+                  <div className="space-y-1 text-[13px] text-[#333]">
+                    <div>布局名称：{venueDefaultLayout.name}</div>
+                    <div>舞台标题：{venueDefaultLayout.stageTitle}</div>
+                    <div>区域数量：{venueDefaultLayout.sections.length}</div>
+                    <div>画布大小：{venueDefaultLayout.canvasWidth} × {venueDefaultLayout.canvasHeight}</div>
+                  </div>
+                ) : (
+                  <div className="text-[13px] text-[#999]">该场馆暂无默认座位图，可在活动创建后配置。</div>
+                )}
               </div>
-              {seatLayoutMode === 'unified' && (
-                <div className="mt-4">
-                  <label className="mb-1 block text-[12px] text-[#666]">座位图模板</label>
-                  <select
-                    value={selectedTemplateId ?? ''}
-                    onChange={e => setSelectedTemplateId(e.target.value ? Number(e.target.value) : null)}
-                    disabled={!primaryVenueId || loadingTemplates || seatTemplates.length === 0}
-                    className="w-full rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5] disabled:text-[#999]"
-                  >
-                    <option value="">{primaryVenueId ? loadingTemplates ? '加载模板中...' : '请选择模板' : '请先为场次选择场馆'}</option>
-                    {seatTemplates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
-                  </select>
-                  <div className="mt-1 text-[12px] text-[#999]">统一座位图使用第一个已选场馆的模板；后续可在活动座位图页继续编辑。</div>
-                </div>
-              )}
-            </div>
+            )}
 
             {sessions.map((s, i) => (
               <div key={s.key} className="mb-5 p-4 border border-[#f0f0f0] rounded-lg bg-[#fafafa]">

@@ -11,8 +11,7 @@ public class ActivitySeatLayout {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long activityId;
-    private Long sourceTemplateId;
-    private String layoutMode;
+    private Long sourceVenueLayoutId;
     private String name;
     private String templateType;
     private String stageTitle;
@@ -28,10 +27,8 @@ public class ActivitySeatLayout {
     public void setId(Long id) { this.id = id; }
     public Long getActivityId() { return activityId; }
     public void setActivityId(Long activityId) { this.activityId = activityId; }
-    public Long getSourceTemplateId() { return sourceTemplateId; }
-    public void setSourceTemplateId(Long sourceTemplateId) { this.sourceTemplateId = sourceTemplateId; }
-    public String getLayoutMode() { return layoutMode; }
-    public void setLayoutMode(String layoutMode) { this.layoutMode = layoutMode; }
+    public Long getSourceVenueLayoutId() { return sourceVenueLayoutId; }
+    public void setSourceVenueLayoutId(Long sourceVenueLayoutId) { this.sourceVenueLayoutId = sourceVenueLayoutId; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getTemplateType() { return templateType; }

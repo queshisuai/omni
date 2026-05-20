@@ -7,6 +7,7 @@ public class LockSeatsRequest {
     private Long userId;
     private Long sessionId;
     private Long ticketTypeId;
+    private Integer quantity;
     private List<Long> seatIds;
     private BigDecimal unitPrice;
 
@@ -16,6 +17,8 @@ public class LockSeatsRequest {
     public void setSessionId(Long sessionId) { this.sessionId = sessionId; }
     public Long getTicketTypeId() { return ticketTypeId; }
     public void setTicketTypeId(Long ticketTypeId) { this.ticketTypeId = ticketTypeId; }
+    public Integer getQuantity() { return quantity; }
+    public void setQuantity(Integer quantity) { this.quantity = quantity; }
     public List<Long> getSeatIds() { return seatIds; }
     public void setSeatIds(List<Long> seatIds) { this.seatIds = seatIds; }
     public BigDecimal getUnitPrice() { return unitPrice; }

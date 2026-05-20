@@ -10,7 +10,6 @@ public class SeatCraftLayoutDtos {
         private Long venueId;
         private Long activityId;
         private Long sessionId;
-        private String layoutMode;
         private String name;
         private String templateType;
         private String stageTitle;
@@ -19,6 +18,7 @@ public class SeatCraftLayoutDtos {
         private Integer canvasWidth;
         private Integer canvasHeight;
         private List<SectionResponse> sections = new ArrayList<>();
+        private SeatCraftBlockDtos.LayoutRequest blockLayout;
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
@@ -28,8 +28,6 @@ public class SeatCraftLayoutDtos {
         public void setActivityId(Long activityId) { this.activityId = activityId; }
         public Long getSessionId() { return sessionId; }
         public void setSessionId(Long sessionId) { this.sessionId = sessionId; }
-        public String getLayoutMode() { return layoutMode; }
-        public void setLayoutMode(String layoutMode) { this.layoutMode = layoutMode; }
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
         public String getTemplateType() { return templateType; }
@@ -46,6 +44,8 @@ public class SeatCraftLayoutDtos {
         public void setCanvasHeight(Integer canvasHeight) { this.canvasHeight = canvasHeight; }
         public List<SectionResponse> getSections() { return sections; }
         public void setSections(List<SectionResponse> sections) { this.sections = sections; }
+        public SeatCraftBlockDtos.LayoutRequest getBlockLayout() { return blockLayout; }
+        public void setBlockLayout(SeatCraftBlockDtos.LayoutRequest blockLayout) { this.blockLayout = blockLayout; }
     }
 
     public static class SectionResponse {
@@ -66,6 +66,7 @@ public class SeatCraftLayoutDtos {
         private Integer primeRowEnd;
         private Integer primeColStart;
         private Integer primeColEnd;
+        private Integer sort;
         private Integer seatCount;
         private Long ticketTypeId;
         private BigDecimal price;
@@ -104,6 +105,8 @@ public class SeatCraftLayoutDtos {
         public void setPrimeColStart(Integer primeColStart) { this.primeColStart = primeColStart; }
         public Integer getPrimeColEnd() { return primeColEnd; }
         public void setPrimeColEnd(Integer primeColEnd) { this.primeColEnd = primeColEnd; }
+        public Integer getSort() { return sort; }
+        public void setSort(Integer sort) { this.sort = sort; }
         public Integer getSeatCount() { return seatCount; }
         public void setSeatCount(Integer seatCount) { this.seatCount = seatCount; }
         public Long getTicketTypeId() { return ticketTypeId; }

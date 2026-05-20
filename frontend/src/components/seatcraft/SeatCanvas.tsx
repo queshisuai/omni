@@ -5,8 +5,9 @@ import { Move } from 'lucide-react'
 import { motion } from 'motion/react'
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch'
 import { cn } from '@/lib/utils'
+import { buildSeatsForBlock } from './block-layout'
 import { buildSeatsForSection, isPrimeSeat } from './layout'
-import type { SeatCanvasProps, SeatCraftSeat, SeatCraftSection } from './types'
+import type { SeatBlockDraft, SeatCanvasProps, SeatCraftSeat, SeatCraftSection } from './types'
 
 function Seat({ seat, onClick, color, isPrime }: { seat: SeatCraftSeat; onClick?: (seat: SeatCraftSeat) => void; color: string; isPrime?: boolean }) {
   const selected = seat.status === 'selected'
@@ -66,18 +67,76 @@ function buildCurvedPath(section: SeatCraftSection) {
 
 export function SeatCanvas({
   sections,
+  blocks = [],
   stage,
   selectedSeatIds = [],
   sectionSeats,
   isDesignMode,
   onSeatClick,
   onSectionMove,
+  onBlockMove,
   onStageMove,
   activeSectionKey,
+  activeBlockKey,
   stageTitle = '舞台',
 }: SeatCanvasProps) {
   const hasPrimeArea = useMemo(() => sections.some(section => section.primeRowStart != null && section.primeColStart != null), [sections])
-  const uniqueColors = useMemo(() => Array.from(new Set(sections.map(section => section.color))), [sections])
+  const uniqueColors = useMemo(() => Array.from(new Set([...sections.map(section => section.color), ...blocks.map(block => block.color)])), [blocks, sections])
+
+  const renderBlock = (block: SeatBlockDraft) => {
+    const seats = buildSeatsForBlock(block, selectedSeatIds)
+    const width = block.width ?? Math.max(120, (block.cols ?? block.seatsPerRow ?? 1) * (block.seatSpacing ?? 24))
+    const height = block.height ?? Math.max(80, (block.rows ?? 1) * (block.rowSpacing ?? 24))
+    const selected = activeBlockKey === block.blockKey
+
+    return (
+      <motion.g
+        key={block.id}
+        drag={isDesignMode}
+        dragMomentum={false}
+        onDragEnd={(_, info) => onBlockMove?.(block.blockKey, block.x + info.offset.x, block.y + info.offset.y)}
+        initial={false}
+        animate={{ rotate: block.rotation || 0 }}
+        className={cn('group transition-none', isDesignMode ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none')}
+      >
+        {block.blockType === 'standingBlock' ? (
+          <rect
+            x={block.x - width / 2}
+            y={block.y - height / 2}
+            width={width}
+            height={height}
+            rx={16}
+            fill={block.color}
+            className={cn('opacity-35 stroke-zinc-800/80 transition-all duration-300', selected && 'stroke-emerald-500/90')}
+          />
+        ) : (
+          <rect
+            x={block.x - 18}
+            y={block.y - 34}
+            width={width + 36}
+            height={height + 48}
+            rx={12}
+            className={cn('fill-zinc-900/30 stroke-zinc-800/80 transition-all duration-300', selected && 'stroke-emerald-500/90')}
+          />
+        )}
+
+        <text
+          x={block.x}
+          y={block.blockType === 'standingBlock' ? block.y + 4 : block.y - 18}
+          textAnchor="middle"
+          className="pointer-events-none select-none text-[10px] font-bold font-mono uppercase tracking-widest fill-zinc-300"
+        >
+          {block.name}{block.blockType === 'standingBlock' && block.capacity ? ` · ${block.capacity}人` : ''}
+        </text>
+
+        <g className={cn(!isDesignMode && 'pointer-events-auto')}>
+          {seats.map(seat => (
+            <Seat key={seat.id} seat={seat} onClick={onSeatClick} color={block.color} />
+          ))}
+        </g>
+      </motion.g>
+    )
+  }
 
   const renderSection = (section: SeatCraftSection) => {
     const seats = sectionSeats?.[section.sectionKey] ?? buildSeatsForSection(section, selectedSeatIds)
@@ -209,6 +268,7 @@ export function SeatCanvas({
             </motion.g>
 
             <g>{sections.map(section => renderSection(section))}</g>
+            <g>{blocks.map(block => renderBlock(block))}</g>
           </svg>
         </TransformComponent>
       </TransformWrapper>

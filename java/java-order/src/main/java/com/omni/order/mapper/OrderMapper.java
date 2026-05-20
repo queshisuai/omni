@@ -12,6 +12,19 @@ import java.util.List;
 
 @Mapper
 public interface OrderMapper extends BaseMapper<Order> {
+    String ORDER_LIST_COLUMNS = "o.id, o.order_no AS orderNo, o.user_id AS userId, o.session_id AS sessionId, " +
+            "o.ticket_type_id AS ticketTypeId, o.quantity, o.amount, o.status, o.user_hidden AS userHidden, " +
+            "o.user_deleted_at AS userDeletedAt, o.user_delete_expires_at AS userDeleteExpiresAt, " +
+            "o.create_time AS createTime, o.update_time AS updateTime, a.id AS activityId, " +
+            "a.name AS activityName, a.poster AS activityPoster, v.name AS venueName, " +
+            "s.start_time AS sessionTime, tt.name AS ticketName, tt.price AS unitPrice ";
+
+    String ORDER_LIST_JOINS = "FROM \"order\" o " +
+            "LEFT JOIN session s ON s.id = o.session_id " +
+            "LEFT JOIN activity a ON a.id = s.activity_id " +
+            "LEFT JOIN venue v ON v.id = s.venue_id " +
+            "LEFT JOIN ticket_type tt ON tt.id = o.ticket_type_id ";
+
     @Select("SELECT o.id, o.order_no AS orderNo, o.user_id AS userId, o.session_id AS sessionId, " +
             "o.ticket_type_id AS ticketTypeId, o.quantity, o.amount, o.status, o.create_time AS createTime, " +
             "o.update_time AS updateTime, a.id AS activityId, a.name AS activityName, a.poster AS activityPoster, " +
@@ -24,6 +37,17 @@ public interface OrderMapper extends BaseMapper<Order> {
             "WHERE o.user_id = #{userId} " +
             "ORDER BY o.create_time DESC")
     List<OrderListItemResponse> selectOrderListItems(Long userId);
+
+    @Select("SELECT " + ORDER_LIST_COLUMNS + ORDER_LIST_JOINS +
+            "WHERE o.user_id = #{userId} AND COALESCE(o.user_hidden, FALSE) = FALSE " +
+            "ORDER BY o.create_time DESC")
+    List<OrderListItemResponse> selectVisibleOrderListItems(Long userId);
+
+    @Select("SELECT " + ORDER_LIST_COLUMNS + ORDER_LIST_JOINS +
+            "WHERE o.user_id = #{userId} AND COALESCE(o.user_hidden, FALSE) = TRUE " +
+            "AND (o.user_delete_expires_at IS NULL OR o.user_delete_expires_at > CURRENT_TIMESTAMP) " +
+            "ORDER BY o.user_deleted_at DESC, o.create_time DESC")
+    List<OrderListItemResponse> selectTrashOrderListItems(Long userId);
 
     @Select({"<script>",
             "SELECT COUNT(*) FROM \"order\" WHERE status = 2",
