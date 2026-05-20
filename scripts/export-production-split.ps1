@@ -3,6 +3,7 @@ param(
     [int]$SourcePort = 5432,
     [string]$SourceDatabase = "omni_ticket",
     [string]$SourceUser = "postgres",
+    # 默认面向生产共享库 public schema；本地 local-schema 预演可传入服务 schema，但不改变生产默认。
     [string]$SourceSchema = "public",
     [string]$OutputDir = "artifacts/production-split"
 )
@@ -117,7 +118,7 @@ foreach ($service in $manifest.services) {
         }
         Set-Content -LiteralPath $preDataFile -Value $filteredPreDataSql -Encoding UTF8
 
-        Invoke-PgDump -Arguments ($commonArguments + "--data-only") -OutputFile $dataFile
+        Invoke-PgDump -Arguments ($commonArguments + "--data-only" + "--column-inserts" + "--disable-triggers") -OutputFile $dataFile
         Write-Host "Exported $($service.key) to $serviceDir"
     }
     finally {
@@ -127,4 +128,4 @@ foreach ($service in $manifest.services) {
     }
 }
 
-Write-Host "Production split export completed: $resolvedOutputDir"
+Write-Host "PASS production split export artifacts written to $resolvedOutputDir"
