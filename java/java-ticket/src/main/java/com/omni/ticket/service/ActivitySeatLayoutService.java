@@ -7,15 +7,15 @@ import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.ActivitySeatLayout;
 import com.omni.ticket.entity.ActivitySeatLayoutSection;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.VenueApplication;
 import com.omni.ticket.entity.VenueDefaultLayout;
 import com.omni.ticket.entity.VenueDefaultLayoutSection;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutSectionMapper;
-import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueApplicationMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueDefaultLayoutMapper;
 import com.omni.ticket.mapper.VenueDefaultLayoutSectionMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 public class ActivitySeatLayoutService {
 
     private final ActivityMapper activityMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final VenueDefaultLayoutMapper venueDefaultLayoutMapper;
     private final VenueDefaultLayoutSectionMapper venueSectionMapper;
     private final ActivitySeatLayoutMapper activityLayoutMapper;
@@ -39,29 +39,29 @@ public class ActivitySeatLayoutService {
     private final VenueApplicationMapper venueApplicationMapper;
 
     public ActivitySeatLayoutService(ActivityMapper activityMapper,
-                                      UserRefMapper userRefMapper,
+                                      UserAccessService userAccessService,
                                       VenueDefaultLayoutMapper venueDefaultLayoutMapper,
                                       VenueDefaultLayoutSectionMapper venueSectionMapper,
                                       ActivitySeatLayoutMapper activityLayoutMapper,
                                       ActivitySeatLayoutSectionMapper activitySectionMapper) {
-        this(activityMapper, userRefMapper, venueDefaultLayoutMapper, venueSectionMapper,
+        this(activityMapper, userAccessService, venueDefaultLayoutMapper, venueSectionMapper,
                 activityLayoutMapper, activitySectionMapper, null, null);
     }
 
     public ActivitySeatLayoutService(ActivityMapper activityMapper,
-                                     UserRefMapper userRefMapper,
+                                     UserAccessService userAccessService,
                                      VenueDefaultLayoutMapper venueDefaultLayoutMapper,
                                      VenueDefaultLayoutSectionMapper venueSectionMapper,
                                      ActivitySeatLayoutMapper activityLayoutMapper,
                                      ActivitySeatLayoutSectionMapper activitySectionMapper,
                                      SeatCraftBlockLayoutService blockLayoutService) {
-        this(activityMapper, userRefMapper, venueDefaultLayoutMapper, venueSectionMapper,
+        this(activityMapper, userAccessService, venueDefaultLayoutMapper, venueSectionMapper,
                 activityLayoutMapper, activitySectionMapper, blockLayoutService, null);
     }
 
     @Autowired
     public ActivitySeatLayoutService(ActivityMapper activityMapper,
-                                     UserRefMapper userRefMapper,
+                                     UserAccessService userAccessService,
                                      VenueDefaultLayoutMapper venueDefaultLayoutMapper,
                                      VenueDefaultLayoutSectionMapper venueSectionMapper,
                                      ActivitySeatLayoutMapper activityLayoutMapper,
@@ -69,7 +69,7 @@ public class ActivitySeatLayoutService {
                                      SeatCraftBlockLayoutService blockLayoutService,
                                      VenueApplicationMapper venueApplicationMapper) {
         this.activityMapper = activityMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.venueDefaultLayoutMapper = venueDefaultLayoutMapper;
         this.venueSectionMapper = venueSectionMapper;
         this.activityLayoutMapper = activityLayoutMapper;
@@ -357,15 +357,13 @@ public class ActivitySeatLayoutService {
     }
 
     private Activity requireManageableActivity(Long userId, Long activityId) {
-        UserRef user = userRefMapper.selectById(userId);
-        if (user == null || (!"admin".equals(user.getRole()) && !"organizer".equals(user.getRole()))) {
-            throw new BusinessException(403, "无权限");
-        }
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
+        String role = user.getRole();
         Activity activity = activityMapper.selectById(activityId);
         if (activity == null) {
             throw new BusinessException(404, "活动不存在");
         }
-        if ("organizer".equals(user.getRole()) && !userId.equals(activity.getOrganizerId())) {
+        if ("organizer".equals(role) && !userId.equals(activity.getOrganizerId())) {
             throw new BusinessException(403, "只能操作自己主办的活动");
         }
         return activity;

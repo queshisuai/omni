@@ -3,10 +3,10 @@ package com.omni.ticket.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueDefaultLayout;
-import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueDefaultLayoutMapper;
 import com.omni.ticket.mapper.VenueDefaultLayoutSectionMapper;
 import com.omni.ticket.mapper.VenueMapper;
@@ -38,7 +38,7 @@ class VenueDefaultLayoutServiceTest {
     @Mock
     private VenueMapper venueMapper;
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
     @Mock
     private SeatCraftBlockLayoutService blockLayoutService;
 
@@ -46,12 +46,12 @@ class VenueDefaultLayoutServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new VenueDefaultLayoutService(layoutMapper, sectionMapper, venueMapper, userRefMapper, blockLayoutService);
+        service = new VenueDefaultLayoutService(layoutMapper, sectionMapper, venueMapper, userAccessService, blockLayoutService);
     }
 
     @Test
     void saveLayoutAcceptsBlockOnlyLayoutAndPersistsBlocks() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user("admin"));
+        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user("admin"));
         when(venueMapper.selectById(9L)).thenReturn(venue());
         when(layoutMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
         doAnswer(invocation -> {
@@ -123,8 +123,8 @@ class VenueDefaultLayoutServiceTest {
         return layout;
     }
 
-    private UserRef user(String role) {
-        UserRef user = new UserRef();
+    private InternalUserRefResponse user(String role) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
         user.setRole(role);
         return user;
     }

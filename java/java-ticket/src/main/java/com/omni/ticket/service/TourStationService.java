@@ -7,14 +7,14 @@ import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.Station;
 import com.omni.ticket.entity.Tour;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.VenueApplication;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.StationMapper;
 import com.omni.ticket.mapper.TourMapper;
-import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueApplicationMapper;
+import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +32,7 @@ public class TourStationService {
 
     private final TourMapper tourMapper;
     private final StationMapper stationMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final VenueApplicationMapper venueApplicationMapper;
     private final ActivityMapper activityMapper;
     private final SessionMapper sessionMapper;
@@ -41,14 +41,14 @@ public class TourStationService {
 
     public TourStationService(TourMapper tourMapper,
                                StationMapper stationMapper,
-                               UserRefMapper userRefMapper) {
-        this(tourMapper, stationMapper, userRefMapper, null, null, null, null, null);
+                               UserAccessService userAccessService) {
+        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null);
     }
 
     @Autowired
     public TourStationService(TourMapper tourMapper,
                               StationMapper stationMapper,
-                              UserRefMapper userRefMapper,
+                              UserAccessService userAccessService,
                               VenueApplicationMapper venueApplicationMapper,
                               ActivityMapper activityMapper,
                               SessionMapper sessionMapper,
@@ -56,7 +56,7 @@ public class TourStationService {
                               SessionSeatLayoutService sessionSeatLayoutService) {
         this.tourMapper = tourMapper;
         this.stationMapper = stationMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.venueApplicationMapper = venueApplicationMapper;
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
@@ -66,7 +66,7 @@ public class TourStationService {
 
     @Transactional
     public Tour createTourDraft(Long userId, Map<String, Object> body) {
-        UserRef user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
         String title = requireText(body == null ? null : body.get("title"), "演出项目名称不能为空");
         LocalDateTime now = LocalDateTime.now();
         Tour tour = new Tour();
@@ -88,7 +88,7 @@ public class TourStationService {
 
     @Transactional
     public Station createStationDraft(Long userId, Long tourId, Map<String, Object> body) {
-        UserRef user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
         Tour tour = tourMapper.selectById(tourId);
         if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
             throw new BusinessException(404, "演出项目不存在");
@@ -113,7 +113,7 @@ public class TourStationService {
     }
 
     public Page<Tour> listManageableTours(Long userId, int page, int size) {
-        UserRef user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
         LambdaQueryWrapper<Tour> wrapper = new LambdaQueryWrapper<Tour>()
                 .eq(Tour::getStatus, 1)
                 .orderByDesc(Tour::getId);
@@ -168,7 +168,7 @@ public class TourStationService {
 
     @Transactional
     public Map<String, Object> publishStation(Long userId, Long stationId, Map<String, Object> body) {
-        UserRef user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
         Station station = stationMapper.selectById(stationId);
         if (station == null || !Integer.valueOf(1).equals(station.getStatus())) {
             throw new BusinessException(404, "站点不存在");
@@ -278,12 +278,8 @@ public class TourStationService {
         return LocalDateTime.parse(text.replace(" ", "T"));
     }
 
-    private UserRef requireAdminOrOrganizer(Long userId) {
-        UserRef user = userRefMapper.selectById(userId);
-        if (user == null || (!"admin".equals(user.getRole()) && !"organizer".equals(user.getRole()))) {
-            throw new BusinessException(403, "无权限");
-        }
-        return user;
+    private InternalUserRefResponse requireAdminOrOrganizer(Long userId) {
+        return userAccessService.requireAdminOrOrganizer(userId);
     }
 
     private String requireText(Object value, String message) {

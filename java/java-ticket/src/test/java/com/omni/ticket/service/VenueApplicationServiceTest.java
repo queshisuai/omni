@@ -4,10 +4,10 @@ import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.entity.Venue;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.VenueApplication;
-import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueApplicationMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,18 +37,18 @@ class VenueApplicationServiceTest {
     @Mock
     private VenueMapper venueMapper;
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
 
     private VenueApplicationService service;
 
     @BeforeEach
     void setUp() {
-        service = new VenueApplicationService(venueApplicationMapper, venueMapper, userRefMapper);
+        service = new VenueApplicationService(venueApplicationMapper, venueMapper, userAccessService);
     }
 
     @Test
     void organizerSubmitCreatesPendingApplication() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
 
         VenueApplication result = service.submit(request());
 
@@ -76,7 +76,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void submitRejectsMissingUsageProof() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         VenueApplicationRequest request = request();
         request.setProofNote(null);
         request.setProofFileUrl(null);
@@ -88,7 +88,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void submitRejectsLayoutWithoutTicketGroup() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         VenueApplicationRequest request = request();
         request.getLayout().setTicketGroups(List.of());
 
@@ -100,7 +100,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void approveWithCreateModeCreatesNewVenueAndApprovesApplication() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
         VenueApplication application = pendingApplication();
         when(venueApplicationMapper.selectById(301L)).thenReturn(application);
 
@@ -123,7 +123,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void approveWithLinkModeAssociatesExistingVenueWithoutCreatingVenue() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
         VenueApplication application = pendingApplication();
         when(venueApplicationMapper.selectById(301L)).thenReturn(application);
         when(venueMapper.selectById(99L)).thenReturn(activeVenue(99L));
@@ -207,8 +207,8 @@ class VenueApplicationServiceTest {
         return venue;
     }
 
-    private UserRef user(Long id, String role) {
-        UserRef user = new UserRef();
+    private InternalUserRefResponse user(Long id, String role) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
         user.setId(id);
         user.setRole(role);
         return user;

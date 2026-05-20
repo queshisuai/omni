@@ -1,13 +1,13 @@
 package com.omni.ticket.service;
 
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.dto.VenueSeatRequest;
-import com.omni.ticket.entity.UserRef;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueSeat;
-import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueAreaMapper;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.mapper.VenueSeatMapper;
+import com.omni.ticket.service.UserAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,18 +36,18 @@ class SeatTemplateServiceTest {
     @Mock
     private VenueSeatMapper venueSeatMapper;
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
 
     private SeatTemplateService service;
 
     @BeforeEach
     void setUp() {
-        service = new SeatTemplateService(venueMapper, venueAreaMapper, venueSeatMapper, userRefMapper);
+        service = new SeatTemplateService(venueMapper, venueAreaMapper, venueSeatMapper, userAccessService);
     }
 
     @Test
     void createAreaGeneratesSeatTemplateForAllRowsAndSeats() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        setupAdminUser();
         when(venueMapper.selectById(1L)).thenReturn(venue(1L));
 
         Map<String, Object> body = new HashMap<>();
@@ -68,7 +68,7 @@ class SeatTemplateServiceTest {
 
     @Test
     void updateSeatUpdatesEditableFieldsById() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        setupAdminUser();
         when(venueSeatMapper.selectById(9L)).thenReturn(seat(9L));
         when(venueMapper.selectById(1L)).thenReturn(venue(1L));
         when(venueAreaMapper.selectById(12L)).thenReturn(area(12L, 1L));
@@ -104,7 +104,7 @@ class SeatTemplateServiceTest {
 
     @Test
     void updateSeatRejectsMovingSeatToAnotherVenue() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        setupAdminUser();
         when(venueSeatMapper.selectById(9L)).thenReturn(seat(9L));
         when(venueMapper.selectById(2L)).thenReturn(venue(2L));
         when(venueAreaMapper.selectById(21L)).thenReturn(area(21L, 2L));
@@ -120,7 +120,7 @@ class SeatTemplateServiceTest {
 
     @Test
     void createSeatReactivatesDisabledSeatAtSamePosition() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        setupAdminUser();
         when(venueMapper.selectById(1L)).thenReturn(venue(1L));
         when(venueAreaMapper.selectById(11L)).thenReturn(area(11L, 1L));
         VenueSeat disabled = seat(9L);
@@ -139,7 +139,7 @@ class SeatTemplateServiceTest {
 
     @Test
     void createSeatRejectsActiveSeatAtSamePosition() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        setupAdminUser();
         when(venueMapper.selectById(1L)).thenReturn(venue(1L));
         when(venueAreaMapper.selectById(11L)).thenReturn(area(11L, 1L));
         when(venueSeatMapper.selectList(any())).thenReturn(java.util.List.of(seat(9L)));
@@ -182,7 +182,7 @@ class SeatTemplateServiceTest {
 
     @Test
     void createSeatRejectsStatusOutsideZeroOrOne() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        setupAdminUser();
         VenueSeatRequest request = validSeatRequest();
         request.setStatus(2);
 
@@ -194,7 +194,7 @@ class SeatTemplateServiceTest {
 
     @Test
     void deleteSeatDisablesSeatInsteadOfPhysicalDelete() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        setupAdminUser();
         when(venueSeatMapper.selectById(9L)).thenReturn(seat(9L));
 
         VenueSeat deleted = service.deleteSeat(2002L, 9L);
@@ -203,11 +203,12 @@ class SeatTemplateServiceTest {
         verify(venueSeatMapper).updateById(argThat(seat -> Long.valueOf(9L).equals(seat.getId()) && Integer.valueOf(0).equals(seat.getStatus())));
     }
 
-    private UserRef user(Long id, String role) {
-        UserRef user = new UserRef();
-        user.setId(id);
-        user.setRole(role);
-        return user;
+    private void setupAdminUser() {
+        InternalUserRefResponse user = new InternalUserRefResponse();
+        user.setId(2002L);
+        user.setRole("admin");
+        when(userAccessService.requireUser(2002L)).thenReturn(user);
+        when(userAccessService.isAdmin(user)).thenReturn(true);
     }
 
     private Venue venue(Long id) {

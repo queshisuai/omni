@@ -7,11 +7,11 @@ import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.dto.VenueApplicationResponse;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueApplication;
-import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueApplicationMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -28,32 +28,29 @@ public class VenueApplicationService {
 
     private final VenueApplicationMapper venueApplicationMapper;
     private final VenueMapper venueMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final SeatCraftBlockLayoutService blockLayoutService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public VenueApplicationService(VenueApplicationMapper venueApplicationMapper,
                                     VenueMapper venueMapper,
-                                    UserRefMapper userRefMapper) {
-        this(venueApplicationMapper, venueMapper, userRefMapper, null);
+                                    UserAccessService userAccessService) {
+        this(venueApplicationMapper, venueMapper, userAccessService, null);
     }
 
     @Autowired
     public VenueApplicationService(VenueApplicationMapper venueApplicationMapper,
                                    VenueMapper venueMapper,
-                                   UserRefMapper userRefMapper,
+                                   UserAccessService userAccessService,
                                    SeatCraftBlockLayoutService blockLayoutService) {
         this.venueApplicationMapper = venueApplicationMapper;
         this.venueMapper = venueMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.blockLayoutService = blockLayoutService;
     }
 
     public VenueApplication submit(VenueApplicationRequest request) {
-        UserRef user = requireUser(request.getUserId());
-        if (!"admin".equals(user.getRole()) && !"organizer".equals(user.getRole())) {
-            throw new BusinessException(403, "无权限");
-        }
+        userAccessService.requireAdminOrOrganizer(request.getUserId());
         validateUsageProof(request);
         LocalDateTime now = LocalDateTime.now();
         VenueApplication application = new VenueApplication();
@@ -143,7 +140,7 @@ public class VenueApplicationService {
     }
 
     public List<VenueApplicationResponse> listMine(Long userId) {
-        requireUser(userId);
+        userAccessService.requireUser(userId);
         return venueApplicationMapper.selectList(new LambdaQueryWrapper<VenueApplication>()
                         .eq(VenueApplication::getApplicantId, userId)
                         .orderByDesc(VenueApplication::getCreateTime))
@@ -151,10 +148,7 @@ public class VenueApplicationService {
     }
 
     public List<VenueApplicationResponse> listAdmin(Long userId, Integer status) {
-        UserRef user = requireUser(userId);
-        if (!"admin".equals(user.getRole())) {
-            throw new BusinessException(403, "无权限");
-        }
+        userAccessService.requireAdmin(userId);
         LambdaQueryWrapper<VenueApplication> wrapper = new LambdaQueryWrapper<>();
         if (status != null) {
             wrapper.eq(VenueApplication::getStatus, status);
@@ -164,10 +158,7 @@ public class VenueApplicationService {
     }
 
     public VenueApplication approve(Long id, Long userId, String mode, Long venueId, String reviewNote) {
-        UserRef reviewer = requireUser(userId);
-        if (!"admin".equals(reviewer.getRole())) {
-            throw new BusinessException(403, "无权限");
-        }
+        userAccessService.requireAdmin(userId);
         VenueApplication application = requirePendingApplication(id);
         Long approvedVenueId;
         if ("create".equals(mode)) {
@@ -199,10 +190,7 @@ public class VenueApplicationService {
     }
 
     public VenueApplication reject(Long id, Long userId, String reviewNote) {
-        UserRef reviewer = requireUser(userId);
-        if (!"admin".equals(reviewer.getRole())) {
-            throw new BusinessException(403, "无权限");
-        }
+        userAccessService.requireAdmin(userId);
         if (trim(reviewNote) == null || trim(reviewNote).isEmpty()) {
             throw new BusinessException(400, "驳回原因不能为空");
         }
@@ -216,12 +204,8 @@ public class VenueApplicationService {
         return application;
     }
 
-    private UserRef requireUser(Long userId) {
-        UserRef user = userRefMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(401, "无权限");
-        }
-        return user;
+    private InternalUserRefResponse requireUser(Long userId) {
+        return userAccessService.requireUser(userId);
     }
 
     private VenueApplication requirePendingApplication(Long id) {

@@ -11,11 +11,11 @@ import com.omni.ticket.dto.PaidOrderCountResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
-import com.omni.ticket.mapper.UserRefMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -30,30 +30,27 @@ public class AdminSummaryService {
     private final ActivityMapper activityMapper;
     private final SessionMapper sessionMapper;
     private final TicketTypeMapper ticketTypeMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final OrderInternalClient orderInternalClient;
     private final String internalApiToken;
 
     public AdminSummaryService(ActivityMapper activityMapper,
-                               SessionMapper sessionMapper,
-                               TicketTypeMapper ticketTypeMapper,
-                               UserRefMapper userRefMapper,
-                               OrderInternalClient orderInternalClient,
-                               @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+                                SessionMapper sessionMapper,
+                                TicketTypeMapper ticketTypeMapper,
+                                UserAccessService userAccessService,
+                                OrderInternalClient orderInternalClient,
+                                @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.orderInternalClient = orderInternalClient;
         this.internalApiToken = internalApiToken;
     }
 
     public AdminSummaryResponse getSummary(Long userId) {
-        UserRef user = userRefMapper.selectById(userId);
-        String role = user != null ? user.getRole() : null;
-        if (!"admin".equals(role) && !"organizer".equals(role)) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
-        }
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
+        String role = user.getRole();
 
         LambdaQueryWrapper<Activity> activityWrapper = new LambdaQueryWrapper<>();
         if ("organizer".equals(role)) {

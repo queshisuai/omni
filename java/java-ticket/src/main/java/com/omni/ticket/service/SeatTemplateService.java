@@ -2,14 +2,14 @@ package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.dto.VenueSeatRequest;
 import com.omni.ticket.dto.SeatTemplateResponse;
-import com.omni.ticket.entity.UserRef;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueArea;
 import com.omni.ticket.entity.VenueSeat;
-import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueAreaMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.mapper.VenueSeatMapper;
 import org.springframework.stereotype.Service;
@@ -23,16 +23,16 @@ public class SeatTemplateService {
     private final VenueMapper venueMapper;
     private final VenueAreaMapper venueAreaMapper;
     private final VenueSeatMapper venueSeatMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
 
     public SeatTemplateService(VenueMapper venueMapper,
-                               VenueAreaMapper venueAreaMapper,
-                               VenueSeatMapper venueSeatMapper,
-                               UserRefMapper userRefMapper) {
+                                VenueAreaMapper venueAreaMapper,
+                                VenueSeatMapper venueSeatMapper,
+                                UserAccessService userAccessService) {
         this.venueMapper = venueMapper;
         this.venueAreaMapper = venueAreaMapper;
         this.venueSeatMapper = venueSeatMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
     }
 
     public SeatTemplateResponse createArea(Map<String, Object> body) {
@@ -239,17 +239,14 @@ public class SeatTemplateService {
     }
 
     private void requireAdmin(Long userId) {
-        UserRef user = userRefMapper.selectById(userId);
-        if (user == null || !"admin".equals(user.getRole())) {
+        InternalUserRefResponse user = userAccessService.requireUser(userId);
+        if (!userAccessService.isAdmin(user)) {
             throw new BusinessException(403, "仅平台管理员可配置座位模板");
         }
     }
 
     private void requireConsoleUser(Long userId) {
-        UserRef user = userRefMapper.selectById(userId);
-        if (user == null || (!"admin".equals(user.getRole()) && !"organizer".equals(user.getRole()))) {
-            throw new BusinessException(403, "无权限");
-        }
+        userAccessService.requireAdminOrOrganizer(userId);
     }
 
     private Long toLong(Object value) {

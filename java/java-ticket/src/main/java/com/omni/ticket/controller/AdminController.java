@@ -25,6 +25,7 @@ import com.omni.ticket.mapper.*;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.service.VenueDefaultLayoutService;
 import com.omni.ticket.service.SeatTemplateService;
 import com.omni.ticket.service.SessionAdminService;
@@ -60,7 +61,7 @@ public class AdminController {
     private final SessionMapper sessionMapper;
     private final TicketTypeMapper ticketTypeMapper;
     private final VenueMapper venueMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final ActivityAdminService activityAdminService;
     private final SessionAdminService sessionAdminService;
     private final VenueApplicationService venueApplicationService;
@@ -76,7 +77,7 @@ public class AdminController {
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
-                            UserRefMapper userRefMapper,
+                            UserAccessService userAccessService,
                              ActivityAdminService activityAdminService,
                              SessionAdminService sessionAdminService,
                              VenueApplicationService venueApplicationService,
@@ -85,7 +86,7 @@ public class AdminController {
                                 AdminSummaryService adminSummaryService,
                                  SessionSeatService sessionSeatService,
                                  VenueDefaultLayoutService venueDefaultLayoutService) {
-        this(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userRefMapper, activityAdminService,
+        this(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
                 adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null);
     }
@@ -93,24 +94,24 @@ public class AdminController {
     @Autowired
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
-                            UserRefMapper userRefMapper,
+                            UserAccessService userAccessService,
                              ActivityAdminService activityAdminService,
                              SessionAdminService sessionAdminService,
                              VenueApplicationService venueApplicationService,
                               SeatTemplateService seatTemplateService,
-                               TicketTypeAreaService ticketTypeAreaService,
-                               AdminSummaryService adminSummaryService,
-                                 SessionSeatService sessionSeatService,
-                                  VenueDefaultLayoutService venueDefaultLayoutService,
-                                  ActivitySeatLayoutService activitySeatLayoutService,
-                                  SessionSeatLayoutService sessionSeatLayoutService,
-                                  TourStationService tourStationService,
-                                  OrderAdminQueryService orderAdminQueryService) {
+                                TicketTypeAreaService ticketTypeAreaService,
+                                AdminSummaryService adminSummaryService,
+                                  SessionSeatService sessionSeatService,
+                                   VenueDefaultLayoutService venueDefaultLayoutService,
+                                   ActivitySeatLayoutService activitySeatLayoutService,
+                                   SessionSeatLayoutService sessionSeatLayoutService,
+                                   TourStationService tourStationService,
+                                   OrderAdminQueryService orderAdminQueryService) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
         this.venueMapper = venueMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.activityAdminService = activityAdminService;
         this.sessionAdminService = sessionAdminService;
         this.venueApplicationService = venueApplicationService;
@@ -163,11 +164,7 @@ public class AdminController {
 
     /** 获取用户角色，非admin/organizer返回null并拒绝 */
     private String checkRole(Long userId) {
-        UserRef user = userRefMapper.selectById(userId);
-        if (user == null) return null;
-        String role = user.getRole();
-        if (!"admin".equals(role) && !"organizer".equals(role)) return null;
-        return role;
+        return userAccessService.requireAdminOrOrganizerRole(userId);
     }
 
     /** 检查organizer是否拥有此活动 */

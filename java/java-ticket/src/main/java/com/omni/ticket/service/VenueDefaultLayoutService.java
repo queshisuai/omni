@@ -3,8 +3,10 @@ package com.omni.ticket.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
+import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,26 +21,26 @@ public class VenueDefaultLayoutService {
     private final VenueDefaultLayoutMapper layoutMapper;
     private final VenueDefaultLayoutSectionMapper sectionMapper;
     private final VenueMapper venueMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final SeatCraftBlockLayoutService blockLayoutService;
 
     public VenueDefaultLayoutService(VenueDefaultLayoutMapper layoutMapper,
                                        VenueDefaultLayoutSectionMapper sectionMapper,
                                        VenueMapper venueMapper,
-                                       UserRefMapper userRefMapper) {
-        this(layoutMapper, sectionMapper, venueMapper, userRefMapper, null);
+                                       UserAccessService userAccessService) {
+        this(layoutMapper, sectionMapper, venueMapper, userAccessService, null);
     }
 
     @Autowired
     public VenueDefaultLayoutService(VenueDefaultLayoutMapper layoutMapper,
                                       VenueDefaultLayoutSectionMapper sectionMapper,
                                       VenueMapper venueMapper,
-                                      UserRefMapper userRefMapper,
+                                      UserAccessService userAccessService,
                                       SeatCraftBlockLayoutService blockLayoutService) {
         this.layoutMapper = layoutMapper;
         this.sectionMapper = sectionMapper;
         this.venueMapper = venueMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.blockLayoutService = blockLayoutService;
     }
 
@@ -179,10 +181,7 @@ public class VenueDefaultLayoutService {
     }
 
     private void requireAdminOrOrganizer(Long userId, Long venueId) {
-        UserRef user = userRefMapper.selectById(userId);
-        if (user == null || (!"admin".equals(user.getRole()) && !"organizer".equals(user.getRole()))) {
-            throw new BusinessException(403, "无权限");
-        }
+        userAccessService.requireAdminOrOrganizer(userId);
         Venue venue = venueMapper.selectById(venueId);
         if (venue == null) {
             throw new BusinessException(404, "场馆不存在");

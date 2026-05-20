@@ -5,6 +5,7 @@ import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.ChangePasswordRequest;
+import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
 import com.omni.user.dto.OrganizerApplicationRequest;
@@ -14,6 +15,7 @@ import com.omni.user.dto.RegisterRequest;
 import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UpdateProfileRequest;
 import com.omni.user.dto.UserInfoResponse;
+import org.springframework.beans.factory.annotation.Value;
 import com.omni.user.service.OrganizerApplicationService;
 import com.omni.user.service.UserService;
 import io.jsonwebtoken.Claims;
@@ -35,10 +37,18 @@ public class UserController {
 
     private final UserService userService;
     private final OrganizerApplicationService organizerApplicationService;
+    private final String internalApiToken;
 
     public UserController(UserService userService, OrganizerApplicationService organizerApplicationService) {
+        this(userService, organizerApplicationService, "");
+    }
+
+    public UserController(UserService userService,
+                          OrganizerApplicationService organizerApplicationService,
+                          @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.userService = userService;
         this.organizerApplicationService = organizerApplicationService;
+        this.internalApiToken = internalApiToken;
     }
 
     /**
@@ -153,6 +163,20 @@ public class UserController {
         String reviewNote = request == null ? null : request.getReviewNote();
         OrganizerApplicationResponse response = organizerApplicationService.reject(id, reviewerId, reviewNote);
         return Result.success(response);
+    }
+
+    @GetMapping("/internal/{id}")
+    public Result<InternalUserRefResponse> getInternalUserRef(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(userService.getInternalUserRef(id));
+    }
+
+    private boolean isValidInternalToken(String token) {
+        return StringUtils.hasText(internalApiToken) && internalApiToken.equals(token);
     }
 
     /**

@@ -5,13 +5,13 @@ import com.omni.ticket.entity.Station;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.Tour;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.VenueApplication;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.StationMapper;
 import com.omni.ticket.mapper.TourMapper;
-import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueApplicationMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +40,7 @@ class TourStationServiceTest {
     @Mock
     private StationMapper stationMapper;
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
     @Mock
     private VenueApplicationMapper venueApplicationMapper;
     @Mock
@@ -56,13 +56,13 @@ class TourStationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new TourStationService(tourMapper, stationMapper, userRefMapper, venueApplicationMapper,
+        service = new TourStationService(tourMapper, stationMapper, userAccessService, venueApplicationMapper,
                 activityMapper, sessionMapper, activitySeatLayoutService, sessionSeatLayoutService);
     }
 
     @Test
     void organizerCreatesTourDraftForSelf() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
 
         Tour result = service.createTourDraft(2003L, Map.of("title", "巡回演唱会"));
 
@@ -77,7 +77,7 @@ class TourStationServiceTest {
 
     @Test
     void adminCreatesTourDraftForProvidedOrganizer() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
 
         service.createTourDraft(2002L, Map.of("title", "平台巡演", "organizerId", 2003L));
 
@@ -88,7 +88,7 @@ class TourStationServiceTest {
 
     @Test
     void normalUserCannotCreateTourDraft() {
-        when(userRefMapper.selectById(2004L)).thenReturn(user(2004L, "user"));
+        when(userAccessService.requireAdminOrOrganizer(2004L)).thenThrow(new BusinessException(403, "无权限"));
 
         BusinessException error = assertThrows(BusinessException.class,
                 () -> service.createTourDraft(2004L, Map.of("title", "普通用户演出")));
@@ -98,7 +98,7 @@ class TourStationServiceTest {
 
     @Test
     void organizerCreatesStationDraftForOwnTour() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(tourMapper.selectById(10L)).thenReturn(tour(10L, 2003L));
 
         Station result = service.createStationDraft(2003L, 10L, Map.of("city", "哈尔滨", "stationName", "哈尔滨站"));
@@ -114,7 +114,7 @@ class TourStationServiceTest {
 
     @Test
     void stationDraftStoresVenueApplicationIdWhenProvided() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(tourMapper.selectById(10L)).thenReturn(tour(10L, 2003L));
 
         service.createStationDraft(2003L, 10L, Map.of("city", "上海", "stationName", "上海站", "venueApplicationId", 88L));
@@ -126,7 +126,7 @@ class TourStationServiceTest {
 
     @Test
     void organizerCannotCreateStationDraftForOthersTour() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(tourMapper.selectById(10L)).thenReturn(tour(10L, 9999L));
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -137,7 +137,7 @@ class TourStationServiceTest {
 
     @Test
     void organizerListsOnlyOwnTours() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         Page<Tour> page = new Page<>(1, 10);
         page.setRecords(List.of(tour(10L, 2003L)));
         when(tourMapper.selectPage(any(), any())).thenReturn(page);
@@ -197,7 +197,7 @@ class TourStationServiceTest {
 
     @Test
     void publishStationCreatesActivitySessionCopiesLayoutGeneratesStockAndMarksPublished() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         Tour tour = tour(10L, 2003L);
         tour.setTitle("万象巡演");
         tour.setCategoryId(2L);
@@ -241,7 +241,7 @@ class TourStationServiceTest {
 
     @Test
     void publishStationRejectsWhenSessionOutsideVenueApplicationValidity() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(tourMapper.selectById(10L)).thenReturn(tour(10L, 2003L));
         when(stationMapper.selectById(20L)).thenReturn(station(20L, 10L, 88L));
         when(venueApplicationMapper.selectById(88L)).thenReturn(approvedApplication(88L, 2003L, 101L,
@@ -254,8 +254,8 @@ class TourStationServiceTest {
         assertEquals("场次时间不在场地使用权有效期内", error.getMessage());
     }
 
-    private UserRef user(Long id, String role) {
-        UserRef user = new UserRef();
+    private InternalUserRefResponse user(Long id, String role) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
         user.setId(id);
         user.setRole(role);
         return user;

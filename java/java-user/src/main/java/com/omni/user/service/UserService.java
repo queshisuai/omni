@@ -11,6 +11,7 @@ import com.omni.user.dto.LoginResponse;
 import com.omni.user.dto.RegisterRequest;
 import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UpdateProfileRequest;
+import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.dto.UserInfoResponse;
 import com.omni.user.entity.User;
 import com.omni.user.mapper.UserMapper;
@@ -110,6 +111,17 @@ public class UserService {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
         return user;
+    }
+
+    public InternalUserRefResponse getInternalUserRef(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+        return toInternalUserRefResponse(user);
     }
 
     /**
@@ -287,6 +299,17 @@ public class UserService {
 
         user.setPassword(passwordEncoder.encode(newPassword));
         userMapper.updateById(user);
+    }
+
+    private InternalUserRefResponse toInternalUserRefResponse(User user) {
+        InternalUserRefResponse response = new InternalUserRefResponse();
+        response.setId(user.getId());
+        response.setPhone(user.getPhone());
+        response.setRole(user.getRole() != null ? user.getRole() : "user");
+        response.setStatus(user.getStatus());
+        response.setOrganizerStatus(user.getOrganizerStatus());
+        response.setOrganizerName(user.getOrganizerName());
+        return response;
     }
 
     private UserInfoResponse toUserInfoResponse(User user) {

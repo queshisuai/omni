@@ -12,7 +12,7 @@ import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.SessionSeatLayout;
 import com.omni.ticket.entity.SessionSeatLayoutSection;
 import com.omni.ticket.entity.TicketType;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.VenueArea;
 import com.omni.ticket.entity.VenueSeat;
 import com.omni.ticket.mapper.ActivityMapper;
@@ -23,8 +23,8 @@ import com.omni.ticket.mapper.SessionSeatLayoutMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutSectionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
-import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueAreaMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueSeatMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
 public class SessionSeatLayoutService {
     private final SessionMapper sessionMapper;
     private final ActivityMapper activityMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final ActivitySeatLayoutMapper activityLayoutMapper;
     private final ActivitySeatLayoutSectionMapper activitySectionMapper;
     private final SessionSeatLayoutMapper sessionLayoutMapper;
@@ -54,7 +54,7 @@ public class SessionSeatLayoutService {
 
     public SessionSeatLayoutService(SessionMapper sessionMapper,
                                     ActivityMapper activityMapper,
-                                    UserRefMapper userRefMapper,
+                                    UserAccessService userAccessService,
                                     ActivitySeatLayoutMapper activityLayoutMapper,
                                     ActivitySeatLayoutSectionMapper activitySectionMapper,
                                     SessionSeatLayoutMapper sessionLayoutMapper,
@@ -63,13 +63,13 @@ public class SessionSeatLayoutService {
                                      TicketTypeMapper ticketTypeMapper,
                                      VenueAreaMapper venueAreaMapper,
                                      VenueSeatMapper venueSeatMapper) {
-        this(sessionMapper, activityMapper, userRefMapper, activityLayoutMapper, activitySectionMapper,
+        this(sessionMapper, activityMapper, userAccessService, activityLayoutMapper, activitySectionMapper,
                 sessionLayoutMapper, sessionSectionMapper, sessionSeatMapper, ticketTypeMapper, venueAreaMapper, venueSeatMapper, null);
     }
 
     public SessionSeatLayoutService(SessionMapper sessionMapper,
                                     ActivityMapper activityMapper,
-                                    UserRefMapper userRefMapper,
+                                    UserAccessService userAccessService,
                                     ActivitySeatLayoutMapper activityLayoutMapper,
                                     ActivitySeatLayoutSectionMapper activitySectionMapper,
                                     SessionSeatLayoutMapper sessionLayoutMapper,
@@ -79,7 +79,7 @@ public class SessionSeatLayoutService {
                                      VenueAreaMapper venueAreaMapper,
                                      VenueSeatMapper venueSeatMapper,
                                      SeatCraftBlockLayoutService blockLayoutService) {
-        this(sessionMapper, activityMapper, userRefMapper, activityLayoutMapper, activitySectionMapper,
+        this(sessionMapper, activityMapper, userAccessService, activityLayoutMapper, activitySectionMapper,
                 sessionLayoutMapper, sessionSectionMapper, sessionSeatMapper, ticketTypeMapper, venueAreaMapper, venueSeatMapper,
                 blockLayoutService, null);
     }
@@ -87,7 +87,7 @@ public class SessionSeatLayoutService {
     @Autowired
     public SessionSeatLayoutService(SessionMapper sessionMapper,
                                     ActivityMapper activityMapper,
-                                    UserRefMapper userRefMapper,
+                                    UserAccessService userAccessService,
                                     ActivitySeatLayoutMapper activityLayoutMapper,
                                     ActivitySeatLayoutSectionMapper activitySectionMapper,
                                     SessionSeatLayoutMapper sessionLayoutMapper,
@@ -100,7 +100,7 @@ public class SessionSeatLayoutService {
                                     SessionBlockTicketStockService blockTicketStockService) {
         this.sessionMapper = sessionMapper;
         this.activityMapper = activityMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.activityLayoutMapper = activityLayoutMapper;
         this.activitySectionMapper = activitySectionMapper;
         this.sessionLayoutMapper = sessionLayoutMapper;
@@ -472,10 +472,8 @@ public class SessionSeatLayoutService {
     }
 
     private Session requireManageableSession(Long userId, Long sessionId) {
-        UserRef user = userRefMapper.selectById(userId);
-        if (user == null || (!"admin".equals(user.getRole()) && !"organizer".equals(user.getRole()))) {
-            throw new BusinessException(403, "无权限");
-        }
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
+        String role = user.getRole();
         Session session = sessionMapper.selectById(sessionId);
         if (session == null) {
             throw new BusinessException(404, "场次不存在");
@@ -484,7 +482,7 @@ public class SessionSeatLayoutService {
         if (activity == null) {
             throw new BusinessException(404, "活动不存在");
         }
-        if ("organizer".equals(user.getRole()) && !userId.equals(activity.getOrganizerId())) {
+        if ("organizer".equals(role) && !userId.equals(activity.getOrganizerId())) {
             throw new BusinessException(403, "只能操作自己主办的场次");
         }
         return session;

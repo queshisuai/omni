@@ -2,6 +2,7 @@ package com.omni.user.service;
 
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.ChangePasswordRequest;
+import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
 import com.omni.user.dto.ResetPasswordRequest;
@@ -254,6 +255,37 @@ class UserServiceTest {
 
         assertEquals("encoded-newpass1", user.getPassword());
         verify(userMapper).updateById(user);
+    }
+
+    @Test
+    void internalUserRefReturnsOnlyAuthorizationFields() {
+        User user = existingUser();
+        user.setRole("organizer");
+        user.setStatus(1);
+        user.setOrganizerStatus(1);
+        user.setOrganizerName("万象主办方");
+        when(userMapper.selectById(2004L)).thenReturn(user);
+
+        InternalUserRefResponse response = userService.getInternalUserRef(2004L);
+
+        assertEquals(2004L, response.getId());
+        assertEquals("13900000001", response.getPhone());
+        assertEquals("organizer", response.getRole());
+        assertEquals(1, response.getStatus());
+        assertEquals(1, response.getOrganizerStatus());
+        assertEquals("万象主办方", response.getOrganizerName());
+    }
+
+    @Test
+    void internalUserRefRejectsUnknownUser() {
+        when(userMapper.selectById(9999L)).thenReturn(null);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.getInternalUserRef(9999L)
+        );
+
+        assertEquals("用户不存在", exception.getMessage());
     }
 
     private LoginRequest smsLoginRequest(String smsCode) {

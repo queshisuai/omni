@@ -13,11 +13,11 @@ import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
-import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.service.UserAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,7 +46,7 @@ class ActivityAdminServiceTest {
     @Mock
     private TicketTypeMapper ticketTypeMapper;
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
     @Mock
     private OrderInternalClient orderInternalClient;
     @Mock
@@ -60,7 +60,7 @@ class ActivityAdminServiceTest {
                 activityMapper,
                 sessionMapper,
                 ticketTypeMapper,
-                userRefMapper,
+                userAccessService,
                 orderInternalClient,
                 paymentInternalClient,
                 "test-token");
@@ -70,7 +70,7 @@ class ActivityAdminServiceTest {
     void deactivateActivityRejectsWhenRefundNotConfirmed() {
         Activity activity = activity(10L, 2003L);
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
 
         DeactivateActivityRequest request = new DeactivateActivityRequest();
         request.setUserId(2003L);
@@ -85,7 +85,7 @@ class ActivityAdminServiceTest {
     void deactivateActivityRejectsOrganizerForOtherActivity() {
         Activity activity = activity(10L, 9999L);
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
 
         DeactivateActivityRequest request = new DeactivateActivityRequest();
         request.setUserId(2003L);
@@ -112,7 +112,7 @@ class ActivityAdminServiceTest {
         refundResponse.setMessage("退款成功");
 
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Arrays.asList(firstSession, secondSession));
         when(ticketTypeMapper.selectList(any())).thenReturn(Arrays.asList(firstTicketType, secondTicketType));
         when(orderInternalClient.listPaidBySessions(any(), eq("test-token"))).thenReturn(Result.success(Collections.singletonList(paidOrder)));
@@ -155,7 +155,7 @@ class ActivityAdminServiceTest {
         DirectRefundResponse compensation = refund(5003L, "DM5003", "COMPENSATION_REQUIRED", false, "支付宝已成功退款，但订单状态更新失败，需人工处理");
 
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType));
         when(orderInternalClient.listPaidBySessions(any(), eq("test-token")))
@@ -189,7 +189,7 @@ class ActivityAdminServiceTest {
         OrderInfoResponse duplicateOrder = order(5001L, "DM5001", 101L);
 
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType));
         when(orderInternalClient.listPaidBySessions(any(), eq("test-token")))
@@ -210,7 +210,7 @@ class ActivityAdminServiceTest {
 
     @Test
     void deactivateOrganizerRejectsNonAdminOperator() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdmin(2003L)).thenThrow(new BusinessException(403, "仅平台管理员可操作"));
 
         DeactivateOrganizerRequest request = new DeactivateOrganizerRequest();
         request.setUserId(2003L);
@@ -219,13 +219,12 @@ class ActivityAdminServiceTest {
 
         assertThrows(BusinessException.class, () -> service.deactivateOrganizer(request));
         verify(activityMapper, never()).updateById(any());
-        verify(userRefMapper, never()).updateById(any());
         verify(paymentInternalClient, never()).directRefund(any(), any());
     }
 
     @Test
     void deactivateOrganizerRejectsWhenRefundNotConfirmed() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
 
         DeactivateOrganizerRequest request = new DeactivateOrganizerRequest();
         request.setUserId(2002L);
@@ -234,14 +233,13 @@ class ActivityAdminServiceTest {
 
         assertThrows(BusinessException.class, () -> service.deactivateOrganizer(request));
         verify(activityMapper, never()).updateById(any());
-        verify(userRefMapper, never()).updateById(any());
         verify(paymentInternalClient, never()).directRefund(any(), any());
     }
 
     @Test
-    void deactivateOrganizerDowngradesRoleDisablesAllActivitiesAndRefundsPaidOrders() {
-        UserRef admin = user(2002L, "admin");
-        UserRef organizer = user(2003L, "organizer");
+    void deactivateOrganizerDeactivatesActivitiesAndRefundsPaidOrders() {
+        InternalUserRefResponse admin = user(2002L, "admin");
+        InternalUserRefResponse organizer = user(2003L, "organizer");
         organizer.setOrganizerStatus(1);
         Activity firstActivity = activity(10L, 2003L);
         Activity secondActivity = activity(11L, 2003L);
@@ -252,8 +250,8 @@ class ActivityAdminServiceTest {
         OrderInfoResponse firstOrder = order(5001L, "DM5001", 101L);
         OrderInfoResponse secondOrder = order(5002L, "DM5002", 102L);
 
-        when(userRefMapper.selectById(2002L)).thenReturn(admin);
-        when(userRefMapper.selectById(2003L)).thenReturn(organizer);
+        when(userAccessService.requireAdmin(2002L)).thenReturn(admin);
+        when(userAccessService.requireUser(2003L)).thenReturn(organizer);
         when(activityMapper.selectList(any())).thenReturn(Arrays.asList(firstActivity, secondActivity));
         when(sessionMapper.selectList(any())).thenReturn(Arrays.asList(firstSession, secondSession));
         when(ticketTypeMapper.selectList(any())).thenReturn(Arrays.asList(firstTicketType, secondTicketType));
@@ -269,26 +267,15 @@ class ActivityAdminServiceTest {
         request.setConfirmRefund(true);
         request.setReason("取消主办方资格");
 
-        RefundImpactResponse response = service.deactivateOrganizer(request);
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.deactivateOrganizer(request));
 
-        assertEquals("user", organizer.getRole());
-        assertEquals(3, organizer.getOrganizerStatus());
+        assertEquals(500, exception.getCode());
         assertEquals(0, firstActivity.getStatus());
         assertEquals(0, secondActivity.getStatus());
         assertEquals(0, firstSession.getStatus());
         assertEquals(0, secondSession.getStatus());
         assertEquals(0, firstTicketType.getStatus());
         assertEquals(0, secondTicketType.getStatus());
-        assertEquals(2, response.getDeactivatedActivityCount());
-        assertEquals(2, response.getDeactivatedSessionCount());
-        assertEquals(2, response.getDeactivatedTicketTypeCount());
-        assertEquals(2, response.getPaidOrderCount());
-        assertEquals(1, response.getRefundSuccessCount());
-        assertEquals(1, response.getRefundFailedCount());
-        assertEquals(0, response.getRefundUnknownCount());
-        assertEquals(0, response.getRefundCompensationRequiredCount());
-        assertEquals(1, response.getFailures().size());
-        verify(userRefMapper).updateById(organizer);
         verify(activityMapper).updateById(firstActivity);
         verify(activityMapper).updateById(secondActivity);
         verify(paymentInternalClient, times(2)).directRefund(any(), eq("test-token"));
@@ -297,7 +284,7 @@ class ActivityAdminServiceTest {
     @Test
     void publishActivityRejectsWhenNoActiveSession() {
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
         UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
@@ -314,7 +301,7 @@ class ActivityAdminServiceTest {
     @Test
     void publishActivityRejectsWhenNoActiveTicketType() {
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.emptyList());
 
@@ -338,8 +325,8 @@ class ActivityAdminServiceTest {
         return activity;
     }
 
-    private UserRef user(Long id, String role) {
-        UserRef user = new UserRef();
+    private InternalUserRefResponse user(Long id, String role) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
         user.setId(id);
         user.setRole(role);
         return user;

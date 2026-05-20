@@ -9,7 +9,7 @@ import com.omni.ticket.entity.SessionSeatLayout;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.SessionSeatLayoutSection;
 import com.omni.ticket.entity.TicketType;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.VenueArea;
 import com.omni.ticket.entity.VenueSeat;
 import com.omni.ticket.mapper.ActivityMapper;
@@ -20,7 +20,7 @@ import com.omni.ticket.mapper.SessionSeatLayoutMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutSectionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
-import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueAreaMapper;
 import com.omni.ticket.mapper.VenueSeatMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,7 +54,7 @@ class SessionSeatLayoutServiceTest {
     @Mock
     private ActivityMapper activityMapper;
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
     @Mock
     private ActivitySeatLayoutMapper activityLayoutMapper;
     @Mock
@@ -80,7 +80,7 @@ class SessionSeatLayoutServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SessionSeatLayoutService(sessionMapper, activityMapper, userRefMapper,
+        service = new SessionSeatLayoutService(sessionMapper, activityMapper, userAccessService,
                 activityLayoutMapper, activitySectionMapper, sessionLayoutMapper,
                 sessionSectionMapper, sessionSeatMapper, ticketTypeMapper, venueAreaMapper, venueSeatMapper,
                 blockLayoutService, blockTicketStockService);
@@ -105,7 +105,7 @@ class SessionSeatLayoutServiceTest {
     @Test
     void copyFromActivityLayoutCopiesBlockLayoutToSession() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         com.omni.ticket.entity.ActivitySeatLayout activityLayout = new com.omni.ticket.entity.ActivitySeatLayout();
@@ -141,7 +141,7 @@ class SessionSeatLayoutServiceTest {
     @Test
     void getLayoutIncludesBlockLayout() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -238,7 +238,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void bindTicketTypesRejectsSectionOutsideActiveLayout() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -257,7 +257,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void bindTicketTypesRejectsTicketTypeFromOtherSession() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -280,7 +280,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void bindTicketTypeUpdatesSectionAndExistingSectionSeats() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -309,7 +309,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void bindTicketTypesRejectsSectionAlreadyBoundToAnotherTicketType() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -390,8 +390,8 @@ class SessionSeatLayoutServiceTest {
         return layout;
     }
 
-    private UserRef user(Long id, String role) {
-        UserRef user = new UserRef();
+    private InternalUserRefResponse user(Long id, String role) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
         user.setId(id);
         user.setRole(role);
         return user;

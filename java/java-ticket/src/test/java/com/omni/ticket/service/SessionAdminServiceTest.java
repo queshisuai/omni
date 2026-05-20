@@ -3,12 +3,11 @@ package com.omni.ticket.service;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
-import com.omni.ticket.entity.UserRef;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.service.SessionSeatLayoutService;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
-import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,7 +40,7 @@ class SessionAdminServiceTest {
     @Mock
     private VenueMapper venueMapper;
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
     @Mock
     private SessionSeatService sessionSeatService;
     @Mock
@@ -51,12 +50,12 @@ class SessionAdminServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userRefMapper, null, sessionSeatService, sessionSeatLayoutService);
+        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userAccessService, null, sessionSeatService, sessionSeatLayoutService);
     }
 
     @Test
     void createSessionGeneratesSeatSnapshotAfterInsert() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueMapper.selectById(101L)).thenReturn(venue(101L));
         when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
@@ -74,7 +73,7 @@ class SessionAdminServiceTest {
 
     @Test
     void createSessionCopiesActivityLayoutWhenActivityLayoutIdProvided() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueMapper.selectById(101L)).thenReturn(venue(101L));
         when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
@@ -103,7 +102,7 @@ class SessionAdminServiceTest {
 
     @Test
     void createSessionRejectsWhenEndTimeNotAfterStartTime() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueMapper.selectById(101L)).thenReturn(venue(101L));
 
@@ -118,7 +117,7 @@ class SessionAdminServiceTest {
 
     @Test
     void createSessionRejectsWhenVenueTimeOverlapsActiveSession() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueMapper.selectById(101L)).thenReturn(venue(101L));
         Session existing = new Session();
@@ -137,7 +136,7 @@ class SessionAdminServiceTest {
 
     @Test
     void deleteSessionDeletesSeatsThenSession() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
         Session session = new Session();
         session.setId(50L);
         session.setActivityId(10L);
@@ -168,13 +167,6 @@ class SessionAdminServiceTest {
         body.put("startTime", "2026-06-01T20:00");
         body.put("endTime", "2026-06-01T22:00");
         return body;
-    }
-
-    private UserRef user(Long id, String role) {
-        UserRef user = new UserRef();
-        user.setId(id);
-        user.setRole(role);
-        return user;
     }
 
     private Activity activity(Long id, Long organizerId) {

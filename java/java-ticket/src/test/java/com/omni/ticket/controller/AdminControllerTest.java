@@ -9,7 +9,7 @@ import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
-import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
@@ -37,7 +37,6 @@ import static org.mockito.Mockito.when;
 import java.util.Collections;
 import java.util.Map;
 
-import com.omni.ticket.entity.UserRef;
 import com.omni.ticket.entity.Tour;
 
 @ExtendWith(MockitoExtension.class)
@@ -52,7 +51,7 @@ class AdminControllerTest {
     @Mock
     private VenueMapper venueMapper;
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
     @Mock
     private ActivityAdminService activityAdminService;
     @Mock
@@ -128,9 +127,7 @@ class AdminControllerTest {
     @Test
     void createTicketTypeRejectsEmptyLayoutSectionIds() {
         AdminController controller = controller();
-        UserRef mockUser = new UserRef();
-        mockUser.setRole("organizer");
-        when(userRefMapper.selectById(2003L)).thenReturn(mockUser);
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
         com.omni.ticket.entity.Session mockSession = new com.omni.ticket.entity.Session();
         mockSession.setActivityId(10L);
         mockSession.setVenueId(1L);
@@ -161,6 +158,6 @@ class AdminControllerTest {
     }
 
     private AdminController controller() {
-        return new AdminController(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userRefMapper, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null);
+        return new AdminController(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null);
     }
 }

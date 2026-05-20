@@ -17,11 +17,11 @@ import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
-import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -46,7 +46,7 @@ public class ActivityAdminService {
     private final ActivityMapper activityMapper;
     private final SessionMapper sessionMapper;
     private final TicketTypeMapper ticketTypeMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final OrderInternalClient orderInternalClient;
     private final PaymentInternalClient paymentInternalClient;
     private final String internalApiToken;
@@ -54,14 +54,14 @@ public class ActivityAdminService {
     public ActivityAdminService(ActivityMapper activityMapper,
                                 SessionMapper sessionMapper,
                                 TicketTypeMapper ticketTypeMapper,
-                                UserRefMapper userRefMapper,
+                                UserAccessService userAccessService,
                                 OrderInternalClient orderInternalClient,
                                 PaymentInternalClient paymentInternalClient,
                                 @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.orderInternalClient = orderInternalClient;
         this.paymentInternalClient = paymentInternalClient;
         this.internalApiToken = internalApiToken;
@@ -75,11 +75,8 @@ public class ActivityAdminService {
         if (activity == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "活动不存在");
         }
-        UserRef user = userRefMapper.selectById(request.getUserId());
-        String role = user != null ? user.getRole() : null;
-        if (!"admin".equals(role) && !"organizer".equals(role)) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
-        }
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
+        String role = user.getRole();
         if ("organizer".equals(role) && !request.getUserId().equals(activity.getOrganizerId())) {
             throw new BusinessException(ResultCode.FORBIDDEN, "只能管理自己主办的活动");
         }
@@ -97,11 +94,8 @@ public class ActivityAdminService {
         if (activity == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "活动不存在");
         }
-        UserRef user = userRefMapper.selectById(request.getUserId());
-        String role = user != null ? user.getRole() : null;
-        if (!"admin".equals(role) && !"organizer".equals(role)) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
-        }
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
+        String role = user.getRole();
         if ("organizer".equals(role) && !request.getUserId().equals(activity.getOrganizerId())) {
             throw new BusinessException(ResultCode.FORBIDDEN, "只能管理自己主办的活动");
         }
@@ -116,17 +110,11 @@ public class ActivityAdminService {
         if (request == null || request.getUserId() == null || request.getOrganizerId() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "取消主办方资格参数不能为空");
         }
-        UserRef operator = userRefMapper.selectById(request.getUserId());
-        if (operator == null || !"admin".equals(operator.getRole())) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "仅管理员可取消主办方资格");
-        }
+        userAccessService.requireAdmin(request.getUserId());
         if (!Boolean.TRUE.equals(request.getConfirmRefund())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "取消主办方资格前必须确认同意为该主办方所有已支付订单退款");
         }
-        UserRef organizer = userRefMapper.selectById(request.getOrganizerId());
-        if (organizer == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "主办方不存在");
-        }
+        InternalUserRefResponse organizer = userAccessService.requireUser(request.getOrganizerId());
         if (!"organizer".equals(organizer.getRole())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "当前用户不是主办方");
         }
@@ -135,10 +123,7 @@ public class ActivityAdminService {
                 .eq(Activity::getOrganizerId, request.getOrganizerId()));
         RefundImpactResponse response = deactivateActivities(activities, request.getReason());
 
-        organizer.setRole("user");
-        organizer.setOrganizerStatus(ORGANIZER_STATUS_CANCELLED);
-        userRefMapper.updateById(organizer);
-        return response;
+        throw new BusinessException(ResultCode.INTERNAL_ERROR, "取消主办方资格需通过用户服务接口处理");
     }
 
     private RefundImpactResponse deactivateActivities(List<Activity> activities, String reason) {

@@ -6,15 +6,15 @@ import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.ActivitySeatLayout;
 import com.omni.ticket.entity.ActivitySeatLayoutSection;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.VenueDefaultLayout;
 import com.omni.ticket.entity.VenueDefaultLayoutSection;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutSectionMapper;
-import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueDefaultLayoutMapper;
 import com.omni.ticket.mapper.VenueDefaultLayoutSectionMapper;
+import com.omni.ticket.service.UserAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,7 +42,7 @@ class ActivitySeatLayoutServiceTest {
     private ActivityMapper activityMapper;
 
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
 
     @Mock
     private VenueDefaultLayoutMapper venueDefaultLayoutMapper;
@@ -63,13 +63,13 @@ class ActivitySeatLayoutServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ActivitySeatLayoutService(activityMapper, userRefMapper, venueDefaultLayoutMapper, venueSectionMapper,
+        service = new ActivitySeatLayoutService(activityMapper, userAccessService, venueDefaultLayoutMapper, venueSectionMapper,
                 activityLayoutMapper, activitySectionMapper, blockLayoutService);
     }
 
     @Test
     void organizerCreatesFromVenueDefaultForOwnActivity() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueDefaultLayoutMapper.selectById(7L)).thenReturn(venueLayout(7L, 1L, "concert"));
         when(activityLayoutMapper.selectList(any())).thenReturn(List.of());
@@ -93,7 +93,7 @@ class ActivitySeatLayoutServiceTest {
     @Test
     void createFromVenueDefaultDisablesExistingActiveLayoutsBeforeInsertingNewLayout() {
         ActivitySeatLayout oldLayout = activeLayout(99L, 10L);
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueDefaultLayoutMapper.selectById(7L)).thenReturn(venueLayout(7L, 1L, "concert"));
         when(activityLayoutMapper.selectList(any())).thenReturn(List.of(oldLayout));
@@ -115,7 +115,7 @@ class ActivitySeatLayoutServiceTest {
     void createFromVenueDefaultDisablesAllExistingActiveLayoutsAndInsertsOneActiveLayout() {
         ActivitySeatLayout firstOldLayout = activeLayout(99L, 10L);
         ActivitySeatLayout secondOldLayout = activeLayout(100L, 10L);
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueDefaultLayoutMapper.selectById(7L)).thenReturn(venueLayout(7L, 1L, "concert"));
         when(activityLayoutMapper.selectList(any())).thenReturn(List.of(firstOldLayout, secondOldLayout));
@@ -136,7 +136,7 @@ class ActivitySeatLayoutServiceTest {
     @Test
     void createFromVenueDefaultCopiesVenueBlockLayoutToActivity() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueDefaultLayoutMapper.selectById(7L)).thenReturn(venueLayout(7L, 1L, "concert"));
         when(activityLayoutMapper.selectList(any())).thenReturn(List.of());
@@ -153,7 +153,7 @@ class ActivitySeatLayoutServiceTest {
 
     @Test
     void organizerCannotCreateFromVenueDefaultForOthersActivity() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 9999L));
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -185,7 +185,7 @@ class ActivitySeatLayoutServiceTest {
         requestLayout.setCanvasHeight(900);
         requestLayout.setSections(List.of(sectionRequest("floor", "池座", 12, 24)));
 
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(activityLayoutMapper.selectOne(any())).thenReturn(existingLayout);
         when(activitySectionMapper.selectList(any())).thenReturn(List.of(oldSection));
@@ -221,7 +221,7 @@ class ActivitySeatLayoutServiceTest {
         SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
         requestLayout.setBlockLayout(blockLayout);
 
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(activityLayoutMapper.selectOne(any())).thenReturn(existingLayout);
         when(activitySectionMapper.selectList(any())).thenReturn(List.of());
@@ -235,7 +235,7 @@ class ActivitySeatLayoutServiceTest {
     void getLayoutIncludesBlockLayout() {
         ActivitySeatLayout existingLayout = activeLayout(88L, 10L);
         SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(activityLayoutMapper.selectOne(any())).thenReturn(existingLayout);
         when(activitySectionMapper.selectList(any())).thenReturn(List.of());
@@ -246,8 +246,8 @@ class ActivitySeatLayoutServiceTest {
         assertSame(blockLayout, response.getBlockLayout());
     }
 
-    private UserRef user(Long id, String role) {
-        UserRef user = new UserRef();
+    private InternalUserRefResponse user(Long id, String role) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
         user.setId(id);
         user.setRole(role);
         return user;

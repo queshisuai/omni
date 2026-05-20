@@ -9,11 +9,11 @@ import com.omni.ticket.dto.PaidOrderCountRequest;
 import com.omni.ticket.dto.PaidOrderCountResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
-import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.service.UserAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,7 +44,7 @@ class AdminSummaryServiceTest {
     @Mock
     private TicketTypeMapper ticketTypeMapper;
     @Mock
-    private UserRefMapper userRefMapper;
+    private UserAccessService userAccessService;
     @Mock
     private OrderInternalClient orderInternalClient;
 
@@ -53,12 +53,12 @@ class AdminSummaryServiceTest {
     @BeforeEach
     void setUp() {
         service = new AdminSummaryService(activityMapper, sessionMapper, ticketTypeMapper,
-                userRefMapper, orderInternalClient, "internal-token");
+                userAccessService, orderInternalClient, "internal-token");
     }
 
     @Test
     void adminSummaryCountsAllActivitiesAndUsesPaidOrderCountFromOrderService() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
         when(activityMapper.selectList(any())).thenReturn(activities(30, 2003L));
         when(sessionMapper.selectList(any())).thenReturn(Arrays.asList(session(10L), session(11L)));
         when(ticketTypeMapper.selectCount(any())).thenReturn(90L);
@@ -77,7 +77,7 @@ class AdminSummaryServiceTest {
 
     @Test
     void organizerSummaryCountsOnlyOwnActivitiesAndUsesPaidOrderCountFromOrderService() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectList(any())).thenReturn(Arrays.asList(activity(101L, 2003L), activity(102L, 2003L)));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(20L)));
         when(ticketTypeMapper.selectCount(any())).thenReturn(6L);
@@ -94,7 +94,7 @@ class AdminSummaryServiceTest {
 
     @Test
     void returnsZeroPaidOrderCountAndSkipsOrderServiceWhenNoSessions() {
-        when(userRefMapper.selectById(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectList(any())).thenReturn(Collections.singletonList(activity(101L, 2003L)));
         when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
@@ -108,7 +108,7 @@ class AdminSummaryServiceTest {
 
     @Test
     void rejectsNonAdminOrOrganizer() {
-        when(userRefMapper.selectById(2004L)).thenReturn(user(2004L, "user"));
+        when(userAccessService.requireAdminOrOrganizer(2004L)).thenThrow(new BusinessException(403, "无权限"));
 
         BusinessException error = assertThrows(BusinessException.class, () -> service.getSummary(2004L));
 
@@ -117,7 +117,7 @@ class AdminSummaryServiceTest {
 
     @Test
     void throwsInternalErrorWhenOrderServiceReturnsNonSuccessCode() {
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
         when(activityMapper.selectList(any())).thenReturn(Collections.singletonList(activity(101L, 2002L)));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(10L)));
         when(ticketTypeMapper.selectCount(any())).thenReturn(1L);
@@ -133,8 +133,8 @@ class AdminSummaryServiceTest {
     @Test
     void throwsInternalErrorAndSkipsOrderServiceWhenInternalTokenMissing() {
         service = new AdminSummaryService(activityMapper, sessionMapper, ticketTypeMapper,
-                userRefMapper, orderInternalClient, "");
-        when(userRefMapper.selectById(2002L)).thenReturn(user(2002L, "admin"));
+                userAccessService, orderInternalClient, "");
+        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
         when(activityMapper.selectList(any())).thenReturn(Collections.singletonList(activity(101L, 2002L)));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(10L)));
         when(ticketTypeMapper.selectCount(any())).thenReturn(1L);
@@ -146,8 +146,8 @@ class AdminSummaryServiceTest {
         verify(orderInternalClient, never()).countPaidBySessions(any(PaidOrderCountRequest.class), anyString());
     }
 
-    private UserRef user(Long id, String role) {
-        UserRef user = new UserRef();
+    private InternalUserRefResponse user(Long id, String role) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
         user.setId(id);
         user.setRole(role);
         return user;

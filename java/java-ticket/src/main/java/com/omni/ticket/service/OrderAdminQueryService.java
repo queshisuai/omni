@@ -9,10 +9,10 @@ import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.dto.PaidOrdersBySessionsRequest;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
-import com.omni.ticket.entity.UserRef;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
-import com.omni.ticket.mapper.UserRefMapper;
+import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -23,18 +23,18 @@ import java.util.stream.Collectors;
 
 @Service
 public class OrderAdminQueryService {
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final ActivityMapper activityMapper;
     private final SessionMapper sessionMapper;
     private final OrderInternalClient orderInternalClient;
     private final String internalApiToken;
 
-    public OrderAdminQueryService(UserRefMapper userRefMapper,
+    public OrderAdminQueryService(UserAccessService userAccessService,
                                   ActivityMapper activityMapper,
                                   SessionMapper sessionMapper,
                                   OrderInternalClient orderInternalClient,
                                   @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.orderInternalClient = orderInternalClient;
@@ -42,11 +42,8 @@ public class OrderAdminQueryService {
     }
 
     public List<OrderInfoResponse> listOrders(Long userId, Boolean paidOnly) {
-        UserRef user = userRefMapper.selectById(userId);
-        String role = user == null ? null : user.getRole();
-        if (!"admin".equals(role) && !"organizer".equals(role)) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
-        }
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
+        String role = user.getRole();
         List<Activity> activities = "organizer".equals(role)
                 ? activityMapper.selectList(new LambdaQueryWrapper<Activity>().eq(Activity::getOrganizerId, userId))
                 : activityMapper.selectList(new LambdaQueryWrapper<Activity>());

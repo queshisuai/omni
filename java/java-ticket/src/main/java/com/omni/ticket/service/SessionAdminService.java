@@ -7,13 +7,12 @@ import com.omni.ticket.dto.SessionAdminResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
-import com.omni.ticket.entity.UserRef;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
-import com.omni.ticket.mapper.UserRefMapper;
 import com.omni.ticket.mapper.VenueMapper;
+import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +31,7 @@ public class SessionAdminService {
     private final ActivityMapper activityMapper;
     private final SessionMapper sessionMapper;
     private final VenueMapper venueMapper;
-    private final UserRefMapper userRefMapper;
+    private final UserAccessService userAccessService;
     private final TicketTypeMapper ticketTypeMapper;
     private final SessionSeatService sessionSeatService;
     private final SessionSeatLayoutService sessionSeatLayoutService;
@@ -40,30 +39,30 @@ public class SessionAdminService {
     public SessionAdminService(ActivityMapper activityMapper,
                                 SessionMapper sessionMapper,
                                 VenueMapper venueMapper,
-                                UserRefMapper userRefMapper) {
-        this(activityMapper, sessionMapper, venueMapper, userRefMapper, null, null, null);
+                                UserAccessService userAccessService) {
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, null, null, null);
     }
 
     public SessionAdminService(ActivityMapper activityMapper,
                                SessionMapper sessionMapper,
                                VenueMapper venueMapper,
-                               UserRefMapper userRefMapper,
+                               UserAccessService userAccessService,
                                TicketTypeMapper ticketTypeMapper) {
-        this(activityMapper, sessionMapper, venueMapper, userRefMapper, ticketTypeMapper, null, null);
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, null, null);
     }
 
     @Autowired
     public SessionAdminService(ActivityMapper activityMapper,
                                SessionMapper sessionMapper,
                                VenueMapper venueMapper,
-                               UserRefMapper userRefMapper,
+                               UserAccessService userAccessService,
                                TicketTypeMapper ticketTypeMapper,
                                SessionSeatService sessionSeatService,
                                SessionSeatLayoutService sessionSeatLayoutService) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.venueMapper = venueMapper;
-        this.userRefMapper = userRefMapper;
+        this.userAccessService = userAccessService;
         this.ticketTypeMapper = ticketTypeMapper;
         this.sessionSeatService = sessionSeatService;
         this.sessionSeatLayoutService = sessionSeatLayoutService;
@@ -266,11 +265,7 @@ public class SessionAdminService {
     }
 
     private String requireRole(Long userId) {
-        UserRef user = userRefMapper.selectById(userId);
-        if (user == null || (!"admin".equals(user.getRole()) && !"organizer".equals(user.getRole()))) {
-            throw new BusinessException(403, "无权限");
-        }
-        return user.getRole();
+        return userAccessService.requireAdminOrOrganizerRole(userId);
     }
 
     private Long toPositiveLong(Object value, String message) {
