@@ -43,6 +43,10 @@ Invoke-Step -Name "Local schema SQL safety" -Command {
     powershell -ExecutionPolicy Bypass -File (Join-Path -Path $repoRoot -ChildPath "scripts/check-local-schema-sql.ps1")
 }
 
+Invoke-Step -Name "Production split SQL safety" -Command {
+    powershell -ExecutionPolicy Bypass -File (Join-Path -Path $repoRoot -ChildPath "scripts/check-production-split-sql.ps1")
+}
+
 Invoke-Step -Name "Java boundary tests" -Command {
     Push-Location -LiteralPath $javaRoot
     try {
