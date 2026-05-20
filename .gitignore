@@ -14,6 +14,7 @@ Thumbs.db
 target/
 dist/
 node_modules/
+artifacts/
 
 # Environment
 .env

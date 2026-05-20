@@ -37,8 +37,25 @@ function New-PgDumpTableArgument {
 function Remove-ForeignKeyStatements {
     param([string]$Sql)
 
-    $pattern = '(?ims)^ALTER\s+TABLE\s+ONLY\s+.*?\s+ADD\s+CONSTRAINT\s+.*?\s+FOREIGN\s+KEY\s*\(.*?\)\s+REFERENCES\s+.*?;\s*'
-    return [regex]::Replace($Sql, $pattern, '')
+    $result = New-Object System.Text.StringBuilder
+    $statementPattern = '(?s).*?(?:;|\z)'
+    foreach ($match in [regex]::Matches($Sql, $statementPattern)) {
+        $statement = $match.Value
+        if ($statement.Length -eq 0) {
+            continue
+        }
+
+        $isForeignKeyConstraint = $statement -match '(?is)^\s*ALTER\s+TABLE\s+' -and
+            $statement -match '(?is)\bADD\s+CONSTRAINT\b' -and
+            $statement -match '(?is)\bFOREIGN\s+KEY\b' -and
+            $statement -match '(?is)\bREFERENCES\b'
+
+        if (-not $isForeignKeyConstraint) {
+            [void]$result.Append($statement)
+        }
+    }
+
+    return $result.ToString()
 }
 
 function Invoke-PgDump {
