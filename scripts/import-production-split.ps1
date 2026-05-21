@@ -19,7 +19,9 @@ param(
 
     [int]$Port = 5432,
 
-    [string]$DbUser = "postgres"
+    [string]$DbUser = "postgres",
+
+    [string]$TargetDatabaseByService = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,7 +67,7 @@ function Assert-SafeSqlFile {
         [string]$Description
     )
 
-    $content = Get-Content -Raw -LiteralPath $Path
+    $content = Get-Content -Raw -Encoding UTF8 -LiteralPath $Path
     $forbiddenPatterns = @(
         @{ Name = "DROP DATABASE"; Pattern = '(?is)\bDROP\s+DATABASE\b' },
         @{ Name = "DROP SCHEMA"; Pattern = '(?is)\bDROP\s+SCHEMA\b' },
@@ -116,6 +118,52 @@ function Invoke-PsqlFile {
     }
 }
 
+function Convert-SchemaQualification {
+    param(
+        [string]$Sql,
+        [string]$FromSchema,
+        [string]$ToSchema
+    )
+
+    if (-not $FromSchema -or -not $ToSchema -or $FromSchema -eq $ToSchema) {
+        return $Sql
+    }
+
+    $quotedFrom = [regex]::Escape('"' + $FromSchema.Replace('"', '""') + '"')
+    $quotedTo = '"' + $ToSchema.Replace('"', '""') + '"'
+    $bareFrom = [regex]::Escape($FromSchema)
+
+    $converted = [regex]::Replace($Sql, $quotedFrom + '\s*\.', $quotedTo + '.', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $converted = [regex]::Replace($converted, '(?<![A-Za-z0-9_])' + $bareFrom + '\s*\.', $ToSchema + '.', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+
+    return $converted
+}
+
+function Get-TargetDatabaseMap {
+    param([string]$Value)
+
+    $result = @{}
+    if (-not $Value) {
+        return $result
+    }
+
+    foreach ($entry in ($Value -split ',')) {
+        $trimmed = $entry.Trim()
+        if (-not $trimmed) {
+            continue
+        }
+
+        $parts = $trimmed -split '=', 2
+        if ($parts.Count -ne 2 -or -not $parts[0].Trim() -or -not $parts[1].Trim()) {
+            throw "Invalid TargetDatabaseByService entry '$entry'. Expected service=database"
+        }
+
+        $result[$parts[0].Trim()] = $parts[1].Trim()
+    }
+
+    return $result
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $splitRoot = Join-Path -Path $repoRoot -ChildPath "sql/production-split"
 $manifestFile = Join-Path -Path $splitRoot -ChildPath "manifest.json"
@@ -128,6 +176,7 @@ if (-not (Test-Path -LiteralPath $resolvedArtifactDir -PathType Container)) {
 }
 
 $manifest = Get-Content -Raw -LiteralPath $manifestFile | ConvertFrom-Json
+$targetDatabaseOverrides = Get-TargetDatabaseMap -Value $TargetDatabaseByService
 $targetHosts = @{
     user = $UserHost
     ticket = $TicketHost
@@ -157,6 +206,10 @@ foreach ($service in $manifest.services) {
     $targetDatabase = [string]$service.targetDatabase
     $targetHost = $targetHosts[$serviceKey]
 
+    if ($targetDatabaseOverrides.ContainsKey($serviceKey)) {
+        $targetDatabase = $targetDatabaseOverrides[$serviceKey]
+    }
+
     if (-not $targetHost) {
         throw "No target host parameter mapped for service key '$serviceKey'"
     }
@@ -167,6 +220,7 @@ foreach ($service in $manifest.services) {
     $serviceArtifactDir = Join-Path -Path $resolvedArtifactDir -ChildPath $serviceKey
     $preDataFile = Join-Path -Path $serviceArtifactDir -ChildPath "001_pre_data.sql"
     $dataFile = Join-Path -Path $serviceArtifactDir -ChildPath "002_data.sql"
+    $postDataFile = Join-Path -Path $serviceArtifactDir -ChildPath "003_post_data.sql"
     $constraintFile = Join-Path -Path (Join-Path -Path $splitRoot -ChildPath $serviceKey) -ChildPath "001_same_owner_constraints.sql"
 
     if (-not (Test-Path -LiteralPath $serviceArtifactDir -PathType Container)) {
@@ -175,9 +229,19 @@ foreach ($service in $manifest.services) {
 
     Assert-NonEmptyFile -Path $preDataFile -Description "$serviceKey pre-data artifact"
     Assert-NonEmptyFile -Path $dataFile -Description "$serviceKey data artifact"
+    Assert-NonEmptyFile -Path $postDataFile -Description "$serviceKey post-data artifact"
     Assert-NonEmptyFile -Path $constraintFile -Description "$serviceKey same-owner constraints SQL"
+    $sourceSchema = [string]$service.key + "_service"
+    $preDataContent = Convert-SchemaQualification -Sql (Get-Content -Raw -Encoding UTF8 -LiteralPath $preDataFile) -FromSchema $sourceSchema -ToSchema 'public'
+    $dataContent = Convert-SchemaQualification -Sql (Get-Content -Raw -Encoding UTF8 -LiteralPath $dataFile) -FromSchema $sourceSchema -ToSchema 'public'
+    $postDataContent = Convert-SchemaQualification -Sql (Get-Content -Raw -Encoding UTF8 -LiteralPath $postDataFile) -FromSchema $sourceSchema -ToSchema 'public'
+    Set-Content -LiteralPath $preDataFile -Value $preDataContent -Encoding UTF8
+    Set-Content -LiteralPath $dataFile -Value $dataContent -Encoding UTF8
+    Set-Content -LiteralPath $postDataFile -Value $postDataContent -Encoding UTF8
+
     Assert-SafeSqlFile -Path $preDataFile -Description "$serviceKey pre-data artifact"
     Assert-SafeSqlFile -Path $dataFile -Description "$serviceKey data artifact"
+    Assert-SafeSqlFile -Path $postDataFile -Description "$serviceKey post-data artifact"
     Assert-SafeSqlFile -Path $constraintFile -Description "$serviceKey same-owner constraints SQL"
 
     $importPlan += [PSCustomObject]@{
@@ -186,6 +250,7 @@ foreach ($service in $manifest.services) {
         TargetDatabase = $targetDatabase
         PreDataFile = $preDataFile
         DataFile = $dataFile
+        PostDataFile = $postDataFile
         ConstraintFile = $constraintFile
     }
 }
@@ -200,6 +265,7 @@ foreach ($item in $importPlan) {
     Write-Host "Starting import for $serviceKey -> $targetDatabase on $targetHost`:$Port"
     Invoke-PsqlFile -HostName $targetHost -DatabaseName $targetDatabase -SqlFile $item.PreDataFile
     Invoke-PsqlFile -HostName $targetHost -DatabaseName $targetDatabase -SqlFile $item.DataFile
+    Invoke-PsqlFile -HostName $targetHost -DatabaseName $targetDatabase -SqlFile $item.PostDataFile
     Invoke-PsqlFile -HostName $targetHost -DatabaseName $targetDatabase -SqlFile $item.ConstraintFile
     Write-Host "Completed import for $serviceKey"
 }

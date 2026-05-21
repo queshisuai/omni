@@ -62,7 +62,6 @@
 | `AdminController` | `/api/ticket/admin` | B端活动/场次/场馆/座位图/票档 CRUD |
 | `SeatController` | `/api/ticket` | C端选座 |
 | `ReservationController` | `/api/ticket` | 预约 (弃用) |
-| `SocialController` | `/api/ticket` | 评价+动态 (已移除) |
 
 #### 服务 (13)
 

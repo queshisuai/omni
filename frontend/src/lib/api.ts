@@ -513,39 +513,3 @@ export async function reviewVenueApplication(id: number, body: Record<string, un
     method: 'POST', body: JSON.stringify(body),
   })
 }
-
-// ========== 评价 ==========
-
-export async function listReviews(activityId: number, page = 1, size = 10) {
-  return request<import('@/types/api').PageResult<import('@/types/api').ReviewEntity>>(
-    `/api/ticket/activities/${activityId}/reviews?page=${page}&size=${size}`
-  )
-}
-
-export async function createReview(body: Record<string, unknown>) {
-  return request<import('@/types/api').ReviewEntity>('/api/ticket/reviews', {
-    method: 'POST', body: JSON.stringify(body),
-  })
-}
-
-export async function deleteReview(id: number) {
-  return request<void>(`/api/ticket/reviews/${id}`, { method: 'DELETE' })
-}
-
-// ========== 动态 ==========
-
-export async function listMoments(activityId: number, page = 1, size = 10) {
-  return request<import('@/types/api').PageResult<import('@/types/api').MomentEntity>>(
-    `/api/ticket/activities/${activityId}/moments?page=${page}&size=${size}`
-  )
-}
-
-export async function createMoment(body: Record<string, unknown>) {
-  return request<import('@/types/api').MomentEntity>('/api/ticket/moments', {
-    method: 'POST', body: JSON.stringify(body),
-  })
-}
-
-export async function deleteMoment(id: number) {
-  return request<void>(`/api/ticket/moments/${id}`, { method: 'DELETE' })
-}

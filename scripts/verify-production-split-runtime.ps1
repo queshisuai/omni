@@ -16,7 +16,9 @@ param(
 
     [int]$Port = 5432,
 
-    [string]$DbUser = "postgres"
+    [string]$DbUser = "postgres",
+
+    [string]$TargetDatabaseByService = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,7 +47,6 @@ function Invoke-PsqlScalar {
         "--port=$Port",
         "--username=$DbUser",
         "--dbname=$DatabaseName",
-        "--no-password",
         "-v", "ON_ERROR_STOP=1",
         "--tuples-only",
         "--no-align",
@@ -92,15 +93,44 @@ function New-TableOwnerMap {
     return $tableOwner
 }
 
+function Get-TargetDatabaseMap {
+    param([string]$Value)
+
+    $result = @{}
+    if (-not $Value) {
+        return $result
+    }
+
+    foreach ($entry in ($Value -split ',')) {
+        $trimmed = $entry.Trim()
+        if (-not $trimmed) {
+            continue
+        }
+
+        $parts = $trimmed -split '=', 2
+        if ($parts.Count -ne 2 -or -not $parts[0].Trim() -or -not $parts[1].Trim()) {
+            throw "Invalid TargetDatabaseByService entry '$entry'. Expected service=database"
+        }
+
+        $result[$parts[0].Trim()] = $parts[1].Trim()
+    }
+
+    return $result
+}
+
 function Assert-ServiceForeignKeys {
     param(
         [object]$Service,
         [string]$HostName,
+        [string]$TargetDatabaseOverride,
         [hashtable]$TableOwner
     )
 
     $serviceKey = [string]$Service.key
     $targetDatabase = [string]$Service.targetDatabase
+    if ($TargetDatabaseOverride) {
+        $targetDatabase = $TargetDatabaseOverride
+    }
     if (-not $serviceKey) {
         throw "Manifest contains a service without key"
     }
@@ -140,6 +170,9 @@ FROM (
 
     $fkJson = Invoke-PsqlScalar -HostName $HostName -DatabaseName $targetDatabase -Sql $fkQuery -Description "foreign key inspection"
     $foreignKeys = @($fkJson | ConvertFrom-Json)
+    if ($foreignKeys.Count -eq 1 -and $foreignKeys[0] -is [array]) {
+        $foreignKeys = @($foreignKeys[0])
+    }
 
     foreach ($foreignKey in $foreignKeys) {
         $childTable = [string]$foreignKey.child_table
@@ -174,6 +207,7 @@ Assert-FileExists -Path $manifestFile -Description "production split manifest"
 
 $manifest = Get-Content -Raw -LiteralPath $manifestFile | ConvertFrom-Json
 $tableOwner = New-TableOwnerMap -Manifest $manifest
+$targetDatabaseOverrides = Get-TargetDatabaseMap -Value $TargetDatabaseByService
 $targetHosts = @{
     user = $UserHost
     ticket = $TicketHost
@@ -184,7 +218,7 @@ $targetHosts = @{
 
 foreach ($service in $manifest.services) {
     $serviceKey = [string]$service.key
-    Assert-ServiceForeignKeys -Service $service -HostName $targetHosts[$serviceKey] -TableOwner $tableOwner
+    Assert-ServiceForeignKeys -Service $service -HostName $targetHosts[$serviceKey] -TargetDatabaseOverride $targetDatabaseOverrides[$serviceKey] -TableOwner $tableOwner
 }
 
 Write-Host "PASS production split runtime verification completed"

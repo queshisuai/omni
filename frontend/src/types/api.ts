@@ -484,33 +484,6 @@ export interface OrderEntity {
   unitPrice?: number | null
 }
 
-/** 评价 */
-export interface ReviewEntity {
-  id: number
-  activityId: number
-  userId: number
-  orderId: number | null
-  rating: number
-  content: string | null
-  images: string | null
-  likeCount: number
-  status: number
-  createTime: string
-}
-
-/** 动态 */
-export interface MomentEntity {
-  id: number
-  userId: number
-  activityId: number | null
-  content: string
-  images: string | null
-  likeCount: number
-  commentCount: number
-  status: number
-  createTime: string
-}
-
 export interface PagePayResponse {
   orderId: number
   orderNo: string
