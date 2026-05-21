@@ -102,6 +102,57 @@ class AlipayServiceTest {
     }
 
     @Test
+    void createQrPayIgnoresTradeQueryFailureAfterQrCodeGenerated() throws Exception {
+        OrderInfoResponse order = order(15L, "DM1007", new BigDecimal("280.00"), 1);
+        when(orderClient.getOrder(15L, "internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+
+        AlipayTradePrecreateResponse precreate = mock(AlipayTradePrecreateResponse.class);
+        when(precreate.isSuccess()).thenReturn(true);
+        when(precreate.getQrCode()).thenReturn("https://qr.alipay.com/fail-open");
+        when(alipayClient.execute(any(AlipayTradePrecreateRequest.class))).thenReturn(precreate);
+        when(alipayClient.execute(any(com.alipay.api.request.AlipayTradeQueryRequest.class))).thenThrow(new RuntimeException("timeout"));
+
+        QrPayResponse result = service.createQrPay(15L);
+
+        assertEquals("https://qr.alipay.com/fail-open", result.getQrCode());
+    }
+
+    @Test
+    void createQrPayMapsRuntimeExceptionFromAlipayPrecreate() throws Exception {
+        OrderInfoResponse order = order(16L, "DM1008", new BigDecimal("280.00"), 1);
+        when(orderClient.getOrder(16L, "internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+        when(alipayClient.execute(any(AlipayTradePrecreateRequest.class))).thenThrow(new RuntimeException("connection reset"));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createQrPay(16L));
+
+        assertEquals("生成支付宝支付二维码失败", error.getMessage());
+        ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentMapper).updateById(paymentCaptor.capture());
+        assertEquals(PaymentService.STATUS_FAILED, paymentCaptor.getValue().getStatus());
+    }
+
+    @Test
+    void createQrPayRetriesTransientRuntimeExceptionFromAlipayPrecreate() throws Exception {
+        OrderInfoResponse order = order(17L, "DM1009", new BigDecimal("280.00"), 1);
+        when(orderClient.getOrder(17L, "internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+
+        AlipayTradePrecreateResponse response = mock(AlipayTradePrecreateResponse.class);
+        when(response.isSuccess()).thenReturn(true);
+        when(response.getQrCode()).thenReturn("https://qr.alipay.com/retry-success");
+        when(alipayClient.execute(any(AlipayTradePrecreateRequest.class)))
+                .thenThrow(new RuntimeException("connection reset"))
+                .thenReturn(response);
+
+        QrPayResponse result = service.createQrPay(17L);
+
+        assertEquals("https://qr.alipay.com/retry-success", result.getQrCode());
+        verify(alipayClient, org.mockito.Mockito.times(2)).execute(any(AlipayTradePrecreateRequest.class));
+    }
+
+    @Test
     void createQrPayRejectsPaidOrder() {
         OrderInfoResponse order = order(11L, "DM1002", new BigDecimal("380.00"), 2);
         when(orderClient.getOrder(11L, "internal-token")).thenReturn(Result.success(order));

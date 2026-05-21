@@ -6,6 +6,8 @@ import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.client.PaymentInternalClient;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.DeactivateActivityRequest;
+import com.omni.ticket.dto.DeleteActivityRequest;
+import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.DirectRefundResponse;
 import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
@@ -206,6 +208,30 @@ class ActivityAdminServiceTest {
         assertEquals(1, response.getPaidOrderCount());
         assertEquals(1, response.getRefundSuccessCount());
         verify(paymentInternalClient, times(1)).directRefund(any(), eq("test-token"));
+    }
+
+    @Test
+    void deleteActivityWithSessionsMarksDeletedAndStoresReason() {
+        Activity activity = activity(10L, 2003L);
+        activity.setPublishStatus("deactivated");
+        Session session = session(101L, 10L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session));
+        when(orderInternalClient.listPaidBySessions(any(), eq("test-token"))).thenReturn(Result.success(Collections.emptyList()));
+
+        DeleteActivityRequest request = new DeleteActivityRequest();
+        request.setUserId(2003L);
+        request.setReason("演出计划取消");
+
+        DeleteActivityResponse response = service.deleteActivity(10L, request);
+
+        assertEquals(Boolean.TRUE, response.getDeleted());
+        assertEquals("deleted", activity.getPublishStatus());
+        assertEquals(0, activity.getStatus());
+        assertEquals("演出计划取消", activity.getDeleteReason());
+        verify(activityMapper).updateById(activity);
+        verify(activityMapper, never()).deleteById(10L);
     }
 
     @Test

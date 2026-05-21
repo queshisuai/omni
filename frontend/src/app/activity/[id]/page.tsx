@@ -4,7 +4,6 @@ import { useState, useEffect, use, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { SeatMap } from '@/components/SeatMap'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { getActivityDetail, createOrderWithSeats, createAlipayQrPay, getSeatMap } from '@/lib/api'
@@ -165,23 +164,6 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           }
         }
       }
-    } else {
-      const byAreaRow = new Map<string, SessionSeatVO[]>()
-      for (const seat of available) {
-        const key = `${seat.areaId}-${seat.rowNo}`
-        byAreaRow.set(key, [...(byAreaRow.get(key) || []), seat])
-      }
-      for (const rowSeats of byAreaRow.values()) {
-        const sorted = rowSeats.sort((a, b) => a.seatNo - b.seatNo)
-        for (let i = 0; i <= sorted.length - quantity; i++) {
-          const candidate = sorted.slice(i, i + quantity)
-          const continuous = candidate.every((seat, index) => index === 0 || seat.seatNo === candidate[index - 1].seatNo + 1)
-          if (continuous) {
-            setSelectedSeatIds(candidate.map(seat => seat.id))
-            return
-          }
-        }
-      }
     }
     setSelectedSeatIds(available.slice(0, quantity).map(seat => seat.id))
   }
@@ -194,26 +176,20 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setOrdering(true)
     setOrderError('')
     try {
-      const hasSeatMap = Boolean(seatMap && seatMap.seats.length > 0)
-      if (hasSeatMap && validSelectedSeatIds.length !== quantity) {
+      const hasSeatCraftLayout = Boolean(seatMap?.layout && (seatMap.layout.blockLayout?.blocks?.length || seatMap.layout.blocks?.length) && seatCraftSelectionModel)
+      const seatIds = hasSeatCraftLayout ? validSelectedSeatIds : []
+      if (hasSeatCraftLayout && validSelectedSeatIds.length !== quantity) {
         setOrderError('请选择对应数量的座位')
         return
       }
-      const order = await createOrderWithSeats(hasSeatMap
-        ? {
-            userId: user.userId,
-            sessionId: selectedSession.session.id,
-            ticketTypeId: selectedTicket.id,
-            seatIds: validSelectedSeatIds,
-            unitPrice: selectedTicket.price,
-          }
-        : {
-            userId: user.userId,
-            sessionId: selectedSession.session.id,
-            ticketTypeId: selectedTicket.id,
-            quantity,
-            unitPrice: selectedTicket.price,
-          })
+      const order = await createOrderWithSeats({
+        userId: user.userId,
+        sessionId: selectedSession.session.id,
+        ticketTypeId: selectedTicket.id,
+        seatIds,
+        quantity,
+        unitPrice: selectedTicket.price,
+      })
       const pay = await createAlipayQrPay(order.id)
       setQrPay(pay)
       setShowConfirm(false)
@@ -349,7 +325,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                             ¥{tt.price}
                           </div>
                           <div className="text-xs text-[#999] mt-0.5">
-                            {tt.remainStock > 0 ? `余${tt.remainStock}张` : '售罄'}
+                            {tt.remainStock == null ? '待生成库存' : tt.remainStock > 0 ? `余${tt.remainStock}张` : '售罄'}
                           </div>
                         </button>
                       ))
@@ -362,7 +338,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       <div className="mb-5">
                         {seatMapLoading ? (
                           <div className="rounded-lg border border-[#e5e5e5] p-6 text-center text-[13px] text-[#999]">正在加载座位图...</div>
-                        ) : seatMap && seatMap.layout && seatMap.layout.sections.length > 0 && seatCraftSelectionModel ? (
+                        ) : seatMap && seatMap.layout && (seatMap.layout.blockLayout?.blocks?.length || seatMap.layout.blocks?.length) && seatCraftSelectionModel ? (
                           <div>
                             <div className="mb-3 flex items-center justify-between">
                               <div className="text-[14px] text-[#666]">已选 {validSelectedSeatIds.length} / {quantity} 座</div>
@@ -376,15 +352,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                               focusTarget={seatCraftFocusTarget}
                             />
                           </div>
-                        ) : seatMap && seatMap.seats.length > 0 ? (
-                          <div>
-                            <div className="mb-3 flex items-center justify-between">
-                              <div className="text-[14px] text-[#666]">已选 {validSelectedSeatIds.length} / {quantity} 座</div>
-                              <button onClick={handleAutoSelectSeats} className="rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">自动分配</button>
-                            </div>
-                            <SeatMap seats={seatMap.seats.filter(seat => seat.ticketTypeId == null || seat.ticketTypeId === selectedTicket.id)} areas={seatMap.areas} stageLabel={seatMap.stageLabel} maxSelectable={quantity} selectedSeatIds={validSelectedSeatIds} onChange={setSelectedSeatIds} />
+                        ) : (
+                          <div className="rounded-lg border border-[#e5e5e5] p-6 text-center text-[13px] text-[#999]">
+                            座位图暂不公布，座位将在下单后由系统自动分配。
                           </div>
-                        ) : null}
+                        )}
                       </div>
                       <div className="flex items-center gap-4 pt-4 border-t border-[#f0f0f0]">
                         <span className="text-[14px] text-[#666]">数量</span>
@@ -408,7 +380,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         </div>
                         <button
                           onClick={handleBuy}
-                          disabled={Boolean(seatMap && seatMap.seats.length > 0 && validSelectedSeatIds.length !== quantity)}
+                          disabled={Boolean(seatMap?.layout && seatCraftSelectionModel && validSelectedSeatIds.length !== quantity)}
                           className="ml-auto cursor-pointer border-none outline-none text-white text-[16px] font-medium px-10 py-3 rounded disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ backgroundColor: '#ff1268' }}
                         >

@@ -101,9 +101,15 @@ export default function ActivitiesPage() {
     loadData(page)
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('确定删除该活动？')) return
-    await deleteAdminActivity(id, userId)
+  const handleDelete = async (activity: ActivityEntity) => {
+    const reason = window.prompt('删除活动前请填写原因。已发布且有订单的活动需先完成下架退款。')
+    if (reason === null) return
+    if (!reason.trim()) {
+      alert('删除原因不能为空')
+      return
+    }
+    const result = await deleteAdminActivity(activity.id, { userId, reason: reason.trim() })
+    alert(result.message || '活动已删除')
     loadData(page)
   }
 
@@ -215,7 +221,7 @@ export default function ActivitiesPage() {
                         <Edit className="w-4 h-4" />
                       </Link>
                       <button
-                        onClick={() => handleDelete(a.id)}
+                        onClick={() => handleDelete(a)}
                         className="p-1.5 rounded hover:bg-[#fee2e2] text-[#ef4444] transition-colors bg-transparent border-none cursor-pointer"
                         title="删除"
                       >

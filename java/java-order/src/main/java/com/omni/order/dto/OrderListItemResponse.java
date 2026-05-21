@@ -24,6 +24,7 @@ public class OrderListItemResponse {
     private LocalDateTime sessionTime;
     private String ticketName;
     private BigDecimal unitPrice;
+    private String seatLabels;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -65,4 +66,6 @@ public class OrderListItemResponse {
     public void setTicketName(String ticketName) { this.ticketName = ticketName; }
     public BigDecimal getUnitPrice() { return unitPrice; }
     public void setUnitPrice(BigDecimal unitPrice) { this.unitPrice = unitPrice; }
+    public String getSeatLabels() { return seatLabels; }
+    public void setSeatLabels(String seatLabels) { this.seatLabels = seatLabels; }
 }

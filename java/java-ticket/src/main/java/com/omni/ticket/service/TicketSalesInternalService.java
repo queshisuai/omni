@@ -19,6 +19,7 @@ import com.omni.ticket.mapper.VenueMapper;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class TicketSalesInternalService {
@@ -81,17 +82,26 @@ public class TicketSalesInternalService {
     }
 
     public TicketSalesSeatLockResponse lockSeats(TicketSalesLockRequest request) {
-        if (request.getSeatIds() == null || request.getSeatIds().isEmpty()) {
+        List<Long> seatIds = request.getSeatIds();
+        if ((seatIds == null || seatIds.isEmpty()) && Boolean.TRUE.equals(request.getAllocateRandom())) {
+            int quantity = requirePositiveQuantity(request.getQuantity());
+            seatIds = sessionSeatMapper.selectRandomAvailableSeatIds(request.getSessionId(), request.getTicketTypeId(), quantity);
+            if (seatIds == null || seatIds.size() < quantity) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
+            }
+        }
+        if (seatIds == null || seatIds.isEmpty()) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "座位不能为空");
         }
-        for (Long seatId : request.getSeatIds()) {
+        for (Long seatId : seatIds) {
             int updated = sessionSeatMapper.lockSeat(seatId, request.getSessionId(), request.getTicketTypeId(), request.getLockExpireTime());
             if (updated != 1) {
                 throw new BusinessException(ResultCode.BAD_REQUEST, "座位已锁定或不可售");
             }
         }
         TicketSalesSeatLockResponse response = new TicketSalesSeatLockResponse();
-        response.setLockedSeatIds(request.getSeatIds());
+        response.setLockedSeatIds(seatIds);
+        response.setSeatLabels(sessionSeatMapper.selectSeatLabelsByIds(seatIds));
         return response;
     }
 

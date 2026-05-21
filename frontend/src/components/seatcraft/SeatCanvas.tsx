@@ -1,352 +1,161 @@
 'use client'
 
-import { useEffect, useId, useMemo, useRef } from 'react'
-import { Move } from 'lucide-react'
-import { motion } from 'motion/react'
-import { TransformComponent, TransformWrapper, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
-import { cn } from '@/lib/utils'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { PointerEvent } from 'react'
 import { buildSeatsForBlock } from './block-layout'
-import { buildSeatsForSection, isPrimeSeat } from './layout'
-import type { SeatBlockDraft, SeatCanvasProps, SeatCraftSeat, SeatCraftSection } from './types'
+import type { SeatBlockDraft, SeatCanvasProps, SeatCraftSeat } from './types'
 
-function Seat({ seat, onClick, color, isPrime }: { seat: SeatCraftSeat; onClick?: (seat: SeatCraftSeat) => void; color: string; isPrime?: boolean }) {
-  const selected = seat.status === 'selected'
-  const occupied = seat.status === 'occupied' || seat.status === 'reserved'
-  const fill = selected ? '#ffffff' : occupied ? '#27272a' : isPrime ? '#fbbf24' : color
-  const stroke = selected ? '#ffffff' : occupied ? '#3f3f46' : color
+type DragTarget =
+  | { type: 'block'; key: string; startX: number; startY: number; originX: number; originY: number }
+  | { type: 'stage'; startX: number; startY: number; originX: number; originY: number }
 
-  return (
-    <motion.rect
-      x={seat.x - 6}
-      y={seat.y - 6}
-      width={12}
-      height={12}
-      rx={3}
-      fill={fill}
-      stroke={stroke}
-      strokeWidth={selected ? 1.5 : 1}
-      transform={`rotate(${seat.angle}, ${seat.x}, ${seat.y})`}
-      className={cn(
-        'transition-all duration-300',
-        occupied ? 'pointer-events-none opacity-40' : 'cursor-pointer',
-        selected && 'drop-shadow-[0_0_12px_rgba(255,255,255,1)]',
-      )}
-      onClick={() => onClick?.(seat)}
-      initial={{ scale: 0, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0, opacity: 0 }}
-      whileHover={{ scale: 1.25 }}
-      whileTap={{ scale: 0.85 }}
-    >
-      <title>{`${seat.sectionName} - ${seat.label}`}</title>
-    </motion.rect>
-  )
-}
-
-function buildCurvedPath(section: SeatCraftSection) {
-  const innerRadius = section.radius ?? 200
-  const seatSpacing = 16
-  const r1 = innerRadius - 20
-  const r2 = r1 + section.rows * seatSpacing + 30
-  const span = section.arcSpan ?? 120
-  const rad = ((span + 2) / 2) * Math.PI / 180
-  const shiftY = innerRadius
-
-  const x1 = r1 * Math.sin(-rad)
-  const y1 = -r1 * Math.cos(-rad) + shiftY
-  const x2 = r1 * Math.sin(rad)
-  const y2 = -r1 * Math.cos(rad) + shiftY
-  const x3 = r2 * Math.sin(rad)
-  const y3 = -r2 * Math.cos(rad) + shiftY
-  const x4 = r2 * Math.sin(-rad)
-  const y4 = -r2 * Math.cos(-rad) + shiftY
-  const largeArc = span > 180 ? 1 : 0
-
-  return `M ${x1} ${y1} A ${r1} ${r1} 0 ${largeArc} 1 ${x2} ${y2} L ${x3} ${y3} A ${r2} ${r2} 0 ${largeArc} 0 ${x4} ${y4} Z`
+const STATUS_COLOR: Record<string, string> = {
+  available: '#34d399',
+  selected: '#ff1268',
+  occupied: '#71717a',
+  reserved: '#f59e0b',
 }
 
 export function SeatCanvas({
-  sections,
+  sections: _sections,
   blocks = [],
   stage,
   selectedSeatIds = [],
   sectionSeats,
   isDesignMode,
-  interactionMode,
+  interactionMode = isDesignMode ? 'design' : 'selection',
   onSeatClick,
-  onSectionClick,
   onBlockClick,
-  onSectionMove,
   onBlockMove,
   onStageMove,
-  activeSectionKey,
   activeBlockKey,
   focusTarget,
-  stageTitle = '舞台',
+  stageTitle,
 }: SeatCanvasProps) {
-  const focusTargetId = useId()
-  const transformRef = useRef<ReactZoomPanPinchRef | null>(null)
-  const mode = interactionMode ?? (isDesignMode ? 'design' : 'selection')
-  const canDrag = mode === 'design'
-  const canSelectSeats = mode === 'selection'
-  const canSelectRegions = mode === 'ticket'
-  const hasPrimeArea = useMemo(() => sections.some(section => section.primeRowStart != null && section.primeColStart != null), [sections])
-  const uniqueColors = useMemo(() => Array.from(new Set([...sections.map(section => section.color), ...blocks.map(block => block.color)])), [blocks, sections])
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const [drag, setDrag] = useState<DragTarget | null>(null)
+  const [viewBox, setViewBox] = useState(() => `0 0 1000 800`)
+  const canvasWidth = 1000
+  const canvasHeight = 800
+
+  const selectedKeys = useMemo(() => new Set(selectedSeatIds.map(String)), [selectedSeatIds])
+  const seatsByBlock = useMemo(() => {
+    const provided = sectionSeats ?? {}
+    return Object.fromEntries(blocks.map(block => [block.blockKey, (provided[block.blockKey] ?? buildSeatsForBlock(block)).map(seat => ({
+      ...seat,
+      status: selectedKeys.has(String(seat.sessionSeatId ?? seat.id)) ? 'selected' : seat.status,
+    }))]))
+  }, [blocks, sectionSeats, selectedKeys])
 
   useEffect(() => {
-    if (!focusTarget || canDrag) return
-    const timer = window.setTimeout(() => {
-      transformRef.current?.zoomToElement(focusTargetId, focusTarget.scale ?? 1.6, 260)
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [canDrag, focusTarget, focusTargetId])
+    if (!focusTarget) {
+      setViewBox(`0 0 ${canvasWidth} ${canvasHeight}`)
+      return
+    }
+    const padding = 80
+    const width = Math.max(180, focusTarget.width + padding)
+    const height = Math.max(160, focusTarget.height + padding)
+    const x = focusTarget.x - width / 2
+    const y = focusTarget.y - height / 2
+    setViewBox(`${x} ${y} ${width} ${height}`)
+  }, [focusTarget])
 
-  const renderBlock = (block: SeatBlockDraft) => {
-    const seats = buildSeatsForBlock(block, selectedSeatIds)
-    const width = block.width ?? Math.max(120, (block.cols ?? block.seatsPerRow ?? 1) * (block.seatSpacing ?? 24))
-    const height = block.height ?? Math.max(80, (block.rows ?? 1) * (block.rowSpacing ?? 24))
-    const selected = activeBlockKey === block.blockKey
-
-    return (
-      <motion.g
-        key={block.id}
-        drag={canDrag}
-        dragMomentum={false}
-        onDragEnd={(_, info) => onBlockMove?.(block.blockKey, block.x + info.offset.x, block.y + info.offset.y)}
-        onClick={() => canSelectRegions && onBlockClick?.(block)}
-        initial={false}
-        animate={{}}
-        className={cn(
-          'group transition-none',
-          canDrag && 'cursor-grab active:cursor-grabbing',
-          canSelectRegions && 'cursor-pointer pointer-events-auto',
-          canSelectSeats && 'pointer-events-none',
-        )}
-      >
-        {block.blockType === 'standingBlock' ? (
-          <rect
-            x={block.x - width / 2}
-            y={block.y - height / 2}
-            width={width}
-            height={height}
-            rx={16}
-            fill={block.color}
-            className={cn('opacity-35 stroke-zinc-800/80 transition-all duration-300', selected && 'stroke-emerald-500/90')}
-          />
-        ) : (
-          <rect
-            x={block.x - 18}
-            y={block.y - 34}
-            width={width + 36}
-            height={height + 48}
-            rx={12}
-            className={cn('fill-zinc-900/30 stroke-zinc-800/80 transition-all duration-300', selected && 'stroke-emerald-500/90')}
-          />
-        )}
-
-        <text
-          x={block.x}
-          y={block.blockType === 'standingBlock' ? block.y + 4 : block.y - 18}
-          textAnchor="middle"
-          className="pointer-events-none select-none text-[10px] font-bold font-mono uppercase tracking-widest fill-zinc-300"
-        >
-          {block.name}{block.blockType === 'standingBlock' && block.capacity ? ` · ${block.capacity}人` : ''}
-        </text>
-
-        <g className={cn(canSelectSeats && 'pointer-events-auto', !canSelectSeats && 'pointer-events-none')}>
-          {seats.map(seat => (
-            <Seat key={seat.id} seat={seat} onClick={onSeatClick} color={block.color} />
-          ))}
-        </g>
-      </motion.g>
-    )
+  const pointFromEvent = (event: PointerEvent<SVGElement>) => {
+    const svg = svgRef.current
+    if (!svg) return { x: 0, y: 0 }
+    const point = svg.createSVGPoint()
+    point.x = event.clientX
+    point.y = event.clientY
+    const transformed = point.matrixTransform(svg.getScreenCTM()?.inverse())
+    return { x: transformed.x, y: transformed.y }
   }
 
-  const renderSection = (section: SeatCraftSection) => {
-    const seats = sectionSeats?.[section.sectionKey] ?? buildSeatsForSection(section, selectedSeatIds)
-    const width = section.cols * 16
-    const height = section.rows * 16
+  const startBlockDrag = (event: PointerEvent<SVGGElement>, block: SeatBlockDraft) => {
+    onBlockClick?.(block)
+    if (!isDesignMode) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const point = pointFromEvent(event)
+    setDrag({ type: 'block', key: block.blockKey, startX: point.x, startY: point.y, originX: block.x, originY: block.y })
+  }
 
-    return (
-      <motion.g
-        key={section.id}
-        drag={canDrag}
-        dragMomentum={false}
-        onDragEnd={(_, info) => onSectionMove?.(section.sectionKey, section.x + info.offset.x, section.y + info.offset.y)}
-        onClick={() => canSelectRegions && onSectionClick?.(section)}
-        initial={false}
-        animate={{ x: section.x, y: section.y, rotate: section.rotation || 0 }}
-        className={cn(
-          'group transition-none',
-          canDrag && 'cursor-grab active:cursor-grabbing',
-          canSelectRegions && 'cursor-pointer pointer-events-auto',
-          canSelectSeats && 'pointer-events-none',
-        )}
-      >
-        {section.layout !== 'curved' ? (
-          <rect
-            x={-width / 2 - 12}
-            y={-35}
-            width={width + 24}
-            height={height + 45}
-            rx={12}
-            className={cn(
-              'fill-zinc-900/40 stroke-zinc-800/80 transition-all duration-300',
-              activeSectionKey === section.sectionKey ? 'stroke-emerald-500/90' : canDrag || canSelectRegions ? 'hover:stroke-emerald-500/50' : 'group-hover:stroke-zinc-700',
-            )}
-          />
-        ) : (
-          <path
-            d={buildCurvedPath(section)}
-            className={cn(
-              'fill-zinc-900/40 stroke-zinc-800/80 transition-all duration-300',
-              activeSectionKey === section.sectionKey ? 'stroke-emerald-500/90' : canDrag || canSelectRegions ? 'hover:stroke-emerald-500/50' : 'group-hover:stroke-zinc-700',
-            )}
-          />
-        )}
+  const startStageDrag = (event: PointerEvent<SVGGElement>) => {
+    if (!isDesignMode) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const point = pointFromEvent(event)
+    setDrag({ type: 'stage', startX: point.x, startY: point.y, originX: stage.x, originY: stage.y })
+  }
 
-        {section.layout !== 'curved' && (
-          <path
-            d={`M ${-width / 2 - 12} -35 L ${width / 2 + 12} -35`}
-            className={cn(
-              'stroke-[2px] opacity-50',
-              section.type === 'core' ? 'stroke-emerald-500' : section.type === 'stand' ? 'stroke-blue-500' : 'stroke-purple-500',
-            )}
-          />
-        )}
-
-        <text
-          x={0}
-          y={section.layout === 'curved' ? -35 : -18}
-          textAnchor="middle"
-          className="pointer-events-none select-none text-[10px] font-bold font-mono uppercase tracking-widest fill-zinc-400"
-        >
-          {section.name}
-        </text>
-
-        <g className={cn(canSelectSeats && 'pointer-events-auto', !canSelectSeats && 'pointer-events-none')}>
-          {seats.map(seat => (
-            <Seat
-              key={seat.id}
-              seat={seat}
-              onClick={onSeatClick}
-              color={section.color}
-              isPrime={isPrimeSeat(section, seat.row, seat.col)}
-            />
-          ))}
-        </g>
-      </motion.g>
-    )
+  const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+    if (!drag) return
+    const point = pointFromEvent(event)
+    const x = Math.round(drag.originX + point.x - drag.startX)
+    const y = Math.round(drag.originY + point.y - drag.startY)
+    if (drag.type === 'block') onBlockMove?.(drag.key, x, y)
+    if (drag.type === 'stage') onStageMove?.(x, y)
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-      <TransformWrapper ref={transformRef} initialScale={1} minScale={0.5} maxScale={4} centerOnInit disabled={canDrag}>
-        <TransformComponent wrapperClass="!h-full !w-full" contentClass="!h-full !w-full flex items-center justify-center">
-          <svg viewBox="0 0 1000 800" className="h-full w-full select-none p-12">
-            {canDrag && (
-              <defs>
-                <pattern id="seatcraft-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
-                </pattern>
-              </defs>
-            )}
-            {canDrag && <rect width="100%" height="100%" fill="url(#seatcraft-grid)" />}
-
-            <motion.g
-              drag={canDrag}
-              dragMomentum={false}
-              onDragEnd={(_, info) => onStageMove?.(stage.x + info.offset.x, stage.y + info.offset.y)}
-              initial={false}
-              animate={{ x: stage.x, y: stage.y }}
-              className={cn(canDrag ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none')}
-            >
-              <defs>
-                <linearGradient id="seatcraft-stage-gradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={stageTitle.includes('银幕') || stageTitle.includes('SCREEN') ? '#f8fafc' : '#3f3f46'} />
-                  <stop offset="100%" stopColor={stageTitle.includes('银幕') || stageTitle.includes('SCREEN') ? '#cbd5e1' : '#09090b'} />
-                </linearGradient>
-              </defs>
-              <rect
-                x={-200}
-                y={0}
-                width={400}
-                height={80}
-                rx={8}
-                fill="url(#seatcraft-stage-gradient)"
-                className={cn('stroke-zinc-700 stroke-[2px]', (stageTitle.includes('银幕') || stageTitle.includes('SCREEN')) && 'stroke-zinc-400 drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]')}
-              />
-              {!(stageTitle.includes('银幕') || stageTitle.includes('SCREEN')) && (
-                <path d="M -160 80 L 160 80" fill="none" className="stroke-emerald-500/50 stroke-[3px]" />
-              )}
-              <text
-                x={0}
-                y={55}
-                textAnchor="middle"
-                className={cn('font-mono uppercase tracking-[0.5em]', (stageTitle.includes('银幕') || stageTitle.includes('SCREEN')) ? 'fill-zinc-400 text-[8px]' : 'fill-zinc-500 text-[10px]')}
-              >
-                {stageTitle.includes('银幕') || stageTitle.includes('SCREEN') ? 'PROJECTION ZONE' : '舞台中心'}
-              </text>
-              <text
-                x={0}
-                y={35}
-                textAnchor="middle"
-                className={cn('text-xl font-bold tracking-[0.2em]', (stageTitle.includes('银幕') || stageTitle.includes('SCREEN')) ? 'fill-zinc-950' : 'fill-zinc-100')}
-              >
-                {stageTitle}
-              </text>
-            </motion.g>
-
-            <g>{sections.map(section => renderSection(section))}</g>
-            <g>{blocks.map(block => renderBlock(block))}</g>
-            {focusTarget && !canDrag && (
-              <rect
-                id={focusTargetId}
-                x={focusTarget.x - focusTarget.width / 2}
-                y={focusTarget.y - focusTarget.height / 2}
-                width={Math.max(1, focusTarget.width)}
-                height={Math.max(1, focusTarget.height)}
-                fill="transparent"
-                pointerEvents="none"
-              />
-            )}
-          </svg>
-        </TransformComponent>
-      </TransformWrapper>
-
-      {canDrag && (
-        <div className="absolute right-6 top-6 flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-xs font-bold text-zinc-950 shadow-lg shadow-emerald-500/20 animate-pulse">
-          <Move className="h-3 w-3" /> 设计模式已开启
-        </div>
-      )}
-
-      <div className="absolute bottom-10 left-1/2 z-20 flex -translate-x-1/2 items-center gap-8 whitespace-nowrap rounded-2xl border border-white/5 bg-zinc-900/90 px-8 py-3 shadow-2xl backdrop-blur-xl">
-        <div className="flex items-center gap-2.5">
-          <div className="flex -space-x-1">
-            {uniqueColors.map((color, index) => (
-              <div key={color} className="h-3.5 w-3.5 rounded-sm ring-2 ring-zinc-950 shadow-sm" style={{ backgroundColor: color, zIndex: uniqueColors.length - index }} />
-            ))}
-          </div>
-          <span className="pl-1 text-[11px] font-bold uppercase tracking-widest text-zinc-400">可选</span>
-        </div>
-
-        {hasPrimeArea && (
-          <div className="flex items-center gap-2.5">
-            <div className="h-3.5 w-3.5 rounded-sm bg-[#fbbf24] ring-1 ring-[#f59e0b]/50 shadow-[0_0_10px_rgba(251,191,36,0.3)]" />
-            <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-400">优选</span>
-          </div>
-        )}
-
-        <div className="flex items-center gap-2.5">
-          <div className="h-3.5 w-3.5 rounded-sm bg-white shadow-[0_0_15px_rgba(255,255,255,0.5)]" />
-          <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-200">已选</span>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <div className="h-3.5 w-3.5 rounded-sm border border-zinc-700 bg-zinc-800 opacity-60" />
-          <span className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">售罄</span>
-        </div>
-      </div>
+    <div className="h-full min-h-[520px] overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950">
+      <svg ref={svgRef} viewBox={viewBox} className="h-full min-h-[520px] w-full transition-all duration-500 ease-out" onPointerMove={handlePointerMove} onPointerUp={() => setDrag(null)} onPointerCancel={() => setDrag(null)}>
+        <rect x={0} y={0} width={canvasWidth} height={canvasHeight} fill="#020617" />
+        <Grid width={canvasWidth} height={canvasHeight} />
+        <g onPointerDown={startStageDrag} className={isDesignMode ? 'cursor-move' : ''}>
+          <rect x={stage.x - 90} y={stage.y - 18} width={180} height={36} rx={18} fill="#f97316" />
+          <text x={stage.x} y={stage.y + 5} textAnchor="middle" className="fill-white text-[13px] font-semibold">{stageTitle ?? stage.title}</text>
+        </g>
+        {blocks.map(block => renderBlock(block, seatsByBlock[block.blockKey] ?? [], interactionMode, activeBlockKey === block.blockKey, startBlockDrag, onSeatClick))}
+      </svg>
     </div>
+  )
+}
+
+function Grid({ width, height }: { width: number; height: number }) {
+  const lines = []
+  for (let x = 0; x <= width; x += 40) lines.push(<line key={`x-${x}`} x1={x} y1={0} x2={x} y2={height} stroke="#1e293b" strokeWidth={1} />)
+  for (let y = 0; y <= height; y += 40) lines.push(<line key={`y-${y}`} x1={0} y1={y} x2={width} y2={y} stroke="#1e293b" strokeWidth={1} />)
+  return <g opacity={0.45}>{lines}</g>
+}
+
+function renderBlock(
+  block: SeatBlockDraft,
+  seats: SeatCraftSeat[],
+  mode: string,
+  active: boolean,
+  onBlockPointerDown: (event: PointerEvent<SVGGElement>, block: SeatBlockDraft) => void,
+  onSeatClick?: (seat: SeatCraftSeat) => void,
+) {
+  const canSelectSeat = mode === 'selection'
+  const standingWidth = block.width ?? 180
+  const standingHeight = block.height ?? 90
+  return (
+    <g key={block.blockKey} transform={`rotate(${block.rotation || 0} ${block.x} ${block.y})`} onPointerDown={(event) => onBlockPointerDown(event, block)} className="cursor-pointer">
+      {block.blockType === 'standingBlock' ? (
+        <g>
+          <rect x={block.x} y={block.y} width={standingWidth} height={standingHeight} rx={14} fill={block.color} fillOpacity={0.25} stroke={active ? '#ff1268' : block.color} strokeWidth={active ? 3 : 2} />
+          <text x={block.x + standingWidth / 2} y={block.y + standingHeight / 2 - 4} textAnchor="middle" className="fill-zinc-100 text-[13px] font-semibold">{block.name}</text>
+          <text x={block.x + standingWidth / 2} y={block.y + standingHeight / 2 + 16} textAnchor="middle" className="fill-zinc-400 text-[11px]">容量 {block.capacity ?? 0}</text>
+        </g>
+      ) : (
+        <g>
+          {seats.map(seat => (
+            <circle
+              key={seat.id}
+              cx={seat.x}
+              cy={seat.y}
+              r={7}
+              fill={STATUS_COLOR[seat.status] ?? '#34d399'}
+              stroke={active ? '#ff1268' : '#0f172a'}
+              strokeWidth={active ? 2 : 1}
+              onPointerDown={(event) => {
+                if (canSelectSeat) event.stopPropagation()
+              }}
+              onClick={() => canSelectSeat && onSeatClick?.(seat)}
+              className={canSelectSeat ? 'cursor-pointer' : ''}
+            />
+          ))}
+          <text x={block.x} y={block.y - 16} textAnchor="middle" className="fill-zinc-200 text-[12px] font-semibold">{block.name}</text>
+        </g>
+      )}
+    </g>
   )
 }

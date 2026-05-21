@@ -10,6 +10,7 @@ public class TicketSalesLockRequest {
     private List<Long> seatIds;
     private Integer quantity;
     private LocalDateTime lockExpireTime;
+    private Boolean allocateRandom;
 
     public Long getOrderId() { return orderId; }
     public void setOrderId(Long orderId) { this.orderId = orderId; }
@@ -23,4 +24,6 @@ public class TicketSalesLockRequest {
     public void setQuantity(Integer quantity) { this.quantity = quantity; }
     public LocalDateTime getLockExpireTime() { return lockExpireTime; }
     public void setLockExpireTime(LocalDateTime lockExpireTime) { this.lockExpireTime = lockExpireTime; }
+    public Boolean getAllocateRandom() { return allocateRandom; }
+    public void setAllocateRandom(Boolean allocateRandom) { this.allocateRandom = allocateRandom; }
 }

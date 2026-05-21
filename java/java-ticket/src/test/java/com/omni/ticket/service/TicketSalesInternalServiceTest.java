@@ -108,6 +108,24 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
+    void lockSeatsRandomlyAllocatesRealSeatsWhenSeatIdsMissing() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.selectRandomAvailableSeatIds(3001L, 4001L, 2)).thenReturn(List.of(601L, 602L));
+        when(sessionSeatMapper.lockSeat(eq(601L), eq(3001L), eq(4001L), any())).thenReturn(1);
+        when(sessionSeatMapper.lockSeat(eq(602L), eq(3001L), eq(4001L), any())).thenReturn(1);
+        when(sessionSeatMapper.selectSeatLabelsByIds(List.of(601L, 602L))).thenReturn(List.of("A区1排1座", "A区1排2座"));
+
+        TicketSalesLockRequest request = lockRequest(null, 2);
+        request.setAllocateRandom(true);
+
+        TicketSalesSeatLockResponse response = service.lockSeats(request);
+
+        assertEquals(List.of(601L, 602L), response.getLockedSeatIds());
+        assertEquals(List.of("A区1排1座", "A区1排2座"), response.getSeatLabels());
+    }
+
+    @Test
     void lockStockThrowsWhenInsufficientStock() {
         TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
         TicketSalesInternalService service = service(ticketTypeMapper, mock(SessionSeatMapper.class));

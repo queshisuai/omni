@@ -1,12 +1,7 @@
 import type { SeatCraftLayoutVO, SeatMapResponse, SessionSeatVO } from '@/types/api'
-import { buildSeatsForSection } from '@/components/seatcraft/layout'
-import { toSeatCraftLayoutDraft as toLegacySeatCraftLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
+import { buildSeatsForBlock } from '@/components/seatcraft/block-layout'
+import { toSeatCraftLayoutDraft as toLegacySeatCraftLayoutDraft, type SeatBlockDraft, type SeatCraftLayoutDraft, type SeatCraftSeat } from '@/components/seatcraft/types'
 import type { UnifiedSeatCraftLayout, UnifiedSeatCraftSeat, UnifiedSeatCraftSelectionModel, ZoomTarget } from './types'
-
-const SECTION_SEAT_SPACING = 16
-const SECTION_PADDING_X = 24
-const SECTION_HEADER_HEIGHT = 35
-const SECTION_PADDING_BOTTOM = 10
 
 export function toUnifiedSeatCraftLayout(layout: SeatCraftLayoutVO, options: { includeBlocks?: boolean } = {}): UnifiedSeatCraftLayout {
   const draft = toLegacySeatCraftLayoutDraft(layout)
@@ -20,29 +15,7 @@ export function toUnifiedSeatCraftLayout(layout: SeatCraftLayoutVO, options: { i
     stage: draft.stage,
     canvasWidth: layout.canvasWidth,
     canvasHeight: layout.canvasHeight,
-    sections: layout.sections.map(section => ({
-      id: section.id ?? null,
-      sectionKey: section.sectionKey,
-      name: section.name,
-      rows: section.rows,
-      cols: section.cols,
-      x: section.x,
-      y: section.y,
-      color: section.color,
-      type: section.type,
-      layout: section.layout,
-      radius: section.radius ?? null,
-      arcSpan: section.arcSpan ?? null,
-      rotation: section.rotation ?? null,
-      primeRowStart: section.primeRowStart ?? null,
-      primeRowEnd: section.primeRowEnd ?? null,
-      primeColStart: section.primeColStart ?? null,
-      primeColEnd: section.primeColEnd ?? null,
-      seatCount: section.seatCount ?? null,
-      ticketTypeId: section.ticketTypeId ?? null,
-      price: section.price ?? null,
-      bbox: buildSectionBBox(section),
-    })),
+    sections: [],
     blocks: options.includeBlocks === false ? [] : draft.blocks ?? [],
     ticketGroups: layout.blockLayout?.ticketGroups ?? layout.ticketGroups ?? [],
     source: layout,
@@ -54,65 +27,31 @@ export function toSeatCraftLayoutDraft(layout: SeatCraftLayoutVO): SeatCraftLayo
 }
 
 export function toSeatCraftSelectionModel(response: SeatMapResponse): UnifiedSeatCraftSelectionModel {
-  const layout = response.layout ? toUnifiedSeatCraftLayout(response.layout, { includeBlocks: false }) : null
-  const sectionById = new Map((response.layout?.sections ?? []).map(section => [section.id, section]))
-  const seatsByPosition = response.seats.reduce<Record<string, SessionSeatVO>>((acc, seat) => {
-    if (seat.layoutSectionId == null) return acc
-    acc[`${seat.layoutSectionId}-${seat.rowNo}-${seat.seatNo}`] = seat
+  const layout = response.layout ? toUnifiedSeatCraftLayout(response.layout) : null
+  const blocks = layout?.blocks ?? []
+  const seatsByBlockPosition = response.seats.reduce<Record<string, SessionSeatVO>>((acc, seat) => {
+    const blockKey = findBlockKeyBySeat(blocks, seat)
+    const rowNo = seat.generatedRowNo ?? seat.rowNo
+    const seatNo = seat.generatedSeatNo ?? seat.seatNo
+    if (!blockKey) return acc
+    acc[`${blockKey}-${rowNo}-${seatNo}`] = seat
     return acc
   }, {})
 
   const seatsBySectionKey: Record<string, UnifiedSeatCraftSeat[]> = {}
 
-  if (response.layout) {
-    for (const section of response.layout.sections) {
-      const builtSeats = buildSeatsForSection({
-        id: String(section.id),
-        sectionKey: section.sectionKey,
-        name: section.name,
-        rows: section.rows,
-        cols: section.cols,
-        x: section.x,
-        y: section.y,
-        color: section.color,
-        type: section.type,
-        layout: section.layout,
-        radius: section.radius,
-        arcSpan: section.arcSpan,
-        rotation: section.rotation,
-        primeRowStart: section.primeRowStart,
-        primeRowEnd: section.primeRowEnd,
-        primeColStart: section.primeColStart,
-        primeColEnd: section.primeColEnd,
-        ticketTypeId: section.ticketTypeId,
-      })
-
-      seatsBySectionKey[section.sectionKey] = builtSeats.map((seat) => {
-        const source = seatsByPosition[`${section.id}-${seat.row + 1}-${seat.col + 1}`]
-        return buildUnifiedSeat(seat, source, section.id, response.ticketTypeId)
+  if (layout) {
+    for (const block of blocks) {
+      const builtSeats = buildSeatsForBlock(block)
+      seatsBySectionKey[block.blockKey] = builtSeats.map((seat) => {
+        const source = seatsByBlockPosition[`${block.blockKey}-${seat.row + 1}-${seat.col + 1}`]
+        return buildUnifiedSeat(seat, source, null, response.ticketTypeId)
       })
     }
   }
 
   const layoutSeats = Object.values(seatsBySectionKey).flat()
-  const fallbackSeats = layoutSeats.length > 0 ? [] : response.seats.map((seat) => {
-    const section = sectionById.get(seat.layoutSectionId ?? -1)
-    return buildUnifiedSeat({
-      id: String(seat.id),
-      sessionSeatId: seat.id,
-      row: seat.rowNo - 1,
-      col: seat.seatNo - 1,
-      x: 0,
-      y: 0,
-      angle: 0,
-      status: seat.status === 1 ? 'available' : 'occupied',
-      sectionKey: section?.sectionKey ?? String(seat.layoutSectionId ?? seat.areaId),
-      sectionName: section?.name ?? `分区 ${seat.areaId}`,
-      label: seat.seatLabel,
-    }, seat, seat.layoutSectionId ?? null, response.ticketTypeId)
-  })
-
-  const seats = layoutSeats.length > 0 ? layoutSeats : fallbackSeats
+  const seats = layoutSeats
 
   return {
     sessionId: response.sessionId,
@@ -128,10 +67,13 @@ export function toSeatCraftSelectionModel(response: SeatMapResponse): UnifiedSea
 }
 
 export function buildZoomTargetFromTicketGroup(layout: SeatCraftLayoutVO, ticketTypeId: number): ZoomTarget | null {
-  // C 端当前只支持基于 section.ticketTypeId 聚焦；block/ticketGroup 尚无真实座位映射时不构造误导性目标。
-  const targets = layout.sections
-    .filter(section => section.ticketTypeId === ticketTypeId)
-    .map(buildSectionBBox)
+  const draft = toLegacySeatCraftLayoutDraft(layout)
+  const groupKeys = new Set((draft.ticketGroups ?? [])
+    .filter(group => group.name === String(ticketTypeId) || group.groupKey === String(ticketTypeId) || group.sourceBlockKeys.length > 0)
+    .flatMap(group => group.sourceBlockKeys))
+  const targets = (draft.blocks ?? [])
+    .filter(block => groupKeys.size === 0 || groupKeys.has(block.blockKey))
+    .map(buildBlockBBox)
 
   if (targets.length === 0) return null
 
@@ -148,7 +90,7 @@ export function buildZoomTargetFromTicketGroup(layout: SeatCraftLayoutVO, ticket
     width,
     height,
     scale: targets.length === 1 ? 1.8 : 1.4,
-    sectionKeys: layout.sections.filter(section => section.ticketTypeId === ticketTypeId).map(section => section.sectionKey),
+    sectionKeys: targets.flatMap(target => target.sectionKeys ?? []),
   }
 }
 
@@ -171,20 +113,33 @@ function buildUnifiedSeat(
   }
 }
 
-function buildSectionBBox(section: { sectionKey: string; x: number; y: number; rows: number; cols: number; layout: string; radius?: number | null; arcSpan?: number | null }): ZoomTarget {
-  if (section.layout === 'curved') {
-    const radius = section.radius ?? 200
-    const span = section.arcSpan ?? 120
-    const width = Math.max(section.cols * SECTION_SEAT_SPACING + SECTION_PADDING_X, radius * 2 * Math.sin((span / 2) * Math.PI / 180))
-    const height = Math.max(section.rows * SECTION_SEAT_SPACING + SECTION_HEADER_HEIGHT, radius + section.rows * SECTION_SEAT_SPACING)
-    return { x: section.x, y: section.y + height / 3, width, height, sectionKeys: [section.sectionKey] }
+function findBlockKeyBySeat(blocks: SeatBlockDraft[], seat: SessionSeatVO) {
+  if (seat.ticketGroupKey) {
+    const block = blocks.find(item => item.ticketGroupKey === seat.ticketGroupKey)
+    if (block) return block.blockKey
   }
+  if (seat.seatBlockId != null) {
+    const block = blocks.find(item => Number(item.id) === seat.seatBlockId)
+    if (block) return block.blockKey
+  }
+  return null
+}
 
-  return {
-    x: section.x,
-    y: section.y + (section.rows * SECTION_SEAT_SPACING - SECTION_HEADER_HEIGHT) / 2,
-    width: section.cols * SECTION_SEAT_SPACING + SECTION_PADDING_X,
-    height: section.rows * SECTION_SEAT_SPACING + SECTION_HEADER_HEIGHT + SECTION_PADDING_BOTTOM,
-    sectionKeys: [section.sectionKey],
+function buildBlockBBox(block: SeatBlockDraft): ZoomTarget {
+  if (block.blockType === 'standingBlock') {
+    const width = block.width ?? 180
+    const height = block.height ?? 90
+    return { x: block.x + width / 2, y: block.y + height / 2, width, height, sectionKeys: [block.blockKey] }
   }
+  const seats = buildSeatsForBlock(block)
+  return buildSeatsBBox(seats, block.blockKey)
+}
+
+function buildSeatsBBox(seats: SeatCraftSeat[], key: string): ZoomTarget {
+  if (seats.length === 0) return { x: 0, y: 0, width: 240, height: 180, sectionKeys: [key] }
+  const minX = Math.min(...seats.map(seat => seat.x))
+  const minY = Math.min(...seats.map(seat => seat.y))
+  const maxX = Math.max(...seats.map(seat => seat.x))
+  const maxY = Math.max(...seats.map(seat => seat.y))
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, width: Math.max(80, maxX - minX), height: Math.max(80, maxY - minY), sectionKeys: [key] }
 }

@@ -130,11 +130,22 @@ export interface ActivityEntity {
   id: number
   categoryId: number
   artistId: number
+  organizerId?: number | null
   name: string
   description: string | null
   poster: string
+  publishStatus?: string | null
   status: number
   createTime: string
+}
+
+export interface DeleteActivityResponse {
+  activityId: number
+  publishStatus: string
+  status: number
+  deleted: boolean
+  refundBlocked: boolean
+  message?: string
 }
 
 /** 艺人 */
@@ -310,6 +321,10 @@ export interface SessionSeatVO {
   orderId: number | null
   ticketTypeId: number | null
   layoutSectionId?: number | null
+  seatBlockId?: number | null
+  ticketGroupKey?: string | null
+  generatedRowNo?: number | null
+  generatedSeatNo?: number | null
 }
 
 export type SeatCraftTemplateType = 'concert' | 'cinema' | 'custom'
@@ -443,8 +458,9 @@ export interface AdminTicketTypeCreateRequest {
   sessionId: number
   name: string
   price: number
-  totalStock: number
+  totalStock?: number
   layoutSectionIds?: number[]
+  sourceBlockKeys?: string[]
   areaIds?: number[]
 }
 
@@ -492,6 +508,7 @@ export interface OrderEntity {
   sessionTime?: string | null
   ticketName?: string | null
   unitPrice?: number | null
+  seatLabels?: string | null
 }
 
 export interface PagePayResponse {

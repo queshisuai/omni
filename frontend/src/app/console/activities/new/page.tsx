@@ -135,7 +135,7 @@ export default function NewActivityPage() {
             layout: venueDefaultLayout,
           })
         } catch (err) {
-          await deleteAdminActivity(activity.id, u.userId).catch(() => {})
+          await deleteAdminActivity(activity.id, { userId: u.userId, reason: '创建活动失败自动清理' }).catch(() => {})
           throw err
         }
       }

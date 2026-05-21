@@ -103,6 +103,6 @@ export interface SeatCraftTicketEditorProps {
   ticketPrice: string
   onTicketNameChange: (value: string) => void
   onTicketPriceChange: (value: string) => void
-  estimatedStock: number
+  estimatedSeatCount: number
   onSubmit: () => void | Promise<void>
 }

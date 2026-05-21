@@ -52,6 +52,7 @@ public class AlipayService {
     private static final String TRADE_SUCCESS = "TRADE_SUCCESS";
     private static final String TRADE_FINISHED = "TRADE_FINISHED";
     private static final String TRADE_NOT_EXIST = "ACQ.TRADE_NOT_EXIST";
+    private static final int QRCODE_CREATE_MAX_ATTEMPTS = 2;
     private static final int QRCODE_QUERY_MAX_ATTEMPTS = 3;
     private static final long QRCODE_QUERY_RETRY_DELAY_MS = 300L;
 
@@ -176,7 +177,7 @@ public class AlipayService {
 
         try {
             AlipayClient client = createClient();
-            AlipayTradePrecreateResponse alipayResponse = client.execute(request);
+            AlipayTradePrecreateResponse alipayResponse = executePrecreateWithRetry(client, request, orderId);
             if (alipayResponse == null || !alipayResponse.isSuccess() || !StringUtils.hasText(alipayResponse.getQrCode())) {
                 markPaymentFailed(payment, "支付宝二维码响应为空或失败");
                 throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付二维码失败");
@@ -189,20 +190,42 @@ public class AlipayService {
             response.setSubject(subject);
             response.setQrCode(alipayResponse.getQrCode());
             return response;
-        } catch (AlipayApiException e) {
+        } catch (AlipayApiException | RuntimeException e) {
             markPaymentFailed(payment, "生成支付宝支付二维码异常");
             log.error("生成支付宝支付二维码失败: orderId={}", orderId, e);
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付二维码失败");
         }
     }
 
-    private void waitUntilPrecreatedTradeQueryable(AlipayClient client, String orderNo) throws AlipayApiException {
+    private AlipayTradePrecreateResponse executePrecreateWithRetry(AlipayClient client, AlipayTradePrecreateRequest request, Long orderId) throws AlipayApiException {
+        RuntimeException lastRuntimeException = null;
+        for (int attempt = 1; attempt <= QRCODE_CREATE_MAX_ATTEMPTS; attempt++) {
+            try {
+                return client.execute(request);
+            } catch (RuntimeException e) {
+                lastRuntimeException = e;
+                if (attempt >= QRCODE_CREATE_MAX_ATTEMPTS) {
+                    throw e;
+                }
+                log.warn("生成支付宝二维码临时失败，准备重试: orderId={}, attempt={}, message={}", orderId, attempt, e.getMessage());
+            }
+        }
+        throw lastRuntimeException;
+    }
+
+    private void waitUntilPrecreatedTradeQueryable(AlipayClient client, String orderNo) {
         for (int attempt = 1; attempt <= QRCODE_QUERY_MAX_ATTEMPTS; attempt++) {
             AlipayTradeQueryRequest queryRequest = new AlipayTradeQueryRequest();
             Map<String, String> bizContent = new LinkedHashMap<>();
             bizContent.put("out_trade_no", orderNo);
             queryRequest.setBizContent(buildJson(bizContent));
-            AlipayTradeQueryResponse queryResponse = client.execute(queryRequest);
+            AlipayTradeQueryResponse queryResponse;
+            try {
+                queryResponse = client.execute(queryRequest);
+            } catch (RuntimeException | AlipayApiException e) {
+                log.warn("支付宝二维码已生成，但交易可查询确认失败: outTradeNo={}, attempt={}, message={}", orderNo, attempt, e.getMessage());
+                return;
+            }
             if (queryResponse != null && queryResponse.isSuccess()) {
                 return;
             }

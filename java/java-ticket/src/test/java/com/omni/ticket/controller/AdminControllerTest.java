@@ -3,8 +3,11 @@ package com.omni.ticket.controller;
 import com.omni.common.result.Result;
 import com.omni.common.util.JwtUtil;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
+import com.omni.ticket.dto.DeleteActivityRequest;
+import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
+import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
@@ -122,6 +125,37 @@ class AdminControllerTest {
         Result<Void> result = controller.deleteSession(2003L, 50L);
 
         assertEquals(200, result.getCode());
+    }
+
+    @Test
+    void deleteActivityRejectsBlankReason() {
+        AdminController controller = controller();
+        DeleteActivityRequest request = new DeleteActivityRequest();
+        request.setUserId(2003L);
+        request.setReason(" ");
+
+        Result<?> result = controller.deleteActivity(10L, request);
+
+        assertEquals(400, result.getCode());
+        assertEquals("删除原因不能为空", result.getMessage());
+        verify(activityAdminService, never()).deleteActivity(any(), any());
+    }
+
+    @Test
+    void deleteActivityDelegatesToService() {
+        AdminController controller = controller();
+        DeleteActivityRequest request = new DeleteActivityRequest();
+        request.setUserId(2003L);
+        request.setReason("演出计划取消");
+        DeleteActivityResponse response = new DeleteActivityResponse();
+        response.setActivityId(10L);
+        when(activityAdminService.deleteActivity(10L, request)).thenReturn(response);
+
+        Result<DeleteActivityResponse> result = controller.deleteActivity(10L, request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(10L, result.getData().getActivityId());
+        verify(activityAdminService).deleteActivity(10L, request);
     }
 
     @Test

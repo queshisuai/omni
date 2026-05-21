@@ -214,7 +214,7 @@ export default function VenuePage() {
                   <td className="p-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => openEdit(v)} className="rounded-lg border border-[#ddd] px-3 py-1.5 text-[13px] text-[#666] hover:bg-[#fafafa] cursor-pointer">编辑</button>
-                      <Link href={`/console/venue/${v.id}/seats`} className="inline-block rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">配置区域</Link>
+                      <Link href={`/console/venue/${v.id}/seats`} className="inline-block rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">配置 SeatCraft</Link>
                     </div>
                   </td>
                 )}

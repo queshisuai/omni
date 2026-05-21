@@ -363,8 +363,11 @@ export async function deactivateOrganizer(body: import('@/types/api').Deactivate
   })
 }
 
-export async function deleteAdminActivity(id: number, userId: number) {
-  return request<void>(`/api/ticket/admin/activities/${id}?userId=${userId}`, { method: 'DELETE' })
+export async function deleteAdminActivity(id: number, body: { userId: number; reason: string }) {
+  return request<import('@/types/api').DeleteActivityResponse>(`/api/ticket/admin/activities/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify(body),
+  })
 }
 
 export async function createAdminSession(body: Record<string, unknown>) {

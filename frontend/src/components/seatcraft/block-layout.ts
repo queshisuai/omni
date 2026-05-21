@@ -7,6 +7,11 @@ const DEFAULT_INNER_RADIUS = 80
 const DEFAULT_ARC_START = 0
 const DEFAULT_ARC_END = 180
 const SNAP_DISTANCE = 8
+const ARRANGE_START_X = 120
+const ARRANGE_START_Y = 180
+const ARRANGE_GAP_X = 300
+const ARRANGE_GAP_Y = 220
+const ARRANGE_COLUMNS = 3
 
 export type SeatCraftLayoutPayload = Omit<SeatCraftLayoutVO, 'blocks' | 'overrides' | 'ticketGroups' | 'blockLayout'> & {
   id: number
@@ -67,6 +72,18 @@ export function snapBlockPosition(
     x: Math.abs(current.x - target.x) <= SNAP_DISTANCE ? target.x : current.x,
     y: Math.abs(current.y - target.y) <= SNAP_DISTANCE ? target.y : current.y,
   }), position)
+}
+
+export function autoArrangeSeatLayout(layout: SeatCraftLayoutDraft): SeatCraftLayoutDraft {
+  const blocks = layout.blocks ?? []
+  return {
+    ...layout,
+    blocks: blocks.map((block, index) => ({
+      ...block,
+      x: ARRANGE_START_X + (index % ARRANGE_COLUMNS) * ARRANGE_GAP_X,
+      y: ARRANGE_START_Y + Math.floor(index / ARRANGE_COLUMNS) * ARRANGE_GAP_Y,
+    })),
+  }
 }
 
 export function toSeatCraftLayoutPayload(layout: SeatCraftLayoutDraft): SeatCraftLayoutPayload {
@@ -147,7 +164,7 @@ function buildArcSeats(block: SeatBlockDraft, overrides: Map<string, SeatOverrid
       const t = seatsPerRow === 1 ? 0.5 : (seat - 1) / (seatsPerRow - 1)
       const angle = startAngle + (endAngle - startAngle) * t + (block.rotation || 0)
       const radians = angle * Math.PI / 180
-      seats.push(buildSeat(block, row, seat, block.x + radius * Math.cos(radians), block.y + radius * Math.sin(radians), override, selectedSeatIds, angle))
+      seats.push(buildSeat(block, row, seat, block.x + radius * Math.sin(radians), block.y + radius * Math.cos(radians), override, selectedSeatIds, angle))
     }
   }
   return seats

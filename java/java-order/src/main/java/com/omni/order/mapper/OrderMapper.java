@@ -17,7 +17,7 @@ public interface OrderMapper extends BaseMapper<Order> {
             "o.user_deleted_at AS userDeletedAt, o.user_delete_expires_at AS userDeleteExpiresAt, " +
             "o.create_time AS createTime, o.update_time AS updateTime, os.activity_id AS activityId, " +
             "os.activity_name AS activityName, os.activity_poster AS activityPoster, os.venue_name AS venueName, " +
-            "os.session_time AS sessionTime, os.ticket_name AS ticketName, os.unit_price AS unitPrice ";
+            "os.session_time AS sessionTime, os.ticket_name AS ticketName, os.unit_price AS unitPrice, os.seat_labels AS seatLabels ";
 
     String ORDER_LIST_JOINS = "FROM \"order\" o " +
             "LEFT JOIN order_snapshot os ON os.order_id = o.id ";

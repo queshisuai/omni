@@ -1,4 +1,4 @@
-import type { SeatCraftLayoutVO, SessionSeatVO } from '@/types/api'
+import type { SeatCraftLayoutVO } from '@/types/api'
 
 export type SeatStatus = 'available' | 'reserved' | 'selected' | 'occupied'
 export type SectionType = 'core' | 'stand' | 'zone'
@@ -149,6 +149,7 @@ export interface SeatLayoutControlsProps {
   onUpdateBlock?: (blockKey: string, updates: Partial<SeatBlockDraft>) => void
   onAddSection: () => void
   onAddBlock?: (blockType?: SeatBlockType) => void
+  onAutoArrange?: () => void
   onDuplicateSection: (sectionKey: string) => void
   onDuplicateBlock?: (blockKey: string) => void
   onMirrorBlock?: (blockKey: string) => void
@@ -161,16 +162,6 @@ export interface SeatLayoutControlsProps {
 export interface SeatLayoutDesignerProps {
   layout: SeatCraftLayoutDraft
   onChange: (layout: SeatCraftLayoutDraft) => void
-}
-
-export interface SeatSelectionMapProps {
-  layout: SeatCraftLayoutVO
-  seats: SessionSeatVO[]
-  ticketTypeId?: number | null
-  selectedSeatIds: number[]
-  onChange: (seatIds: number[]) => void
-  maxSelectable?: number
-  focusTarget?: SeatCraftZoomTarget | null
 }
 
 export function makeDefaultStage(title = '舞台'): SeatCraftStage {

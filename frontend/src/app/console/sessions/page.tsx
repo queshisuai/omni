@@ -2,11 +2,12 @@
 
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { SeatCraftTicketEditor } from '@/components/seatcraft-unified/SeatCraftTicketEditor'
-import { createAdminSession, createAdminTicketType, getActivitySeatLayout, getSessionTicketDrafts, listAdminActivities, listAdminSessions, listAdminVenues, listVenueAreas, updateAdminSession } from '@/lib/api'
+import { createAdminSession, createAdminTicketType, getActivitySeatLayout, getSessionTicketDrafts, listAdminActivities, listAdminSessions, listAdminVenues, updateAdminSession } from '@/lib/api'
 import { Edit, Plus, RefreshCw, X } from 'lucide-react'
-import type { ActivityEntity, SeatCraftLayoutVO, SeatCraftSectionVO, SessionAdminVO, VenueAreaVO, VenueEntity } from '@/types/api'
+import type { ActivityEntity, SeatCraftLayoutVO, SeatCraftSectionVO, SessionAdminVO, VenueEntity } from '@/types/api'
 
 const PAGE_SIZE = 10
 
@@ -20,7 +21,7 @@ type SessionForm = {
   activityLayoutId: string
 }
 
-type TicketFormMode = 'loading' | 'seatcraft' | 'legacy'
+type TicketFormMode = 'loading' | 'seatcraft'
 
 const emptyForm: SessionForm = {
   activityId: '',
@@ -62,13 +63,11 @@ function SessionsPageContent() {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [ticketFormSession, setTicketFormSession] = useState<SessionAdminVO | null>(null)
-  const [sessionAreas, setSessionAreas] = useState<VenueAreaVO[]>([])
   const [ticketName, setTicketName] = useState('')
   const [ticketPrice, setTicketPrice] = useState('')
-  const [selectedAreaIds, setSelectedAreaIds] = useState<number[]>([])
   const [ticketDrafts, setTicketDrafts] = useState<SeatCraftSectionVO[]>([])
   const [ticketLayout, setTicketLayout] = useState<SeatCraftLayoutVO | null>(null)
-  const [ticketFormMode, setTicketFormMode] = useState<TicketFormMode>('legacy')
+  const [ticketFormMode, setTicketFormMode] = useState<TicketFormMode>('seatcraft')
   const [selectedLayoutSectionIds, setSelectedLayoutSectionIds] = useState<number[]>([])
   const [ticketMessage, setTicketMessage] = useState('')
   const ticketDraftRequestRef = useRef(0)
@@ -238,18 +237,6 @@ function SessionsPageContent() {
     return ticketDraftRequestRef.current === requestId && ticketFormSessionIdRef.current === sessionId
   }
 
-  const loadLegacyTicketAreas = (session: SessionAdminVO, requestId: number) => {
-    listVenueAreas(session.venueId, userId).then(areas => {
-      if (!isCurrentTicketRequest(requestId, session.id)) return
-      setSessionAreas(areas)
-      setTicketFormMode('legacy')
-    }).catch(() => {
-      if (!isCurrentTicketRequest(requestId, session.id)) return
-      setSessionAreas([])
-      setTicketFormMode('legacy')
-    })
-  }
-
   const loadTicketLayout = (session: SessionAdminVO, drafts: SeatCraftSectionVO[], requestId: number) => {
     getActivitySeatLayout(session.activityId, userId).then(layout => {
       if (!isCurrentTicketRequest(requestId, session.id)) return
@@ -273,12 +260,12 @@ function SessionsPageContent() {
       setSelectedLayoutSectionIds([])
       if (drafts.length === 0) {
         setTicketLayout(null)
-        loadLegacyTicketAreas(session, requestId)
+        setTicketFormMode('seatcraft')
         return
       }
       loadTicketLayout(session, drafts, requestId)
     } catch (err) {
-      if (isCurrentTicketRequest(requestId, session.id)) setTicketFormMode(ticketDrafts.length > 0 ? 'seatcraft' : 'legacy')
+      if (isCurrentTicketRequest(requestId, session.id)) setTicketFormMode('seatcraft')
       throw err
     }
   }
@@ -288,8 +275,6 @@ function SessionsPageContent() {
     setTicketFormSession(session)
     setTicketName('')
     setTicketPrice('')
-    setSelectedAreaIds([])
-    setSessionAreas([])
     setTicketDrafts([])
     setTicketLayout(null)
     setTicketFormMode('loading')
@@ -305,28 +290,24 @@ function SessionsPageContent() {
         if (drafts.length > 0) {
           loadTicketLayout(session, drafts, requestId)
         } else {
-          loadLegacyTicketAreas(session, requestId)
+          setTicketLayout(null)
+          setTicketFormMode('seatcraft')
         }
       })
       .catch(() => {
         if (!isCurrentTicketRequest(requestId, session.id)) return
         setTicketDrafts([])
         setTicketLayout(null)
-        loadLegacyTicketAreas(session, requestId)
+        setTicketFormMode('seatcraft')
       })
-  }
-
-  const toggleArea = (areaId: number) => {
-    setSelectedAreaIds(current => current.includes(areaId) ? current.filter(id => id !== areaId) : [...current, areaId])
   }
 
   const usingSeatCraftDrafts = ticketDrafts.length > 0
   const activeTicketLayout = ticketFormMode === 'seatcraft' && usingSeatCraftDrafts ? ticketLayout : null
   const usingSeatCraftEditor = activeTicketLayout !== null
-  const usingLegacyFallback = ticketFormMode === 'legacy'
-  const estimatedStock = usingSeatCraftDrafts
+  const estimatedSeatCount = usingSeatCraftDrafts
     ? ticketDrafts.filter(section => selectedLayoutSectionIds.includes(section.id)).reduce((sum, section) => sum + (section.seatCount || section.rows * section.cols), 0)
-    : sessionAreas.filter(area => selectedAreaIds.includes(area.id)).reduce((sum, area) => sum + area.rowCount * area.seatsPerRow, 0)
+    : 0
 
   const handleCreateTicketType = async () => {
     if (!ticketFormSession) return
@@ -342,31 +323,23 @@ function SessionsPageContent() {
       setTicketMessage('请选择绑定分区')
       return
     }
-    if (usingLegacyFallback && selectedAreaIds.length === 0) {
-      setTicketMessage('请选择绑定区域')
-      return
-    }
-    if (!usingSeatCraftEditor && !usingLegacyFallback) {
-      setTicketMessage('票档配置仍在加载，请稍后再试')
+    if (!usingSeatCraftEditor) {
+      setTicketMessage('当前场次尚未配置 SeatCraft 座位图，请先配置座位图后再创建票档')
       return
     }
     try {
       const seatCraftPayload = usingSeatCraftEditor ? { layoutSectionIds: selectedLayoutSectionIds } : {}
-      const legacyPayload = usingLegacyFallback ? { areaIds: selectedAreaIds } : {}
       await createAdminTicketType({
         userId,
         sessionId: ticketFormSession.id,
         name: ticketName.trim(),
         price: Number(ticketPrice),
-        totalStock: estimatedStock,
         ...seatCraftPayload,
-        ...legacyPayload,
       })
-      setTicketMessage(usingSeatCraftEditor ? '票档已创建，库存已按分区座位自动计算' : '票档已创建，库存已自动计算')
+      setTicketMessage('票档已创建，库存已按分区座位自动计算')
       setTicketName('')
       setTicketPrice('')
       setSelectedLayoutSectionIds([])
-      setSelectedAreaIds([])
       try {
         await refreshTicketDrafts(ticketFormSession)
       } catch (err) {
@@ -548,28 +521,17 @@ function SessionsPageContent() {
               ticketPrice={ticketPrice}
               onTicketNameChange={setTicketName}
               onTicketPriceChange={setTicketPrice}
-              estimatedStock={estimatedStock}
+              estimatedSeatCount={estimatedSeatCount}
               onSubmit={handleCreateTicketType}
             />
-          ) : usingLegacyFallback ? (
-            <div className="rounded-lg border border-dashed border-[#e5e5e5] bg-[#fafafa] p-4 opacity-80">
-              <div className="mb-4 grid gap-3 sm:grid-cols-2">
-                <input value={ticketName} onChange={event => setTicketName(event.target.value)} className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="票档名称，如 VIP" />
-                <input type="number" value={ticketPrice} onChange={event => setTicketPrice(event.target.value)} className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="票价" />
-              </div>
-              <div className="mb-3 text-[13px] text-[#666]">当前没有 SeatCraft drafts，使用 legacy 区域绑定。预计库存：{estimatedStock}</div>
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {sessionAreas.map(area => (
-              <label key={area.id} className={`cursor-pointer rounded-lg border p-3 text-[13px] ${selectedAreaIds.includes(area.id) ? 'border-[#ff1268] bg-[#fff7fa]' : 'border-[#f0f0f0]'}`}>
-                <div className="flex items-center gap-2 font-medium text-[#333]"><input type="checkbox" checked={selectedAreaIds.includes(area.id)} onChange={() => toggleArea(area.id)} />{area.name}</div>
-                <div className="mt-1 text-[#666]">{area.rowCount} 排 × 每排 {area.seatsPerRow} 座</div>
-              </label>
-                ))}
-              </div>
-              {sessionAreas.length === 0 && <div className="rounded-lg border border-[#f0f0f0] p-4 text-[13px] text-[#999]">当前场馆还没有配置座位区域，请先到场馆管理配置。</div>}
-              <button onClick={handleCreateTicketType} className="mt-4 rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">创建票档</button>
+          ) : (
+            <div className="rounded-lg border border-dashed border-[#e5e5e5] bg-[#fafafa] p-8 text-center text-[13px] text-[#999]">
+              <div>当前场次尚未配置 SeatCraft 座位图，请先配置座位图后再创建票档。</div>
+              <Link href={`/console/sessions/${ticketFormSession.id}/seat-layout`} className="mt-4 inline-flex rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">
+                去创建座位图
+              </Link>
             </div>
-          ) : null}
+          )}
           {ticketMessage && <div className="mt-3 text-[13px] text-[#666]">{ticketMessage}</div>}
         </div>
       )}

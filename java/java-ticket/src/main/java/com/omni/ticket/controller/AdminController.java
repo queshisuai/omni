@@ -8,6 +8,8 @@ import com.omni.common.util.JwtUtil;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.AdminSummaryResponse;
+import com.omni.ticket.dto.DeleteActivityRequest;
+import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatTemplateResponse;
@@ -329,18 +331,15 @@ public class AdminController {
     }
 
     @DeleteMapping("/activities/{id}")
-    public Result<Void> deleteActivity(@RequestParam Long userId, @PathVariable Long id) {
-        String role = checkRole(userId);
-        if (role == null) return Result.fail(403, "无权限");
-
-        Activity activity = activityMapper.selectById(id);
-        if (activity == null) return Result.fail(404, "活动不存在");
-
-        if ("organizer".equals(role) && !userId.equals(activity.getOrganizerId()))
-            return Result.fail(403, "只能删除自己主办的活动");
-
-        activityMapper.deleteById(id);
-        return Result.success();
+    public Result<DeleteActivityResponse> deleteActivity(@PathVariable Long id,
+                                                         @RequestBody DeleteActivityRequest request) {
+        if (request == null || request.getUserId() == null || request.getUserId() <= 0) {
+            return Result.fail(400, "用户ID不正确");
+        }
+        if (!StringUtils.hasText(request.getReason())) {
+            return Result.fail(400, "删除原因不能为空");
+        }
+        return Result.success(activityAdminService.deleteActivity(id, request));
     }
 
     @GetMapping("/activities")
@@ -358,6 +357,7 @@ public class AdminController {
         if ("organizer".equals(role)) {
             wrapper.eq(Activity::getOrganizerId, userId);
         }
+        wrapper.ne(Activity::getPublishStatus, "deleted");
         if (StringUtils.hasText(keyword)) {
             wrapper.like(Activity::getName, keyword.trim());
         }

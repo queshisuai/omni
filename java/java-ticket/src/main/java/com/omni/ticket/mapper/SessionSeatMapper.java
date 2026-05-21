@@ -46,7 +46,15 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
             "AND ticket_group_key = #{ticketGroupKey} AND status = 1 AND order_id IS NULL " +
             "AND NOT EXISTS (SELECT 1 FROM order_seat os WHERE os.session_seat_id = session_seat.id)")
     Long countAvailableByTicketGroupKey(@Param("sessionId") Long sessionId,
-                                        @Param("ticketGroupKey") String ticketGroupKey);
+                                         @Param("ticketGroupKey") String ticketGroupKey);
+
+    @Select("SELECT id FROM session_seat WHERE session_id = #{sessionId} " +
+            "AND ticket_type_id = #{ticketTypeId} AND status = 1 AND order_id IS NULL " +
+            "AND NOT EXISTS (SELECT 1 FROM order_seat os WHERE os.session_seat_id = session_seat.id) " +
+            "ORDER BY random() LIMIT #{quantity}")
+    List<Long> selectRandomAvailableSeatIds(@Param("sessionId") Long sessionId,
+                                            @Param("ticketTypeId") Long ticketTypeId,
+                                            @Param("quantity") Integer quantity);
 
     @Update("UPDATE session_seat SET status = 2, ticket_type_id = #{ticketTypeId}, " +
             "lock_expire_time = #{lockExpireTime}, update_time = CURRENT_TIMESTAMP " +

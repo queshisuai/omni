@@ -163,17 +163,18 @@ public class OrderService {
         int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
-        if (hasSeatIds) {
-            TicketSalesLockRequest lockRequest = new TicketSalesLockRequest();
-            lockRequest.setOrderId(0L);
-            lockRequest.setSessionId(request.getSessionId());
-            lockRequest.setTicketTypeId(request.getTicketTypeId());
-            lockRequest.setSeatIds(request.getSeatIds());
-            lockRequest.setQuantity(quantity);
-            lockRequest.setLockExpireTime(LocalDateTime.now().plusMinutes(15));
-            lockSeats(lockRequest);
-        } else {
-            lockStockForTicketType(request.getTicketTypeId(), quantity);
+        TicketSalesLockRequest lockRequest = new TicketSalesLockRequest();
+        lockRequest.setOrderId(0L);
+        lockRequest.setSessionId(request.getSessionId());
+        lockRequest.setTicketTypeId(request.getTicketTypeId());
+        lockRequest.setSeatIds(request.getSeatIds());
+        lockRequest.setQuantity(quantity);
+        lockRequest.setLockExpireTime(LocalDateTime.now().plusMinutes(15));
+        lockRequest.setAllocateRandom(!hasSeatIds);
+        TicketSalesSeatLockResponse lockResponse = lockSeats(lockRequest);
+        List<Long> lockedSeatIds = lockResponse.getLockedSeatIds() != null ? lockResponse.getLockedSeatIds() : request.getSeatIds();
+        if (!hasSeatIds && lockResponse.getSeatLabels() != null) {
+            quote.setSeatLabels(String.join(", ", lockResponse.getSeatLabels()));
         }
         Order order = buildPendingOrder(
                 request.getUserId(),
@@ -183,10 +184,10 @@ public class OrderService {
                 quote.getUnitPrice());
         orderMapper.insert(order);
         writeSnapshot(order, quote);
-        if (hasSeatIds && orderSeatMapper != null) {
+        if (lockedSeatIds != null && !lockedSeatIds.isEmpty() && orderSeatMapper != null) {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime expireTime = now.plusMinutes(15);
-            for (Long seatId : request.getSeatIds()) {
+            for (Long seatId : lockedSeatIds) {
                 OrderSeat orderSeat = new OrderSeat();
                 orderSeat.setOrderId(order.getId());
                 orderSeat.setSessionSeatId(seatId);

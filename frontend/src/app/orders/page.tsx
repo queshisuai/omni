@@ -36,6 +36,7 @@ interface EnrichedOrder extends OrderEntity {
   sessionTime: string
   ticketName: string
   unitPrice: number
+  seatLabels: string
 }
 
 function enrichOrders(orders: OrderEntity[]): EnrichedOrder[] {
@@ -49,6 +50,7 @@ function enrichOrders(orders: OrderEntity[]): EnrichedOrder[] {
       sessionTime: order.sessionTime || '',
       ticketName: order.ticketName || '未知票档',
       unitPrice: order.unitPrice || order.amount / order.quantity,
+      seatLabels: order.seatLabels || '座位信息生成中',
     }
   })
 }
@@ -388,6 +390,7 @@ export default function OrdersPage() {
                         <span className="mx-2">|</span>
                         <span>单价 ¥{(order.unitPrice || 0).toFixed(2)}</span>
                       </div>
+                      <div className="text-[13px] text-[#666]">座位：{order.seatLabels}</div>
                       <div className="text-[20px] text-[#ff1268] font-medium mt-1">
                         ¥{order.amount.toFixed(2)}
                       </div>

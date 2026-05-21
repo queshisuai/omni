@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -198,7 +199,7 @@ class OrderSeatServiceTest {
     }
 
     @Test
-    void createOrderWithSeatsAllowsStandingTicketWithoutSeatIdsAndLocksStock() {
+    void createOrderWithSeatsWithoutSeatIdsRandomlyLocksRealSeats() {
         LockSeatsRequest request = new LockSeatsRequest();
         request.setUserId(2004L);
         request.setSessionId(101L);
@@ -211,17 +212,20 @@ class OrderSeatServiceTest {
         when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.success(quote));
 
-        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token")))
-                .thenReturn(Result.success());
+        TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
+        lockResponse.setLockedSeatIds(List.of(3001L, 3002L, 3003L));
+        lockResponse.setSeatLabels(List.of("A区1排1座", "A区1排2座", "A区1排3座"));
+        when(ticketSalesInternalClient.lockSeats(any(TicketSalesLockRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success(lockResponse));
 
         Order order = service.createOrderWithSeats(request);
 
         assertEquals(3, order.getQuantity());
         assertEquals(new BigDecimal("540.00"), order.getAmount());
         assertEquals(OrderService.STATUS_PENDING, order.getStatus());
-        verify(ticketSalesInternalClient).lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token"));
-        verify(ticketSalesInternalClient, never()).lockSeats(any(), any());
-        verify(orderSeatMapper, never()).insert(any());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), any());
+        verify(ticketSalesInternalClient).lockSeats(argThat(lock -> Boolean.TRUE.equals(lock.getAllocateRandom()) && lock.getQuantity() == 3), eq("test-internal-token"));
+        verify(orderSeatMapper, times(3)).insert(any());
     }
 
     @Test
@@ -238,7 +242,7 @@ class OrderSeatServiceTest {
         when(ticketSalesInternalClient.quote(any(TicketSalesQuoteRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.success(quote));
 
-        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), eq("test-internal-token")))
+        when(ticketSalesInternalClient.lockSeats(any(TicketSalesLockRequest.class), eq("test-internal-token")))
                 .thenReturn(Result.fail(400, "票档库存不足"));
 
         BusinessException error = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));

@@ -8,6 +8,8 @@ import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.client.PaymentInternalClient;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
+import com.omni.ticket.dto.DeleteActivityRequest;
+import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.DirectRefundRequest;
 import com.omni.ticket.dto.DirectRefundResponse;
 import com.omni.ticket.dto.OrderInfoResponse;
@@ -31,6 +33,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 
 @Service
@@ -104,6 +107,53 @@ public class ActivityAdminService {
         }
         activity.setStatus(request.getStatus());
         activityMapper.updateById(activity);
+    }
+
+    public DeleteActivityResponse deleteActivity(Long activityId, DeleteActivityRequest request) {
+        if (activityId == null || activityId <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "活动ID不正确");
+        }
+        if (request == null || request.getUserId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "删除参数不能为空");
+        }
+        if (!StringUtils.hasText(request.getReason())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "删除原因不能为空");
+        }
+        Activity activity = activityMapper.selectById(activityId);
+        if (activity == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "活动不存在");
+        }
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
+        if ("organizer".equals(user.getRole()) && !request.getUserId().equals(activity.getOrganizerId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "只能管理自己主办的活动");
+        }
+
+        List<Session> sessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>()
+                .eq(Session::getActivityId, activityId));
+        List<Long> sessionIds = sessions == null ? Collections.emptyList()
+                : sessions.stream().map(Session::getId).collect(Collectors.toList());
+        List<OrderInfoResponse> paidOrders = sessionIds.isEmpty()
+                ? Collections.emptyList()
+                : unwrapOrders(orderInternalClient.listPaidBySessions(new PaidOrdersBySessionsRequest(sessionIds), requireInternalApiToken()));
+        if (paidOrders != null && !paidOrders.isEmpty() && !"deactivated".equals(activity.getPublishStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "活动存在已支付订单，请先下架并完成退款");
+        }
+
+        activity.setStatus(0);
+        activity.setPublishStatus("deleted");
+        activity.setDeleteReason(request.getReason().trim());
+        activity.setDeletedBy(request.getUserId());
+        activity.setDeletedAt(LocalDateTime.now());
+        activityMapper.updateById(activity);
+
+        DeleteActivityResponse response = new DeleteActivityResponse();
+        response.setActivityId(activityId);
+        response.setStatus(activity.getStatus());
+        response.setPublishStatus(activity.getPublishStatus());
+        response.setDeleted(true);
+        response.setRefundBlocked(false);
+        response.setMessage("活动已删除");
+        return response;
     }
 
     public RefundImpactResponse deactivateOrganizer(DeactivateOrganizerRequest request) {
