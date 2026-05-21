@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="NotificationApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="ACTIVE_PROFILES" value="prod-split" />
+    <envs>
+      <env name="SPRING_DATASOURCE_URL" value="jdbc:postgresql://localhost:5432/omni_notification" />
+      <env name="SPRING_DATASOURCE_USERNAME" value="postgres" />
+      <env name="SPRING_DATASOURCE_PASSWORD" value="123456" />
+      <env name="INTERNAL_API_TOKEN" value="omni-local-internal-token" />
+    </envs>
+    <module name="java-notification" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.omni.notification.NotificationApplication" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
