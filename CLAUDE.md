@@ -57,13 +57,14 @@ Omni/
 
 ## 数据库
 
-- **数据库名**：`omni_ticket`
+- **当前本机拆分运行库**：`omni_user`、`omni_ticket_split`、`omni_order`、`omni_payment`、`omni_notification`
+- **历史共享库 / 迁移源**：`omni_ticket`，当前 `prod-split` 联调不再作为业务运行库使用。
 - **用户**：`postgres` / 密码：`123456`
 - **端口**：`5432`
 - **注意**：表名无前缀，保留字表名用双引号（如 `"user"`、`"order"`）
 - **角色字段**：`user.role` = `user` / `organizer` / `admin`
 - **`order` 表外键**：`user_id` 引用 `"user"(id)`，下单必须用数据库中真实存在的用户
-- **默认模式**：默认 `application.yml` 仍面向共享数据库阶段；不要改默认 datasource 指向 service schema。
+- **默认模式**：默认 `application.yml` 仍面向历史共享数据库阶段；当前联调用 `prod-split`，不要误启默认 profile 后连回 `omni_ticket`。
 - **本地 schema isolation**：只在 disposable local DB 使用 `local-schema` profile，服务 schema 为 `user_service`、`ticket_service`、`order_service`、`payment_service`、`notification_service`。
 - **本地隔离 SQL**：`sql/local/*` 只能用于本地 disposable DB，禁止接入 staging / production 迁移链路。
 
@@ -73,7 +74,9 @@ Omni/
 2. **后端服务**：java-gateway → java-user → java-ticket → java-order → java-payment → java-notification
 3. **前端**：`cd frontend && pnpm dev`
 
-每个 Java 服务默认启动命令：`cd java/<模块> && mvn spring-boot:run`
+当前本机拆分库启动推荐使用根目录 `start-project.ps1`，脚本默认以 `prod-split` profile 启动五个业务服务并连接五个拆分库。仅需回到历史共享库模式时才使用 `start-project.ps1 -UseSharedDatabase`。
+
+历史共享库启动命令：`cd java/<模块> && mvn spring-boot:run`
 
 本地 schema isolation 启动命令：`cd java/<模块> && mvn spring-boot:run -Dspring-boot.run.profiles=local-schema`
 

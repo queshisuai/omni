@@ -3,7 +3,8 @@
 param(
     [switch]$SkipJava,
     [switch]$SkipFrontend,
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+    [switch]$UseSharedDatabase
 )
 
 $ErrorActionPreference = "Continue"
@@ -113,19 +114,29 @@ if (-not $SkipInstall -and -not $SkipFrontend) {
 if (-not $SkipJava) {
     Write-Step "Starting Java Services..."
 
+    if ($UseSharedDatabase) {
+        Write-Host "[Warning] Starting business services with the legacy shared omni_ticket database." -ForegroundColor Yellow
+    } else {
+        Write-Host "[Info] Starting business services with prod-split local databases." -ForegroundColor Cyan
+    }
+
     $javaServices = @(
-        @{Name="java-gateway"; Port=8088; Path="java\java-gateway"},
-        @{Name="java-user"; Port=8081; Path="java\java-user"},
-        @{Name="java-ticket"; Port=8082; Path="java\java-ticket"},
-        @{Name="java-order"; Port=8083; Path="java\java-order"},
-        @{Name="java-payment"; Port=8084; Path="java\java-payment"},
-        @{Name="java-notification"; Port=8085; Path="java\java-notification"}
+        @{Name="java-gateway"; Port=8088; Path="java\java-gateway"; Database=$null},
+        @{Name="java-user"; Port=8081; Path="java\java-user"; Database="omni_user"},
+        @{Name="java-ticket"; Port=8082; Path="java\java-ticket"; Database="omni_ticket_split"},
+        @{Name="java-order"; Port=8083; Path="java\java-order"; Database="omni_order"},
+        @{Name="java-payment"; Port=8084; Path="java\java-payment"; Database="omni_payment"},
+        @{Name="java-notification"; Port=8085; Path="java\java-notification"; Database="omni_notification"}
     )
 
     foreach ($svc in $javaServices) {
         $fullPath = Join-Path $projectRoot $svc.Path
         Write-Host "Starting $($svc.Name) on port $($svc.Port)..." -ForegroundColor Cyan
-        Start-Service-InBackground -Name $svc.Name -Command "cd $fullPath; mvn spring-boot:run" -WorkDir $fullPath
+        $command = "cd $fullPath; mvn spring-boot:run"
+        if (-not $UseSharedDatabase -and $svc.Database) {
+            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=omni-local-internal-token`""
+        }
+        Start-Service-InBackground -Name $svc.Name -Command $command -WorkDir $fullPath
         Start-Sleep -Seconds 5
     }
     Write-Host "`n[Info] Java services need a few minutes to start" -ForegroundColor Yellow

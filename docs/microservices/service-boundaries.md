@@ -2,7 +2,7 @@
 
 ## Goal
 
-当前阶段采用逻辑解耦优先策略：服务仍共用同一个 PostgreSQL 实例，但生产代码必须遵守服务数据所有权，不能通过 Mapper 或 SQL 直接读取其他服务拥有的表。
+当前代码已完成逻辑边界收敛，并支持 `prod-split` profile 连接服务拆分库。默认 `application.yml` 仍保留历史共享库配置用于兼容旧阶段，但当前本机拆分联调不应再连接 `omni_ticket`。
 
 ## Ownership
 
@@ -29,7 +29,8 @@
 
 ## Current Exceptions
 
-- 服务仍共用同一个 PostgreSQL 数据库实例；这是部署拓扑例外，不是代码访问边界例外。
+- 历史默认 profile 仍指向共享库 `omni_ticket`；当前拆分联调必须使用 `prod-split` profile 或等价 datasource 覆盖。
+- 本机物理拆分预演使用同一个 PostgreSQL 实例内的五个 database；这是本机拓扑限制，不是代码访问边界例外。
 - 历史 SQL 迁移中仍存在跨服务外键；这些约束将在 schema isolation readiness 阶段清点并分批处理。
 - 运行时代码不允许新增跨服务 Mapper、Entity 或 SQL join 访问。
 
