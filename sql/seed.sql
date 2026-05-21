@@ -9,6 +9,7 @@ TRUNCATE TABLE
     notification,
     refund_request,
     payment,
+    order_snapshot,
     order_seat,
     seat,
     reservation,
@@ -18,6 +19,11 @@ TRUNCATE TABLE
     ticket_type,
     session,
     activity,
+    seat_override,
+    ticket_group,
+    seat_block,
+    venue_default_layout_section,
+    venue_default_layout,
     venue_seat,
     venue_area,
     venue_application,
@@ -146,6 +152,43 @@ CROSS JOIN LATERAL generate_series(va.seat_start, va.seat_start + va.seats_per_r
 ORDER BY va.id, r.row_no, s.seat_no;
 
 SELECT setval('venue_seat_id_seq', COALESCE((SELECT MAX(id) FROM venue_seat), 1), true);
+
+-- ========== 场馆 SeatCraft 默认座位图 ==========
+INSERT INTO venue_default_layout (id, venue_id, name, template_type, stage_title, stage_x, stage_y, canvas_width, canvas_height, status)
+SELECT id, id, name || ' SeatCraft 座位图', 'concert', '舞台', 80, 40, 960, 720, 1
+FROM venue
+ORDER BY id;
+
+INSERT INTO ticket_group (owner_type, owner_id, group_key, name, source_block_ids, sort, status)
+SELECT 'venue', venue_id, 'area-' || id, name, 'area-' || id, sort, 1
+FROM venue_area
+WHERE status = 1
+ORDER BY venue_id, sort, id;
+
+INSERT INTO seat_block (owner_type, owner_id, block_key, name, block_type, ticket_group_key, x, y, rows, cols, row_spacing, seat_spacing, color, sort, status)
+SELECT
+    'venue',
+    venue_id,
+    'area-' || id,
+    name,
+    'gridBlock',
+    'area-' || id,
+    120 + (sort - 1) * 240,
+    180,
+    row_count,
+    seats_per_row,
+    20,
+    18,
+    color,
+    sort,
+    1
+FROM venue_area
+WHERE status = 1
+ORDER BY venue_id, sort, id;
+
+SELECT setval('venue_default_layout_id_seq', COALESCE((SELECT MAX(id) FROM venue_default_layout), 1), true);
+SELECT setval('seat_block_id_seq', COALESCE((SELECT MAX(id) FROM seat_block), 1), true);
+SELECT setval('ticket_group_id_seq', COALESCE((SELECT MAX(id) FROM ticket_group), 1), true);
 
 -- ========== 活动 ==========
 INSERT INTO activity (id, category_id, artist_id, organizer_id, name, description, poster, status) VALUES
@@ -287,13 +330,161 @@ END $$;
 SELECT setval('ticket_type_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type), 1), true);
 SELECT setval('ticket_type_area_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type_area), 1), true);
 
+-- ========== 场次级 SeatCraft 座位图与真实座位关联 ==========
+INSERT INTO session_seat_layout (id, session_id, name, template_type, stage_title, stage_x, stage_y, canvas_width, canvas_height, status)
+SELECT s.id, s.id, a.name || ' 场次座位图', 'concert', '舞台', 80, 40, 960, 720, 1
+FROM session s
+JOIN activity a ON a.id = s.activity_id
+ORDER BY s.id;
+
+INSERT INTO ticket_group (owner_type, owner_id, group_key, name, source_block_ids, sort, status)
+SELECT 'session', tta.session_id, 'area-' || tta.area_id, tt.name, 'area-' || tta.area_id, va.sort, 1
+FROM ticket_type_area tta
+JOIN ticket_type tt ON tt.id = tta.ticket_type_id
+JOIN venue_area va ON va.id = tta.area_id
+ORDER BY tta.session_id, va.sort, va.id;
+
+INSERT INTO seat_block (owner_type, owner_id, block_key, name, block_type, ticket_group_key, x, y, rows, cols, row_spacing, seat_spacing, color, sort, status)
+SELECT
+    'session',
+    tta.session_id,
+    'area-' || va.id,
+    va.name,
+    'gridBlock',
+    'area-' || va.id,
+    120 + (va.sort - 1) * 240,
+    180,
+    va.row_count,
+    va.seats_per_row,
+    20,
+    18,
+    va.color,
+    va.sort,
+    1
+FROM ticket_type_area tta
+JOIN venue_area va ON va.id = tta.area_id
+ORDER BY tta.session_id, va.sort, va.id;
+
+INSERT INTO session_seat_layout_section (id, session_layout_id, ticket_type_id, section_key, name, rows, cols, x, y, color, type, layout, seat_count, sort, status)
+SELECT
+    tt.id,
+    ssl.id,
+    tt.id,
+    'area-' || va.id,
+    va.name,
+    va.row_count,
+    va.seats_per_row,
+    120 + (va.sort - 1) * 240,
+    180,
+    va.color,
+    'core',
+    'grid',
+    va.row_count * va.seats_per_row,
+    va.sort,
+    1
+FROM ticket_type_area tta
+JOIN ticket_type tt ON tt.id = tta.ticket_type_id
+JOIN venue_area va ON va.id = tta.area_id
+JOIN session_seat_layout ssl ON ssl.session_id = tta.session_id
+ORDER BY tta.session_id, va.sort, va.id;
+
+UPDATE session_seat ss
+SET ticket_type_id = tta.ticket_type_id,
+    layout_section_id = ssls.id,
+    seat_block_id = sb.id,
+    ticket_group_key = 'area-' || ss.area_id,
+    generated_row_no = ss.row_no,
+    generated_seat_no = ss.seat_no,
+    update_time = CURRENT_TIMESTAMP
+FROM ticket_type_area tta
+JOIN session_seat_layout ssl ON ssl.session_id = tta.session_id
+JOIN session_seat_layout_section ssls ON ssls.session_layout_id = ssl.id AND ssls.ticket_type_id = tta.ticket_type_id
+JOIN seat_block sb ON sb.owner_type = 'session' AND sb.owner_id = tta.session_id AND sb.block_key = 'area-' || tta.area_id
+WHERE ss.session_id = tta.session_id
+  AND ss.area_id = tta.area_id;
+
+SELECT setval('session_seat_layout_id_seq', COALESCE((SELECT MAX(id) FROM session_seat_layout), 1), true);
+SELECT setval('session_seat_layout_section_id_seq', COALESCE((SELECT MAX(id) FROM session_seat_layout_section), 1), true);
+SELECT setval('seat_block_id_seq', COALESCE((SELECT MAX(id) FROM seat_block), 1), true);
+SELECT setval('ticket_group_id_seq', COALESCE((SELECT MAX(id) FROM ticket_group), 1), true);
+
+-- ========== 真实已购订单示例：订单、座位、快照、支付记录完整闭环 ==========
+DO $$
+DECLARE
+    order_one BIGINT := 1;
+    order_two BIGINT := 2;
+    seat_ids_one BIGINT[];
+    seat_ids_two BIGINT[];
+    seat_labels_one TEXT;
+    seat_labels_two TEXT;
+BEGIN
+    SELECT ARRAY_AGG(id ORDER BY id) INTO seat_ids_one
+    FROM (
+        SELECT ss.id
+        FROM session_seat ss
+        WHERE ss.session_id = 1 AND ss.area_id = 1 AND ss.status = 1
+        ORDER BY ss.row_no, ss.seat_no
+        LIMIT 2
+    ) picked;
+
+    SELECT ARRAY_AGG(id ORDER BY id) INTO seat_ids_two
+    FROM (
+        SELECT ss.id
+        FROM session_seat ss
+        WHERE ss.session_id = 4 AND ss.area_id = 5 AND ss.status = 1
+        ORDER BY ss.row_no, ss.seat_no
+        LIMIT 1
+    ) picked;
+
+    INSERT INTO "order" (id, order_no, user_id, session_id, ticket_type_id, quantity, amount, status, create_time, update_time)
+    VALUES
+    (order_one, 'DMSEED202605210001', 2004, 1, 1, 2, (SELECT price * 2 FROM ticket_type WHERE id = 1), 2, CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '3 days'),
+    (order_two, 'DMSEED202605210002', 2008, 4, 11, 1, (SELECT price FROM ticket_type WHERE id = 11), 2, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days');
+
+    INSERT INTO order_seat (order_id, session_seat_id, session_id, ticket_type_id, status, create_time, update_time)
+    SELECT order_one, unnest(seat_ids_one), 1, 1, 1, CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '3 days';
+
+    INSERT INTO order_seat (order_id, session_seat_id, session_id, ticket_type_id, status, create_time, update_time)
+    SELECT order_two, unnest(seat_ids_two), 4, 11, 1, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days';
+
+    UPDATE session_seat SET status = 3, order_id = order_one, ticket_type_id = 1, update_time = CURRENT_TIMESTAMP - INTERVAL '3 days'
+    WHERE id = ANY(seat_ids_one);
+
+    UPDATE session_seat SET status = 3, order_id = order_two, ticket_type_id = 11, update_time = CURRENT_TIMESTAMP - INTERVAL '2 days'
+    WHERE id = ANY(seat_ids_two);
+
+    UPDATE ticket_type SET remain_stock = remain_stock - 2 WHERE id = 1;
+    UPDATE ticket_type SET remain_stock = remain_stock - 1 WHERE id = 11;
+
+    SELECT STRING_AGG(seat_label, ', ' ORDER BY id) INTO seat_labels_one FROM session_seat WHERE id = ANY(seat_ids_one);
+    SELECT STRING_AGG(seat_label, ', ' ORDER BY id) INTO seat_labels_two FROM session_seat WHERE id = ANY(seat_ids_two);
+
+    INSERT INTO payment (id, order_id, payment_no, payment_method, out_trade_no, trade_no, buyer_id, amount, status, pay_time, create_time)
+    VALUES
+    (1, order_one, 'PAYSEED202605210001', 'ALIPAY', 'DMSEED202605210001', 'ALI-SEED-0001', '2004', (SELECT amount FROM "order" WHERE id = order_one), 1, CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '3 days'),
+    (2, order_two, 'PAYSEED202605210002', 'ALIPAY', 'DMSEED202605210002', 'ALI-SEED-0002', '2008', (SELECT amount FROM "order" WHERE id = order_two), 1, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days');
+
+    INSERT INTO order_snapshot (order_id, activity_id, activity_name, activity_poster, tour_id, station_id, session_id, session_time, venue_name, ticket_type_id, ticket_name, unit_price, quantity, seat_labels, create_time, update_time)
+    SELECT o.id, a.id, a.name, a.poster, a.tour_id, a.station_id, o.session_id, s.start_time, v.name, tt.id, tt.name, tt.price, o.quantity,
+           CASE WHEN o.id = order_one THEN seat_labels_one ELSE seat_labels_two END,
+           o.create_time, o.update_time
+    FROM "order" o
+    JOIN session s ON s.id = o.session_id
+    JOIN activity a ON a.id = s.activity_id
+    JOIN venue v ON v.id = s.venue_id
+    JOIN ticket_type tt ON tt.id = o.ticket_type_id
+    WHERE o.id IN (order_one, order_two);
+END $$;
+
+SELECT setval('order_id_seq', COALESCE((SELECT MAX(id) FROM "order"), 1), true);
+SELECT setval('order_seat_id_seq', COALESCE((SELECT MAX(id) FROM order_seat), 1), true);
+SELECT setval('payment_id_seq', COALESCE((SELECT MAX(id) FROM payment), 1), true);
+SELECT setval('order_snapshot_id_seq', COALESCE((SELECT MAX(id) FROM order_snapshot), 1), true);
+
 -- ========== 示例场馆申请 ==========
 INSERT INTO venue_application (id, applicant_id, venue_id, venue_name, city, address, capacity, contact_name, contact_phone, qualification_no, business_scope, description, status, reviewer_id, review_note, review_time) VALUES
 (1, 2005, 4, '上海艺海剧场', '上海', '上海市黄浦区人民大道300号', 1600, '周南', '13800000003', 'VENUE-SH-001', '话剧歌剧演出', '已关联公共场馆，供主办方创建场次使用。', 1, 2002, '已关联公共场馆', CURRENT_TIMESTAMP - INTERVAL '20 days'),
 (2, 2007, NULL, '苏州亲子艺术中心', '苏州', '苏州市工业园区星湖街66号', 1200, '赵童', '13800000005', 'VENUE-SZ-001', '儿童亲子演出', '待审核示例申请。', 0, NULL, NULL, NULL);
 SELECT setval('venue_application_id_seq', 2, true);
 
--- 订单、付款和退款记录不写入种子数据，避免污染普通用户真实购票列表。
-SELECT setval('order_id_seq', 1, false);
-SELECT setval('order_seat_id_seq', 1, false);
-SELECT setval('payment_id_seq', 1, false);
+-- 种子订单保留真实票档、座位、快照和支付记录，用于订单页演示。

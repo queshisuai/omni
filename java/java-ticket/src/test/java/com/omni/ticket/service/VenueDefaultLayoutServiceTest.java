@@ -5,8 +5,10 @@ import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Venue;
+import com.omni.ticket.entity.VenueArea;
 import com.omni.ticket.entity.VenueDefaultLayout;
 import com.omni.ticket.service.UserAccessService;
+import com.omni.ticket.mapper.VenueAreaMapper;
 import com.omni.ticket.mapper.VenueDefaultLayoutMapper;
 import com.omni.ticket.mapper.VenueDefaultLayoutSectionMapper;
 import com.omni.ticket.mapper.VenueMapper;
@@ -38,6 +40,8 @@ class VenueDefaultLayoutServiceTest {
     @Mock
     private VenueMapper venueMapper;
     @Mock
+    private VenueAreaMapper venueAreaMapper;
+    @Mock
     private UserAccessService userAccessService;
     @Mock
     private SeatCraftBlockLayoutService blockLayoutService;
@@ -46,7 +50,7 @@ class VenueDefaultLayoutServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new VenueDefaultLayoutService(layoutMapper, sectionMapper, venueMapper, userAccessService, blockLayoutService);
+        service = new VenueDefaultLayoutService(layoutMapper, sectionMapper, venueMapper, venueAreaMapper, userAccessService, blockLayoutService);
     }
 
     @Test
@@ -91,6 +95,28 @@ class VenueDefaultLayoutServiceTest {
         assertSame(blockLayout, response.getBlockLayout());
     }
 
+    @Test
+    void getLayoutBackfillsFromLegacyVenueAreasWhenDefaultLayoutIsMissing() {
+        when(layoutMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(venueMapper.selectById(9L)).thenReturn(venue());
+        when(venueAreaMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(area(1L, "VIP区", 5, 12, 1), area(2L, "A区", 8, 16, 2)));
+        doAnswer(invocation -> {
+            VenueDefaultLayout layout = invocation.getArgument(0);
+            layout.setId(88L);
+            return 1;
+        }).when(layoutMapper).insert(any(VenueDefaultLayout.class));
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.getLayout(9L);
+
+        assertEquals("北京星河体育馆 SeatCraft 座位图", response.getName());
+        assertEquals(2, response.getBlockLayout().getBlocks().size());
+        assertEquals("VIP区", response.getBlockLayout().getBlocks().get(0).getName());
+        assertEquals(5, response.getBlockLayout().getBlocks().get(0).getRows());
+        assertEquals(12, response.getBlockLayout().getBlocks().get(0).getCols());
+        assertEquals(2, response.getBlockLayout().getTicketGroups().size());
+        verify(blockLayoutService).replaceLayout(eq("venue"), eq(9L), any(SeatCraftBlockDtos.LayoutRequest.class));
+    }
+
     private SeatCraftLayoutDtos.LayoutResponse blockOnlyLayout() {
         SeatCraftLayoutDtos.LayoutResponse layout = new SeatCraftLayoutDtos.LayoutResponse();
         layout.setName("默认座位图");
@@ -132,7 +158,21 @@ class VenueDefaultLayoutServiceTest {
     private Venue venue() {
         Venue venue = new Venue();
         venue.setId(9L);
+        venue.setName("北京星河体育馆");
         venue.setStatus(1);
         return venue;
+    }
+
+    private VenueArea area(Long id, String name, Integer rows, Integer cols, Integer sort) {
+        VenueArea area = new VenueArea();
+        area.setId(id);
+        area.setVenueId(9L);
+        area.setName(name);
+        area.setRowCount(rows);
+        area.setSeatsPerRow(cols);
+        area.setColor("#ff1268");
+        area.setSort(sort);
+        area.setStatus(1);
+        return area;
     }
 }

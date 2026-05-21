@@ -2,6 +2,7 @@ package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.*;
@@ -11,7 +12,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -21,6 +24,7 @@ public class VenueDefaultLayoutService {
     private final VenueDefaultLayoutMapper layoutMapper;
     private final VenueDefaultLayoutSectionMapper sectionMapper;
     private final VenueMapper venueMapper;
+    private final VenueAreaMapper venueAreaMapper;
     private final UserAccessService userAccessService;
     private final SeatCraftBlockLayoutService blockLayoutService;
 
@@ -28,18 +32,20 @@ public class VenueDefaultLayoutService {
                                        VenueDefaultLayoutSectionMapper sectionMapper,
                                        VenueMapper venueMapper,
                                        UserAccessService userAccessService) {
-        this(layoutMapper, sectionMapper, venueMapper, userAccessService, null);
+        this(layoutMapper, sectionMapper, venueMapper, null, userAccessService, null);
     }
 
     @Autowired
     public VenueDefaultLayoutService(VenueDefaultLayoutMapper layoutMapper,
-                                      VenueDefaultLayoutSectionMapper sectionMapper,
-                                      VenueMapper venueMapper,
-                                      UserAccessService userAccessService,
-                                      SeatCraftBlockLayoutService blockLayoutService) {
+                                       VenueDefaultLayoutSectionMapper sectionMapper,
+                                       VenueMapper venueMapper,
+                                       VenueAreaMapper venueAreaMapper,
+                                       UserAccessService userAccessService,
+                                       SeatCraftBlockLayoutService blockLayoutService) {
         this.layoutMapper = layoutMapper;
         this.sectionMapper = sectionMapper;
         this.venueMapper = venueMapper;
+        this.venueAreaMapper = venueAreaMapper;
         this.userAccessService = userAccessService;
         this.blockLayoutService = blockLayoutService;
     }
@@ -129,7 +135,7 @@ public class VenueDefaultLayoutService {
                 new LambdaQueryWrapper<VenueDefaultLayout>()
                         .eq(VenueDefaultLayout::getVenueId, venueId)
                         .eq(VenueDefaultLayout::getStatus, 1));
-        if (layout == null) return null;
+        if (layout == null) return backfillFromLegacyVenueAreas(venueId);
 
         List<VenueDefaultLayoutSection> sections = sectionMapper.selectList(
                 new LambdaQueryWrapper<VenueDefaultLayoutSection>()
@@ -137,6 +143,76 @@ public class VenueDefaultLayoutService {
                         .eq(VenueDefaultLayoutSection::getStatus, 1)
                         .orderByAsc(VenueDefaultLayoutSection::getSort));
         return toLayoutResponse(layout, sections);
+    }
+
+    @Transactional
+    public SeatCraftLayoutDtos.LayoutResponse backfillFromLegacyVenueAreas(Long venueId) {
+        if (venueAreaMapper == null || blockLayoutService == null) return null;
+        Venue venue = venueMapper.selectById(venueId);
+        if (venue == null) return null;
+        List<VenueArea> areas = venueAreaMapper.selectList(new LambdaQueryWrapper<VenueArea>()
+                .eq(VenueArea::getVenueId, venueId)
+                .eq(VenueArea::getStatus, 1)
+                .orderByAsc(VenueArea::getSort)
+                .orderByAsc(VenueArea::getId));
+        if (areas == null || areas.isEmpty()) return null;
+
+        LocalDateTime now = LocalDateTime.now();
+        VenueDefaultLayout layout = new VenueDefaultLayout();
+        layout.setVenueId(venueId);
+        layout.setName((venue.getName() != null ? venue.getName() : "场馆 #" + venueId) + " SeatCraft 座位图");
+        layout.setTemplateType("concert");
+        layout.setStageTitle("舞台");
+        layout.setStageX(80);
+        layout.setStageY(40);
+        layout.setCanvasWidth(960);
+        layout.setCanvasHeight(720);
+        layout.setStatus(1);
+        layout.setCreateTime(now);
+        layout.setUpdateTime(now);
+        layoutMapper.insert(layout);
+
+        SeatCraftBlockDtos.LayoutRequest blockLayout = buildBlockLayoutFromAreas(areas);
+        blockLayoutService.replaceLayout("venue", venueId, blockLayout);
+
+        SeatCraftLayoutDtos.LayoutResponse response = toLayoutResponse(layout, List.of());
+        response.setBlockLayout(blockLayout);
+        return response;
+    }
+
+    private SeatCraftBlockDtos.LayoutRequest buildBlockLayoutFromAreas(List<VenueArea> areas) {
+        SeatCraftBlockDtos.LayoutRequest layout = new SeatCraftBlockDtos.LayoutRequest();
+        List<SeatCraftBlockDtos.BlockRequest> blocks = new ArrayList<>();
+        List<SeatCraftBlockDtos.TicketGroupRequest> groups = new ArrayList<>();
+        for (int i = 0; i < areas.size(); i++) {
+            VenueArea area = areas.get(i);
+            String key = "area-" + area.getId();
+            SeatCraftBlockDtos.BlockRequest block = new SeatCraftBlockDtos.BlockRequest();
+            block.setBlockKey(key);
+            block.setName(area.getName());
+            block.setBlockType("gridBlock");
+            block.setTicketGroupKey(key);
+            block.setX(BigDecimal.valueOf(120L + (long) i * 240L));
+            block.setY(BigDecimal.valueOf(180L));
+            block.setRows(area.getRowCount());
+            block.setCols(area.getSeatsPerRow());
+            block.setSeatSpacing(BigDecimal.valueOf(18));
+            block.setRowSpacing(BigDecimal.valueOf(20));
+            block.setColor(area.getColor() != null ? area.getColor() : "#ff1268");
+            block.setSort(area.getSort() != null ? area.getSort() : i);
+            blocks.add(block);
+
+            SeatCraftBlockDtos.TicketGroupRequest group = new SeatCraftBlockDtos.TicketGroupRequest();
+            group.setGroupKey(key);
+            group.setName(area.getName());
+            group.setSourceBlockKeys(List.of(key));
+            group.setSort(area.getSort() != null ? area.getSort() : i);
+            groups.add(group);
+        }
+        layout.setBlocks(blocks);
+        layout.setOverrides(List.of());
+        layout.setTicketGroups(groups);
+        return layout;
     }
 
     private SeatCraftLayoutDtos.LayoutResponse toLayoutResponse(VenueDefaultLayout layout, List<VenueDefaultLayoutSection> sections) {
