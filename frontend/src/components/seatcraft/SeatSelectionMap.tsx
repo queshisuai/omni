@@ -5,7 +5,7 @@ import type { SeatSelectionMapProps, SeatCraftSeat } from './types'
 import { SeatCanvas } from './SeatCanvas'
 import { buildSeatsForSection } from './layout'
 
-export function SeatSelectionMap({ layout, seats, ticketTypeId, selectedSeatIds, onChange }: SeatSelectionMapProps) {
+export function SeatSelectionMap({ layout, seats, ticketTypeId, selectedSeatIds, onChange, maxSelectable, focusTarget }: SeatSelectionMapProps) {
   const seatIds = useMemo(() => new Set(selectedSeatIds.map(String)), [selectedSeatIds])
 
   const sectionSeats = useMemo(() => {
@@ -56,12 +56,13 @@ export function SeatSelectionMap({ layout, seats, ticketTypeId, selectedSeatIds,
   const selectedKeys = useMemo(() => new Set(selectedSeatIds.map(String)), [selectedSeatIds])
 
   const toggleSeat = (seat: SeatCraftSeat) => {
-    if (seat.sessionSeatId == null) return
+    if (seat.sessionSeatId == null || seat.status === 'occupied' || seat.status === 'reserved') return
     const next = new Set(selectedKeys)
     const key = String(seat.sessionSeatId)
     if (next.has(key)) {
       next.delete(key)
     } else {
+      if (maxSelectable != null && next.size >= maxSelectable) return
       next.add(key)
     }
     onChange(Array.from(next).map(Number))
@@ -94,6 +95,7 @@ export function SeatSelectionMap({ layout, seats, ticketTypeId, selectedSeatIds,
       sectionSeats={sectionSeats}
       isDesignMode={false}
       stageTitle={layout.stageTitle}
+      focusTarget={focusTarget}
       onSeatClick={toggleSeat}
     />
   )

@@ -1,9 +1,9 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useId, useMemo, useRef } from 'react'
 import { Move } from 'lucide-react'
 import { motion } from 'motion/react'
-import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch'
+import { TransformComponent, TransformWrapper, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { cn } from '@/lib/utils'
 import { buildSeatsForBlock } from './block-layout'
 import { buildSeatsForSection, isPrimeSeat } from './layout'
@@ -72,16 +72,34 @@ export function SeatCanvas({
   selectedSeatIds = [],
   sectionSeats,
   isDesignMode,
+  interactionMode,
   onSeatClick,
+  onSectionClick,
+  onBlockClick,
   onSectionMove,
   onBlockMove,
   onStageMove,
   activeSectionKey,
   activeBlockKey,
+  focusTarget,
   stageTitle = '舞台',
 }: SeatCanvasProps) {
+  const focusTargetId = useId()
+  const transformRef = useRef<ReactZoomPanPinchRef | null>(null)
+  const mode = interactionMode ?? (isDesignMode ? 'design' : 'selection')
+  const canDrag = mode === 'design'
+  const canSelectSeats = mode === 'selection'
+  const canSelectRegions = mode === 'ticket'
   const hasPrimeArea = useMemo(() => sections.some(section => section.primeRowStart != null && section.primeColStart != null), [sections])
   const uniqueColors = useMemo(() => Array.from(new Set([...sections.map(section => section.color), ...blocks.map(block => block.color)])), [blocks, sections])
+
+  useEffect(() => {
+    if (!focusTarget || canDrag) return
+    const timer = window.setTimeout(() => {
+      transformRef.current?.zoomToElement(focusTargetId, focusTarget.scale ?? 1.6, 260)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [canDrag, focusTarget, focusTargetId])
 
   const renderBlock = (block: SeatBlockDraft) => {
     const seats = buildSeatsForBlock(block, selectedSeatIds)
@@ -92,12 +110,18 @@ export function SeatCanvas({
     return (
       <motion.g
         key={block.id}
-        drag={isDesignMode}
+        drag={canDrag}
         dragMomentum={false}
         onDragEnd={(_, info) => onBlockMove?.(block.blockKey, block.x + info.offset.x, block.y + info.offset.y)}
+        onClick={() => canSelectRegions && onBlockClick?.(block)}
         initial={false}
-        animate={{ rotate: block.rotation || 0 }}
-        className={cn('group transition-none', isDesignMode ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none')}
+        animate={{}}
+        className={cn(
+          'group transition-none',
+          canDrag && 'cursor-grab active:cursor-grabbing',
+          canSelectRegions && 'cursor-pointer pointer-events-auto',
+          canSelectSeats && 'pointer-events-none',
+        )}
       >
         {block.blockType === 'standingBlock' ? (
           <rect
@@ -129,7 +153,7 @@ export function SeatCanvas({
           {block.name}{block.blockType === 'standingBlock' && block.capacity ? ` · ${block.capacity}人` : ''}
         </text>
 
-        <g className={cn(!isDesignMode && 'pointer-events-auto')}>
+        <g className={cn(canSelectSeats && 'pointer-events-auto', !canSelectSeats && 'pointer-events-none')}>
           {seats.map(seat => (
             <Seat key={seat.id} seat={seat} onClick={onSeatClick} color={block.color} />
           ))}
@@ -146,12 +170,18 @@ export function SeatCanvas({
     return (
       <motion.g
         key={section.id}
-        drag={isDesignMode}
+        drag={canDrag}
         dragMomentum={false}
         onDragEnd={(_, info) => onSectionMove?.(section.sectionKey, section.x + info.offset.x, section.y + info.offset.y)}
+        onClick={() => canSelectRegions && onSectionClick?.(section)}
         initial={false}
         animate={{ x: section.x, y: section.y, rotate: section.rotation || 0 }}
-        className={cn('group transition-none', isDesignMode ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none')}
+        className={cn(
+          'group transition-none',
+          canDrag && 'cursor-grab active:cursor-grabbing',
+          canSelectRegions && 'cursor-pointer pointer-events-auto',
+          canSelectSeats && 'pointer-events-none',
+        )}
       >
         {section.layout !== 'curved' ? (
           <rect
@@ -162,7 +192,7 @@ export function SeatCanvas({
             rx={12}
             className={cn(
               'fill-zinc-900/40 stroke-zinc-800/80 transition-all duration-300',
-              activeSectionKey === section.sectionKey ? 'stroke-emerald-500/90' : isDesignMode ? 'hover:stroke-emerald-500/50' : 'group-hover:stroke-zinc-700',
+              activeSectionKey === section.sectionKey ? 'stroke-emerald-500/90' : canDrag || canSelectRegions ? 'hover:stroke-emerald-500/50' : 'group-hover:stroke-zinc-700',
             )}
           />
         ) : (
@@ -170,7 +200,7 @@ export function SeatCanvas({
             d={buildCurvedPath(section)}
             className={cn(
               'fill-zinc-900/40 stroke-zinc-800/80 transition-all duration-300',
-              activeSectionKey === section.sectionKey ? 'stroke-emerald-500/90' : isDesignMode ? 'hover:stroke-emerald-500/50' : 'group-hover:stroke-zinc-700',
+              activeSectionKey === section.sectionKey ? 'stroke-emerald-500/90' : canDrag || canSelectRegions ? 'hover:stroke-emerald-500/50' : 'group-hover:stroke-zinc-700',
             )}
           />
         )}
@@ -194,7 +224,7 @@ export function SeatCanvas({
           {section.name}
         </text>
 
-        <g className={cn(!isDesignMode && 'pointer-events-auto')}>
+        <g className={cn(canSelectSeats && 'pointer-events-auto', !canSelectSeats && 'pointer-events-none')}>
           {seats.map(seat => (
             <Seat
               key={seat.id}
@@ -211,25 +241,25 @@ export function SeatCanvas({
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-      <TransformWrapper initialScale={1} minScale={0.5} maxScale={4} centerOnInit disabled={isDesignMode}>
+      <TransformWrapper ref={transformRef} initialScale={1} minScale={0.5} maxScale={4} centerOnInit disabled={canDrag}>
         <TransformComponent wrapperClass="!h-full !w-full" contentClass="!h-full !w-full flex items-center justify-center">
           <svg viewBox="0 0 1000 800" className="h-full w-full select-none p-12">
-            {isDesignMode && (
+            {canDrag && (
               <defs>
                 <pattern id="seatcraft-grid" width="40" height="40" patternUnits="userSpaceOnUse">
                   <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
                 </pattern>
               </defs>
             )}
-            {isDesignMode && <rect width="100%" height="100%" fill="url(#seatcraft-grid)" />}
+            {canDrag && <rect width="100%" height="100%" fill="url(#seatcraft-grid)" />}
 
             <motion.g
-              drag={isDesignMode}
+              drag={canDrag}
               dragMomentum={false}
               onDragEnd={(_, info) => onStageMove?.(stage.x + info.offset.x, stage.y + info.offset.y)}
               initial={false}
               animate={{ x: stage.x, y: stage.y }}
-              className={cn(isDesignMode ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none')}
+              className={cn(canDrag ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none')}
             >
               <defs>
                 <linearGradient id="seatcraft-stage-gradient" x1="0" y1="0" x2="0" y2="1">
@@ -269,11 +299,22 @@ export function SeatCanvas({
 
             <g>{sections.map(section => renderSection(section))}</g>
             <g>{blocks.map(block => renderBlock(block))}</g>
+            {focusTarget && !canDrag && (
+              <rect
+                id={focusTargetId}
+                x={focusTarget.x - focusTarget.width / 2}
+                y={focusTarget.y - focusTarget.height / 2}
+                width={Math.max(1, focusTarget.width)}
+                height={Math.max(1, focusTarget.height)}
+                fill="transparent"
+                pointerEvents="none"
+              />
+            )}
           </svg>
         </TransformComponent>
       </TransformWrapper>
 
-      {isDesignMode && (
+      {canDrag && (
         <div className="absolute right-6 top-6 flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-xs font-bold text-zinc-950 shadow-lg shadow-emerald-500/20 animate-pulse">
           <Move className="h-3 w-3" /> 设计模式已开启
         </div>

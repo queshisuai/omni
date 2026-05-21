@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { createStationDraft, createTourDraft, listMyVenueApplications, publishStation, submitVenueApplication } from '@/lib/api'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
 import { toSeatCraftLayoutPayload } from '@/components/seatcraft/block-layout'
 import type { SeatCraftLayoutDraft } from '@/components/seatcraft/types'
-import type { VenueApplicationVO } from '@/types/api'
+import type { UserRole, VenueApplicationVO } from '@/types/api'
 
 const steps = ['Tour 基本信息', 'Station 城市站点', '场地申请', 'SeatCraft', '票档价格', '场次排期', '发布确认']
 
@@ -40,6 +41,8 @@ export default function NewTourPage() {
   const [proofNote, setProofNote] = useState('')
   const [proofFileUrl, setProofFileUrl] = useState('')
   const [venueApplications, setVenueApplications] = useState<VenueApplicationVO[]>([])
+  const [role, setRole] = useState<UserRole | ''>('')
+  const [checkingRole, setCheckingRole] = useState(true)
   const [selectedVenueApplicationId, setSelectedVenueApplicationId] = useState<number | null>(null)
   const [sessionStartTime, setSessionStartTime] = useState('')
   const [sessionEndTime, setSessionEndTime] = useState('')
@@ -53,8 +56,24 @@ export default function NewTourPage() {
   useEffect(() => {
     const user = getUser()
     if (!user) return
+    setRole(user.role || '')
+    setCheckingRole(false)
     listMyVenueApplications(user.userId).then(setVenueApplications).catch(() => {})
   }, [])
+
+  if (checkingRole || !role) {
+    return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
+  }
+
+  if (role === 'admin') {
+    return (
+      <div className="max-w-[720px] rounded-xl border border-[#e5e5e5] bg-white p-6">
+        <h1 className="mb-2 text-[22px] font-bold text-[#1a1a2e]">创建演出仅面向主办方</h1>
+        <p className="mb-5 text-[14px] text-[#666]">平台管理员可在活动管理、场馆审核和入驻审核中处理平台运营事项，不在此创建主办方演出草稿。</p>
+        <Link href="/console/activities" className="inline-flex rounded-lg bg-[#1a1a2e] px-4 py-2 text-[14px] font-medium text-white">返回平台活动管理</Link>
+      </div>
+    )
+  }
 
   const handleSubmit = async () => {
     const user = getUser()
@@ -121,7 +140,7 @@ export default function NewTourPage() {
 
   return (
     <div>
-      <h1 className="mb-5 text-[22px] font-bold text-[#1a1a2e]">创建演出</h1>
+      <h1 className="mb-5 text-[22px] font-bold text-[#1a1a2e]">创建我的演出</h1>
       <div className="mb-6 flex flex-wrap gap-2">
         {steps.map((step, index) => (
           <span key={step} className={`rounded-full px-3 py-1 text-[12px] ${index < 7 ? 'bg-[#fff0f5] text-[#ff1268]' : 'bg-[#f5f5f5] text-[#999]'}`}>

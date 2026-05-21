@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
@@ -88,8 +88,10 @@ export default function OrdersPage() {
   const [hiding, setHiding] = useState<number | null>(null)
   const [restoring, setRestoring] = useState<number | null>(null)
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const loadOrdersRef = useRef(() => {})
+  const lastRefreshRef = useRef(0)
 
-  useEffect(() => {
+  const loadOrders = () => {
     if (!isAuthenticated()) {
       router.replace('/login?ru=/orders')
       return
@@ -103,6 +105,7 @@ export default function OrdersPage() {
 
     ;(async () => {
       setLoading(true)
+      setError('')
       try {
         const [orderData, trashData] = await Promise.all([
           listOrders(user.userId),
@@ -122,7 +125,37 @@ export default function OrdersPage() {
         setLoading(false)
       }
     })()
+  }
+
+  loadOrdersRef.current = loadOrders
+
+  const refreshWhenVisible = () => {
+    const now = Date.now()
+    if (now - lastRefreshRef.current < 200) return
+    lastRefreshRef.current = now
+    loadOrdersRef.current()
+  }
+
+  useEffect(() => {
+    loadOrders()
   }, [router])
+
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) refreshWhenVisible()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshWhenVisible()
+    }
+
+    window.addEventListener('pageshow', handlePageShow)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   const handleCancel = async (orderId: number) => {
     if (!confirm('确定取消该订单吗？')) return

@@ -1,48 +1,16 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SeatMap } from '@/components/SeatMap'
-import { SeatSelectionMap } from '@/components/seatcraft/SeatSelectionMap'
+import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { getActivityDetail, createOrderWithSeats, createAlipayQrPay, getSeatMap } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import { sections } from '@/lib/mock-data'
+import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import type { ActivityDetailVO, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, TicketTypeEntity } from '@/types/api'
-
-/** 从 mock 数据构造活动详情（后端不可用时的降级方案） */
-function buildMockDetail(id: string): ActivityDetailVO {
-  const activity = sections.flatMap(s => s.items).find(a => a.id === id)
-  if (!activity) throw new Error('活动不存在')
-
-  return {
-    activity: {
-      id: Number(id.replace(/\D/g, '')) || 1,
-      categoryId: 1,
-      artistId: 1,
-      name: activity.title,
-      description: `${activity.title} - ${activity.venue} - ${activity.showTime}`,
-      poster: activity.poster,
-      status: activity.status === 'on_sale' ? 1 : activity.status === 'coming_soon' ? 2 : 3,
-      createTime: '',
-    },
-    category: { id: 1, name: activity.categoryId, icon: null, sort: 1, status: 1 },
-    artist: { id: 1, name: activity.venue, avatar: null, description: null },
-    sessions: [
-      {
-        session: { id: 1, activityId: 1, venueId: 1, startTime: activity.showTime, endTime: '', status: 1 },
-        venue: { id: 1, name: activity.venue, address: activity.venue, city: '北京' },
-        ticketTypes: [
-          { id: 1, sessionId: 1, name: '普通票', price: activity.price, totalStock: 999, remainStock: 500, status: 1 },
-          { id: 2, sessionId: 1, name: 'VIP', price: activity.price * 2, totalStock: 300, remainStock: 150, status: 1 },
-          { id: 3, sessionId: 1, name: '套票', price: activity.price * 3, totalStock: 100, remainStock: 80, status: 1 },
-        ],
-      },
-    ],
-  }
-}
 
 export default function ActivityDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -62,50 +30,109 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [seatMap, setSeatMap] = useState<SeatMapResponse | null>(null)
   const [seatMapLoading, setSeatMapLoading] = useState(false)
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([])
+  const seatMapRequestIdRef = useRef(0)
+  const loadDetailRef = useRef(() => {})
+  const lastRefreshRef = useRef(0)
+
+  const seatCraftSelectionModel = useMemo(() => seatMap ? toSeatCraftSelectionModel(seatMap) : null, [seatMap])
+  const seatCraftFocusTarget = useMemo(() => {
+    if (!seatMap?.layout || selectedTicket?.id == null) return null
+    return buildZoomTargetFromTicketGroup(seatMap.layout, selectedTicket.id)
+  }, [seatMap?.layout, selectedTicket?.id])
+  const availableSeatIdSet = useMemo(() => {
+    if (!seatMap) return null
+    const ids = seatCraftSelectionModel?.availableSeatIds
+      ?? seatMap.seats
+        .filter(seat => seat.status === 1 && (seat.ticketTypeId == null || seat.ticketTypeId === selectedTicket?.id))
+        .map(seat => seat.id)
+    return new Set(ids)
+  }, [seatCraftSelectionModel, seatMap, selectedTicket?.id])
+  const validSelectedSeatIds = useMemo(
+    () => availableSeatIdSet ? selectedSeatIds.filter(id => availableSeatIdSet.has(id)) : selectedSeatIds,
+    [availableSeatIdSet, selectedSeatIds],
+  )
+
+  const loadDetail = async () => {
+    setLoading(true)
+    setError('')
+    setSelectedSession(null)
+    setSelectedTicket(null)
+    try {
+      const data = await getActivityDetail(Number(id))
+      setDetail(data)
+      if (data.sessions.length > 0) {
+        setSelectedSession(data.sessions[0])
+        if (data.sessions[0].ticketTypes.length > 0) {
+          setSelectedTicket(data.sessions[0].ticketTypes[0])
+        }
+      }
+    } catch (err: unknown) {
+      setDetail(null)
+      setError(err instanceof Error ? err.message : '加载活动失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  loadDetailRef.current = loadDetail
+
+  const refreshWhenVisible = () => {
+    const now = Date.now()
+    if (now - lastRefreshRef.current < 200) return
+    lastRefreshRef.current = now
+    void loadDetailRef.current()
+  }
 
   useEffect(() => {
-    (async () => {
-      try {
-        const data = await getActivityDetail(Number(id))
-        setDetail(data)
-        if (data.sessions.length > 0) {
-          setSelectedSession(data.sessions[0])
-          if (data.sessions[0].ticketTypes.length > 0) {
-            setSelectedTicket(data.sessions[0].ticketTypes[0])
-          }
-        }
-      } catch {
-        // 后端不可用时降级到 mock 数据
-        try {
-          const mockDetail = buildMockDetail(id)
-          setDetail(mockDetail)
-          if (mockDetail.sessions.length > 0) {
-            setSelectedSession(mockDetail.sessions[0])
-            if (mockDetail.sessions[0].ticketTypes.length > 0) {
-              setSelectedTicket(mockDetail.sessions[0].ticketTypes[0])
-            }
-          }
-        } catch (mockErr: unknown) {
-          setError(mockErr instanceof Error ? mockErr.message : '加载失败')
-        }
-      } finally {
-        setLoading(false)
-      }
-    })()
+    void loadDetail()
   }, [id])
 
   useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) refreshWhenVisible()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshWhenVisible()
+    }
+
+    window.addEventListener('pageshow', handlePageShow)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
+  useEffect(() => {
+    const requestId = ++seatMapRequestIdRef.current
+    let cancelled = false
+
     if (!selectedSession || !selectedTicket) {
       setSeatMap(null)
       setSelectedSeatIds([])
+      setSeatMapLoading(false)
       return
     }
     setSeatMapLoading(true)
     setSelectedSeatIds([])
     getSeatMap(selectedSession.session.id, selectedTicket.id)
-      .then(setSeatMap)
-      .catch(() => setSeatMap(null))
-      .finally(() => setSeatMapLoading(false))
+      .then((data) => {
+        if (cancelled || seatMapRequestIdRef.current !== requestId) return
+        setSeatMap(data)
+      })
+      .catch(() => {
+        if (cancelled || seatMapRequestIdRef.current !== requestId) return
+        setSeatMap(null)
+      })
+      .finally(() => {
+        if (cancelled || seatMapRequestIdRef.current !== requestId) return
+        setSeatMapLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [selectedSession, selectedTicket])
 
   const handleBuy = () => {
@@ -120,7 +147,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
   const handleAutoSelectSeats = () => {
     if (!seatMap) return
-    const available = seatMap.seats.filter(seat => seat.status === 1)
+    const available = seatMap.seats.filter(seat => seat.status === 1 && (seat.ticketTypeId == null || seat.ticketTypeId === selectedTicket?.id))
     if (seatMap.layout && seatMap.layout.sections.length > 0) {
       const bySection = new Map<string, SessionSeatVO[]>()
       for (const seat of available) {
@@ -168,7 +195,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setOrderError('')
     try {
       const hasSeatMap = Boolean(seatMap && seatMap.seats.length > 0)
-      if (hasSeatMap && selectedSeatIds.length !== quantity) {
+      if (hasSeatMap && validSelectedSeatIds.length !== quantity) {
         setOrderError('请选择对应数量的座位')
         return
       }
@@ -177,7 +204,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             userId: user.userId,
             sessionId: selectedSession.session.id,
             ticketTypeId: selectedTicket.id,
-            seatIds: selectedSeatIds,
+            seatIds: validSelectedSeatIds,
             unitPrice: selectedTicket.price,
           }
         : {
@@ -335,27 +362,27 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       <div className="mb-5">
                         {seatMapLoading ? (
                           <div className="rounded-lg border border-[#e5e5e5] p-6 text-center text-[13px] text-[#999]">正在加载座位图...</div>
-                        ) : seatMap && seatMap.layout && seatMap.layout.sections.length > 0 ? (
+                        ) : seatMap && seatMap.layout && seatMap.layout.sections.length > 0 && seatCraftSelectionModel ? (
                           <div>
                             <div className="mb-3 flex items-center justify-between">
-                              <div className="text-[14px] text-[#666]">已选 {selectedSeatIds.length} / {quantity} 座</div>
+                              <div className="text-[14px] text-[#666]">已选 {validSelectedSeatIds.length} / {quantity} 座</div>
                               <button onClick={handleAutoSelectSeats} className="rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">自动分配</button>
                             </div>
-                            <SeatSelectionMap
-                              layout={seatMap.layout}
-                              seats={seatMap.seats}
-                              ticketTypeId={selectedTicket.id}
-                              selectedSeatIds={selectedSeatIds}
+                            <SeatCraftSelector
+                              selectionModel={seatCraftSelectionModel}
+                              selectedSeatIds={validSelectedSeatIds}
                               onChange={setSelectedSeatIds}
+                              maxSelectable={quantity}
+                              focusTarget={seatCraftFocusTarget}
                             />
                           </div>
                         ) : seatMap && seatMap.seats.length > 0 ? (
                           <div>
                             <div className="mb-3 flex items-center justify-between">
-                              <div className="text-[14px] text-[#666]">已选 {selectedSeatIds.length} / {quantity} 座</div>
+                              <div className="text-[14px] text-[#666]">已选 {validSelectedSeatIds.length} / {quantity} 座</div>
                               <button onClick={handleAutoSelectSeats} className="rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">自动分配</button>
                             </div>
-                            <SeatMap seats={seatMap.seats} areas={seatMap.areas} stageLabel={seatMap.stageLabel} maxSelectable={quantity} selectedSeatIds={selectedSeatIds} onChange={setSelectedSeatIds} />
+                            <SeatMap seats={seatMap.seats.filter(seat => seat.ticketTypeId == null || seat.ticketTypeId === selectedTicket.id)} areas={seatMap.areas} stageLabel={seatMap.stageLabel} maxSelectable={quantity} selectedSeatIds={validSelectedSeatIds} onChange={setSelectedSeatIds} />
                           </div>
                         ) : null}
                       </div>
@@ -381,7 +408,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         </div>
                         <button
                           onClick={handleBuy}
-                          disabled={Boolean(seatMap && seatMap.seats.length > 0 && selectedSeatIds.length !== quantity)}
+                          disabled={Boolean(seatMap && seatMap.seats.length > 0 && validSelectedSeatIds.length !== quantity)}
                           className="ml-auto cursor-pointer border-none outline-none text-white text-[16px] font-medium px-10 py-3 rounded disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ backgroundColor: '#ff1268' }}
                         >

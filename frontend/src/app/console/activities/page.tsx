@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity } from '@/lib/api'
@@ -12,7 +12,8 @@ const PAGE_SIZE = 10
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState<ActivityEntity[]>([])
   const [userId, setUserId] = useState(0)
-  const [role, setRole] = useState<UserRole>('user')
+  const [role, setRole] = useState<UserRole | ''>('')
+  const [checkingRole, setCheckingRole] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [keyword, setKeyword] = useState('')
@@ -20,12 +21,16 @@ export default function ActivitiesPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
+  const loadDataRef = useRef(() => {})
+  const lastRefreshRef = useRef(0)
+  const isAdmin = role === 'admin'
 
   const loadData = (nextPage = page) => {
     const u = getUser()
     if (!u) return
     setUserId(u.userId)
     setRole(u.role || 'user')
+    setCheckingRole(false)
     setLoading(true)
     setError('')
     listAdminActivities(u.userId, {
@@ -45,24 +50,50 @@ export default function ActivitiesPage() {
     })
   }
 
+  loadDataRef.current = loadData
+
+  const refreshWhenVisible = () => {
+    const now = Date.now()
+    if (now - lastRefreshRef.current < 200) return
+    lastRefreshRef.current = now
+    loadDataRef.current()
+  }
+
   useEffect(() => { loadData() }, [])
+
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) refreshWhenVisible()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshWhenVisible()
+    }
+
+    window.addEventListener('pageshow', handlePageShow)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   const handleToggleStatus = async (activity: ActivityEntity) => {
     const newStatus = activity.status === 1 ? 0 : 1
     if (newStatus === 0) {
-      const confirmed = confirm('下架后活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意下架并同意退款。')
+      const confirmed = confirm('下架并退款后，活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意下架并同意退款。')
       if (!confirmed) return
       const result = await deactivateActivity(activity.id, {
         userId,
         confirmRefund: true,
-        reason: '活动下架自动退款',
+        reason: isAdmin ? '平台下架活动自动退款' : '主办方下架活动自动退款',
       })
       const abnormalCount = result.refundFailedCount + result.refundUnknownCount + result.refundCompensationRequiredCount
       const summary = `已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
       if (abnormalCount > 0) {
-        alert(`活动已下架，但部分退款失败/结果未知/需人工处理。${summary}`)
+        alert(`活动已下架并发起退款，但部分退款失败/结果未知/需人工处理。${summary}`)
       } else {
-        alert(`活动已下架。${summary}`)
+        alert(`活动已下架并发起退款。${summary}`)
       }
     } else {
       await updateActivityStatus(activity.id, { userId, status: newStatus })
@@ -82,18 +113,22 @@ export default function ActivitiesPage() {
     loadData(1)
   }
 
+  if (checkingRole || !role) {
+    return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
+  }
+
   return (
     <div>
       <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{role === 'admin' ? '平台演出管理' : '我的演出管理'}</h1>
-          <p className="mt-1 text-[13px] text-[#999]">搜索、筛选和维护演出上下架状态。</p>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '平台活动管理' : '我的活动管理'}</h1>
+          <p className="mt-1 text-[13px] text-[#999]">{isAdmin ? '搜索、筛选和维护全平台活动上下架状态。' : '维护自己主办活动的编辑、删除、上架与下架并退款。'}</p>
         </div>
         <Link
           href="/console/activities/new"
           className="flex items-center gap-1.5 bg-[#ff1268] text-white px-4 py-2 rounded-lg text-[14px] font-medium hover:bg-[#e0105a] transition-colors"
         >
-          <Plus className="w-4 h-4" /> 新建活动
+          <Plus className="w-4 h-4" /> {isAdmin ? '新建平台活动' : '新建我的活动'}
         </Link>
       </div>
 
@@ -168,7 +203,7 @@ export default function ActivitiesPage() {
                       <button
                         onClick={() => handleToggleStatus(a)}
                         className="p-1.5 rounded hover:bg-[#f0f0f0] text-[#666] transition-colors bg-transparent border-none cursor-pointer"
-                        title={a.status === 1 ? '下架' : '上架'}
+                        title={a.status === 1 ? '下架并退款' : '上架'}
                       >
                         {a.status === 1 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>

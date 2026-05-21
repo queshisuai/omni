@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { getUser } from '@/lib/auth'
 import { approveRefund, listAdminRefunds, rejectRefund } from '@/lib/api'
-import type { RefundRequestVO, RefundStatus } from '@/types/api'
+import type { RefundRequestVO, RefundStatus, UserRole } from '@/types/api'
 
 const STATUS_OPTIONS: Array<{ label: string; value?: RefundStatus }> = [
   { label: '全部' },
@@ -20,6 +21,8 @@ const STATUS_META: Record<RefundStatus, { label: string; className: string }> = 
   3: { label: '退款失败', className: 'bg-[#fff1f2] text-[#e11d48]' },
   4: { label: '处理中', className: 'bg-[#e3f2fd] text-[#2563eb]' },
 }
+
+const UNKNOWN_STATUS_META = { label: '未知状态', className: 'bg-[#f5f5f5] text-[#777]' }
 
 type ReviewAction = 'approve' | 'reject'
 
@@ -45,9 +48,17 @@ export default function ConsoleRefundsPage() {
   const [error, setError] = useState('')
   const [draft, setDraft] = useState<ReviewDraft | null>(null)
   const [submittingId, setSubmittingId] = useState<number | null>(null)
+  const [role, setRole] = useState<UserRole | ''>('')
+  const [checkingRole, setCheckingRole] = useState(true)
+  const isAdmin = role === 'admin'
 
   useEffect(() => {
     let ignore = false
+    const user = getUser()
+    if (user) {
+      setRole(user.role || 'user')
+      setCheckingRole(false)
+    }
 
     setLoading(true)
     setError('')
@@ -97,12 +108,16 @@ export default function ConsoleRefundsPage() {
     }
   }
 
+  if (checkingRole || !role) {
+    return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
+  }
+
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-5">
         <div>
-          <h1 className="text-[22px] font-bold text-[#1a1a2e]">退款审核</h1>
-          <div className="text-[13px] text-[#999] mt-1">审核可见范围内的退款申请，处理中记录可重试退款</div>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '退款审核' : '主办方退款处理'}</h1>
+          <div className="text-[13px] text-[#999] mt-1">{isAdmin ? '审核可见范围内的退款申请，处理中记录可重试退款' : '处理自己活动相关的退款申请，处理中记录可重试退款'}</div>
         </div>
         <button
           onClick={refresh}
@@ -165,7 +180,7 @@ export default function ConsoleRefundsPage() {
               </thead>
               <tbody>
                 {refunds.map(refund => {
-                  const meta = STATUS_META[refund.status]
+                  const meta = STATUS_META[refund.status] || UNKNOWN_STATUS_META
                   const reviewing = draft?.id === refund.id
                   const submitting = submittingId === refund.id
                   return (

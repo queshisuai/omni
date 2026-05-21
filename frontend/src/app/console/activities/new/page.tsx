@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, getVenueDefaultLayout, updateActivitySeatLayout } from '@/lib/api'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
-import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatCraftLayoutVO } from '@/types/api'
+import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatCraftLayoutVO, UserRole } from '@/types/api'
 
 type SessionDraft = {
   key: string
@@ -26,6 +26,8 @@ export default function NewActivityPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
+  const [role, setRole] = useState<UserRole | ''>('')
+  const [checkingRole, setCheckingRole] = useState(true)
 
   // 分类和场馆
   const [categories, setCategories] = useState<CategoryVO[]>([])
@@ -51,6 +53,8 @@ export default function NewActivityPage() {
   useEffect(() => {
     const u = getUser()
     if (!u) return
+    setRole(u.role || 'user')
+    setCheckingRole(false)
     listCategories().then(setCategories).catch(() => {})
     listAdminVenues(u.userId).then(setVenues).catch(() => {})
   }, [])
@@ -172,10 +176,18 @@ export default function NewActivityPage() {
   }
 
   const steps = ['活动信息', '设置场次', '设置票档']
+  const isAdmin = role === 'admin'
+
+  if (checkingRole || !role) {
+    return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
+  }
 
   return (
     <div>
-      <h1 className="text-[22px] font-bold text-[#1a1a2e] mb-5">新建活动</h1>
+      <div className="mb-5">
+        <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '新建平台活动' : '新建我的活动'}</h1>
+        <p className="mt-1 text-[13px] text-[#999]">{isAdmin ? '为平台创建活动，并配置场次、票档和初始库存。' : '为自己主办的项目创建活动，并配置场次、票档和初始库存。'}</p>
+      </div>
 
       {/* 步骤条 */}
       <div className="flex items-center gap-0 mb-8">
@@ -338,7 +350,7 @@ export default function NewActivityPage() {
               disabled={submitting}
               className="flex items-center gap-1 bg-[#22c55e] text-white px-6 py-2 rounded-lg text-[14px] font-medium border-none cursor-pointer hover:bg-[#16a34a] transition-colors disabled:opacity-50"
             >
-              {submitting ? '提交中...' : '提交发布'}
+              {submitting ? '提交中...' : isAdmin ? '提交平台活动' : '提交我的活动'}
             </button>
           )}
         </div>

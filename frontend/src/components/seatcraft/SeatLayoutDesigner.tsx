@@ -82,7 +82,19 @@ export function SeatLayoutDesigner({ layout, onChange }: SeatLayoutDesignerProps
     }
   }, [activeSectionKey, layout.sections])
 
-  const draft = useMemo(() => layout, [layout])
+  useEffect(() => {
+    const blocks = layout.blocks ?? []
+    if (activeBlockKey == null) {
+      setActiveBlockKey(blocks[0]?.blockKey ?? null)
+      return
+    }
+    const stillExists = blocks.some(block => block.blockKey === activeBlockKey)
+    if (!stillExists) {
+      setActiveBlockKey(blocks[0]?.blockKey ?? null)
+    }
+  }, [activeBlockKey, layout.blocks])
+
+  const draft = layout
   const blocks = draft.blocks ?? []
 
   const commit = (next: SeatCraftLayoutDraft) => onChange(next)
@@ -255,6 +267,7 @@ export function SeatLayoutDesigner({ layout, onChange }: SeatLayoutDesignerProps
           }}
           onStageMove={(x, y) => updateStage({ x, y })}
           onSeatClick={undefined}
+          onSectionClick={undefined}
         />
       </div>
       <SeatLayoutControls

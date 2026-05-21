@@ -9,13 +9,11 @@ import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Men
 
 const menuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
-  { href: '/console/tours', label: '我的演出', icon: CalendarDays, roles: ['organizer'] },
-  { href: '/console/tours/new', label: '创建演出', icon: PlusCircle, roles: ['organizer'] },
-  { href: '/console/activities', label: '活动管理', icon: CalendarDays },
+  { href: '/console/activities', label: '平台活动管理', icon: CalendarDays, roles: ['admin'] },
   { href: '/console/sessions', label: '场次管理', icon: Clock },
   { href: '/console/orders', label: '订单查看', icon: ShoppingCart },
   { href: '/console/refunds', label: '退款审核', icon: RotateCcw },
-  { href: '/console/venue', label: '场馆管理', icon: MapPin },
+  { href: '/console/venue', label: '场馆管理', icon: MapPin, roles: ['admin'] },
   { href: '/console/venue/applications', label: '场馆审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/organizer-applications', label: '入驻审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
@@ -24,7 +22,10 @@ const menuItems = [
 const organizerMenuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
   { href: '/console/tours', label: '我的演出', icon: CalendarDays },
-  { href: '/console/tours/new', label: '创建演出', icon: PlusCircle },
+  { href: '/console/tours/new', label: '创建我的演出', icon: PlusCircle },
+  { href: '/console/activities', label: '我的活动管理', icon: CalendarDays },
+  { href: '/console/sessions', label: '我的场次管理', icon: Clock },
+  { href: '/console/refunds', label: '主办方退款处理', icon: RotateCcw },
   { href: '/console/venue/apply', label: '场地申请记录', icon: MapPin },
   { href: '/console/orders', label: '订单', icon: ShoppingCart },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
@@ -38,13 +39,26 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [checking, setChecking] = useState(true)
   const visibleMenuItems = useMemo(() => {
+    if (checking || !role) return []
     if (role === 'organizer') return organizerMenuItems
     return menuItems.filter((item) => {
       if (!('roles' in item) || !item.roles) return true
-      if (!role) return true
       return item.roles.includes(role as 'admin' | 'organizer')
     })
-  }, [role])
+  }, [checking, role])
+  const activeMenuHref = useMemo(() => {
+    let bestMatch = ''
+
+    for (const item of visibleMenuItems) {
+      if (pathname === item.href) return item.href
+      if (item.href === '/console') continue
+      if (pathname.startsWith(`${item.href}/`) && item.href.length > bestMatch.length) {
+        bestMatch = item.href
+      }
+    }
+
+    return bestMatch
+  }, [pathname, visibleMenuItems])
 
   useEffect(() => {
     if (!isAuthenticated()) { router.push('/login'); return }
@@ -79,13 +93,16 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   }, [router])
 
   const handleLogout = () => logout()
+  const roleReady = !checking && Boolean(role)
+  const brandLabel = roleReady ? role === 'admin' ? '平台后台' : '主办方后台' : '后台'
+  const roleLabel = roleReady ? role === 'admin' ? '平台管理员' : '主办方' : '校验中'
 
   return (
     <div className="min-h-screen bg-[#f5f6f7] flex">
       {/* 侧边栏 */}
       <aside className={`w-[240px] bg-[#1a1a2e] text-white flex-shrink-0 flex flex-col ${sidebarOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden'} lg:flex lg:relative`}>
         <div className="p-5 border-b border-[#2a2a4e] flex items-center justify-between">
-          <Link href="/console" className="text-[18px] font-bold text-[#ff1268]">主办方后台</Link>
+          <Link href="/console" className="text-[18px] font-bold text-[#ff1268]">{brandLabel}</Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-white">
             <X className="w-5 h-5" />
           </button>
@@ -93,7 +110,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         <nav className="flex-1 p-3">
           {visibleMenuItems.map(item => {
             const Icon = item.icon
-            const active = pathname === item.href || (item.href !== '/console' && pathname.startsWith(item.href))
+            const active = item.href === activeMenuHref
             return (
               <Link
                 key={item.href}
@@ -111,7 +128,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         </nav>
         <div className="p-4 border-t border-[#2a2a4e]">
           <div className="text-[12px] text-[#666] mb-1">
-            {role === 'admin' ? '平台管理员' : '主办方'}
+            {roleLabel}
           </div>
           <div className="text-[14px] text-white mb-3">{nickname}</div>
           <div className="flex flex-col gap-2">

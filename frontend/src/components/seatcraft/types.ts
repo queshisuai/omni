@@ -5,6 +5,16 @@ export type SectionType = 'core' | 'stand' | 'zone'
 export type SectionLayout = 'grid' | 'curved'
 export type SeatBlockType = 'gridBlock' | 'arcBlock' | 'standingBlock'
 export type SeatOverrideStatus = 'visible' | 'hidden' | 'deleted'
+export type SeatCanvasInteractionMode = 'design' | 'selection' | 'ticket'
+
+export interface SeatCraftZoomTarget {
+  x: number
+  y: number
+  width: number
+  height: number
+  scale?: number
+  sectionKeys?: string[]
+}
 
 export interface SeatCraftSeat {
   id: string
@@ -116,12 +126,16 @@ export interface SeatCanvasProps {
   selectedSeatIds?: string[]
   sectionSeats?: Record<string, SeatCraftSeat[]>
   isDesignMode: boolean
+  interactionMode?: SeatCanvasInteractionMode
   onSeatClick?: (seat: SeatCraftSeat) => void
+  onSectionClick?: (section: SeatCraftSection) => void
+  onBlockClick?: (block: SeatBlockDraft) => void
   onSectionMove?: (sectionKey: string, x: number, y: number) => void
   onBlockMove?: (blockKey: string, x: number, y: number) => void
   onStageMove?: (x: number, y: number) => void
   activeSectionKey?: string | null
   activeBlockKey?: string | null
+  focusTarget?: SeatCraftZoomTarget | null
   stageTitle?: string
 }
 
@@ -155,6 +169,8 @@ export interface SeatSelectionMapProps {
   ticketTypeId?: number | null
   selectedSeatIds: number[]
   onChange: (seatIds: number[]) => void
+  maxSelectable?: number
+  focusTarget?: SeatCraftZoomTarget | null
 }
 
 export function makeDefaultStage(title = '舞台'): SeatCraftStage {

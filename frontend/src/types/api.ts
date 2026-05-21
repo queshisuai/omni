@@ -438,6 +438,16 @@ export interface TicketTypeEntity {
   status: number
 }
 
+export interface AdminTicketTypeCreateRequest {
+  userId: number
+  sessionId: number
+  name: string
+  price: number
+  totalStock: number
+  layoutSectionIds?: number[]
+  areaIds?: number[]
+}
+
 /** 场次详情（含票档和场馆） */
 export interface SessionDetail {
   session: SessionEntity

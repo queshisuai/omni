@@ -2,7 +2,7 @@
  * API 客户端 - fetch 封装
  */
 import { getToken } from './auth'
-import type { ApiResult, ChangePasswordRequest, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, ResetPasswordRequest, SubjectType, UserInfo } from '@/types/api'
+import type { ApiResult, ChangePasswordRequest, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, ResetPasswordRequest, SeatMapResponse, SubjectType, UserInfo } from '@/types/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -15,13 +15,7 @@ class ApiError extends Error {
   }
 }
 
-let offlineUntil = 0
-
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  if (Date.now() < offlineUntil) {
-    throw new ApiError(503, '服务暂不可用，使用离线模式')
-  }
-
   const token = getToken()
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -40,7 +34,6 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       signal: controller.signal
     })
   } catch {
-    offlineUntil = Date.now() + 5000 // 发生网络错误，5秒内直接走离线模式
     throw new ApiError(503, '服务暂不可用，请稍后重试')
   } finally {
     clearTimeout(timeoutId)
@@ -157,7 +150,7 @@ export async function getActivityDetail(id: number) {
 }
 
 export async function getSeatMap(sessionId: number, ticketTypeId: number) {
-  return request<import('@/types/api').SeatMapResponse>(`/api/ticket/sessions/${sessionId}/ticket-types/${ticketTypeId}/seats`)
+  return request<SeatMapResponse>(`/api/ticket/sessions/${sessionId}/ticket-types/${ticketTypeId}/seats`)
 }
 
 export async function listCategories() {
@@ -402,7 +395,7 @@ export async function deleteAdminSession(id: number, userId: number) {
   return request<void>(`/api/ticket/admin/sessions/${id}?userId=${userId}`, { method: 'DELETE' })
 }
 
-export async function createAdminTicketType(body: Record<string, unknown>) {
+export async function createAdminTicketType(body: import('@/types/api').AdminTicketTypeCreateRequest) {
   return request<import('@/types/api').TicketTypeEntity>('/api/ticket/admin/ticket-types', {
     method: 'POST', body: JSON.stringify(body),
   })
