@@ -408,77 +408,73 @@ SELECT setval('session_seat_layout_section_id_seq', COALESCE((SELECT MAX(id) FRO
 SELECT setval('seat_block_id_seq', COALESCE((SELECT MAX(id) FROM seat_block), 1), true);
 SELECT setval('ticket_group_id_seq', COALESCE((SELECT MAX(id) FROM ticket_group), 1), true);
 
--- ========== 真实已购订单示例：订单、座位、快照、支付记录完整闭环 ==========
+-- ========== 真实订单示例：1 笔已支付 + 1 笔已退款历史 ==========
 DO $$
 DECLARE
-    order_one BIGINT := 1;
-    order_two BIGINT := 2;
-    seat_ids_one BIGINT[];
-    seat_ids_two BIGINT[];
-    seat_labels_one TEXT;
-    seat_labels_two TEXT;
+    paid_order BIGINT := 1;
+    refunded_order BIGINT := 2;
+    paid_seat_id BIGINT;
+    refunded_seat_id BIGINT;
+    paid_seat_label TEXT;
+    refunded_seat_label TEXT;
 BEGIN
-    SELECT ARRAY_AGG(id ORDER BY id) INTO seat_ids_one
-    FROM (
-        SELECT ss.id
-        FROM session_seat ss
-        WHERE ss.session_id = 1 AND ss.area_id = 1 AND ss.status = 1
-        ORDER BY ss.row_no, ss.seat_no
-        LIMIT 2
-    ) picked;
+    SELECT ss.id, ss.seat_label INTO paid_seat_id, paid_seat_label
+    FROM session_seat ss
+    WHERE ss.session_id = 1 AND ss.area_id = 1 AND ss.status = 1
+    ORDER BY ss.row_no, ss.seat_no
+    LIMIT 1;
 
-    SELECT ARRAY_AGG(id ORDER BY id) INTO seat_ids_two
-    FROM (
-        SELECT ss.id
-        FROM session_seat ss
-        WHERE ss.session_id = 4 AND ss.area_id = 5 AND ss.status = 1
-        ORDER BY ss.row_no, ss.seat_no
-        LIMIT 1
-    ) picked;
+    SELECT ss.id, ss.seat_label INTO refunded_seat_id, refunded_seat_label
+    FROM session_seat ss
+    WHERE ss.session_id = 4 AND ss.area_id = 5 AND ss.status = 1
+    ORDER BY ss.row_no, ss.seat_no
+    LIMIT 1;
 
     INSERT INTO "order" (id, order_no, user_id, session_id, ticket_type_id, quantity, amount, status, create_time, update_time)
     VALUES
-    (order_one, 'DMSEED202605210001', 2004, 1, 1, 2, (SELECT price * 2 FROM ticket_type WHERE id = 1), 2, CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '3 days'),
-    (order_two, 'DMSEED202605210002', 2008, 4, 11, 1, (SELECT price FROM ticket_type WHERE id = 11), 2, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days');
+    (paid_order, 'DMSEED202605210001', 2004, 1, 1, 1, (SELECT price FROM ticket_type WHERE id = 1), 2, CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '3 days'),
+    (refunded_order, 'DMSEED202605210002', 2008, 4, 11, 1, (SELECT price FROM ticket_type WHERE id = 11), 4, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '1 day');
 
     INSERT INTO order_seat (order_id, session_seat_id, session_id, ticket_type_id, status, create_time, update_time)
-    SELECT order_one, unnest(seat_ids_one), 1, 1, 1, CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '3 days';
+    VALUES
+    (paid_order, paid_seat_id, 1, 1, 1, CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '3 days'),
+    (refunded_order, refunded_seat_id, 4, 11, 4, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '1 day');
 
-    INSERT INTO order_seat (order_id, session_seat_id, session_id, ticket_type_id, status, create_time, update_time)
-    SELECT order_two, unnest(seat_ids_two), 4, 11, 1, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days';
+    UPDATE session_seat
+    SET status = 3, order_id = paid_order, ticket_type_id = 1, update_time = CURRENT_TIMESTAMP - INTERVAL '3 days'
+    WHERE id = paid_seat_id;
 
-    UPDATE session_seat SET status = 3, order_id = order_one, ticket_type_id = 1, update_time = CURRENT_TIMESTAMP - INTERVAL '3 days'
-    WHERE id = ANY(seat_ids_one);
+    UPDATE session_seat
+    SET status = 4, order_id = refunded_order, ticket_type_id = 11, update_time = CURRENT_TIMESTAMP - INTERVAL '1 day'
+    WHERE id = refunded_seat_id;
 
-    UPDATE session_seat SET status = 3, order_id = order_two, ticket_type_id = 11, update_time = CURRENT_TIMESTAMP - INTERVAL '2 days'
-    WHERE id = ANY(seat_ids_two);
-
-    UPDATE ticket_type SET remain_stock = remain_stock - 2 WHERE id = 1;
-    UPDATE ticket_type SET remain_stock = remain_stock - 1 WHERE id = 11;
-
-    SELECT STRING_AGG(seat_label, ', ' ORDER BY id) INTO seat_labels_one FROM session_seat WHERE id = ANY(seat_ids_one);
-    SELECT STRING_AGG(seat_label, ', ' ORDER BY id) INTO seat_labels_two FROM session_seat WHERE id = ANY(seat_ids_two);
+    UPDATE ticket_type SET remain_stock = remain_stock - 1 WHERE id = 1;
 
     INSERT INTO payment (id, order_id, payment_no, payment_method, out_trade_no, trade_no, buyer_id, amount, status, pay_time, create_time)
     VALUES
-    (1, order_one, 'PAYSEED202605210001', 'ALIPAY', 'DMSEED202605210001', 'ALI-SEED-0001', '2004', (SELECT amount FROM "order" WHERE id = order_one), 1, CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '3 days'),
-    (2, order_two, 'PAYSEED202605210002', 'ALIPAY', 'DMSEED202605210002', 'ALI-SEED-0002', '2008', (SELECT amount FROM "order" WHERE id = order_two), 1, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days');
+    (1, paid_order, 'PAYSEED202605210001', 'ALIPAY', 'DMSEED202605210001', 'ALI-SEED-0001', '2004', (SELECT amount FROM "order" WHERE id = paid_order), 1, CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '3 days'),
+    (2, refunded_order, 'PAYSEED202605210002', 'ALIPAY', 'DMSEED202605210002', 'ALI-SEED-0002', '2008', (SELECT amount FROM "order" WHERE id = refunded_order), 1, CURRENT_TIMESTAMP - INTERVAL '2 days', CURRENT_TIMESTAMP - INTERVAL '2 days');
+
+    INSERT INTO refund_request (id, order_id, user_id, payment_id, refund_no, amount, reason, status, reviewer_id, review_note, alipay_refund_no, raw_response, create_time, review_time, refund_time)
+    VALUES
+    (1, refunded_order, 2008, 2, 'REFSEED202605210001', (SELECT amount FROM "order" WHERE id = refunded_order), '演示历史订单已完成退款', 1, 2002, '演示种子自动退款闭环', 'ALI-REFUND-SEED-0001', '{"seed":true,"status":"refunded"}', CURRENT_TIMESTAMP - INTERVAL '1 day 6 hours', CURRENT_TIMESTAMP - INTERVAL '1 day 5 hours', CURRENT_TIMESTAMP - INTERVAL '1 day 4 hours');
 
     INSERT INTO order_snapshot (order_id, activity_id, activity_name, activity_poster, tour_id, station_id, session_id, session_time, venue_name, ticket_type_id, ticket_name, unit_price, quantity, seat_labels, create_time, update_time)
     SELECT o.id, a.id, a.name, a.poster, a.tour_id, a.station_id, o.session_id, s.start_time, v.name, tt.id, tt.name, tt.price, o.quantity,
-           CASE WHEN o.id = order_one THEN seat_labels_one ELSE seat_labels_two END,
+           CASE WHEN o.id = paid_order THEN paid_seat_label ELSE refunded_seat_label END,
            o.create_time, o.update_time
     FROM "order" o
     JOIN session s ON s.id = o.session_id
     JOIN activity a ON a.id = s.activity_id
     JOIN venue v ON v.id = s.venue_id
     JOIN ticket_type tt ON tt.id = o.ticket_type_id
-    WHERE o.id IN (order_one, order_two);
+    WHERE o.id IN (paid_order, refunded_order);
 END $$;
 
 SELECT setval('order_id_seq', COALESCE((SELECT MAX(id) FROM "order"), 1), true);
 SELECT setval('order_seat_id_seq', COALESCE((SELECT MAX(id) FROM order_seat), 1), true);
 SELECT setval('payment_id_seq', COALESCE((SELECT MAX(id) FROM payment), 1), true);
+SELECT setval('refund_request_id_seq', COALESCE((SELECT MAX(id) FROM refund_request), 1), true);
 SELECT setval('order_snapshot_id_seq', COALESCE((SELECT MAX(id) FROM order_snapshot), 1), true);
 
 -- ========== 示例场馆申请 ==========
@@ -487,4 +483,4 @@ INSERT INTO venue_application (id, applicant_id, venue_id, venue_name, city, add
 (2, 2007, NULL, '苏州亲子艺术中心', '苏州', '苏州市工业园区星湖街66号', 1200, '赵童', '13800000005', 'VENUE-SZ-001', '儿童亲子演出', '待审核示例申请。', 0, NULL, NULL, NULL);
 SELECT setval('venue_application_id_seq', 2, true);
 
--- 种子订单保留真实票档、座位、快照和支付记录，用于订单页演示。
+-- 种子订单保留真实票档、座位、快照、支付和退款记录；已支付统计与已售座位保持 1:1。
