@@ -41,6 +41,13 @@ Invoke-BoundaryCheck `
     -Allowed @("InternalUserRefResponse", "UserInternalClient", "UserAccessService")
 
 Invoke-BoundaryCheck `
+    -Name "ticket must not use removed social tables" `
+    -Path "java/java-ticket/src" `
+    -Pattern 'ReviewMapper|MomentMapper|@TableName\(""review""\)|@TableName\(""moment""\)|FROM\s+review|FROM\s+moment|JOIN\s+review|JOIN\s+moment' `
+    -Include @("*.java", "*.xml") `
+    -Allowed @("removedSocialPersistenceTypesAreNotPresent", "assertClassNotFound", "isRemovedSocialPersistenceType", "com.omni.ticket.mapper.ReviewMapper", "com.omni.ticket.mapper.MomentMapper")
+
+Invoke-BoundaryCheck `
     -Name "order must not use ticket table refs" `
     -Path "java/java-order/src" `
     -Pattern 'TicketTypeMapper|SessionSeatMapper|ActivityMapper|SessionMapper|VenueMapper|JOIN\s+activity|JOIN\s+session|JOIN\s+venue|JOIN\s+ticket_type|JOIN\s+session_seat|FROM\s+activity|FROM\s+session|FROM\s+venue|FROM\s+ticket_type|FROM\s+session_seat' `
