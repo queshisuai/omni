@@ -17,7 +17,7 @@
 ### Task 1: 数据库迁移 — 创建新表 + 删除旧表
 
 **Files:**
-- Create: `sql/20260519_seatcraft_redesign.sql`
+- Create: `sql/migrations/shared/20260519_seatcraft_redesign.sql`
 
 - [ ] **Step 1: 编写迁移脚本**
 
@@ -89,7 +89,7 @@ DROP TABLE IF EXISTS venue_seat_layout_template;
 ```bash
 cd C:\Users\Administrator\Desktop\omni
 $env:PGPASSWORD="123456"
-& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -U postgres -d omni_ticket -f sql/20260519_seatcraft_redesign.sql
+& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -U postgres -d omni_ticket -f sql/migrations/shared/20260519_seatcraft_redesign.sql
 ```
 
 ---

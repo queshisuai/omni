@@ -26,7 +26,7 @@
 
 ### SQL
 
-- Create: `sql/20260519_create_seatcraft_layouts.sql`
+- Create: `sql/migrations/shared/20260519_create_seatcraft_layouts.sql`
 - Modify: `sql/init.sql`
 
 职责：新增 SeatCraft 模板、活动座位图、场次座位图、场次布局分区表，并为 `session_seat` 增加 `layout_section_id`。
@@ -106,12 +106,12 @@
 ## Task 1: 数据库结构
 
 **Files:**
-- Create: `sql/20260519_create_seatcraft_layouts.sql`
+- Create: `sql/migrations/shared/20260519_create_seatcraft_layouts.sql`
 - Modify: `sql/init.sql`
 
 - [ ] **Step 1: 新建迁移 SQL**
 
-创建 `sql/20260519_create_seatcraft_layouts.sql`，内容如下：
+创建 `sql/migrations/shared/20260519_create_seatcraft_layouts.sql`，内容如下：
 
 ```sql
 CREATE TABLE venue_seat_layout_template (

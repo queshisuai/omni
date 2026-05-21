@@ -13,7 +13,7 @@
 ## Task 1: Database Migration
 
 **Files:**
-- Create: `sql/20260519_tour_station_foundation.sql`
+- Create: `sql/migrations/shared/20260519_tour_station_foundation.sql`
 
 - [ ] **Step 1: Write migration SQL**
 
@@ -143,7 +143,7 @@ Run:
 
 ```powershell
 $env:PGPASSWORD="123456"
-& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -U postgres -d omni_ticket -f sql/20260519_tour_station_foundation.sql
+& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -U postgres -d omni_ticket -f sql/migrations/shared/20260519_tour_station_foundation.sql
 ```
 
 Expected: migration succeeds without errors.

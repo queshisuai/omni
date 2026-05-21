@@ -40,13 +40,13 @@
 
 **Files:**
 - Modify: `kill-ports.bat`
-- Create: `sql/20260519_cleanup_test_data.sql`
+- Create: `sql/migrations/shared/20260519_cleanup_test_data.sql`
 
 ### Task 0.1: 清理本次验证产生的数据
 
 - [ ] **Step 1: 创建清理 SQL**
 
-Create `sql/20260519_cleanup_test_data.sql`:
+Create `sql/migrations/shared/20260519_cleanup_test_data.sql`:
 
 ```sql
 -- Cleanup manual API verification data created during SeatCraft redesign.
@@ -72,7 +72,7 @@ Run:
 
 ```powershell
 $env:PGPASSWORD="123456"
-& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -U postgres -d omni_ticket -f sql/20260519_cleanup_test_data.sql
+& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -U postgres -d omni_ticket -f sql/migrations/shared/20260519_cleanup_test_data.sql
 ```
 
 Expected:
@@ -135,7 +135,7 @@ Nacos 8848 is not stopped by this script.
 ## Phase 1: 数据库基础模型
 
 **Files:**
-- Create: `sql/20260519_tour_station_foundation.sql`
+- Create: `sql/migrations/shared/20260519_tour_station_foundation.sql`
 - Modify: `java/java-ticket/src/main/java/com/omni/ticket/entity/Activity.java`
 - Create Java entities/mappers for Tour, Station, Venue usage, SeatBlock, SeatOverride, TicketGroup.
 - Modify tests under `java/java-ticket/src/test/java/com/omni/ticket`.
@@ -144,7 +144,7 @@ Nacos 8848 is not stopped by this script.
 
 - [ ] **Step 1: 创建迁移 SQL**
 
-Create `sql/20260519_tour_station_foundation.sql`:
+Create `sql/migrations/shared/20260519_tour_station_foundation.sql`:
 
 ```sql
 CREATE TABLE tour (
@@ -200,7 +200,7 @@ Run:
 
 ```powershell
 $env:PGPASSWORD="123456"
-& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -U postgres -d omni_ticket -f sql/20260519_tour_station_foundation.sql
+& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -U postgres -d omni_ticket -f sql/migrations/shared/20260519_tour_station_foundation.sql
 ```
 
 Expected: `CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX` succeed.
@@ -209,7 +209,7 @@ Expected: `CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX` succeed.
 
 - [ ] **Step 1: 扩展迁移 SQL**
 
-Append to `sql/20260519_tour_station_foundation.sql`:
+Append to `sql/migrations/shared/20260519_tour_station_foundation.sql`:
 
 ```sql
 CREATE TABLE seat_block (

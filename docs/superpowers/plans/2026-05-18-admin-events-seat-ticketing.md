@@ -330,7 +330,7 @@ Expected: 后端测试和前端类型检查通过。
 
 **Files:**
 - Modify: `sql/init.sql`
-- Add: `sql/20260518_create_venue_application.sql`
+- Add: `sql/migrations/shared/20260518_create_venue_application.sql`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/entity/VenueApplication.java`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/mapper/VenueApplicationMapper.java`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/dto/VenueApplicationRequest.java`
@@ -443,7 +443,7 @@ Expected: 通过。
 
 **Files:**
 - Modify: `sql/init.sql`
-- Add: `sql/20260518_create_venue_seat_template.sql`
+- Add: `sql/migrations/shared/20260518_create_venue_seat_template.sql`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/entity/VenueArea.java`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/entity/VenueSeat.java`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/mapper/VenueAreaMapper.java`
@@ -514,7 +514,7 @@ Expected: 通过。
 
 **Files:**
 - Modify: `sql/init.sql`
-- Add: `sql/20260518_create_session_seat.sql`
+- Add: `sql/migrations/shared/20260518_create_session_seat.sql`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/entity/SessionSeat.java`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/mapper/SessionSeatMapper.java`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/service/SessionSeatService.java`
@@ -574,7 +574,7 @@ Expected: 通过。
 
 **Files:**
 - Modify: `sql/init.sql`
-- Add: `sql/20260518_create_ticket_type_area.sql`
+- Add: `sql/migrations/shared/20260518_create_ticket_type_area.sql`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/entity/TicketTypeArea.java`
 - Create: `java/java-ticket/src/main/java/com/omni/ticket/mapper/TicketTypeAreaMapper.java`
 - Modify: `java/java-ticket/src/main/java/com/omni/ticket/controller/AdminController.java`
@@ -692,7 +692,7 @@ Expected: 通过。
 
 **Files:**
 - Modify: `sql/init.sql`
-- Add: `sql/20260518_create_order_seat.sql`
+- Add: `sql/migrations/shared/20260518_create_order_seat.sql`
 - Create: `java/java-order/src/main/java/com/omni/order/entity/OrderSeat.java`
 - Create: `java/java-order/src/main/java/com/omni/order/mapper/OrderSeatMapper.java`
 - Create: `java/java-order/src/main/java/com/omni/order/dto/LockSeatsRequest.java`

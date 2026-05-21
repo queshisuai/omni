@@ -45,7 +45,7 @@ Out of scope:
 
 Create:
 
-- `sql/20260520_order_snapshot.sql`  
+- `sql/migrations/shared/20260520_order_snapshot.sql`  
   Owns table creation and idempotent historical backfill.
 - `java/java-order/src/main/java/com/omni/order/entity/OrderSnapshot.java`  
   MyBatis-Plus entity for `order_snapshot`.
@@ -88,13 +88,13 @@ Each task should be run and reviewed before starting the next task. Do not run t
 ## Task D1: SQL, Entity And Mapper
 
 **Files:**
-- Create: `sql/20260520_order_snapshot.sql`
+- Create: `sql/migrations/shared/20260520_order_snapshot.sql`
 - Create: `java/java-order/src/main/java/com/omni/order/entity/OrderSnapshot.java`
 - Create: `java/java-order/src/main/java/com/omni/order/mapper/OrderSnapshotMapper.java`
 
 - [ ] **Step 1: Create migration SQL**
 
-Create `sql/20260520_order_snapshot.sql` with this complete content:
+Create `sql/migrations/shared/20260520_order_snapshot.sql` with this complete content:
 
 ```sql
 -- owner: java-order

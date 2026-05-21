@@ -13,7 +13,7 @@
 ## File Structure
 
 后端新增文件：
-- `sql/20260517_create_organizer_application.sql`：已有库增量建表脚本。
+- `sql/migrations/shared/20260517_create_organizer_application.sql`：已有库增量建表脚本。
 - `java/java-user/src/main/java/com/omni/user/entity/OrganizerApplication.java`：入驻申请实体。
 - `java/java-user/src/main/java/com/omni/user/mapper/OrganizerApplicationMapper.java`：入驻申请 Mapper。
 - `java/java-user/src/main/java/com/omni/user/dto/UserInfoResponse.java`：安全用户信息响应，不含 `password`。
@@ -66,12 +66,12 @@
 ### Task 1: 数据库表结构
 
 **Files:**
-- Create: `sql/20260517_create_organizer_application.sql`
+- Create: `sql/migrations/shared/20260517_create_organizer_application.sql`
 - Modify: `sql/init.sql`
 
 - [ ] **Step 1: 新增增量 SQL**
 
-Create `sql/20260517_create_organizer_application.sql`:
+Create `sql/migrations/shared/20260517_create_organizer_application.sql`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS organizer_application (
@@ -111,7 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_organizer_application_create_time ON organizer_ap
 Run:
 
 ```powershell
-psql -U postgres -d omni_ticket -f sql/20260517_create_organizer_application.sql
+psql -U postgres -d omni_ticket -f sql/migrations/shared/20260517_create_organizer_application.sql
 ```
 
 Expected: 表和索引创建成功；重复执行时只出现 already exists 提示，不报错。
