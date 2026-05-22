@@ -183,7 +183,7 @@ Run: `git add java/java-user && git commit -m "feat: upload user avatars locally
 
 - [ ] **Step 1: Write failing service tests**
 
-Create `TicketAssetServiceTest` with tests for `activity-poster` image success, `venue-proof` PDF success, unsupported `bizType` rejection, and invalid file type rejection.
+Create `TicketAssetServiceTest` with tests for `activity-poster` image success, `venue-proof` rejection, unsupported `bizType` rejection, and invalid file type rejection.
 
 Expected before implementation: compile fails because `TicketAssetService` does not exist.
 
@@ -195,10 +195,10 @@ Implement fields matching `ticket_asset`. Reuse the same DTO shape as user servi
 
 Rules:
 
-- Allowed biz types: `activity-poster`, `tour-poster`, `station-poster`, `artist-avatar`, `venue-proof`.
-- Poster/avatar biz types accept images only.
-- `venue-proof` accepts images and `application/pdf`.
-- Image max size is 5 MB; proof max size is 10 MB.
+- Allowed biz types: `activity-poster`, `tour-poster`, `station-poster`, `artist-avatar`.
+- All allowed biz types accept images only.
+- `venue-proof` is not supported in Phase 1 because proof materials must not be publicly served from `/uploads/ticket/**`; private storage and authenticated download will be designed separately.
+- Image max size is 5 MB.
 - Writes under `<uploadRoot>/ticket/<bizType>/YYYY/MM/<uuid>.<ext>`.
 - Public URL is `/uploads/ticket/<bizType>/YYYY/MM/<uuid>.<ext>`.
 - Calls `UserAccessService.requireAdminOrOrganizer(userId)` if such helper exists; otherwise use the existing role-checking pattern in `AdminController` before calling the service.

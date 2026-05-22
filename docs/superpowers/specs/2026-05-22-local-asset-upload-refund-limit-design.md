@@ -37,7 +37,7 @@
 | 巡演海报 | `java-ticket` | `omni_ticket_split` | `ticket_asset` |
 | 站点海报 | `java-ticket` | `omni_ticket_split` | `ticket_asset` |
 | 艺人头像 | `java-ticket` | `omni_ticket_split` | `ticket_asset` |
-| 场地审批材料 | `java-ticket` | `omni_ticket_split` | `ticket_asset` |
+| 场地审批材料 | 后续私有存储方案 | 后续设计 | 后续设计 |
 
 统一本地根目录由配置控制：
 
@@ -61,8 +61,7 @@ runtime/uploads/
     ├── activity-poster/YYYY/MM/<uuid>.<ext>
     ├── tour-poster/YYYY/MM/<uuid>.<ext>
     ├── station-poster/YYYY/MM/<uuid>.<ext>
-    ├── artist-avatar/YYYY/MM/<uuid>.<ext>
-    └── venue-proof/YYYY/MM/<uuid>.<ext>
+    └── artist-avatar/YYYY/MM/<uuid>.<ext>
 ```
 
 公开访问路径统一为：
@@ -78,8 +77,8 @@ runtime/uploads/
 - `activity.poster`
 - `tour.poster`
 - `station.poster`
-- `venue_application.proof_file_url`
-- `activity.venue_approval_file_url`
+
+Phase 1 不通过 `/uploads/ticket/**` 公开上传 `venue-proof` 或其他证明材料；场地申请证明、活动外部审批文件等敏感材料后续用私有存储和鉴权下载单独设计。
 
 asset 表用于记录元数据和后续清理、审计、迁移。
 
@@ -139,7 +138,6 @@ CREATE INDEX idx_ticket_asset_biz_type ON ticket_asset(biz_type);
 - `tour-poster`
 - `station-poster`
 - `artist-avatar`
-- `venue-proof`
 
 ## 上传接口
 
@@ -173,8 +171,8 @@ Content-Type: multipart/form-data
 
 - `userId` 必须存在且有权限。
 - admin 可上传所有 `bizType`。
-- organizer 可上传自己创建活动、巡演、站点、场地申请需要的素材。
-- `venue-proof` 允许 PDF 或图片；海报和头像只允许图片。
+- organizer 可上传自己创建活动、巡演、站点需要的公开图片素材。
+- Phase 1 只允许公开图片素材：`activity-poster`、`tour-poster`、`station-poster`、`artist-avatar`。不支持 `venue-proof`，PDF 永远拒绝。
 - 写入 `ticket_asset`，返回 `AssetUploadResponse`。
 
 返回结构：
@@ -212,8 +210,7 @@ location /uploads/ {
 - 后台创建/编辑 Tour 海报。
 - 后台创建/编辑 Station 海报。
 - 艺人头像。
-- 场地申请 proof file。
-- 活动外部审批文件 `venueApprovalFileUrl`。
+- 场地申请 proof file 和活动外部审批文件 `venueApprovalFileUrl` 不在 Phase 1 公开上传范围内，后续使用私有存储和鉴权下载方案。
 
 上传成功后，前端把返回的 `publicUrl` 写入现有表单字段并展示预览。
 

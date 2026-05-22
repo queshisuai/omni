@@ -29,10 +29,8 @@ import java.util.UUID;
 public class TicketAssetService {
 
     private static final long MAX_IMAGE_BYTES = 5L * 1024L * 1024L;
-    private static final long MAX_PROOF_BYTES = 10L * 1024L * 1024L;
-    private static final String BIZ_TYPE_VENUE_PROOF = "venue-proof";
     private static final Set<String> ALLOWED_BIZ_TYPES = Set.of(
-            "activity-poster", "tour-poster", "station-poster", "artist-avatar", BIZ_TYPE_VENUE_PROOF);
+            "activity-poster", "tour-poster", "station-poster", "artist-avatar");
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
 
     private final TicketAssetMapper ticketAssetMapper;
@@ -56,8 +54,7 @@ public class TicketAssetService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "上传文件不能为空");
         }
         String contentType = file.getContentType();
-        boolean proof = BIZ_TYPE_VENUE_PROOF.equals(bizType);
-        validateFileTypeAndSize(proof, contentType, file);
+        validateFileTypeAndSize(contentType, file);
 
         LocalDate now = LocalDate.now();
         String extension = extensionFor(contentType);
@@ -94,24 +91,15 @@ public class TicketAssetService {
         }
     }
 
-    private void validateFileTypeAndSize(boolean proof, String contentType, MultipartFile file) {
+    private void validateFileTypeAndSize(String contentType, MultipartFile file) {
         boolean image = ALLOWED_IMAGE_TYPES.contains(contentType);
-        boolean pdf = "application/pdf".equals(contentType);
-        if (!proof && !image) {
+        if (!image) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "该资产类型仅支持 JPG、PNG、WEBP 或 GIF 图片");
         }
-        if (proof && !image && !pdf) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "场馆证明仅支持 JPG、PNG、WEBP、GIF 图片或 PDF");
+        if (file.getSize() > MAX_IMAGE_BYTES) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "图片文件不能超过5MB");
         }
-        long maxSize = proof ? MAX_PROOF_BYTES : MAX_IMAGE_BYTES;
-        if (file.getSize() > maxSize) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, proof ? "场馆证明文件不能超过10MB" : "图片文件不能超过5MB");
-        }
-        if (image) {
-            validateImageMagic(contentType, file);
-        } else {
-            validatePdfMagic(file);
-        }
+        validateImageMagic(contentType, file);
     }
 
     private AssetUploadResponse toAssetUploadResponse(TicketAsset asset) {
@@ -179,12 +167,6 @@ public class TicketAssetService {
         }
     }
 
-    private void validatePdfMagic(MultipartFile file) {
-        if (!startsWith(readHeader(file), new int[] {'%', 'P', 'D', 'F', '-'})) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "文件内容不是有效PDF");
-        }
-    }
-
     private boolean startsWith(byte[] bytes, int[] expected) {
         if (bytes.length < expected.length) {
             return false;
@@ -224,7 +206,7 @@ public class TicketAssetService {
         if ("image/gif".equals(contentType)) {
             return "gif";
         }
-        return "pdf";
+        throw new BusinessException(ResultCode.BAD_REQUEST, "该资产类型仅支持 JPG、PNG、WEBP 或 GIF 图片");
     }
 
     private MessageDigest newSha256Digest() {

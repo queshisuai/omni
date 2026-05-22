@@ -58,30 +58,21 @@ class TicketAssetServiceTest {
     }
 
     @Test
-    void uploadVenueProofStoresPdfAsset() throws Exception {
+    void uploadRejectsVenueProofBizType() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
-        when(ticketAssetMapper.insert(any(TicketAsset.class))).thenAnswer(invocation -> {
-            TicketAsset asset = invocation.getArgument(0);
-            asset.setId(9102L);
-            return 1;
-        });
         TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
         MockMultipartFile file = new MockMultipartFile(
                 "file",
-                "proof.pdf",
-                "application/pdf",
-                "%PDF-1.7\ncontent".getBytes()
+                "proof.png",
+                "image/png",
+                new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
         );
 
-        AssetUploadResponse response = service.upload(USER_ID, "venue-proof", file);
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.upload(USER_ID, "venue-proof", file));
 
-        assertEquals(9102L, response.getId());
-        assertEquals("venue-proof", response.getBizType());
-        assertEquals("application/pdf", response.getMimeType());
-        assertTrue(response.getPublicUrl().startsWith("/uploads/ticket/venue-proof/"));
-        assertTrue(response.getPublicUrl().endsWith(".pdf"));
-        assertTrue(Files.exists(uploadRoot.resolve(response.getPublicUrl().substring("/uploads/".length()))));
-        verify(ticketAssetMapper).insert(any(TicketAsset.class));
+        assertEquals("不支持的资产类型", exception.getMessage());
+        verifyNoInteractions(ticketAssetMapper);
     }
 
     @Test
@@ -152,7 +143,7 @@ class TicketAssetServiceTest {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.upload(USER_ID, "venue-proof", file));
 
-        assertEquals("文件内容不是有效PDF", exception.getMessage());
+        assertEquals("不支持的资产类型", exception.getMessage());
         verifyNoInteractions(ticketAssetMapper);
     }
 
@@ -175,21 +166,20 @@ class TicketAssetServiceTest {
     }
 
     @Test
-    void uploadRejectsVenueProofLargerThanTenMb() throws Exception {
+    void uploadRejectsPdfForVenueProofBizType() throws Exception {
         Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
         TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
-        byte[] content = new byte[10 * 1024 * 1024 + 1];
-        content[0] = '%';
-        content[1] = 'P';
-        content[2] = 'D';
-        content[3] = 'F';
-        content[4] = '-';
-        MockMultipartFile file = new MockMultipartFile("file", "proof.pdf", "application/pdf", content);
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "proof.pdf",
+                "application/pdf",
+                "%PDF-1.7\ncontent".getBytes()
+        );
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.upload(USER_ID, "venue-proof", file));
 
-        assertEquals("场馆证明文件不能超过10MB", exception.getMessage());
+        assertEquals("不支持的资产类型", exception.getMessage());
         verifyNoInteractions(ticketAssetMapper);
     }
 
