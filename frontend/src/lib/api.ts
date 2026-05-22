@@ -163,6 +163,18 @@ export async function listCategories() {
   return request<import('@/types/api').CategoryVO[]>('/api/ticket/categories')
 }
 
+export async function searchAdminArtists(keyword: string) {
+  const params = new URLSearchParams()
+  if (keyword.trim()) params.set('keyword', keyword.trim())
+  const qs = params.toString()
+  return request<import('@/types/api').ArtistSearchVO[]>(`/api/ticket/admin/artists/search${qs ? `?${qs}` : ''}`)
+}
+
+export async function getAdminArtist(id: number) {
+  assertPositiveInteger(id, 'artistId')
+  return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}`)
+}
+
 export async function createReservation(userId: number, sessionId: number) {
   return request<void>('/api/ticket/reservations', {
     method: 'POST',

@@ -94,6 +94,36 @@ export interface OrganizerApplicationVO {
 
 // ========== 票务/活动 ==========
 
+export type ActivityArtistVisibility = 'public' | 'hidden'
+
+export interface ActivityArtistVO {
+  artistId: number
+  name?: string | null
+  alias?: string | null
+  artistType?: string | null
+  countryOrRegion?: string | null
+  categoryTags?: string | null
+  avatar?: string | null
+  isPrimary?: boolean | null
+  primary?: boolean | null
+  roleType?: string | null
+  roleName?: string | null
+  visibility: ActivityArtistVisibility
+  sort: number
+}
+
+export interface ArtistSearchVO {
+  id: number
+  name: string
+  alias?: string | null
+  artistType?: string | null
+  countryOrRegion?: string | null
+  categoryTags?: string | null
+  avatar?: string | null
+  representativeWorks?: string | null
+  riskStatus?: string | null
+}
+
 /** 分页结果 */
 export interface PageResult<T> {
   records: T[]
@@ -114,6 +144,7 @@ export interface ActivityVO {
   startTime: string
   minPrice: number | null
   status: number
+  artists?: ActivityArtistVO[]
 }
 
 /** 分类 */
@@ -131,6 +162,7 @@ export interface ActivityEntity {
   categoryId: number
   artistId: number
   artistName?: string | null
+  artists?: ActivityArtistVO[]
   organizerId?: number | null
   venueApplicationId?: number | null
   venueApprovalNo?: string | null
@@ -158,6 +190,12 @@ export interface DeleteActivityResponse {
 export interface ArtistEntity {
   id: number
   name: string
+  alias?: string | null
+  artistType?: string | null
+  countryOrRegion?: string | null
+  categoryTags?: string | null
+  representativeWorks?: string | null
+  riskStatus?: string | null
   avatar: string | null
   description: string | null
 }
@@ -499,6 +537,7 @@ export interface ActivityDetailVO {
   activity: ActivityEntity
   category: CategoryVO
   artist: ArtistEntity
+  artists?: ActivityArtistVO[]
   sessions: SessionDetail[]
 }
 
