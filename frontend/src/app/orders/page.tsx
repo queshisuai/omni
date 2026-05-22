@@ -97,6 +97,8 @@ export default function OrdersPage() {
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
   const loadOrdersRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
+  const refundOptionsRequestIdRef = useRef(0)
+  const refundTargetIdRef = useRef<number | null>(null)
 
   const loadOrders = () => {
     if (!isAuthenticated()) {
@@ -273,8 +275,11 @@ export default function OrdersPage() {
         },
       )
       setRefunds((prev) => [next, ...prev.filter((item) => item.id !== next.id)])
+      refundOptionsRequestIdRef.current += 1
+      refundTargetIdRef.current = null
       setRefundTarget(null)
       setRefundOptions(null)
+      setRefundOptionsLoading(false)
       setRefundQuantity(1)
       setSelectedOrderSeatIds([])
       setRefundReason('')
@@ -292,6 +297,9 @@ export default function OrdersPage() {
       alert('请先登录后再申请退款')
       return
     }
+    const requestId = refundOptionsRequestIdRef.current + 1
+    refundOptionsRequestIdRef.current = requestId
+    refundTargetIdRef.current = order.id
     setRefundTarget(order)
     setRefundReason('')
     setRefundReasonType('general')
@@ -301,20 +309,27 @@ export default function OrdersPage() {
     setRefundOptionsLoading(true)
     try {
       const options = await getRefundOptions(order.id, user.userId)
+      if (refundOptionsRequestIdRef.current !== requestId || refundTargetIdRef.current !== order.id) return
       setRefundOptions(options)
       setRefundQuantity(Math.min(1, options.refundableQuantity))
     } catch (err: unknown) {
+      if (refundOptionsRequestIdRef.current !== requestId || refundTargetIdRef.current !== order.id) return
       alert(err instanceof Error ? err.message : '加载退款明细失败')
       setRefundTarget(null)
+      refundTargetIdRef.current = null
     } finally {
+      if (refundOptionsRequestIdRef.current !== requestId || refundTargetIdRef.current !== order.id) return
       setRefundOptionsLoading(false)
     }
   }
 
   const closeRefundDialog = () => {
     if (refundSubmitting) return
+    refundOptionsRequestIdRef.current += 1
+    refundTargetIdRef.current = null
     setRefundTarget(null)
     setRefundOptions(null)
+    setRefundOptionsLoading(false)
     setRefundQuantity(1)
     setSelectedOrderSeatIds([])
     setRefundReason('')
