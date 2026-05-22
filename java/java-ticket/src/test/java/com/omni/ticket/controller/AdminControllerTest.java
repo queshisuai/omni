@@ -55,6 +55,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
@@ -313,6 +314,38 @@ class AdminControllerTest {
         verify(activityMapper).insert(captor.capture());
         assertEquals(200, result.getCode());
         assertEquals("published", captor.getValue().getSeatMapVisibility());
+    }
+
+    @Test
+    void createActivityRejectsNonPositivePerUserLimit() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Map<String, Object> body = validCreateActivityBody();
+        body.put("perUserLimit", 0);
+
+        Result<Activity> result = controller.createActivity(body);
+
+        assertEquals(400, result.getCode());
+        assertEquals("个人限购张数必须大于0", result.getMessage());
+        verify(activityMapper, never()).insert(any(Activity.class));
+    }
+
+    @Test
+    void createActivitySavesPerUserLimit() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Map<String, Object> body = validCreateActivityBody();
+        body.put("perUserLimit", 3);
+        when(activityMapper.insert(any(Activity.class))).thenAnswer(invocation -> {
+            Activity activity = invocation.getArgument(0);
+            activity.setId(100L);
+            return 1;
+        });
+
+        Result<Activity> result = controller.createActivity(body);
+
+        assertEquals(200, result.getCode());
+        assertEquals(3, result.getData().getPerUserLimit());
     }
 
     @Test
@@ -604,5 +637,14 @@ class AdminControllerTest {
 
     private AdminController controller() {
         return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService);
+    }
+
+    private Map<String, Object> validCreateActivityBody() {
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", 2003L);
+        body.put("categoryId", 1L);
+        body.put("artistId", 1L);
+        body.put("name", "测试活动");
+        return body;
     }
 }

@@ -456,13 +456,13 @@ export async function createTourDraft(body: Record<string, unknown>) {
   })
 }
 
-export async function createStationDraft(tourId: number, body: Record<string, unknown>) {
+export async function createStationDraft(tourId: number, body: Record<string, unknown> & { perUserLimit?: number | null }) {
   return request<import('@/types/api').StationEntity>(`/api/ticket/admin/tours/${tourId}/stations/draft`, {
     method: 'POST', body: JSON.stringify(body),
   })
 }
 
-export async function publishStation(stationId: number, body: Record<string, unknown>) {
+export async function publishStation(stationId: number, body: Record<string, unknown> & { perUserLimit?: number | null }) {
   return request<Record<string, unknown>>(`/api/ticket/admin/stations/${stationId}/publish`, {
     method: 'POST', body: JSON.stringify(body),
   })
@@ -487,13 +487,13 @@ export async function getAdminActivity(id: number, userId: number) {
   return request<import('@/types/api').ActivityEntity>(`/api/ticket/admin/activities/${id}?userId=${userId}`)
 }
 
-export async function createAdminActivity(body: Record<string, unknown>) {
+export async function createAdminActivity(body: Record<string, unknown> & { perUserLimit?: number | null }) {
   return request<import('@/types/api').ActivityEntity>('/api/ticket/admin/activities', {
     method: 'POST', body: JSON.stringify(body),
   })
 }
 
-export async function updateAdminActivity(id: number, body: Record<string, unknown>) {
+export async function updateAdminActivity(id: number, body: Record<string, unknown> & { perUserLimit?: number | null }) {
   return request<import('@/types/api').ActivityEntity>(`/api/ticket/admin/activities/${id}`, {
     method: 'PUT', body: JSON.stringify(body),
   })

@@ -378,6 +378,7 @@ public class TourStationService {
         activity.setDescription(defaultText(station.getDescription(), tour.getDescription()));
         activity.setPoster(defaultText(station.getPoster(), tour.getPoster()));
         activity.setPublishStatus("publishing");
+        activity.setPerUserLimit(parsePerUserLimit(body == null ? null : body.get("perUserLimit")));
         activity.setUpdateTime(now);
         if (!existingActivity) {
             activityMapper.insert(activity);
@@ -489,6 +490,22 @@ public class TourStationService {
 
     private Long defaultLong(Long value, Long fallback) {
         return value == null ? fallback : value;
+    }
+
+    private Integer parsePerUserLimit(Object value) {
+        String text = optionalText(value);
+        if (text == null) {
+            return null;
+        }
+        try {
+            int parsed = Integer.parseInt(text);
+            if (parsed <= 0) {
+                throw new BusinessException(400, "个人限购张数必须大于0");
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new BusinessException(400, "个人限购张数必须为数字");
+        }
     }
 
     private String defaultText(String value, String fallback) {

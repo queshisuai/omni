@@ -14,6 +14,7 @@ export default function NewStationPage() {
   const [userId, setUserId] = useState(0)
   const [city, setCity] = useState('')
   const [stationName, setStationName] = useState('')
+  const [perUserLimit, setPerUserLimit] = useState('')
   const [announceOnly, setAnnounceOnly] = useState(true)
   const [applications, setApplications] = useState<VenueApplicationVO[]>([])
   const [selectedVenueApplicationId, setSelectedVenueApplicationId] = useState('')
@@ -62,6 +63,7 @@ export default function NewStationPage() {
         userId,
         city: city.trim(),
         stationName: stationName.trim(),
+        perUserLimit: perUserLimit.trim() ? Number(perUserLimit) : null,
         announceOnly,
         venueApplicationId: announceOnly ? null : Number(selectedVenueApplicationId),
       })
@@ -104,6 +106,11 @@ export default function NewStationPage() {
           <label className="mb-3 block">
             <span className="mb-1 block text-[13px] text-[#666]">城市站点名 *</span>
             <input value={stationName} onChange={e => setStationName(e.target.value)} className="w-full rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" placeholder="例：上海站" />
+          </label>
+          <label className="mb-3 block">
+            <span className="mb-1 block text-[13px] text-[#666]">个人限购</span>
+            <input type="number" min={1} value={perUserLimit} onChange={e => setPerUserLimit(e.target.value)} className="w-full rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空表示不限购，例如 2" />
+            <span className="mt-1 block text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</span>
           </label>
           <label className="mb-3 flex items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[14px] text-[#333]">
             <input type="checkbox" checked={announceOnly} onChange={e => setAnnounceOnly(e.target.checked)} className="mt-1" />

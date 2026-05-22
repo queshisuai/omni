@@ -46,6 +46,7 @@ export default function NewActivityPage() {
   const [venueApprovalFileUrl, setVenueApprovalFileUrl] = useState('')
   const [venueApprovalNote, setVenueApprovalNote] = useState('')
   const [seatMapVisibility, setSeatMapVisibility] = useState<SeatMapVisibility>('hidden')
+  const [perUserLimit, setPerUserLimit] = useState('')
 
   // 步骤2：场次
   const [sessions, setSessions] = useState<SessionDraft[]>([{ key: 's1', venueId: null, startTime: '', endTime: '' }])
@@ -148,6 +149,7 @@ export default function NewActivityPage() {
         venueApprovalFileUrl: venueApprovalFileUrl.trim() || null,
         venueApprovalNote: venueApprovalNote.trim() || null,
         seatMapVisibility,
+        perUserLimit: perUserLimit.trim() ? Number(perUserLimit) : null,
       })
 
       const selectedTemplate = templateCandidates.find(candidate => `${candidate.sourceType}:${candidate.sourceId}` === selectedTemplateSource)
@@ -258,6 +260,11 @@ export default function NewActivityPage() {
             <div className="mb-4">
               <label className="block text-[13px] font-medium text-[#333] mb-1.5">海报URL</label>
               <input value={poster} onChange={e => setPoster(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="https://..." />
+            </div>
+            <div className="mb-4">
+              <label className="block text-[13px] font-medium text-[#333] mb-1.5">个人限购</label>
+              <input type="number" min={1} value={perUserLimit} onChange={e => setPerUserLimit(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空表示不限购，例如 2" />
+              <p className="mt-1 text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</p>
             </div>
             <div className="rounded-xl border border-[#ffe1ec] bg-[#fff7fa] p-4">
               <div className="mb-3 text-[14px] font-semibold text-[#1a1a2e]">场地审批凭证</div>

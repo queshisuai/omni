@@ -261,6 +261,7 @@ export interface ActivityEntity {
   riskSuspendedAt?: string | null
   riskRestoredAt?: string | null
   seatMapVisibility?: 'published' | 'hidden' | null
+  perUserLimit?: number | null
   status: number
   createTime: string
 }

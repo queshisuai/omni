@@ -359,6 +359,11 @@ public class AdminController {
         String seatMapVisibility = parseSeatMapVisibility(body.get("seatMapVisibility"), SEAT_MAP_VISIBILITY_HIDDEN);
         if (seatMapVisibility == null) return Result.fail(400, "座位图展示策略不正确");
         activity.setSeatMapVisibility(seatMapVisibility);
+        try {
+            activity.setPerUserLimit(parsePerUserLimit(body.get("perUserLimit")));
+        } catch (IllegalArgumentException e) {
+            return Result.fail(400, e.getMessage());
+        }
         activity.setName(name);
         activity.setDescription(body.get("description") != null ? body.get("description").toString() : null);
         activity.setPoster(body.get("poster") != null ? body.get("poster").toString() : null);
@@ -419,6 +424,13 @@ public class AdminController {
             String seatMapVisibility = parseSeatMapVisibility(body.get("seatMapVisibility"), null);
             if (seatMapVisibility == null) return Result.fail(400, "座位图展示策略不正确");
             activity.setSeatMapVisibility(seatMapVisibility);
+        }
+        if (body.containsKey("perUserLimit")) {
+            try {
+                activity.setPerUserLimit(parsePerUserLimit(body.get("perUserLimit")));
+            } catch (IllegalArgumentException e) {
+                return Result.fail(400, e.getMessage());
+            }
         }
         activityMapper.updateById(activity);
         return Result.success(activity);
@@ -558,6 +570,21 @@ public class AdminController {
             return visibility;
         }
         return null;
+    }
+
+    private Integer parsePerUserLimit(Object value) {
+        if (value == null || value.toString().trim().isEmpty()) {
+            return null;
+        }
+        try {
+            int parsed = Integer.parseInt(value.toString().trim());
+            if (parsed <= 0) {
+                throw new IllegalArgumentException("个人限购张数必须大于0");
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("个人限购张数必须为数字");
+        }
     }
 
     @DeleteMapping("/activities/{id}")
