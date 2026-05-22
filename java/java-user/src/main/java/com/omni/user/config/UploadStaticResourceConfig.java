@@ -20,9 +20,12 @@ public class UploadStaticResourceConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        Path userRoot = resolveUploadRoot(uploadRoot).resolve("user").normalize();
         registry.addResourceHandler("/uploads/user/**")
-                .addResourceLocations(userRoot.toUri().toString());
+                .addResourceLocations(userUploadLocation(uploadRoot));
+    }
+
+    static String userUploadLocation(String configuredRoot) {
+        return withTrailingSlash(resolveUploadRoot(configuredRoot).resolve("user").normalize().toUri().toString());
     }
 
     static Path resolveUploadRoot(String configuredRoot) {
@@ -32,5 +35,9 @@ public class UploadStaticResourceConfig implements WebMvcConfigurer {
         return Paths.get(System.getProperty("user.dir"), "..", "runtime", "uploads")
                 .toAbsolutePath()
                 .normalize();
+    }
+
+    private static String withTrailingSlash(String location) {
+        return location.endsWith("/") ? location : location + "/";
     }
 }
