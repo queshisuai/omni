@@ -20,9 +20,9 @@ public class UploadStaticResourceConfig implements WebMvcConfigurer {
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        Path root = resolveUploadRoot(uploadRoot);
-        registry.addResourceHandler("/uploads/**")
-                .addResourceLocations(root.toUri().toString());
+        Path userRoot = resolveUploadRoot(uploadRoot).resolve("user").normalize();
+        registry.addResourceHandler("/uploads/user/**")
+                .addResourceLocations(userRoot.toUri().toString());
     }
 
     static Path resolveUploadRoot(String configuredRoot) {

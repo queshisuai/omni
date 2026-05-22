@@ -31,6 +31,14 @@ spring:
           uri: lb://java-ticket
           predicates:
             - Path=/api/ticket/**
+        - id: ticket-uploads
+          uri: lb://java-ticket
+          predicates:
+            - Path=/uploads/ticket/**
+        - id: user-uploads
+          uri: lb://java-user
+          predicates:
+            - Path=/uploads/user/**
         - id: order-service
           uri: lb://java-order
           predicates:

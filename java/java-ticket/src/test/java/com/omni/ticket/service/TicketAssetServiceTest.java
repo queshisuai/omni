@@ -137,4 +137,76 @@ class TicketAssetServiceTest {
         assertEquals("文件内容不是有效图片", exception.getMessage());
         verifyNoInteractions(ticketAssetMapper);
     }
+
+    @Test
+    void uploadRejectsForgedPdfMimeContent() throws Exception {
+        Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "proof.pdf",
+                "application/pdf",
+                "not-a-pdf".getBytes()
+        );
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.upload(USER_ID, "venue-proof", file));
+
+        assertEquals("文件内容不是有效PDF", exception.getMessage());
+        verifyNoInteractions(ticketAssetMapper);
+    }
+
+    @Test
+    void uploadRejectsPdfForPosterBizType() throws Exception {
+        Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "poster.pdf",
+                "application/pdf",
+                "%PDF-1.7\ncontent".getBytes()
+        );
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.upload(USER_ID, "activity-poster", file));
+
+        assertEquals("该资产类型仅支持 JPG、PNG、WEBP 或 GIF 图片", exception.getMessage());
+        verifyNoInteractions(ticketAssetMapper);
+    }
+
+    @Test
+    void uploadRejectsVenueProofLargerThanTenMb() throws Exception {
+        Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        byte[] content = new byte[10 * 1024 * 1024 + 1];
+        content[0] = '%';
+        content[1] = 'P';
+        content[2] = 'D';
+        content[3] = 'F';
+        content[4] = '-';
+        MockMultipartFile file = new MockMultipartFile("file", "proof.pdf", "application/pdf", content);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.upload(USER_ID, "venue-proof", file));
+
+        assertEquals("场馆证明文件不能超过10MB", exception.getMessage());
+        verifyNoInteractions(ticketAssetMapper);
+    }
+
+    @Test
+    void uploadDeletesStoredFileWhenDatabaseInsertFails() throws Exception {
+        Path uploadRoot = Files.createTempDirectory("omni-ticket-asset-test");
+        when(ticketAssetMapper.insert(any(TicketAsset.class))).thenThrow(new RuntimeException("db down"));
+        TicketAssetService service = new TicketAssetService(ticketAssetMapper, uploadRoot.toString());
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "poster.gif",
+                "image/gif",
+                new byte[] {'G', 'I', 'F', '8', '9', 'a', 1, 2, 3}
+        );
+
+        assertThrows(RuntimeException.class, () -> service.upload(USER_ID, "activity-poster", file));
+
+        assertEquals(0L, Files.walk(uploadRoot).filter(Files::isRegularFile).count());
+    }
 }
