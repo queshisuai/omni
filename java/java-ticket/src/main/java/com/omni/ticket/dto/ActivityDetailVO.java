@@ -12,6 +12,7 @@ public class ActivityDetailVO {
     private Activity activity;
     private Category category;
     private Artist artist;
+    private List<ActivityArtistDto> artists;
     private List<SessionDetail> sessions;
 
     public Activity getActivity() { return activity; }
@@ -20,6 +21,8 @@ public class ActivityDetailVO {
     public void setCategory(Category category) { this.category = category; }
     public Artist getArtist() { return artist; }
     public void setArtist(Artist artist) { this.artist = artist; }
+    public List<ActivityArtistDto> getArtists() { return artists; }
+    public void setArtists(List<ActivityArtistDto> artists) { this.artists = artists; }
     public List<SessionDetail> getSessions() { return sessions; }
     public void setSessions(List<SessionDetail> sessions) { this.sessions = sessions; }
 

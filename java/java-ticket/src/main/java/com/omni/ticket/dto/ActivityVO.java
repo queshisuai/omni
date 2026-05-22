@@ -2,6 +2,7 @@ package com.omni.ticket.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 活动列表项
@@ -17,6 +18,7 @@ public class ActivityVO {
     private LocalDateTime startTime;
     private BigDecimal minPrice;
     private Integer status;
+    private List<ActivityArtistDto> artists;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -36,4 +38,6 @@ public class ActivityVO {
     public void setMinPrice(BigDecimal minPrice) { this.minPrice = minPrice; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
+    public List<ActivityArtistDto> getArtists() { return artists; }
+    public void setArtists(List<ActivityArtistDto> artists) { this.artists = artists; }
 }

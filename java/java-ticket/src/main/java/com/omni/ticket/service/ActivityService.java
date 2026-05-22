@@ -5,10 +5,12 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.ActivityDetailVO;
+import com.omni.ticket.dto.ActivityArtistDto;
 import com.omni.ticket.dto.ActivityVO;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.BigDecimal;
@@ -28,16 +30,25 @@ public class ActivityService {
     private final SessionMapper sessionMapper;
     private final VenueMapper venueMapper;
     private final TicketTypeMapper ticketTypeMapper;
+    private final ActivityArtistService activityArtistService;
+
+    public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
+                            ArtistMapper artistMapper, SessionMapper sessionMapper,
+                            VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper) {
+        this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper, null);
+    }
 
     public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
                            ArtistMapper artistMapper, SessionMapper sessionMapper,
-                           VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper) {
+                           VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
+                           ActivityArtistService activityArtistService) {
         this.activityMapper = activityMapper;
         this.categoryMapper = categoryMapper;
         this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
         this.venueMapper = venueMapper;
         this.ticketTypeMapper = ticketTypeMapper;
+        this.activityArtistService = activityArtistService;
     }
 
     /**
@@ -107,8 +118,17 @@ public class ActivityService {
             Category category = categoryMap.get(activity.getCategoryId());
             if (category != null) vo.setCategoryName(category.getName());
 
-            Artist artist = artistMap.get(activity.getArtistId());
-            if (artist != null) vo.setArtistName(artist.getName());
+            List<ActivityArtistDto> publicArtists = activityArtistService == null ? List.of() : activityArtistService.listPublicLineup(activity.getId());
+            vo.setArtists(publicArtists);
+            if (!publicArtists.isEmpty()) {
+                vo.setArtistName(publicArtists.stream()
+                        .map(ActivityArtistDto::getName)
+                        .filter(StringUtils::hasText)
+                        .collect(Collectors.joining("、")));
+            } else {
+                Artist artist = artistMap.get(activity.getArtistId());
+                if (artist != null) vo.setArtistName(artist.getName());
+            }
 
             List<Session> sessions = activitySessionMap.getOrDefault(activity.getId(), Collections.emptyList());
             if (!sessions.isEmpty()) {
@@ -148,6 +168,7 @@ public class ActivityService {
         detail.setActivity(activity);
         detail.setCategory(categoryMapper.selectById(activity.getCategoryId()));
         detail.setArtist(artistMapper.selectById(activity.getArtistId()));
+        detail.setArtists(activityArtistService == null ? List.of() : activityArtistService.listPublicLineup(id));
 
         // 查询所有场次及票档
         LambdaQueryWrapper<Session> sessionWrapper = new LambdaQueryWrapper<>();
