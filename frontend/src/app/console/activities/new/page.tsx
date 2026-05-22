@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, listVenueSeatLayoutTemplates, updateActivitySeatLayout } from '@/lib/api'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
-import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatCraftLayoutVO, SeatLayoutTemplateCandidateVO, UserRole } from '@/types/api'
+import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
+import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatLayoutTemplateCandidateVO, UserRole, ActivityArtistVO } from '@/types/api'
 
 type SessionDraft = {
   key: string
@@ -38,7 +39,7 @@ export default function NewActivityPage() {
   // 步骤1：基本信息
   const [name, setName] = useState('')
   const [categoryId, setCategoryId] = useState<number | null>(null)
-  const [artistName, setArtistName] = useState('')
+  const [artists, setArtists] = useState<ActivityArtistVO[]>([])
   const [description, setDescription] = useState('')
   const [poster, setPoster] = useState('')
   const [venueApprovalNo, setVenueApprovalNo] = useState('')
@@ -125,14 +126,21 @@ export default function NewActivityPage() {
 
   const handleSubmit = async () => {
     const u = getUser()
-    if (!u || !categoryId || !name.trim() || !artistName.trim()) return
+    if (!u || !categoryId || !name.trim() || artists.length === 0) return
     setSubmitting(true)
     try {
-      // 1. 创建活动，后端会按名称复用或创建艺人/团队档案
+      // 1. 创建活动，并保存有序艺人阵容
       const activity: ActivityEntity = await createAdminActivity({
         userId: u.userId,
         categoryId,
-        artistName: artistName.trim(),
+        artists: artists.map((artist, index) => ({
+          artistId: artist.artistId,
+          isPrimary: Boolean(artist.isPrimary || artist.primary),
+          roleType: artist.roleType || 'performer',
+          roleName: artist.roleName || '参演艺人',
+          visibility: artist.visibility || 'public',
+          sort: index + 1,
+        })),
         name: name.trim(),
         description,
         poster,
@@ -241,8 +249,7 @@ export default function NewActivityPage() {
               </select>
             </div>
             <div className="mb-4">
-              <label className="block text-[13px] font-medium text-[#333] mb-1.5">艺人/团队名称 *</label>
-              <input value={artistName} onChange={e => setArtistName(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="例：周杰伦" />
+              <ActivityArtistSelector value={artists} onChange={setArtists} />
             </div>
             <div className="mb-4">
               <label className="block text-[13px] font-medium text-[#333] mb-1.5">活动简介</label>

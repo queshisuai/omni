@@ -5,12 +5,13 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { getAdminActivity, listCategories, updateAdminActivity } from '@/lib/api'
-import type { CategoryVO, UserRole } from '@/types/api'
+import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
+import type { ActivityArtistVO, CategoryVO, UserRole } from '@/types/api'
 
 type ActivityForm = {
   name: string
   categoryId: string
-  artistName: string
+  artists: ActivityArtistVO[]
   poster: string
   description: string
 }
@@ -18,7 +19,7 @@ type ActivityForm = {
 const emptyForm: ActivityForm = {
   name: '',
   categoryId: '',
-  artistName: '',
+  artists: [],
   poster: '',
   description: '',
 }
@@ -61,7 +62,7 @@ export default function EditActivityPage() {
       setForm({
         name: activity.name || '',
         categoryId: String(activity.categoryId || ''),
-        artistName: activity.artistName || '',
+        artists: activity.artists || [],
         poster: activity.poster || '',
         description: activity.description || '',
       })
@@ -91,8 +92,8 @@ export default function EditActivityPage() {
       setError('请选择分类')
       return
     }
-    if (!form.artistName.trim()) {
-      setError('请填写艺人/团队名称')
+    if (form.artists.length === 0) {
+      setError('请至少选择一个活动艺人')
       return
     }
 
@@ -104,7 +105,14 @@ export default function EditActivityPage() {
         userId,
         name: form.name.trim(),
         categoryId: Number(form.categoryId),
-        artistName: form.artistName.trim(),
+        artists: form.artists.map((artist, index) => ({
+          artistId: artist.artistId,
+          isPrimary: Boolean(artist.isPrimary || artist.primary),
+          roleType: artist.roleType || 'performer',
+          roleName: artist.roleName || '参演艺人',
+          visibility: artist.visibility || 'public',
+          sort: index + 1,
+        })),
         poster: form.poster.trim() || null,
         description: form.description.trim() || null,
       })
@@ -167,10 +175,7 @@ export default function EditActivityPage() {
             </select>
           </label>
 
-          <label className="block text-[13px] font-medium text-[#333]">
-            艺人/团队名称 *
-            <input value={form.artistName} onChange={event => setForm({ ...form, artistName: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="例：周杰伦" />
-          </label>
+          <ActivityArtistSelector value={form.artists} onChange={artists => setForm({ ...form, artists })} />
 
           <label className="block text-[13px] font-medium text-[#333]">
             海报 URL
