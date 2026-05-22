@@ -3,6 +3,7 @@ package com.omni.ticket.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
 
 import java.time.LocalDateTime;
 
@@ -33,6 +34,8 @@ public class Activity {
     private String deleteReason;
     private LocalDateTime deletedAt;
     private Long deletedBy;
+    @TableField(exist = false)
+    private String artistName;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -74,4 +77,6 @@ public class Activity {
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
     public Long getDeletedBy() { return deletedBy; }
     public void setDeletedBy(Long deletedBy) { this.deletedBy = deletedBy; }
+    public String getArtistName() { return artistName; }
+    public void setArtistName(String artistName) { this.artistName = artistName; }
 }

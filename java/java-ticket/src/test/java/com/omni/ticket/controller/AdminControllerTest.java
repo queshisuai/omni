@@ -320,6 +320,52 @@ class AdminControllerTest {
     }
 
     @Test
+    void getAdminActivityReturnsArtistName() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setOrganizerId(2003L);
+        activity.setArtistId(88L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        Artist artist = new Artist();
+        artist.setId(88L);
+        artist.setName("新乐队");
+        when(artistMapper.selectById(88L)).thenReturn(artist);
+
+        Result<Activity> result = controller.getAdminActivity(10L, 2003L);
+
+        assertEquals(200, result.getCode());
+        assertEquals("新乐队", result.getData().getArtistName());
+    }
+
+    @Test
+    void updateActivityUpdatesArtistFromName() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setOrganizerId(2003L);
+        activity.setArtistId(1L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(artistMapper.insert(any())).thenAnswer(invocation -> {
+            Artist artist = invocation.getArgument(0);
+            artist.setId(89L);
+            return 1;
+        });
+
+        Result<Activity> result = controller.updateActivity(10L, Map.of(
+                "userId", 2003L,
+                "artistName", "新组合"
+        ));
+
+        ArgumentCaptor<Activity> activityCaptor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityMapper).updateById(activityCaptor.capture());
+        assertEquals(200, result.getCode());
+        assertEquals(89L, activityCaptor.getValue().getArtistId());
+    }
+
+    @Test
     void listVenueSeatLayoutTemplatesDelegatesToApplicationService() {
         AdminController controller = controller();
         SeatLayoutTemplateCandidateResponse candidate = new SeatLayoutTemplateCandidateResponse();

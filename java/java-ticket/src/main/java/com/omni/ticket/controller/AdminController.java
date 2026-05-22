@@ -275,7 +275,11 @@ public class AdminController {
         }
         if (body.containsKey("artistId")) {
             Long artistId = parsePositiveLong(body.get("artistId"));
-            if (artistId == null) return Result.fail(400, "艺人ID不正确");
+            if (artistId == null) return Result.fail(400, "艺人/团队名称不能为空");
+            activity.setArtistId(artistId);
+        } else if (body.containsKey("artistName")) {
+            Long artistId = resolveArtistId(body);
+            if (artistId == null) return Result.fail(400, "艺人/团队名称不能为空");
             activity.setArtistId(artistId);
         }
         if (body.containsKey("seatMapVisibility")) {
@@ -301,7 +305,15 @@ public class AdminController {
         if ("organizer".equals(role) && !userId.equals(activity.getOrganizerId()))
             return Result.fail(403, "只能查看自己主办的活动");
 
+        attachArtistName(activity);
+
         return Result.success(activity);
+    }
+
+    private void attachArtistName(Activity activity) {
+        if (activity == null || activity.getArtistId() == null || artistMapper == null) return;
+        Artist artist = artistMapper.selectById(activity.getArtistId());
+        if (artist != null) activity.setArtistName(artist.getName());
     }
 
     @PutMapping("/activities/{id}/status")

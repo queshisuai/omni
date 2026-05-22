@@ -10,7 +10,7 @@ import type { CategoryVO, UserRole } from '@/types/api'
 type ActivityForm = {
   name: string
   categoryId: string
-  artistId: string
+  artistName: string
   poster: string
   description: string
 }
@@ -18,7 +18,7 @@ type ActivityForm = {
 const emptyForm: ActivityForm = {
   name: '',
   categoryId: '',
-  artistId: '',
+  artistName: '',
   poster: '',
   description: '',
 }
@@ -61,7 +61,7 @@ export default function EditActivityPage() {
       setForm({
         name: activity.name || '',
         categoryId: String(activity.categoryId || ''),
-        artistId: String(activity.artistId || ''),
+        artistName: activity.artistName || '',
         poster: activity.poster || '',
         description: activity.description || '',
       })
@@ -91,8 +91,8 @@ export default function EditActivityPage() {
       setError('请选择分类')
       return
     }
-    if (!isPositiveInteger(form.artistId)) {
-      setError('艺人ID不正确')
+    if (!form.artistName.trim()) {
+      setError('请填写艺人/团队名称')
       return
     }
 
@@ -104,7 +104,7 @@ export default function EditActivityPage() {
         userId,
         name: form.name.trim(),
         categoryId: Number(form.categoryId),
-        artistId: Number(form.artistId),
+        artistName: form.artistName.trim(),
         poster: form.poster.trim() || null,
         description: form.description.trim() || null,
       })
@@ -168,8 +168,8 @@ export default function EditActivityPage() {
           </label>
 
           <label className="block text-[13px] font-medium text-[#333]">
-            艺人 ID *
-            <input type="number" min="1" value={form.artistId} onChange={event => setForm({ ...form, artistId: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="例：1" />
+            艺人/团队名称 *
+            <input value={form.artistName} onChange={event => setForm({ ...form, artistName: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="例：周杰伦" />
           </label>
 
           <label className="block text-[13px] font-medium text-[#333]">

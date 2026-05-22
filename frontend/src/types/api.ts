@@ -130,6 +130,7 @@ export interface ActivityEntity {
   id: number
   categoryId: number
   artistId: number
+  artistName?: string | null
   organizerId?: number | null
   venueApplicationId?: number | null
   venueApprovalNo?: string | null
