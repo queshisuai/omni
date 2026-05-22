@@ -265,7 +265,10 @@ public class OrderService {
 
     @Transactional
     public Order markPartialRefunded(Long orderId, MarkPartialRefundedRequest request) {
-        Order order = getOrderDetail(orderId);
+        Order order = orderMapper.selectByIdForUpdate(orderId);
+        if (order == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
+        }
         if (order.getStatus() != STATUS_PAID) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许退款");
         }
@@ -279,12 +282,16 @@ public class OrderService {
         }
 
         List<OrderSeat> selectedSeats = selectRefundSeats(refundableSeats, request != null ? request.getOrderSeatIds() : null, quantity);
-        refundTickets(order, selectedSeats, quantity);
         if (!selectedSeats.isEmpty()) {
-            orderSeatMapper.updateStatusByIds(selectedSeats.stream().map(OrderSeat::getId).collect(Collectors.toList()), ORDER_SEAT_REFUNDED);
+            List<Long> selectedIds = selectedSeats.stream().map(OrderSeat::getId).collect(Collectors.toList());
+            int updated = orderSeatMapper.updateRefundedStatusByOrderIdAndIds(orderId, selectedIds);
+            if (updated != quantity) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "所选票已存在退款申请或已退款");
+            }
         } else {
             recordQuantityOnlyRefund(order, quantity);
         }
+        refundTickets(order, selectedSeats, quantity);
 
         if (refunded + quantity >= order.getQuantity()) {
             order.setStatus(STATUS_REFUNDED);

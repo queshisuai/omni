@@ -53,6 +53,9 @@ public interface OrderMapper extends BaseMapper<Order> {
             "AND o.status IN (1, 2)")
     Integer sumEffectiveQuantityByUserAndActivity(@Param("userId") Long userId, @Param("activityId") Long activityId);
 
+    @Select("SELECT * FROM \"order\" WHERE id = #{id} FOR UPDATE")
+    Order selectByIdForUpdate(@Param("id") Long id);
+
     @Update("UPDATE \"order\" SET status = #{nextStatus}, update_time = CURRENT_TIMESTAMP WHERE id = #{id} AND status = #{expectedStatus}")
     int updateStatusIfCurrent(@Param("id") Long id,
                               @Param("expectedStatus") Integer expectedStatus,

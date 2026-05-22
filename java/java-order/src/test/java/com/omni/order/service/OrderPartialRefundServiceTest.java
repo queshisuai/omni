@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,9 +52,10 @@ class OrderPartialRefundServiceTest {
     void markPartialRefundedRefundsSelectedSeatAndKeepsOrderPaid() {
         Order order = paidOrder(10L, 2);
         OrderSeat seat = soldSeat(900L, 800L);
-        when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderMapper.selectByIdForUpdate(10L)).thenReturn(order);
         when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of(seat));
         when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(0);
+        when(orderSeatMapper.updateRefundedStatusByOrderIdAndIds(10L, List.of(900L))).thenReturn(1);
         when(ticketSalesInternalClient.refund(any(), anyString())).thenReturn(Result.success());
 
         MarkPartialRefundedRequest request = new MarkPartialRefundedRequest();
@@ -62,7 +65,7 @@ class OrderPartialRefundServiceTest {
         Order result = service.markPartialRefunded(10L, request);
 
         assertEquals(OrderService.STATUS_PAID, result.getStatus());
-        verify(orderSeatMapper).updateStatusByIds(List.of(900L), 3);
+        verify(orderSeatMapper).updateRefundedStatusByOrderIdAndIds(10L, List.of(900L));
         verify(orderMapper, never()).updateById(any(Order.class));
         verify(ticketSalesInternalClient).refund(any(), anyString());
     }
@@ -72,9 +75,10 @@ class OrderPartialRefundServiceTest {
         Order order = paidOrder(10L, 2);
         OrderSeat first = soldSeat(900L, 800L);
         OrderSeat second = soldSeat(901L, 801L);
-        when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderMapper.selectByIdForUpdate(10L)).thenReturn(order);
         when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of(first, second));
         when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(0);
+        when(orderSeatMapper.updateRefundedStatusByOrderIdAndIds(10L, List.of(900L, 901L))).thenReturn(2);
         when(ticketSalesInternalClient.refund(any(), anyString())).thenReturn(Result.success());
 
         MarkPartialRefundedRequest request = new MarkPartialRefundedRequest();
@@ -106,7 +110,7 @@ class OrderPartialRefundServiceTest {
     void markPartialRefundedRejectsQuantityMoreThanRefundable() {
         Order order = paidOrder(10L, 2);
         OrderSeat seat = soldSeat(900L, 800L);
-        when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderMapper.selectByIdForUpdate(10L)).thenReturn(order);
         when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of(seat));
         when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(1);
 
@@ -141,6 +145,7 @@ class OrderPartialRefundServiceTest {
     void quantityOnlyRefundPersistsProgressAndReducesRefundOptions() {
         Order order = paidOrder(10L, 2);
         when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderMapper.selectByIdForUpdate(10L)).thenReturn(order);
         when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of());
         when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(0, 1);
         when(ticketSalesInternalClient.refund(any(), anyString())).thenReturn(Result.success());
@@ -159,7 +164,7 @@ class OrderPartialRefundServiceTest {
     @Test
     void quantityOnlyRefundMarksOrderRefundedWhenAllTicketsRefunded() {
         Order order = paidOrder(10L, 2);
-        when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderMapper.selectByIdForUpdate(10L)).thenReturn(order);
         when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of());
         when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(1);
         when(ticketSalesInternalClient.refund(any(), anyString())).thenReturn(Result.success());
@@ -177,7 +182,7 @@ class OrderPartialRefundServiceTest {
     @Test
     void quantityOnlyRefundRejectsQuantityMoreThanRemaining() {
         Order order = paidOrder(10L, 2);
-        when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderMapper.selectByIdForUpdate(10L)).thenReturn(order);
         when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of());
         when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(1);
 
@@ -190,6 +195,62 @@ class OrderPartialRefundServiceTest {
         assertEquals("可退款票数不足", ex.getMessage());
         verify(orderSeatMapper, never()).insert(any(OrderSeat.class));
         verify(ticketSalesInternalClient, never()).refund(any(), anyString());
+    }
+
+    @Test
+    void seatRefundDoesNotCallTicketWhenConditionalUpdateMisses() {
+        Order order = paidOrder(10L, 2);
+        OrderSeat seat = soldSeat(900L, 800L);
+        when(orderMapper.selectByIdForUpdate(10L)).thenReturn(order);
+        when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of(seat));
+        when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(0);
+        when(orderSeatMapper.updateRefundedStatusByOrderIdAndIds(10L, List.of(900L))).thenReturn(0);
+
+        MarkPartialRefundedRequest request = new MarkPartialRefundedRequest();
+        request.setQuantity(1);
+        request.setOrderSeatIds(List.of(900L));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.markPartialRefunded(10L, request));
+
+        assertEquals("所选票已存在退款申请或已退款", ex.getMessage());
+        verify(ticketSalesInternalClient, never()).refund(any(), anyString());
+    }
+
+    @Test
+    void quantityOnlyRefundRecordsLocalProgressBeforeTicketRefund() {
+        Order order = paidOrder(10L, 2);
+        when(orderMapper.selectByIdForUpdate(10L)).thenReturn(order);
+        when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of());
+        when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(0);
+        when(ticketSalesInternalClient.refund(any(), anyString())).thenReturn(Result.success());
+
+        MarkPartialRefundedRequest request = new MarkPartialRefundedRequest();
+        request.setQuantity(1);
+
+        service.markPartialRefunded(10L, request);
+
+        InOrder inOrder = inOrder(orderSeatMapper, ticketSalesInternalClient);
+        inOrder.verify(orderSeatMapper).insert(any(OrderSeat.class));
+        inOrder.verify(ticketSalesInternalClient).refund(any(), anyString());
+    }
+
+    @Test
+    void markPartialRefundedPropagatesTicketRefundFailure() {
+        Order order = paidOrder(10L, 2);
+        when(orderMapper.selectByIdForUpdate(10L)).thenReturn(order);
+        when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of());
+        when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(0);
+        when(ticketSalesInternalClient.refund(any(), anyString())).thenThrow(new IllegalStateException("ticket down"));
+
+        MarkPartialRefundedRequest request = new MarkPartialRefundedRequest();
+        request.setQuantity(1);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> service.markPartialRefunded(10L, request));
+
+        assertEquals("ticket down", ex.getMessage());
+        verify(orderSeatMapper).insert(any(OrderSeat.class));
     }
 
     private Order paidOrder(Long id, int quantity) {

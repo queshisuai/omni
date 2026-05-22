@@ -19,8 +19,9 @@ public interface OrderSeatMapper extends BaseMapper<OrderSeat> {
     Integer countRefundedSeatsByOrderId(@Param("orderId") Long orderId);
 
     @Update({"<script>",
-            "UPDATE order_seat SET status = #{status}, update_time = CURRENT_TIMESTAMP WHERE id IN",
+            "UPDATE order_seat SET status = 3, update_time = CURRENT_TIMESTAMP",
+            "WHERE order_id = #{orderId} AND status = 2 AND id IN",
             "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
             "</script>"})
-    int updateStatusByIds(@Param("ids") List<Long> ids, @Param("status") Integer status);
+    int updateRefundedStatusByOrderIdAndIds(@Param("orderId") Long orderId, @Param("ids") List<Long> ids);
 }
