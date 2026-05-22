@@ -315,11 +315,12 @@ public class AdminController {
         if (body.containsKey("artists")) {
             List<ActivityArtistDto> artists = parseArtists(body.get("artists"));
             activityArtistService.saveLineup(id, artists);
-            artists.stream()
+            Long lineupArtistId = artists.stream()
                     .filter(a -> Boolean.TRUE.equals(a.getPrimary()))
                     .findFirst()
                     .map(ActivityArtistDto::getArtistId)
-                    .ifPresent(activity::setArtistId);
+                    .orElseGet(() -> artists.isEmpty() ? null : artists.get(0).getArtistId());
+            if (lineupArtistId != null) activity.setArtistId(lineupArtistId);
         }
         if (body.containsKey("seatMapVisibility")) {
             String seatMapVisibility = parseSeatMapVisibility(body.get("seatMapVisibility"), null);
@@ -501,7 +502,25 @@ public class AdminController {
             wrapper.eq(Activity::getStatus, status);
         }
         wrapper.orderByDesc(Activity::getCreateTime);
-        return Result.success(activityMapper.selectPage(new Page<>(page, size), wrapper));
+        Page<Activity> result = activityMapper.selectPage(new Page<>(page, size), wrapper);
+        if (activityArtistService != null) {
+            result.getRecords().forEach(this::attachLineupSummary);
+        }
+        return Result.success(result);
+    }
+
+    private void attachLineupSummary(Activity activity) {
+        if (activity == null || activity.getId() == null) return;
+        List<ActivityArtistDto> lineup = activityArtistService.listAdminLineup(activity.getId());
+        activity.setArtists(lineup);
+        String summary = lineup.stream()
+                .filter(a -> "public".equals(a.getVisibility()))
+                .map(ActivityArtistDto::getName)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.joining("、"));
+        if (StringUtils.hasText(summary)) {
+            activity.setArtistName(summary);
+        }
     }
 
     // ========== 场次管理（权限继承自活动） ==========

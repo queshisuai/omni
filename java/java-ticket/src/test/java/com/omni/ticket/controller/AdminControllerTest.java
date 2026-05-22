@@ -49,6 +49,7 @@ import static org.mockito.Mockito.when;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 
 import com.omni.ticket.entity.Tour;
 
@@ -417,6 +418,55 @@ class AdminControllerTest {
         assertEquals(200, result.getCode());
         assertEquals(2, result.getData().getArtists().size());
         assertEquals("周杰伦", result.getData().getArtistName());
+    }
+
+    @Test
+    void listAdminActivitiesReturnsLineupSummary() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<Activity> page = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10, 1);
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setName("多艺人活动");
+        page.setRecords(new ArrayList<>(List.of(activity)));
+        when(activityMapper.selectPage(any(), any())).thenReturn(page);
+        ActivityArtistDto first = new ActivityArtistDto();
+        first.setName("周杰伦");
+        first.setVisibility("public");
+        ActivityArtistDto second = new ActivityArtistDto();
+        second.setName("五月天");
+        second.setVisibility("public");
+        when(activityArtistService.listAdminLineup(10L)).thenReturn(List.of(first, second));
+
+        Result<com.baomidou.mybatisplus.extension.plugins.pagination.Page<Activity>> result = controller.listAdminActivities(2003L, 1, 10, null, null);
+
+        assertEquals(200, result.getCode());
+        assertEquals("周杰伦、五月天", result.getData().getRecords().get(0).getArtistName());
+        assertEquals(2, result.getData().getRecords().get(0).getArtists().size());
+    }
+
+    @Test
+    void updateActivityWithLineupUsesFirstArtistWhenNoPrimary() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setOrganizerId(2003L);
+        activity.setArtistId(9L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+
+        Result<Activity> result = controller.updateActivity(10L, Map.of(
+                "userId", 2003L,
+                "artists", List.of(
+                        Map.of("artistId", 1L, "isPrimary", false, "sort", 1, "visibility", "public"),
+                        Map.of("artistId", 2L, "isPrimary", false, "sort", 2, "visibility", "public")
+                )
+        ));
+
+        ArgumentCaptor<Activity> activityCaptor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityMapper).updateById(activityCaptor.capture());
+        assertEquals(200, result.getCode());
+        assertEquals(1L, activityCaptor.getValue().getArtistId());
     }
 
     @Test
