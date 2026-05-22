@@ -83,7 +83,7 @@ public class ActivitySeatLayoutService {
         Activity activity = requireManageableActivity(userId, activityId);
         VenueDefaultLayout venueLayout = venueDefaultLayoutMapper.selectById(venueLayoutId);
         if (venueLayout == null || !Integer.valueOf(1).equals(venueLayout.getStatus())) {
-            throw new BusinessException(404, "场馆默认座位图不存在");
+            throw new BusinessException(404, "历史地点模板不存在");
         }
         List<VenueDefaultLayoutSection> venueSections = venueSectionMapper.selectList(new LambdaQueryWrapper<VenueDefaultLayoutSection>()
                 .eq(VenueDefaultLayoutSection::getLayoutId, venueLayoutId)
@@ -165,7 +165,7 @@ public class ActivitySeatLayoutService {
                 .orderByDesc(ActivitySeatLayout::getId)
                 .last("LIMIT 1"));
         if (layout == null) {
-            throw new BusinessException(404, "活动座位图不存在");
+            return null;
         }
         List<ActivitySeatLayoutSection> sections = activitySectionMapper.selectList(new LambdaQueryWrapper<ActivitySeatLayoutSection>()
                 .eq(ActivitySeatLayoutSection::getActivityLayoutId, layout.getId())
@@ -187,7 +187,10 @@ public class ActivitySeatLayoutService {
                 .orderByDesc(ActivitySeatLayout::getId)
                 .last("LIMIT 1"));
         if (layout == null) {
-            throw new BusinessException(404, "活动座位图不存在");
+            layout = new ActivitySeatLayout();
+            layout.setActivityId(activityId);
+            layout.setStatus(1);
+            layout.setCreateTime(LocalDateTime.now());
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -199,11 +202,16 @@ public class ActivitySeatLayoutService {
         layout.setCanvasWidth(requireNumber(request.getCanvasWidth(), "画布宽度不能为空"));
         layout.setCanvasHeight(requireNumber(request.getCanvasHeight(), "画布高度不能为空"));
         layout.setUpdateTime(now);
-        activityLayoutMapper.updateById(layout);
+        if (layout.getId() == null) {
+            activityLayoutMapper.insert(layout);
+        } else {
+            activityLayoutMapper.updateById(layout);
+        }
 
-        disableSections(layout.getId(), now);
+        Long layoutId = layout.getId();
+        disableSections(layoutId, now);
         List<ActivitySeatLayoutSection> sections = request.getSections().stream()
-                .map(section -> buildSection(layout.getId(), section, now))
+                .map(section -> buildSection(layoutId, section, now))
                 .collect(Collectors.toList());
         sections.forEach(activitySectionMapper::insert);
         if (request.getBlockLayout() != null && blockLayoutService != null) {

@@ -7,6 +7,8 @@ import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.ActivitySeatLayout;
 import com.omni.ticket.entity.ActivitySeatLayoutSection;
+import com.omni.ticket.entity.SeatBlock;
+import com.omni.ticket.entity.SeatOverride;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.SessionSeatLayout;
@@ -18,6 +20,7 @@ import com.omni.ticket.entity.VenueSeat;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutSectionMapper;
+import com.omni.ticket.mapper.SeatBlockMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutSectionMapper;
@@ -32,8 +35,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -51,6 +58,10 @@ public class SessionSeatLayoutService {
     private final VenueSeatMapper venueSeatMapper;
     private final SeatCraftBlockLayoutService blockLayoutService;
     private final SessionBlockTicketStockService blockTicketStockService;
+    private final SeatBlockMapper seatBlockMapper;
+    private final SessionSeatProtectionService sessionSeatProtectionService;
+    private final TicketTypeStockRecalculationService stockRecalculationService;
+    private final SeatBlockGeometryService geometryService = new SeatBlockGeometryService();
 
     public SessionSeatLayoutService(SessionMapper sessionMapper,
                                     ActivityMapper activityMapper,
@@ -81,7 +92,7 @@ public class SessionSeatLayoutService {
                                      SeatCraftBlockLayoutService blockLayoutService) {
         this(sessionMapper, activityMapper, userAccessService, activityLayoutMapper, activitySectionMapper,
                 sessionLayoutMapper, sessionSectionMapper, sessionSeatMapper, ticketTypeMapper, venueAreaMapper, venueSeatMapper,
-                blockLayoutService, null);
+                blockLayoutService, null, null, null, null);
     }
 
     @Autowired
@@ -97,7 +108,10 @@ public class SessionSeatLayoutService {
                                     VenueAreaMapper venueAreaMapper,
                                     VenueSeatMapper venueSeatMapper,
                                     SeatCraftBlockLayoutService blockLayoutService,
-                                    SessionBlockTicketStockService blockTicketStockService) {
+                                    SessionBlockTicketStockService blockTicketStockService,
+                                    SeatBlockMapper seatBlockMapper,
+                                    SessionSeatProtectionService sessionSeatProtectionService,
+                                    TicketTypeStockRecalculationService stockRecalculationService) {
         this.sessionMapper = sessionMapper;
         this.activityMapper = activityMapper;
         this.userAccessService = userAccessService;
@@ -111,6 +125,9 @@ public class SessionSeatLayoutService {
         this.venueSeatMapper = venueSeatMapper;
         this.blockLayoutService = blockLayoutService;
         this.blockTicketStockService = blockTicketStockService;
+        this.seatBlockMapper = seatBlockMapper;
+        this.sessionSeatProtectionService = sessionSeatProtectionService;
+        this.stockRecalculationService = stockRecalculationService;
     }
 
     @Transactional
@@ -169,8 +186,303 @@ public class SessionSeatLayoutService {
         return toLayoutResponse(layout, findActiveSections(layout.getId()));
     }
 
+    @Transactional
+    public SeatCraftLayoutDtos.LayoutResponse updateLayout(Long userId, Long sessionId, SeatCraftLayoutDtos.LayoutResponse request) {
+        Session session = requireManageableSession(userId, sessionId);
+        if (request == null) {
+            throw new BusinessException(400, "座位图参数不能为空");
+        }
+        SessionSeatLayout layout = findActiveLayout(session.getId());
+        if (layout == null) {
+            layout = new SessionSeatLayout();
+            layout.setSessionId(session.getId());
+            layout.setStatus(1);
+            layout.setCreateTime(LocalDateTime.now());
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (request.getBlockLayout() != null) {
+            reconcileRemovedBlocks(session.getId(), request.getBlockLayout(), now);
+        }
+        layout.setName(requireText(request.getName(), "座位图名称不能为空"));
+        layout.setTemplateType(requireText(request.getTemplateType(), "座位图类型不能为空"));
+        layout.setStageTitle(requireText(request.getStageTitle(), "舞台名称不能为空"));
+        layout.setStageX(requireNumber(request.getStageX(), "舞台X坐标不能为空"));
+        layout.setStageY(requireNumber(request.getStageY(), "舞台Y坐标不能为空"));
+        layout.setCanvasWidth(requireNumber(request.getCanvasWidth(), "画布宽度不能为空"));
+        layout.setCanvasHeight(requireNumber(request.getCanvasHeight(), "画布高度不能为空"));
+        layout.setUpdateTime(now);
+        if (layout.getId() == null) {
+            sessionLayoutMapper.insert(layout);
+        } else {
+            sessionLayoutMapper.updateById(layout);
+        }
+
+        Long layoutId = layout.getId();
+        disableSections(layoutId, now);
+        List<SessionSeatLayoutSection> sections = (request.getSections() == null ? List.<SeatCraftLayoutDtos.SectionResponse>of() : request.getSections()).stream()
+                .map(section -> buildSection(layoutId, section, now))
+                .collect(Collectors.toList());
+        sections.forEach(sessionSectionMapper::insert);
+        if (request.getBlockLayout() != null && blockLayoutService != null) {
+            blockLayoutService.replaceLayout("session", sessionId, request.getBlockLayout());
+            if (blockTicketStockService != null) {
+                blockTicketStockService.generateForSession(sessionId);
+            }
+        }
+        if (stockRecalculationService != null) {
+            stockRecalculationService.recalculateForSession(session.getId());
+        }
+        return toLayoutResponse(layout, sections);
+    }
+
+    private void reconcileRemovedBlocks(Long sessionId, SeatCraftBlockDtos.LayoutRequest blockLayout, LocalDateTime now) {
+        if (blockLayout == null) {
+            return;
+        }
+        requireSeatProtectionDependencies();
+        List<SeatBlock> existingBlocks = seatBlockMapper.selectList(new LambdaQueryWrapper<SeatBlock>()
+                .eq(SeatBlock::getOwnerType, "session")
+                .eq(SeatBlock::getOwnerId, sessionId)
+                .eq(SeatBlock::getStatus, 1));
+        if (existingBlocks == null || existingBlocks.isEmpty()) {
+            return;
+        }
+        Map<String, SeatCraftBlockDtos.BlockRequest> incomingBlocks = incomingBlocksByKey(blockLayout);
+        Map<String, List<SeatOverride>> incomingOverrides = incomingOverridesByBlockKey(blockLayout);
+        Map<Long, Set<String>> validSeatKeysByBlockId = new HashMap<>();
+        List<Long> affectedBlockIds = existingBlocks.stream()
+                .filter(block -> block.getId() != null)
+                .filter(block -> {
+                    String blockKey = trim(block.getBlockKey());
+                    SeatCraftBlockDtos.BlockRequest incoming = incomingBlocks.get(blockKey);
+                    if (incoming == null) {
+                        return true;
+                    }
+                    Set<String> validKeys = generatedSeatKeys(block, incoming, incomingOverrides.getOrDefault(blockKey, Collections.emptyList()));
+                    validSeatKeysByBlockId.put(block.getId(), validKeys);
+                    return true;
+                })
+                .map(SeatBlock::getId)
+                .collect(Collectors.toList());
+        if (affectedBlockIds.isEmpty()) {
+            return;
+        }
+        List<SessionSeat> affectedSeats = sessionSeatMapper.selectList(new LambdaQueryWrapper<SessionSeat>()
+                .eq(SessionSeat::getSessionId, sessionId)
+                .in(SessionSeat::getSeatBlockId, affectedBlockIds));
+        List<SessionSeat> obsoleteSeats = (affectedSeats == null ? Collections.<SessionSeat>emptyList() : affectedSeats).stream()
+                .filter(seat -> seat != null && isObsoleteSeat(seat, validSeatKeysByBlockId))
+                .collect(Collectors.toList());
+        if (obsoleteSeats.isEmpty()) {
+            return;
+        }
+        Set<Long> protectedSeatIds = sessionSeatProtectionService.findProtectedSeatIds(sessionId);
+        for (SessionSeat seat : obsoleteSeats) {
+            if (seat != null && protectedSeatIds.contains(seat.getId())) {
+                throw new BusinessException(400, "该座位区域已有购票订单，请先完成退款后再调整或删除。");
+            }
+        }
+        for (SessionSeat seat : obsoleteSeats) {
+            if (seat == null || !Integer.valueOf(1).equals(seat.getStatus())) {
+                continue;
+            }
+            seat.setStatus(4);
+            seat.setUpdateTime(now);
+            sessionSeatMapper.updateById(seat);
+        }
+    }
+
+    private void requireSeatProtectionDependencies() {
+        if (seatBlockMapper == null || sessionSeatMapper == null || sessionSeatProtectionService == null) {
+            throw new BusinessException(503, "无法确认订单座位占用状态，请稍后重试。");
+        }
+    }
+
+    private Map<String, SeatCraftBlockDtos.BlockRequest> incomingBlocksByKey(SeatCraftBlockDtos.LayoutRequest blockLayout) {
+        return (blockLayout.getBlocks() == null ? List.<SeatCraftBlockDtos.BlockRequest>of() : blockLayout.getBlocks()).stream()
+                .filter(Objects::nonNull)
+                .filter(block -> trim(block.getBlockKey()) != null)
+                .collect(Collectors.toMap(block -> trim(block.getBlockKey()), block -> block, (first, second) -> second));
+    }
+
+    private Map<String, List<SeatOverride>> incomingOverridesByBlockKey(SeatCraftBlockDtos.LayoutRequest blockLayout) {
+        return (blockLayout.getOverrides() == null ? List.<SeatCraftBlockDtos.OverrideRequest>of() : blockLayout.getOverrides()).stream()
+                .filter(Objects::nonNull)
+                .filter(override -> trim(override.getBlockKey()) != null)
+                .map(this::toSeatOverride)
+                .collect(Collectors.groupingBy(SeatOverrideWithBlockKey::blockKey,
+                        Collectors.mapping(SeatOverrideWithBlockKey::override, Collectors.toList())));
+    }
+
+    private SeatOverrideWithBlockKey toSeatOverride(SeatCraftBlockDtos.OverrideRequest request) {
+        SeatOverride override = new SeatOverride();
+        override.setRowNo(request.getRowNo());
+        override.setSeatNo(request.getSeatNo());
+        override.setStatus(request.getStatus());
+        override.setDx(request.getDx());
+        override.setDy(request.getDy());
+        override.setCustomLabel(request.getCustomLabel());
+        return new SeatOverrideWithBlockKey(trim(request.getBlockKey()), override);
+    }
+
+    private SeatBlock projectIncomingBlock(SeatBlock existing, SeatCraftBlockDtos.BlockRequest request) {
+        SeatBlock block = new SeatBlock();
+        block.setId(existing.getId());
+        block.setBlockKey(trim(request.getBlockKey()));
+        block.setBlockType(trim(request.getBlockType()));
+        block.setTicketGroupKey(trim(request.getTicketGroupKey()));
+        block.setX(request.getX());
+        block.setY(request.getY());
+        block.setRotation(request.getRotation());
+        block.setScale(request.getScale());
+        block.setRows(request.getRows());
+        block.setCols(request.getCols());
+        block.setSeatsPerRow(request.getSeatsPerRow());
+        block.setRowSpacing(request.getRowSpacing());
+        block.setSeatSpacing(request.getSeatSpacing());
+        block.setInnerRadius(request.getInnerRadius());
+        block.setArcStartAngle(request.getArcStartAngle());
+        block.setArcEndAngle(request.getArcEndAngle());
+        block.setCapacity(request.getCapacity());
+        return block;
+    }
+
+    private Set<String> generatedSeatKeys(SeatBlock existing, SeatCraftBlockDtos.BlockRequest incoming, List<SeatOverride> overrides) {
+        SeatBlock projected = projectIncomingBlock(existing, incoming);
+        return geometryService.generateSeats(projected, overrides).stream()
+                .map(seat -> generatedCoordinateKey(seat.getRowNo(), seat.getSeatNo()))
+                .collect(Collectors.toSet());
+    }
+
+    private boolean isObsoleteSeat(SessionSeat seat, Map<Long, Set<String>> validSeatKeysByBlockId) {
+        Set<String> validKeys = validSeatKeysByBlockId.get(seat.getSeatBlockId());
+        if (validKeys == null) {
+            return true;
+        }
+        return !validKeys.contains(sessionSeatCoordinateKey(seat));
+    }
+
+    private String sessionSeatCoordinateKey(SessionSeat seat) {
+        Integer rowNo = seat.getGeneratedRowNo() != null ? seat.getGeneratedRowNo() : seat.getRowNo();
+        Integer seatNo = seat.getGeneratedSeatNo() != null ? seat.getGeneratedSeatNo() : seat.getSeatNo();
+        return generatedCoordinateKey(rowNo, seatNo);
+    }
+
+    private String generatedCoordinateKey(Integer rowNo, Integer seatNo) {
+        if (rowNo == null || seatNo == null) {
+            return null;
+        }
+        return rowNo + ":" + seatNo;
+    }
+
+    private String trim(String value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    private static class SeatOverrideWithBlockKey {
+        private final String blockKey;
+        private final SeatOverride override;
+
+        private SeatOverrideWithBlockKey(String blockKey, SeatOverride override) {
+            this.blockKey = blockKey;
+            this.override = override;
+        }
+
+        private String blockKey() {
+            return blockKey;
+        }
+
+        private SeatOverride override() {
+            return override;
+        }
+    }
+
     public boolean hasLayout(Long sessionId) {
         return findActiveLayout(sessionId) != null;
+    }
+
+    @Transactional
+    public void updateTicketBindings(Long userId, Long sessionId, List<TicketBindingInput> bindings) {
+        Session session = requireManageableSession(userId, sessionId);
+        if (bindings == null || bindings.isEmpty()) {
+            stockRecalculationService.recalculateForSession(session.getId());
+            return;
+        }
+        Map<String, Long> targetTicketTypeByBlockKey = new java.util.LinkedHashMap<>();
+        for (TicketBindingInput binding : bindings) {
+            if (binding == null || binding.getTicketTypeId() == null) {
+                continue;
+            }
+            TicketType ticketType = ticketTypeMapper.selectById(binding.getTicketTypeId());
+            if (ticketType == null) {
+                throw new BusinessException(404, "票档不存在");
+            }
+            if (!Objects.equals(ticketType.getSessionId(), session.getId())) {
+                throw new BusinessException(400, "票档不属于当前场次");
+            }
+            List<String> blockKeys = normalizeBlockKeys(binding.getBlockKeys());
+            for (String blockKey : blockKeys) {
+                Long existingTicketTypeId = targetTicketTypeByBlockKey.putIfAbsent(blockKey, binding.getTicketTypeId());
+                if (existingTicketTypeId != null && !Objects.equals(existingTicketTypeId, binding.getTicketTypeId())) {
+                    throw new BusinessException(400, "同一座位区域不能绑定多个票档");
+                }
+            }
+        }
+        Set<Long> protectedSeatIds = sessionSeatProtectionService.findProtectedSeatIds(session.getId());
+        LocalDateTime now = LocalDateTime.now();
+        for (TicketBindingInput binding : bindings) {
+            if (binding == null || binding.getTicketTypeId() == null || binding.getBlockKeys() == null || binding.getBlockKeys().isEmpty()) {
+                continue;
+            }
+            List<String> blockKeys = normalizeBlockKeys(binding.getBlockKeys());
+            if (blockKeys.isEmpty()) {
+                continue;
+            }
+            List<SeatBlock> blocks = seatBlockMapper.selectList(new LambdaQueryWrapper<SeatBlock>()
+                    .eq(SeatBlock::getOwnerType, "session")
+                    .eq(SeatBlock::getOwnerId, session.getId())
+                    .in(SeatBlock::getBlockKey, blockKeys)
+                    .eq(SeatBlock::getStatus, 1));
+            List<Long> blockIds = blocks.stream()
+                    .map(SeatBlock::getId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            if (blockIds.isEmpty()) {
+                continue;
+            }
+            List<SessionSeat> seats = sessionSeatMapper.selectList(new LambdaQueryWrapper<SessionSeat>()
+                    .eq(SessionSeat::getSessionId, session.getId())
+                    .in(SessionSeat::getSeatBlockId, blockIds));
+            for (SessionSeat seat : seats) {
+                if (seat == null || Objects.equals(seat.getTicketTypeId(), binding.getTicketTypeId())) {
+                    continue;
+                }
+                if (protectedSeatIds.contains(seat.getId())) {
+                    throw new BusinessException(400, "该座位区域已有购票订单，请先完成退款后再调整或删除。");
+                }
+                seat.setTicketTypeId(binding.getTicketTypeId());
+                seat.setUpdateTime(now);
+                sessionSeatMapper.updateById(seat);
+            }
+        }
+        stockRecalculationService.recalculateForSession(session.getId());
+    }
+
+    private List<String> normalizeBlockKeys(List<String> blockKeys) {
+        if (blockKeys == null) {
+            return List.of();
+        }
+        return blockKeys.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(key -> !key.isEmpty())
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     public List<SeatCraftLayoutDtos.SectionResponse> buildTicketDrafts(Long sessionLayoutId) {
@@ -386,6 +698,31 @@ public class SessionSeatLayoutService {
         return section;
     }
 
+    private SessionSeatLayoutSection buildSection(Long sessionLayoutId, SeatCraftLayoutDtos.SectionResponse request, LocalDateTime now) {
+        if (request == null) {
+            throw new BusinessException(400, "座位图分区不能为空");
+        }
+        SessionSeatLayoutSection section = new SessionSeatLayoutSection();
+        section.setSessionLayoutId(sessionLayoutId);
+        section.setActivityLayoutSectionId(null);
+        section.setSourceTemplateSectionId(null);
+        section.setTicketTypeId(request.getTicketTypeId());
+        copyCommonSectionFields(section,
+                requireText(request.getSectionKey(), "分区标识不能为空"),
+                requireText(request.getName(), "分区名称不能为空"),
+                requirePositive(request.getRows(), "分区排数不正确"),
+                requirePositive(request.getCols(), "分区座数不正确"),
+                requireNumber(request.getX(), "分区X坐标不能为空"),
+                requireNumber(request.getY(), "分区Y坐标不能为空"),
+                requireText(request.getColor(), "分区颜色不能为空"),
+                requireText(request.getType(), "分区类型不能为空"),
+                requireText(request.getLayout(), "分区布局不能为空"),
+                request.getRadius(), request.getArcSpan(), request.getRotation(), request.getPrimeRowStart(),
+                request.getPrimeRowEnd(), request.getPrimeColStart(), request.getPrimeColEnd(),
+                request.getSort() == null ? 0 : request.getSort(), now);
+        return section;
+    }
+
     private void copyCommonSectionFields(SessionSeatLayoutSection section, String sectionKey, String name, Integer rows, Integer cols,
                                          Integer x, Integer y, String color, String type, String layout, Integer radius,
                                          Integer arcSpan, Integer rotation, Integer primeRowStart, Integer primeRowEnd,
@@ -471,6 +808,27 @@ public class SessionSeatLayoutService {
         return response;
     }
 
+    private String requireText(String value, String message) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new BusinessException(400, message);
+        }
+        return value.trim();
+    }
+
+    private Integer requireNumber(Integer value, String message) {
+        if (value == null) {
+            throw new BusinessException(400, message);
+        }
+        return value;
+    }
+
+    private Integer requirePositive(Integer value, String message) {
+        if (value == null || value <= 0) {
+            throw new BusinessException(400, message);
+        }
+        return value;
+    }
+
     private Session requireManageableSession(Long userId, Long sessionId) {
         InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
         String role = user.getRole();
@@ -514,5 +872,15 @@ public class SessionSeatLayoutService {
         public void setName(String name) { this.name = name; }
         public BigDecimal getPrice() { return price; }
         public void setPrice(BigDecimal price) { this.price = price; }
+    }
+
+    public static class TicketBindingInput {
+        private Long ticketTypeId;
+        private List<String> blockKeys;
+
+        public Long getTicketTypeId() { return ticketTypeId; }
+        public void setTicketTypeId(Long ticketTypeId) { this.ticketTypeId = ticketTypeId; }
+        public List<String> getBlockKeys() { return blockKeys; }
+        public void setBlockKeys(List<String> blockKeys) { this.blockKeys = blockKeys; }
     }
 }

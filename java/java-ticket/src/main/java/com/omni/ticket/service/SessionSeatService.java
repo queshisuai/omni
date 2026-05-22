@@ -141,6 +141,15 @@ public class SessionSeatService {
                 .eq(SessionSeat::getSessionId, sessionId));
     }
 
+    public List<SessionSeat> listBySession(Long sessionId) {
+        return sessionSeatMapper.selectList(new LambdaQueryWrapper<SessionSeat>()
+                .eq(SessionSeat::getSessionId, sessionId));
+    }
+
+    public int update(SessionSeat seat) {
+        return sessionSeatMapper.updateById(seat);
+    }
+
     @Transactional
     public SeatTemplateSyncResponse syncVenueSessions(Long venueId) {
         SeatTemplateSyncResponse response = new SeatTemplateSyncResponse();

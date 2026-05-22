@@ -56,6 +56,9 @@ public class AdminSummaryService {
         if ("organizer".equals(role)) {
             activityWrapper.eq(Activity::getOrganizerId, userId);
         }
+        activityWrapper.eq(Activity::getStatus, 1)
+                .eq(Activity::getPublishStatus, "published")
+                .isNull(Activity::getDeletedAt);
         List<Activity> activities = activityMapper.selectList(activityWrapper);
         if (activities == null) {
             activities = Collections.emptyList();

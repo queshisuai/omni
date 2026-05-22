@@ -23,7 +23,7 @@ export function SeatLayoutControls({
   const activeGroup = activeBlock ? layout.ticketGroups?.find(group => group.groupKey === activeBlock.ticketGroupKey) ?? null : null
 
   return (
-    <aside className="flex h-full w-80 flex-col gap-5 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-5 text-zinc-100">
+    <aside className="flex h-full w-full flex-col gap-6 overflow-y-auto p-5 text-zinc-100 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/10 hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
       <section>
         <div className="mb-3">
           <div className="text-lg font-semibold">SeatCraft 设计器</div>
@@ -37,7 +37,7 @@ export function SeatLayoutControls({
         </div>
       </section>
 
-      <section className="rounded-xl border border-zinc-700/70 bg-zinc-800/50 p-4">
+      <section className="rounded-2xl border border-white/5 bg-white/5 p-4 shadow-sm backdrop-blur-md">
         <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#ff1268]">快捷操作</div>
         <div className="grid grid-cols-2 gap-2">
           <ToolButton icon={<Grid3X3 className="h-4 w-4" />} label="一键排版" onClick={onAutoArrange} />
@@ -54,18 +54,18 @@ export function SeatLayoutControls({
         </div>
         <div className="space-y-2">
           {blocks.map(block => (
-            <button key={block.blockKey} type="button" onClick={() => onSelectBlock?.(block.blockKey)} className={`w-full rounded-xl border px-3 py-3 text-left transition ${activeBlockKey === block.blockKey ? 'border-[#ff1268] bg-[#ff1268]/10' : 'border-zinc-700 bg-zinc-800/50 hover:border-zinc-500'}`}>
+            <button key={block.blockKey} type="button" onClick={() => onSelectBlock?.(block.blockKey)} className={`w-full rounded-xl border px-3 py-3 text-left transition-all ${activeBlockKey === block.blockKey ? 'border-[#ff1268] bg-[#ff1268]/10 shadow-[0_0_15px_rgba(255,18,104,0.1)]' : 'border-white/5 bg-white/5 hover:border-white/20 hover:bg-white/10'}`}>
               <div className="flex items-center justify-between gap-2">
-                <div className="font-semibold">{block.name}</div>
-                <span className="text-[10px] text-zinc-500">{labelForType(block.blockType)}</span>
+                <div className="font-semibold text-sm">{block.name}</div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${activeBlockKey === block.blockKey ? 'bg-[#ff1268]/20 text-[#ff1268]' : 'bg-white/10 text-zinc-400'}`}>{labelForType(block.blockType)}</span>
               </div>
-              <div className="mt-1 text-[11px] text-zinc-500">{summary(block)}</div>
+              <div className={`mt-1.5 text-xs ${activeBlockKey === block.blockKey ? 'text-[#ff1268]/80' : 'text-zinc-500'}`}>{summary(block)}</div>
             </button>
           ))}
         </div>
       </section>
 
-      <section className="rounded-xl border border-zinc-700/70 bg-zinc-800/50 p-4">
+      <section className="rounded-2xl border border-white/5 bg-white/5 p-4 shadow-sm backdrop-blur-md">
         <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#ff1268]">舞台</div>
         <TextField label="标题" value={layout.stage.title} onChange={value => onUpdateStage({ title: value })} />
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -75,7 +75,7 @@ export function SeatLayoutControls({
       </section>
 
       {activeBlock && (
-        <section className="rounded-xl border border-zinc-700/70 bg-zinc-800/50 p-4">
+        <section className="rounded-2xl border border-white/5 bg-white/5 p-4 shadow-sm backdrop-blur-md">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#ff1268]">属性</div>
             <span className="text-[10px] text-zinc-500">{activeBlock.blockKey}</span>
@@ -115,19 +115,19 @@ function BlockSpecificFields({ block, onUpdate }: { block: SeatBlockDraft; onUpd
 }
 
 function ToolButton({ icon, label, onClick, disabled }: { icon: React.ReactNode; label: string; onClick?: () => void; disabled?: boolean }) {
-  return <button type="button" disabled={disabled} onClick={onClick} className="flex items-center justify-center gap-2 rounded-lg bg-zinc-800 px-2 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40">{icon}{label}</button>
+  return <button type="button" disabled={disabled} onClick={onClick} className="group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl border border-white/5 bg-white/5 px-3 py-2.5 text-xs font-medium text-zinc-200 transition-all hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">{icon}<span>{label}</span><div className="absolute inset-0 -z-10 bg-gradient-to-br from-white/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" /></button>
 }
 
 function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="block space-y-1 text-[10px] uppercase text-zinc-500">{label}<input value={value} onChange={event => onChange(event.target.value)} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-[#ff1268]" /></label>
+  return <label className="block space-y-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">{label}<input value={value} onChange={event => onChange(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none transition-all focus:border-[#ff1268] focus:bg-black/40 focus:ring-1 focus:ring-[#ff1268]/50" /></label>
 }
 
 function NumberField({ label, value, min, onChange }: { label: string; value: number; min?: number; onChange: (value: number) => void }) {
-  return <label className="block space-y-1 text-[10px] uppercase text-zinc-500">{label}<input type="number" min={min} value={value} onChange={event => onChange(min != null ? Math.max(min, Number(event.target.value) || min) : Number(event.target.value) || 0)} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-[#ff1268]" /></label>
+  return <label className="block space-y-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">{label}<input type="number" min={min} value={value} onChange={event => onChange(min != null ? Math.max(min, Number(event.target.value) || min) : Number(event.target.value) || 0)} className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none transition-all focus:border-[#ff1268] focus:bg-black/40 focus:ring-1 focus:ring-[#ff1268]/50" /></label>
 }
 
 function ColorField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return <label className="block space-y-1 text-[10px] uppercase text-zinc-500">颜色<div className="flex gap-1.5 pt-2">{COLORS.map(color => <button key={color} type="button" onClick={() => onChange(color)} style={{ backgroundColor: color }} className={`h-5 w-5 rounded-full ${value === color ? 'ring-2 ring-white' : 'opacity-60'}`} />)}</div></label>
+  return <label className="block space-y-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">颜色<div className="flex gap-2 pt-2">{COLORS.map(color => <button key={color} type="button" onClick={() => onChange(color)} style={{ backgroundColor: color }} className={`h-6 w-6 rounded-full transition-all ${value === color ? 'ring-2 ring-white ring-offset-2 ring-offset-black scale-110' : 'opacity-60 hover:opacity-100 hover:scale-110'}`} />)}</div></label>
 }
 
 function labelForType(type: SeatBlockType) {

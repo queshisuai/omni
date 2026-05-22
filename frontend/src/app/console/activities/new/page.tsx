@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, getVenueDefaultLayout, updateActivitySeatLayout } from '@/lib/api'
+import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, listVenueSeatLayoutTemplates, updateActivitySeatLayout } from '@/lib/api'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
-import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatCraftLayoutVO, UserRole } from '@/types/api'
+import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatCraftLayoutVO, SeatLayoutTemplateCandidateVO, UserRole } from '@/types/api'
 
 type SessionDraft = {
   key: string
@@ -21,6 +21,8 @@ type TicketTypeDraft = {
   price: number
   totalStock: number
 }
+
+type SeatMapVisibility = 'published' | 'hidden'
 
 export default function NewActivityPage() {
   const router = useRouter()
@@ -39,11 +41,16 @@ export default function NewActivityPage() {
   const [artistName, setArtistName] = useState('')
   const [description, setDescription] = useState('')
   const [poster, setPoster] = useState('')
+  const [venueApprovalNo, setVenueApprovalNo] = useState('')
+  const [venueApprovalFileUrl, setVenueApprovalFileUrl] = useState('')
+  const [venueApprovalNote, setVenueApprovalNote] = useState('')
+  const [seatMapVisibility, setSeatMapVisibility] = useState<SeatMapVisibility>('hidden')
 
   // 步骤2：场次
   const [sessions, setSessions] = useState<SessionDraft[]>([{ key: 's1', venueId: null, startTime: '', endTime: '' }])
-  const [venueDefaultLayout, setVenueDefaultLayout] = useState<SeatCraftLayoutVO | null>(null)
-  const [loadingDefaultLayout, setLoadingDefaultLayout] = useState(false)
+  const [templateCandidates, setTemplateCandidates] = useState<SeatLayoutTemplateCandidateVO[]>([])
+  const [selectedTemplateSource, setSelectedTemplateSource] = useState('')
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
 
   // 步骤3：票档
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDraft[]>([
@@ -64,22 +71,25 @@ export default function NewActivityPage() {
   useEffect(() => {
     const u = getUser()
     if (!u || !primaryVenueId) {
-      setVenueDefaultLayout(null)
+      setTemplateCandidates([])
+      setSelectedTemplateSource('')
       return
     }
     let cancelled = false
-    setLoadingDefaultLayout(true)
-    getVenueDefaultLayout(primaryVenueId)
-      .then(layout => {
+    setLoadingTemplates(true)
+    listVenueSeatLayoutTemplates(primaryVenueId, u.userId)
+      .then(candidates => {
         if (cancelled) return
-        setVenueDefaultLayout(layout)
+        setTemplateCandidates(candidates)
+        setSelectedTemplateSource('')
       })
       .catch(() => {
         if (cancelled) return
-        setVenueDefaultLayout(null)
+        setTemplateCandidates([])
+        setSelectedTemplateSource('')
       })
       .finally(() => {
-        if (!cancelled) setLoadingDefaultLayout(false)
+        if (!cancelled) setLoadingTemplates(false)
       })
 
     return () => { cancelled = true }
@@ -115,24 +125,29 @@ export default function NewActivityPage() {
 
   const handleSubmit = async () => {
     const u = getUser()
-    if (!u || !categoryId || !name.trim()) return
+    if (!u || !categoryId || !name.trim() || !artistName.trim()) return
     setSubmitting(true)
     try {
-      // 1. 创建活动（artistId用1占位，实际产品可传自定义艺人）
+      // 1. 创建活动，后端会按名称复用或创建艺人/团队档案
       const activity: ActivityEntity = await createAdminActivity({
         userId: u.userId,
         categoryId,
-        artistId: 1,
+        artistName: artistName.trim(),
         name: name.trim(),
         description,
         poster,
+        venueApprovalNo: venueApprovalNo.trim() || null,
+        venueApprovalFileUrl: venueApprovalFileUrl.trim() || null,
+        venueApprovalNote: venueApprovalNote.trim() || null,
+        seatMapVisibility,
       })
 
-      if (venueDefaultLayout) {
+      const selectedTemplate = templateCandidates.find(candidate => `${candidate.sourceType}:${candidate.sourceId}` === selectedTemplateSource)
+      if (selectedTemplate) {
         try {
           await updateActivitySeatLayout(activity.id, {
             userId: u.userId,
-            layout: venueDefaultLayout,
+            layout: selectedTemplate.layout,
           })
         } catch (err) {
           await deleteAdminActivity(activity.id, { userId: u.userId, reason: '创建活动失败自动清理' }).catch(() => {})
@@ -226,7 +241,7 @@ export default function NewActivityPage() {
               </select>
             </div>
             <div className="mb-4">
-              <label className="block text-[13px] font-medium text-[#333] mb-1.5">艺人名称</label>
+              <label className="block text-[13px] font-medium text-[#333] mb-1.5">艺人/团队名称 *</label>
               <input value={artistName} onChange={e => setArtistName(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="例：周杰伦" />
             </div>
             <div className="mb-4">
@@ -237,6 +252,27 @@ export default function NewActivityPage() {
               <label className="block text-[13px] font-medium text-[#333] mb-1.5">海报URL</label>
               <input value={poster} onChange={e => setPoster(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="https://..." />
             </div>
+            <div className="rounded-xl border border-[#ffe1ec] bg-[#fff7fa] p-4">
+              <div className="mb-3 text-[14px] font-semibold text-[#1a1a2e]">场地审批凭证</div>
+              <div className="grid gap-3">
+                <input value={venueApprovalNo} onChange={e => setVenueApprovalNo(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="凭证编号" />
+                <input value={venueApprovalFileUrl} onChange={e => setVenueApprovalFileUrl(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="凭证附件链接" />
+                <textarea value={venueApprovalNote} onChange={e => setVenueApprovalNote(e.target.value)} rows={2} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268] resize-none" placeholder="凭证说明" />
+              </div>
+            </div>
+            <div className="mt-4 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4">
+              <div className="mb-2 text-[14px] font-semibold text-[#1a1a2e]">座位图展示策略</div>
+              <div className="space-y-2 text-[13px] text-[#333]">
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input type="radio" name="seatMapVisibility" value="hidden" checked={seatMapVisibility === 'hidden'} onChange={() => setSeatMapVisibility('hidden')} className="mt-0.5 accent-[#ff1268]" />
+                  <span><span className="font-medium">暂不展示</span>：活动创建后先隐藏座位图，配置确认后再开放。</span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input type="radio" name="seatMapVisibility" value="published" checked={seatMapVisibility === 'published'} onChange={() => setSeatMapVisibility('published')} className="mt-0.5 accent-[#ff1268]" />
+                  <span><span className="font-medium">立即展示</span>：创建完成后 C 端可查看活动座位图。</span>
+                </label>
+              </div>
+            </div>
           </div>
         )}
 
@@ -245,18 +281,19 @@ export default function NewActivityPage() {
           <div>
             {primaryVenueId && (
               <div className="mb-5 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4">
-                <div className="mb-2 text-[14px] font-semibold text-[#1a1a2e]">场馆默认座位图</div>
-                {loadingDefaultLayout ? (
+                <div className="mb-2 text-[14px] font-semibold text-[#1a1a2e]">地点历史座位模板</div>
+                {loadingTemplates ? (
                   <div className="text-[13px] text-[#999]">加载中...</div>
-                ) : venueDefaultLayout ? (
-                  <div className="space-y-1 text-[13px] text-[#333]">
-                    <div>布局名称：{venueDefaultLayout.name}</div>
-                    <div>舞台标题：{venueDefaultLayout.stageTitle}</div>
-                    <div>区域数量：{venueDefaultLayout.sections.length}</div>
-                    <div>画布大小：{venueDefaultLayout.canvasWidth} × {venueDefaultLayout.canvasHeight}</div>
+                ) : templateCandidates.length > 0 ? (
+                  <div className="space-y-3 text-[13px] text-[#333]">
+                    <div>检测到该地点有历史座位模板，可复制为本活动初始座位图后再调整。</div>
+                    <select value={selectedTemplateSource} onChange={e => setSelectedTemplateSource(e.target.value)} className="w-full rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]">
+                      <option value="">不使用模板，稍后配置</option>
+                      {templateCandidates.map(candidate => <option key={`${candidate.sourceType}:${candidate.sourceId}`} value={`${candidate.sourceType}:${candidate.sourceId}`}>{candidate.name}</option>)}
+                    </select>
                   </div>
                 ) : (
-                  <div className="text-[13px] text-[#999]">该场馆暂无默认座位图，可在活动创建后配置。</div>
+                  <div className="text-[13px] text-[#999]">该地点暂无可复用历史模板，可在活动创建后配置。</div>
                 )}
               </div>
             )}

@@ -2,18 +2,24 @@ package com.omni.ticket.controller;
 
 import com.omni.common.result.Result;
 import com.omni.ticket.dto.SeatMapResponse;
+import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.SeatBlock;
+import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.SessionSeatLayout;
 import com.omni.ticket.entity.SessionSeatLayoutSection;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.TicketTypeArea;
 import com.omni.ticket.entity.VenueArea;
+import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutSectionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
+import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeAreaMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueAreaMapper;
+import com.omni.ticket.service.SeatCraftBlockLayoutService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -34,6 +40,10 @@ import static org.mockito.Mockito.when;
 class SeatControllerTest {
 
     @Mock
+    private ActivityMapper activityMapper;
+    @Mock
+    private SessionMapper sessionMapper;
+    @Mock
     private TicketTypeMapper ticketTypeMapper;
     @Mock
     private TicketTypeAreaMapper ticketTypeAreaMapper;
@@ -45,6 +55,8 @@ class SeatControllerTest {
     private SessionSeatLayoutMapper sessionSeatLayoutMapper;
     @Mock
     private SessionSeatLayoutSectionMapper sessionSeatLayoutSectionMapper;
+    @Mock
+    private SeatCraftBlockLayoutService seatCraftBlockLayoutService;
 
     @Test
     void getSeatMapUsesLegacyAreaMappingWhenNoSeatCraftLayout() {
@@ -141,9 +153,113 @@ class SeatControllerTest {
         assertNull(result.getData().getLayout().getSections().get(0).getSeatCount());
     }
 
+    @Test
+    void getSeatMapReturnsTicketTypeOnlyWhenActivitySeatMapIsHidden() {
+        SeatController controller = controller();
+        TicketType ticketType = ticketType(7L, 99L);
+        Session session = session(99L, 5L);
+        Activity activity = activity(5L, "hidden");
+
+        when(ticketTypeMapper.selectById(7L)).thenReturn(ticketType);
+        when(sessionMapper.selectById(99L)).thenReturn(session);
+        when(activityMapper.selectById(5L)).thenReturn(activity);
+
+        Result<SeatMapResponse> result = controller.getSeatMap(99L, 7L);
+
+        assertEquals(200, result.getCode());
+        assertEquals(99L, result.getData().getSessionId());
+        assertEquals(7L, result.getData().getTicketTypeId());
+        assertEquals("票档", result.getData().getTicketTypeName());
+        assertNull(result.getData().getLayout());
+        assertEquals(List.of(), result.getData().getAreas());
+        assertEquals(List.of(), result.getData().getSeats());
+        verify(sessionSeatLayoutMapper, never()).selectOne(any());
+        verify(sessionSeatLayoutSectionMapper, never()).selectList(any());
+        verify(sessionSeatMapper, never()).selectList(any());
+        verify(ticketTypeAreaMapper, never()).selectList(any());
+        verify(venueAreaMapper, never()).selectBatchIds(any());
+    }
+
+    @Test
+    void getSeatMapIncludesSeatCraftLayoutWhenActivitySeatMapIsPublished() {
+        SeatController controller = controller();
+        TicketType ticketType = ticketType(7L, 99L);
+        Session session = session(99L, 5L);
+        Activity activity = activity(5L, "published");
+        SessionSeatLayout layout = layout(11L, 99L);
+        SessionSeatLayoutSection vip = section(21L, 11L, 7L, "VIP区", 2, 3);
+        SessionSeat seat = new SessionSeat();
+        seat.setId(301L);
+        seat.setLayoutSectionId(21L);
+
+        when(ticketTypeMapper.selectById(7L)).thenReturn(ticketType);
+        when(sessionMapper.selectById(99L)).thenReturn(session);
+        when(activityMapper.selectById(5L)).thenReturn(activity);
+        when(sessionSeatLayoutMapper.selectOne(any())).thenReturn(layout);
+        when(sessionSeatLayoutSectionMapper.selectList(any())).thenReturn(List.of(vip));
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(seat));
+
+        Result<SeatMapResponse> result = controller.getSeatMap(99L, 7L);
+
+        assertEquals(200, result.getCode());
+        assertNotNull(result.getData().getLayout());
+        assertEquals(11L, result.getData().getLayout().getId());
+        assertEquals(List.of(seat), result.getData().getSeats());
+    }
+
+    @Test
+    void getSeatMapIncludesSeatCraftBlockLayoutAndBlockSeatsWhenPublished() {
+        SeatController controller = controller();
+        TicketType ticketType = ticketType(7L, 99L);
+        Session session = session(99L, 5L);
+        Activity activity = activity(5L, "published");
+        SessionSeatLayout layout = layout(11L, 99L);
+        com.omni.ticket.dto.SeatCraftBlockDtos.LayoutRequest blockLayout = new com.omni.ticket.dto.SeatCraftBlockDtos.LayoutRequest();
+        com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest block = new com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest();
+        block.setBlockKey("floor");
+        block.setName("池座");
+        block.setBlockType("gridBlock");
+        block.setTicketGroupKey("vip");
+        blockLayout.setBlocks(List.of(block));
+        SessionSeat seat = new SessionSeat();
+        seat.setId(401L);
+        seat.setSeatBlockId(501L);
+        seat.setTicketTypeId(7L);
+
+        when(ticketTypeMapper.selectById(7L)).thenReturn(ticketType);
+        when(sessionMapper.selectById(99L)).thenReturn(session);
+        when(activityMapper.selectById(5L)).thenReturn(activity);
+        when(sessionSeatLayoutMapper.selectOne(any())).thenReturn(layout);
+        when(sessionSeatLayoutSectionMapper.selectList(any())).thenReturn(List.of());
+        when(seatCraftBlockLayoutService.getLayout("session", 99L)).thenReturn(blockLayout);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(seat));
+
+        Result<SeatMapResponse> result = controller.getSeatMap(99L, 7L);
+
+        assertEquals(200, result.getCode());
+        assertNotNull(result.getData().getLayout());
+        assertNotNull(result.getData().getLayout().getBlockLayout());
+        assertEquals(1, result.getData().getLayout().getBlockLayout().getBlocks().size());
+        assertEquals(List.of(seat), result.getData().getSeats());
+    }
+
     private SeatController controller() {
-        return new SeatController(ticketTypeMapper, ticketTypeAreaMapper, venueAreaMapper, sessionSeatMapper,
-                sessionSeatLayoutMapper, sessionSeatLayoutSectionMapper);
+        return new SeatController(activityMapper, sessionMapper, ticketTypeMapper, ticketTypeAreaMapper, venueAreaMapper, sessionSeatMapper,
+                sessionSeatLayoutMapper, sessionSeatLayoutSectionMapper, seatCraftBlockLayoutService);
+    }
+
+    private Activity activity(Long id, String seatMapVisibility) {
+        Activity activity = new Activity();
+        activity.setId(id);
+        activity.setSeatMapVisibility(seatMapVisibility);
+        return activity;
+    }
+
+    private Session session(Long id, Long activityId) {
+        Session session = new Session();
+        session.setId(id);
+        session.setActivityId(activityId);
+        return session;
     }
 
     private TicketType ticketType(Long id, Long sessionId) {

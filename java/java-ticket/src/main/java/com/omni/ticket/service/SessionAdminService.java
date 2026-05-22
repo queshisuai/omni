@@ -155,6 +155,10 @@ public class SessionAdminService {
         }
         requireManageableActivity(session.getActivityId(), userId, role);
         sessionSeatService.deleteBySessionId(id);
+        if (ticketTypeMapper != null) {
+            ticketTypeMapper.delete(new LambdaQueryWrapper<TicketType>()
+                    .eq(TicketType::getSessionId, id));
+        }
         sessionMapper.deleteById(id);
     }
 
@@ -223,6 +227,7 @@ public class SessionAdminService {
             response.setTotalStock(totalStock);
             response.setRemainStock(remainStock);
             response.setSoldStock(Math.max(0, totalStock - remainStock));
+            response.setTicketTypes(types);
             return response;
         }).collect(Collectors.toList());
     }

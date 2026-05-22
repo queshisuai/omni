@@ -1,8 +1,11 @@
 package com.omni.ticket.dto;
 
 import com.omni.ticket.entity.Session;
+import com.omni.ticket.entity.TicketType;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
 
 public class SessionAdminResponse {
     private Long id;
@@ -18,6 +21,7 @@ public class SessionAdminResponse {
     private Integer totalStock;
     private Integer soldStock;
     private Integer remainStock;
+    private List<TicketType> ticketTypes = Collections.emptyList();
 
     public static SessionAdminResponse from(Session session) {
         SessionAdminResponse response = new SessionAdminResponse();
@@ -56,4 +60,6 @@ public class SessionAdminResponse {
     public void setSoldStock(Integer soldStock) { this.soldStock = soldStock; }
     public Integer getRemainStock() { return remainStock; }
     public void setRemainStock(Integer remainStock) { this.remainStock = remainStock; }
+    public List<TicketType> getTicketTypes() { return ticketTypes; }
+    public void setTicketTypes(List<TicketType> ticketTypes) { this.ticketTypes = ticketTypes == null ? Collections.emptyList() : ticketTypes; }
 }

@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { getSessionSeatLayout, updateSessionSeatLayout } from '@/lib/api'
+import { useParams, useSearchParams } from 'next/navigation'
+import { getSessionSeatLayout, updateSessionSeatLayout, updateSessionTicketBindings } from '@/lib/api'
 import { getUser } from '@/lib/auth'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
+import { SeatCraftTicketManagementPanel } from '@/components/seatcraft-unified/SeatCraftTicketManagementPanel'
 import { toSeatCraftLayoutPayload } from '@/components/seatcraft/block-layout'
 import { toSeatCraftLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
+import type { SessionTicketBindingRequest } from '@/types/api'
 
 function createDefaultLayout(name: string): SeatCraftLayoutDraft {
   return {
@@ -25,12 +27,17 @@ function createDefaultLayout(name: string): SeatCraftLayoutDraft {
 
 export default function SessionSeatLayoutPage() {
   const params = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
   const sessionId = Number(params.id)
+  const ticketMode = searchParams.get('mode') === 'tickets'
   const [layout, setLayout] = useState<SeatCraftLayoutDraft | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [bindingSaving, setBindingSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [activeBlockKey, setActiveBlockKey] = useState<string | null>(null)
+  const selectedBlockKeys = activeBlockKey ? [activeBlockKey] : []
 
   useEffect(() => {
     if (!Number.isInteger(sessionId) || sessionId <= 0) {
@@ -88,6 +95,25 @@ export default function SessionSeatLayoutPage() {
     }
   }
 
+  const handleSaveBindings = async (bindings: SessionTicketBindingRequest['bindings']) => {
+    const user = getUser()
+    if (!user) return
+    setBindingSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      await updateSessionTicketBindings(sessionId, {
+        userId: user.userId,
+        bindings,
+      })
+      setMessage('场次 SeatCraft 票档绑定已保存')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存场次 SeatCraft 票档绑定失败')
+    } finally {
+      setBindingSaving(false)
+    }
+  }
+
   if (loading) {
     return <div className="py-20 text-center text-[14px] text-[#999]">加载 SeatCraft 座位图中...</div>
   }
@@ -107,8 +133,8 @@ export default function SessionSeatLayoutPage() {
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-bold text-[#1a1a2e]">场次 SeatCraft 座位图</h1>
-          <p className="mt-1 text-[13px] text-[#999]">为当前场次创建或维护 SeatCraft 座位图，保存后即可在票档创建中绑定区域。</p>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{ticketMode ? '场次 SeatCraft 票档管理' : '场次 SeatCraft 座位图'}</h1>
+          <p className="mt-1 text-[13px] text-[#999]">{ticketMode ? '在 SeatCraft 座位图基础上维护当前场次的票档绑定。' : '为当前场次创建或维护 SeatCraft 座位图，保存后即可在票档创建中绑定区域。'}</p>
         </div>
         <Link href="/console/sessions" className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] hover:bg-[#fafafa]">
           返回场次/票档
@@ -129,7 +155,18 @@ export default function SessionSeatLayoutPage() {
         <span className="text-[13px] text-[#999]">至少绘制一个座位区域或座位块后才能保存。</span>
       </div>
 
-      <SeatLayoutDesigner layout={layout} onChange={setLayout} />
+      {ticketMode ? (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <SeatLayoutDesigner layout={layout} onChange={setLayout} activeBlockKey={activeBlockKey} onActiveBlockKeyChange={setActiveBlockKey} />
+          <SeatCraftTicketManagementPanel
+            selectedBlockKeys={selectedBlockKeys}
+            saving={bindingSaving}
+            onSaveBindings={handleSaveBindings}
+          />
+        </div>
+      ) : (
+        <SeatLayoutDesigner layout={layout} onChange={setLayout} />
+      )}
     </div>
   )
 }

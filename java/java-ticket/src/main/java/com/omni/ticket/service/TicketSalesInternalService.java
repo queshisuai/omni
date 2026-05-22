@@ -8,18 +8,27 @@ import com.omni.ticket.dto.TicketSalesQuoteRequest;
 import com.omni.ticket.dto.TicketSalesQuoteResponse;
 import com.omni.ticket.dto.TicketSalesSeatLockResponse;
 import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.SeatBlock;
 import com.omni.ticket.entity.Session;
+import com.omni.ticket.entity.TicketGroup;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.SeatBlockMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
+import com.omni.ticket.mapper.TicketGroupMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class TicketSalesInternalService {
@@ -28,17 +37,32 @@ public class TicketSalesInternalService {
     private final ActivityMapper activityMapper;
     private final VenueMapper venueMapper;
     private final SessionSeatMapper sessionSeatMapper;
+    private final SeatBlockMapper seatBlockMapper;
+    private final TicketGroupMapper ticketGroupMapper;
 
     public TicketSalesInternalService(TicketTypeMapper ticketTypeMapper,
-                                      SessionMapper sessionMapper,
-                                      ActivityMapper activityMapper,
-                                      VenueMapper venueMapper,
-                                      SessionSeatMapper sessionSeatMapper) {
+                                       SessionMapper sessionMapper,
+                                       ActivityMapper activityMapper,
+                                       VenueMapper venueMapper,
+                                       SessionSeatMapper sessionSeatMapper) {
+        this(ticketTypeMapper, sessionMapper, activityMapper, venueMapper, sessionSeatMapper, null, null);
+    }
+
+    @Autowired
+    public TicketSalesInternalService(TicketTypeMapper ticketTypeMapper,
+                                       SessionMapper sessionMapper,
+                                       ActivityMapper activityMapper,
+                                       VenueMapper venueMapper,
+                                       SessionSeatMapper sessionSeatMapper,
+                                       SeatBlockMapper seatBlockMapper,
+                                       TicketGroupMapper ticketGroupMapper) {
         this.ticketTypeMapper = ticketTypeMapper;
         this.sessionMapper = sessionMapper;
         this.activityMapper = activityMapper;
         this.venueMapper = venueMapper;
         this.sessionSeatMapper = sessionSeatMapper;
+        this.seatBlockMapper = seatBlockMapper;
+        this.ticketGroupMapper = ticketGroupMapper;
     }
 
     public TicketSalesQuoteResponse quote(TicketSalesQuoteRequest request) {
@@ -87,7 +111,15 @@ public class TicketSalesInternalService {
             int quantity = requirePositiveQuantity(request.getQuantity());
             seatIds = sessionSeatMapper.selectRandomAvailableSeatIds(request.getSessionId(), request.getTicketTypeId(), quantity);
             if (seatIds == null || seatIds.size() < quantity) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
+                requireSeatlessStandingTicketType(request.getSessionId(), request.getTicketTypeId());
+                int updated = ticketTypeMapper.decreaseRemainStockIfEnough(request.getTicketTypeId(), quantity);
+                if (updated != 1) {
+                    throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
+                }
+                TicketSalesSeatLockResponse response = new TicketSalesSeatLockResponse();
+                response.setLockedSeatIds(Collections.emptyList());
+                response.setSeatLabels(List.of("系统分配站区票 x" + quantity));
+                return response;
             }
         }
         if (seatIds == null || seatIds.isEmpty()) {
@@ -103,6 +135,48 @@ public class TicketSalesInternalService {
         response.setLockedSeatIds(seatIds);
         response.setSeatLabels(sessionSeatMapper.selectSeatLabelsByIds(seatIds));
         return response;
+    }
+
+    private void requireSeatlessStandingTicketType(Long sessionId, Long ticketTypeId) {
+        if (seatBlockMapper == null || ticketGroupMapper == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
+        }
+        TicketType ticketType = ticketTypeMapper.selectById(ticketTypeId);
+        if (ticketType == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "票档不存在");
+        }
+        List<SeatBlock> standingBlocks = seatBlockMapper.selectList(new LambdaQueryWrapper<SeatBlock>()
+                .eq(SeatBlock::getOwnerType, "session")
+                .eq(SeatBlock::getOwnerId, sessionId)
+                .eq(SeatBlock::getBlockType, "standingBlock")
+                .eq(SeatBlock::getStatus, 1));
+        boolean matched = (standingBlocks == null ? Collections.<SeatBlock>emptyList() : standingBlocks).stream()
+                .filter(block -> block != null && block.getTicketGroupKey() != null)
+                .anyMatch(block -> matchesTicketGroup(sessionId, block.getTicketGroupKey(), ticketType));
+        if (!matched) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
+        }
+    }
+
+    private boolean matchesTicketGroup(Long sessionId, String groupKey, TicketType ticketType) {
+        TicketGroup group = ticketGroupMapper.selectOne(new LambdaQueryWrapper<TicketGroup>()
+                .eq(TicketGroup::getOwnerType, "session")
+                .eq(TicketGroup::getOwnerId, sessionId)
+                .eq(TicketGroup::getGroupKey, groupKey)
+                .eq(TicketGroup::getStatus, 1));
+        if (group == null) {
+            return false;
+        }
+        return Objects.equals(ticketType.getName(), group.getName())
+                && defaultPrice(ticketType.getPrice()).compareTo(groupPrice(group)) == 0;
+    }
+
+    private BigDecimal groupPrice(TicketGroup group) {
+        return group.getActivityPrice() != null ? group.getActivityPrice() : defaultPrice(group.getDefaultPrice());
+    }
+
+    private BigDecimal defaultPrice(BigDecimal price) {
+        return price == null ? BigDecimal.ZERO : price;
     }
 
     public void confirmSold(TicketSalesOrderRequest request) {

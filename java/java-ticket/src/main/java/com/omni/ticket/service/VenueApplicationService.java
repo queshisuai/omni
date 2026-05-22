@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
+import com.omni.ticket.dto.SeatCraftLayoutDtos;
+import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.dto.VenueApplicationResponse;
 import com.omni.ticket.dto.InternalUserRefResponse;
@@ -21,7 +23,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
 
 @Service
 public class VenueApplicationService {
@@ -30,23 +32,26 @@ public class VenueApplicationService {
     private final VenueMapper venueMapper;
     private final UserAccessService userAccessService;
     private final SeatCraftBlockLayoutService blockLayoutService;
+    private final VenueDefaultLayoutService venueDefaultLayoutService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public VenueApplicationService(VenueApplicationMapper venueApplicationMapper,
                                     VenueMapper venueMapper,
                                     UserAccessService userAccessService) {
-        this(venueApplicationMapper, venueMapper, userAccessService, null);
+        this(venueApplicationMapper, venueMapper, userAccessService, null, null);
     }
 
     @Autowired
     public VenueApplicationService(VenueApplicationMapper venueApplicationMapper,
                                    VenueMapper venueMapper,
                                    UserAccessService userAccessService,
-                                   SeatCraftBlockLayoutService blockLayoutService) {
+                                   SeatCraftBlockLayoutService blockLayoutService,
+                                   VenueDefaultLayoutService venueDefaultLayoutService) {
         this.venueApplicationMapper = venueApplicationMapper;
         this.venueMapper = venueMapper;
         this.userAccessService = userAccessService;
         this.blockLayoutService = blockLayoutService;
+        this.venueDefaultLayoutService = venueDefaultLayoutService;
     }
 
     public VenueApplication submit(VenueApplicationRequest request) {
@@ -88,7 +93,7 @@ public class VenueApplicationService {
             throw new BusinessException(400, "场地使用结束时间必须晚于开始时间");
         }
         if (trim(request.getProofNote()) == null && trim(request.getProofFileUrl()) == null) {
-            throw new BusinessException(400, "请填写场地使用证明说明或上传附件");
+            throw new BusinessException(400, "请填写场地审批凭证说明或上传附件");
         }
         validateLayout(request);
     }
@@ -157,6 +162,45 @@ public class VenueApplicationService {
         return venueApplicationMapper.selectList(wrapper).stream().map(VenueApplicationResponse::from).collect(Collectors.toList());
     }
 
+    public List<SeatLayoutTemplateCandidateResponse> listSeatLayoutTemplates(Long userId, Long venueId) {
+        userAccessService.requireAdminOrOrganizer(userId);
+        Venue venue = venueMapper.selectById(venueId);
+        if (venue == null || !Integer.valueOf(1).equals(venue.getStatus())) {
+            throw new BusinessException(404, "地点档案不存在");
+        }
+        List<SeatLayoutTemplateCandidateResponse> candidates = new ArrayList<>();
+        List<VenueApplication> applications = venueApplicationMapper.selectList(new LambdaQueryWrapper<VenueApplication>()
+                .eq(VenueApplication::getVenueId, venueId)
+                .eq(VenueApplication::getStatus, 1)
+                .orderByDesc(VenueApplication::getCreateTime));
+        if (applications != null && blockLayoutService != null) {
+            for (VenueApplication application : applications) {
+                SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayoutService.getLayout("venue_application", application.getId());
+                if (blockLayout != null) {
+                    SeatLayoutTemplateCandidateResponse candidate = new SeatLayoutTemplateCandidateResponse();
+                    candidate.setSourceType("venue_application");
+                    candidate.setSourceId(application.getId());
+                    candidate.setName(defaultText(application.getVenueName(), "历史地点") + "历史申请模板");
+                    candidate.setCreateTime(application.getCreateTime());
+                    candidate.setLayout(toLayoutResponse(candidate.getName(), blockLayout));
+                    candidates.add(candidate);
+                }
+            }
+        }
+        if (venueDefaultLayoutService != null) {
+            SeatCraftLayoutDtos.LayoutResponse legacyLayout = venueDefaultLayoutService.getLayout(venueId);
+            if (legacyLayout != null) {
+                SeatLayoutTemplateCandidateResponse candidate = new SeatLayoutTemplateCandidateResponse();
+                candidate.setSourceType("legacy_venue_default");
+                candidate.setSourceId(legacyLayout.getId());
+                candidate.setName(defaultText(legacyLayout.getName(), "历史地点模板"));
+                candidate.setLayout(legacyLayout);
+                candidates.add(candidate);
+            }
+        }
+        return candidates;
+    }
+
     public VenueApplication approve(Long id, Long userId, String mode, Long venueId, String reviewNote) {
         userAccessService.requireAdmin(userId);
         VenueApplication application = requirePendingApplication(id);
@@ -211,7 +255,7 @@ public class VenueApplicationService {
     private VenueApplication requirePendingApplication(Long id) {
         VenueApplication application = venueApplicationMapper.selectById(id);
         if (application == null) {
-            throw new BusinessException(404, "场馆申请不存在");
+            throw new BusinessException(404, "地点凭证不存在");
         }
         if (!Integer.valueOf(0).equals(application.getStatus())) {
             throw new BusinessException(400, "只能审核待审核申请");
@@ -221,5 +265,24 @@ public class VenueApplicationService {
 
     private String trim(String value) {
         return value == null ? null : value.trim();
+    }
+
+    private String defaultText(String value, String fallback) {
+        String text = trim(value);
+        return text == null ? fallback : text;
+    }
+
+    private SeatCraftLayoutDtos.LayoutResponse toLayoutResponse(String name, SeatCraftBlockDtos.LayoutRequest blockLayout) {
+        SeatCraftLayoutDtos.LayoutResponse response = new SeatCraftLayoutDtos.LayoutResponse();
+        response.setId(0L);
+        response.setName(name);
+        response.setTemplateType("concert");
+        response.setStageTitle("舞台");
+        response.setStageX(0);
+        response.setStageY(0);
+        response.setCanvasWidth(blockLayout.getCanvasWidth() == null ? 1000 : blockLayout.getCanvasWidth());
+        response.setCanvasHeight(blockLayout.getCanvasHeight() == null ? 800 : blockLayout.getCanvasHeight());
+        response.setBlockLayout(blockLayout);
+        return response;
     }
 }

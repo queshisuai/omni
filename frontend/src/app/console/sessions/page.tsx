@@ -5,8 +5,8 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { SeatCraftTicketEditor } from '@/components/seatcraft-unified/SeatCraftTicketEditor'
-import { createAdminSession, createAdminTicketType, getActivitySeatLayout, getSessionTicketDrafts, listAdminActivities, listAdminSessions, listAdminVenues, updateAdminSession } from '@/lib/api'
-import { Edit, Plus, RefreshCw, X } from 'lucide-react'
+import { createAdminSession, createAdminTicketType, deleteAdminSession, deleteAdminTicketType, getActivitySeatLayout, getSessionTicketDrafts, listAdminActivities, listAdminSessions, listAdminVenues, updateAdminSession, updateAdminTicketType } from '@/lib/api'
+import { Edit, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import type { ActivityEntity, SeatCraftLayoutVO, SeatCraftSectionVO, SessionAdminVO, VenueEntity } from '@/types/api'
 
 const PAGE_SIZE = 10
@@ -65,6 +65,7 @@ function SessionsPageContent() {
   const [ticketFormSession, setTicketFormSession] = useState<SessionAdminVO | null>(null)
   const [ticketName, setTicketName] = useState('')
   const [ticketPrice, setTicketPrice] = useState('')
+  const [editingTicketId, setEditingTicketId] = useState<number | null>(null)
   const [ticketDrafts, setTicketDrafts] = useState<SeatCraftSectionVO[]>([])
   const [ticketLayout, setTicketLayout] = useState<SeatCraftLayoutVO | null>(null)
   const [ticketFormMode, setTicketFormMode] = useState<TicketFormMode>('seatcraft')
@@ -233,6 +234,22 @@ function SessionsPageContent() {
     }
   }
 
+  const handleDeleteSession = async (session: SessionAdminVO) => {
+    if (session.ticketTypeCount > 0) {
+      const confirmed = confirm('该场次已有票档。删除场次会同时删除票档、座位快照和场次座位图。确认删除？')
+      if (!confirmed) return
+    } else if (!confirm('确认删除该场次？')) {
+      return
+    }
+    try {
+      await deleteAdminSession(session.id, userId)
+      if (ticketFormSession?.id === session.id) setTicketFormSession(null)
+      loadSessions(page)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除场次失败')
+    }
+  }
+
   const isCurrentTicketRequest = (requestId: number, sessionId: number) => {
     return ticketDraftRequestRef.current === requestId && ticketFormSessionIdRef.current === sessionId
   }
@@ -275,6 +292,7 @@ function SessionsPageContent() {
     setTicketFormSession(session)
     setTicketName('')
     setTicketPrice('')
+    setEditingTicketId(null)
     setTicketDrafts([])
     setTicketLayout(null)
     setTicketFormMode('loading')
@@ -324,10 +342,25 @@ function SessionsPageContent() {
       return
     }
     if (!usingSeatCraftEditor) {
-      setTicketMessage('当前场次尚未配置 SeatCraft 座位图，请先配置座位图后再创建票档')
+      setTicketMessage('当前场次还没有座位图，请先进入场次座位设计器创建后再创建票档')
       return
     }
     try {
+      if (editingTicketId != null) {
+        await updateAdminTicketType(editingTicketId, {
+          userId,
+          name: ticketName.trim(),
+          price: Number(ticketPrice),
+        })
+        setTicketMessage('票档已更新')
+        setTicketName('')
+        setTicketPrice('')
+        setEditingTicketId(null)
+        setSelectedLayoutSectionIds([])
+        updateCurrentTicketTypes(current => current.map(ticket => ticket.id === editingTicketId ? { ...ticket, name: ticketName.trim(), price: Number(ticketPrice) } : ticket))
+        loadSessions(page)
+        return
+      }
       const seatCraftPayload = usingSeatCraftEditor ? { layoutSectionIds: selectedLayoutSectionIds } : {}
       await createAdminTicketType({
         userId,
@@ -349,6 +382,41 @@ function SessionsPageContent() {
     } catch (err) {
       setTicketMessage(err instanceof Error ? err.message : '创建票档失败')
     }
+  }
+
+  const handleEditTicketType = (ticket: NonNullable<SessionAdminVO['ticketTypes']>[number]) => {
+    setEditingTicketId(ticket.id)
+    setTicketName(ticket.name)
+    setTicketPrice(String(ticket.price))
+    setSelectedLayoutSectionIds([])
+    setTicketMessage('正在编辑已有票档，只允许修改名称和票价。')
+  }
+
+  const handleDeleteTicketType = async (ticket: NonNullable<SessionAdminVO['ticketTypes']>[number]) => {
+    if (!ticketFormSession) return
+    if (!confirm(`确认删除票档“${ticket.name}”？`)) return
+    try {
+      await deleteAdminTicketType(ticket.id, userId)
+      if (editingTicketId === ticket.id) {
+        setEditingTicketId(null)
+        setTicketName('')
+        setTicketPrice('')
+      }
+      setTicketMessage('票档已删除')
+      updateCurrentTicketTypes(current => current.filter(item => item.id !== ticket.id))
+      await refreshTicketDrafts(ticketFormSession)
+      loadSessions(page)
+    } catch (err) {
+      setTicketMessage(err instanceof Error ? err.message : '删除票档失败')
+    }
+  }
+
+  const updateCurrentTicketTypes = (updater: (tickets: NonNullable<SessionAdminVO['ticketTypes']>) => NonNullable<SessionAdminVO['ticketTypes']>) => {
+    setTicketFormSession(current => {
+      if (!current) return current
+      const currentTickets = current.ticketTypes ?? []
+      return { ...current, ticketTypes: updater(currentTickets) }
+    })
   }
 
   return (
@@ -476,9 +544,12 @@ function SessionsPageContent() {
                   </td>
                   <td className="p-3 text-center">
                     <div className="flex items-center justify-center gap-2">
-                      <button onClick={() => openTicketForm(session)} className="rounded-lg border border-[#ff1268] px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]">票档</button>
+                      <Link href={`/console/sessions/${session.id}/seat-layout?mode=tickets`} className="rounded-lg border border-[#ff1268] px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]">票档</Link>
                       <button onClick={() => openEdit(session)} className="inline-flex rounded p-1.5 text-[#3b82f6] transition-colors hover:bg-[#f0f0f0]" title="编辑">
                         <Edit className="h-4 w-4" />
+                      </button>
+                      <button onClick={() => handleDeleteSession(session)} className="inline-flex rounded p-1.5 text-[#ef4444] transition-colors hover:bg-[#fff1f2]" title="删除">
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                   </td>
@@ -500,7 +571,7 @@ function SessionsPageContent() {
         <div className="mt-5 rounded-xl border border-[#ffd9e6] bg-white p-5">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="text-[16px] font-bold text-[#1a1a2e]">新增票档</h2>
+              <h2 className="text-[16px] font-bold text-[#1a1a2e]">票档管理</h2>
               <p className="mt-1 text-[13px] text-[#999]">{ticketFormSession.activityName || `活动 #${ticketFormSession.activityId}`} · {ticketFormSession.venueName || `场馆 #${ticketFormSession.venueId}`}</p>
             </div>
             <button onClick={() => {
@@ -509,6 +580,24 @@ function SessionsPageContent() {
               setTicketFormSession(null)
             }} className="text-[13px] text-[#999]">关闭</button>
           </div>
+          {(ticketFormSession.ticketTypes?.length ?? 0) > 0 && (
+            <div className="mb-4 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3">
+              <div className="mb-2 text-[13px] font-medium text-[#666]">已有票档</div>
+              <div className="grid gap-2">
+                {ticketFormSession.ticketTypes?.map(ticket => (
+                  <div key={ticket.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-[13px] text-[#666]">
+                    <span className="font-medium text-[#333]">{ticket.name}</span>
+                    <span>¥{Number(ticket.price).toFixed(2)}</span>
+                    <span>余票 {ticket.remainStock} / {ticket.totalStock}</span>
+                    <div className="ml-auto flex items-center gap-2">
+                      <button type="button" onClick={() => handleEditTicketType(ticket)} className="rounded border border-[#3b82f6] px-2 py-1 text-[#3b82f6]">修改</button>
+                      <button type="button" onClick={() => handleDeleteTicketType(ticket)} className="rounded border border-[#ef4444] px-2 py-1 text-[#ef4444]">删除</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {ticketFormMode === 'loading' ? (
             <div className="rounded-lg border border-[#f0f0f0] bg-[#fafafa] p-8 text-center text-[13px] text-[#999]">正在加载票档分区...</div>
           ) : usingSeatCraftEditor ? (
@@ -523,12 +612,14 @@ function SessionsPageContent() {
               onTicketPriceChange={setTicketPrice}
               estimatedSeatCount={estimatedSeatCount}
               onSubmit={handleCreateTicketType}
+              allowSubmitWithoutSelection={editingTicketId != null}
+              submitLabel={editingTicketId != null ? '保存修改' : '保存票档'}
             />
           ) : (
             <div className="rounded-lg border border-dashed border-[#e5e5e5] bg-[#fafafa] p-8 text-center text-[13px] text-[#999]">
-              <div>当前场次尚未配置 SeatCraft 座位图，请先配置座位图后再创建票档。</div>
-              <Link href={`/console/sessions/${ticketFormSession.id}/seat-layout`} className="mt-4 inline-flex rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">
-                去创建座位图
+              <div>当前场次还没有座位图，票档必须绑定座位块后才能创建。</div>
+              <Link href={`/console/sessions/${ticketFormSession.id}/seat-layout?from=tickets`} className="mt-4 inline-flex rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">
+                去场次座位设计器创建
               </Link>
             </div>
           )}

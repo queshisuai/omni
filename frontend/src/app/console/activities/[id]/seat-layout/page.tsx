@@ -9,6 +9,20 @@ import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
 import { toSeatCraftLayoutPayload } from '@/components/seatcraft/block-layout'
 import { toSeatCraftLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
 
+function createDefaultLayout(name: string): SeatCraftLayoutDraft {
+  return {
+    name,
+    templateType: 'concert',
+    stage: { title: '舞台', x: 0, y: 0 },
+    canvasWidth: 960,
+    canvasHeight: 720,
+    sections: [],
+    blocks: [],
+    overrides: [],
+    ticketGroups: [],
+  }
+}
+
 export default function ActivitySeatLayoutPage() {
   const params = useParams<{ id: string }>()
   const activityId = Number(params.id)
@@ -37,7 +51,7 @@ export default function ActivitySeatLayoutPage() {
     getActivitySeatLayout(activityId, user.userId)
       .then(response => {
         if (cancelled) return
-        setLayout(response ? toSeatCraftLayoutDraft(response) : null)
+        setLayout(response ? toSeatCraftLayoutDraft(response) : createDefaultLayout(`活动 #${activityId} SeatCraft 座位图`))
         setError('')
       })
       .catch(err => {
@@ -93,7 +107,7 @@ export default function ActivitySeatLayoutPage() {
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-[22px] font-bold text-[#1a1a2e]">活动座位图</h1>
-          <p className="mt-1 text-[13px] text-[#999]">当前页面支持本地预览和编辑，保存接口将在下一步接入。</p>
+          <p className="mt-1 text-[13px] text-[#999]">为当前活动创建或维护独立 SeatCraft 座位图，场次可复制后单独调整。</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href={`/console/activities/${activityId}/edit`} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] hover:bg-[#fafafa]">
@@ -118,7 +132,7 @@ export default function ActivitySeatLayoutPage() {
 
       {!layout ? (
         <div className="rounded-xl border border-[#e5e5e5] bg-white p-8 text-center text-[14px] text-[#666]">
-          当前活动还没有统一座位图。请在新建活动时选择统一座位图，或等待下一步保存接口接入后创建。
+          当前活动还没有座位图，可直接创建新的 SeatCraft 座位图。
         </div>
       ) : (
         <SeatLayoutDesigner layout={layout} onChange={setLayout} />

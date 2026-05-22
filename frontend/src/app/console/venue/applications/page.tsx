@@ -71,8 +71,8 @@ export default function VenueApplicationsPage() {
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-bold text-[#1a1a2e]">场馆申请审核</h1>
-          <p className="mt-1 text-[13px] text-[#999]">审核主办方提交的场馆资料，审核通过后进入公共场馆库。</p>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">活动地点凭证审核</h1>
+          <p className="mt-1 text-[13px] text-[#999]">审核主办方提交的地点资料和场地审批凭证，平台不授予场地使用权。</p>
         </div>
         <div className="flex gap-2">
           <select value={status} onChange={e => setStatus(e.target.value)} className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
@@ -86,7 +86,7 @@ export default function VenueApplicationsPage() {
       </div>
 
       <div className="space-y-4">
-        {applications.length === 0 ? <div className="rounded-xl border border-[#e5e5e5] bg-white py-20 text-center text-[14px] text-[#999]">暂无场馆申请</div> : applications.map(item => (
+        {applications.length === 0 ? <div className="rounded-xl border border-[#e5e5e5] bg-white py-20 text-center text-[14px] text-[#999]">暂无地点凭证</div> : applications.map(item => (
           <div key={item.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -110,12 +110,12 @@ export default function VenueApplicationsPage() {
             {reviewingId === item.id && (
               <div className="mt-4 rounded-lg border border-[#ffd9e6] bg-[#fff7fa] p-4">
                 <div className="mb-3 flex gap-4 text-[14px] text-[#333]">
-                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'create'} onChange={() => setMode('create')} /> 创建新公共场馆</label>
-                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'link'} onChange={() => setMode('link')} /> 关联已有公共场馆</label>
+                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'create'} onChange={() => setMode('create')} /> 登记新地点资料</label>
+                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'link'} onChange={() => setMode('link')} /> 关联已有地点档案</label>
                 </div>
                 {mode === 'link' && (
                   <select value={venueId} onChange={e => setVenueId(e.target.value)} className="mb-3 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
-                    <option value="">请选择已有场馆</option>
+                    <option value="">请选择已有地点档案</option>
                     {venues.map(venue => <option key={venue.id} value={venue.id}>{venue.name} ({venue.city})</option>)}
                   </select>
                 )}

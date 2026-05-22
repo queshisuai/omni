@@ -105,4 +105,6 @@ export interface SeatCraftTicketEditorProps {
   onTicketPriceChange: (value: string) => void
   estimatedSeatCount: number
   onSubmit: () => void | Promise<void>
+  allowSubmitWithoutSelection?: boolean
+  submitLabel?: string
 }

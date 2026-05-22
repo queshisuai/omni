@@ -5,18 +5,23 @@ import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatMapResponse;
+import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.SessionSeatLayout;
 import com.omni.ticket.entity.SessionSeatLayoutSection;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.TicketTypeArea;
 import com.omni.ticket.entity.VenueArea;
+import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutSectionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeAreaMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueAreaMapper;
+import com.omni.ticket.service.SeatCraftBlockLayoutService;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,25 +35,34 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/ticket")
 public class SeatController {
+    private final ActivityMapper activityMapper;
+    private final SessionMapper sessionMapper;
     private final TicketTypeMapper ticketTypeMapper;
     private final TicketTypeAreaMapper ticketTypeAreaMapper;
     private final VenueAreaMapper venueAreaMapper;
     private final SessionSeatMapper sessionSeatMapper;
     private final SessionSeatLayoutMapper sessionSeatLayoutMapper;
     private final SessionSeatLayoutSectionMapper sessionSeatLayoutSectionMapper;
+    private final SeatCraftBlockLayoutService seatCraftBlockLayoutService;
 
-    public SeatController(TicketTypeMapper ticketTypeMapper,
+    public SeatController(ActivityMapper activityMapper,
+                           SessionMapper sessionMapper,
+                           TicketTypeMapper ticketTypeMapper,
                            TicketTypeAreaMapper ticketTypeAreaMapper,
-                           VenueAreaMapper venueAreaMapper,
-                           SessionSeatMapper sessionSeatMapper,
-                           SessionSeatLayoutMapper sessionSeatLayoutMapper,
-                           SessionSeatLayoutSectionMapper sessionSeatLayoutSectionMapper) {
+                            VenueAreaMapper venueAreaMapper,
+                            SessionSeatMapper sessionSeatMapper,
+                            SessionSeatLayoutMapper sessionSeatLayoutMapper,
+                            SessionSeatLayoutSectionMapper sessionSeatLayoutSectionMapper,
+                            SeatCraftBlockLayoutService seatCraftBlockLayoutService) {
+        this.activityMapper = activityMapper;
+        this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
         this.ticketTypeAreaMapper = ticketTypeAreaMapper;
         this.venueAreaMapper = venueAreaMapper;
         this.sessionSeatMapper = sessionSeatMapper;
         this.sessionSeatLayoutMapper = sessionSeatLayoutMapper;
         this.sessionSeatLayoutSectionMapper = sessionSeatLayoutSectionMapper;
+        this.seatCraftBlockLayoutService = seatCraftBlockLayoutService;
     }
 
     @GetMapping("/sessions/{sessionId}/ticket-types/{ticketTypeId}/seats")
@@ -56,6 +70,9 @@ public class SeatController {
         TicketType ticketType = ticketTypeMapper.selectById(ticketTypeId);
         if (ticketType == null || !sessionId.equals(ticketType.getSessionId())) {
             throw new BusinessException(404, "票档不存在");
+        }
+        if (isSeatMapHidden(sessionId)) {
+            return Result.success(SeatMapResponse.of(sessionId, ticketType, Collections.emptyList(), Collections.emptyList()));
         }
         SessionSeatLayout layout = findActiveLayout(sessionId);
         if (layout != null) {
@@ -76,6 +93,15 @@ public class SeatController {
                 .orderByAsc(SessionSeat::getRowNo)
                 .orderByAsc(SessionSeat::getSeatNo));
         return Result.success(SeatMapResponse.of(sessionId, ticketType, areas, seats));
+    }
+
+    private boolean isSeatMapHidden(Long sessionId) {
+        Session session = sessionMapper.selectById(sessionId);
+        if (session == null || session.getActivityId() == null) {
+            return false;
+        }
+        Activity activity = activityMapper.selectById(session.getActivityId());
+        return activity != null && "hidden".equals(activity.getSeatMapVisibility());
     }
 
     private SeatMapResponse buildSeatCraftSeatMap(Long sessionId, TicketType ticketType, SessionSeatLayout layout) {
@@ -101,8 +127,22 @@ public class SeatController {
                 .orderByAsc(SessionSeat::getRowNo)
                 .orderByAsc(SessionSeat::getSeatNo));
 
+        SeatCraftLayoutDtos.LayoutResponse layoutResponse = toLayoutResponse(layout, sections);
+        if (seatCraftBlockLayoutService != null) {
+            layoutResponse.setBlockLayout(seatCraftBlockLayoutService.getLayout("session", sessionId));
+        }
+        if (layoutResponse.getBlockLayout() != null && layoutResponse.getBlockLayout().getBlocks() != null
+                && !layoutResponse.getBlockLayout().getBlocks().isEmpty()) {
+            seats = sessionSeatMapper.selectList(new LambdaQueryWrapper<SessionSeat>()
+                    .eq(SessionSeat::getSessionId, sessionId)
+                    .eq(SessionSeat::getTicketTypeId, ticketType.getId())
+                    .isNotNull(SessionSeat::getSeatBlockId)
+                    .orderByAsc(SessionSeat::getSeatBlockId)
+                    .orderByAsc(SessionSeat::getGeneratedRowNo)
+                    .orderByAsc(SessionSeat::getGeneratedSeatNo));
+        }
         SeatMapResponse response = SeatMapResponse.of(sessionId, ticketType, Collections.emptyList(), seats);
-        response.setLayout(toLayoutResponse(layout, sections));
+        response.setLayout(layoutResponse);
         return response;
     }
 

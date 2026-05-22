@@ -208,7 +208,7 @@ export default function NewTourPage() {
               <input type="datetime-local" value={validTo} onChange={e => setValidTo(e.target.value)} className="w-full rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" />
             </label>
             <label className="block sm:col-span-2">
-              <span className="mb-1 block text-[13px] text-[#666]">场地使用证明说明 *</span>
+              <span className="mb-1 block text-[13px] text-[#666]">场地审批凭证说明 *</span>
               <textarea value={proofNote} onChange={e => setProofNote(e.target.value)} rows={3} className="w-full resize-none rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" placeholder="说明合同、授权书、租赁证明等材料" />
             </label>
             <label className="block sm:col-span-2">

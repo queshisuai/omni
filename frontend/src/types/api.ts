@@ -131,10 +131,15 @@ export interface ActivityEntity {
   categoryId: number
   artistId: number
   organizerId?: number | null
+  venueApplicationId?: number | null
+  venueApprovalNo?: string | null
+  venueApprovalFileUrl?: string | null
+  venueApprovalNote?: string | null
   name: string
   description: string | null
   poster: string
   publishStatus?: string | null
+  seatMapVisibility?: 'published' | 'hidden' | null
   status: number
   createTime: string
 }
@@ -174,6 +179,7 @@ export interface SessionAdminVO extends SessionEntity {
   totalStock: number
   soldStock: number
   remainStock: number
+  ticketTypes?: TicketTypeEntity[]
 }
 
 export interface AdminSummaryVO {
@@ -425,6 +431,14 @@ export interface SeatCraftLayoutVO {
   } | null
 }
 
+export interface SeatLayoutTemplateCandidateVO {
+  sourceType: 'venue_application' | 'legacy_venue_default'
+  sourceId: number
+  name: string
+  createTime?: string | null
+  layout: SeatCraftLayoutVO
+}
+
 export interface SeatMapResponse {
   sessionId: number
   ticketTypeId: number
@@ -462,6 +476,14 @@ export interface AdminTicketTypeCreateRequest {
   layoutSectionIds?: number[]
   sourceBlockKeys?: string[]
   areaIds?: number[]
+}
+
+export interface SessionTicketBindingRequest {
+  userId: number
+  bindings: Array<{
+    ticketTypeId: number
+    blockKeys: string[]
+  }>
 }
 
 /** 场次详情（含票档和场馆） */

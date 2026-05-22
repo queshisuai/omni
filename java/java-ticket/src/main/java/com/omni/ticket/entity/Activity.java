@@ -23,7 +23,11 @@ public class Activity {
     private String name;
     private String description;
     private String poster;
+    private String venueApprovalNo;
+    private String venueApprovalFileUrl;
+    private String venueApprovalNote;
     private String publishStatus;
+    private String seatMapVisibility;
     private Integer status;
     private LocalDateTime createTime;
     private String deleteReason;
@@ -50,8 +54,16 @@ public class Activity {
     public void setDescription(String description) { this.description = description; }
     public String getPoster() { return poster; }
     public void setPoster(String poster) { this.poster = poster; }
+    public String getVenueApprovalNo() { return venueApprovalNo; }
+    public void setVenueApprovalNo(String venueApprovalNo) { this.venueApprovalNo = venueApprovalNo; }
+    public String getVenueApprovalFileUrl() { return venueApprovalFileUrl; }
+    public void setVenueApprovalFileUrl(String venueApprovalFileUrl) { this.venueApprovalFileUrl = venueApprovalFileUrl; }
+    public String getVenueApprovalNote() { return venueApprovalNote; }
+    public void setVenueApprovalNote(String venueApprovalNote) { this.venueApprovalNote = venueApprovalNote; }
     public String getPublishStatus() { return publishStatus; }
     public void setPublishStatus(String publishStatus) { this.publishStatus = publishStatus; }
+    public String getSeatMapVisibility() { return seatMapVisibility; }
+    public void setSeatMapVisibility(String seatMapVisibility) { this.seatMapVisibility = seatMapVisibility; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public LocalDateTime getCreateTime() { return createTime; }

@@ -36,9 +36,16 @@ function makeCopyBlockKey(blockKey: string, blocks: NonNullable<SeatCraftLayoutD
   return key
 }
 
-export function SeatLayoutDesigner({ layout, onChange }: SeatLayoutDesignerProps) {
-  const [activeBlockKey, setActiveBlockKey] = useState<string | null>(layout.blocks?.[0]?.blockKey ?? null)
+export function SeatLayoutDesigner({ layout, onChange, activeBlockKey: controlledActiveBlockKey, onActiveBlockKeyChange }: SeatLayoutDesignerProps) {
+  const [internalActiveBlockKey, setInternalActiveBlockKey] = useState<string | null>(layout.blocks?.[0]?.blockKey ?? null)
   const blocks = layout.blocks ?? []
+  const activeBlockKey = controlledActiveBlockKey !== undefined ? controlledActiveBlockKey : internalActiveBlockKey
+  const setActiveBlockKey = (blockKey: string | null) => {
+    if (controlledActiveBlockKey === undefined) {
+      setInternalActiveBlockKey(blockKey)
+    }
+    onActiveBlockKeyChange?.(blockKey)
+  }
 
   useEffect(() => {
     if (activeBlockKey == null) {
@@ -112,8 +119,10 @@ export function SeatLayoutDesigner({ layout, onChange }: SeatLayoutDesignerProps
   }
 
   return (
-    <div className="flex h-full min-h-[720px] w-full overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950">
-      <div className="min-w-0 flex-1 p-4">
+    <div className="relative flex h-full min-h-[760px] w-full overflow-hidden rounded-3xl border border-white/10 bg-[#09090b] shadow-2xl">
+      {/* Canvas Area - takes remaining space */}
+      <div className="relative flex-1 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-zinc-900/50 to-[#09090b]">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[length:24px_24px] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] opacity-20" />
         <SeatCanvas
           sections={[]}
           blocks={blocks}
@@ -127,28 +136,32 @@ export function SeatLayoutDesigner({ layout, onChange }: SeatLayoutDesignerProps
           onStageMove={(x, y) => updateStage({ x, y })}
         />
       </div>
-      <SeatLayoutControls
-        layout={{ ...layout, sections: [], blocks }}
-        activeSectionKey={null}
-        activeBlockKey={activeBlockKey}
-        onSelectSection={() => undefined}
-        onSelectBlock={setActiveBlockKey}
-        onUpdateSection={() => undefined}
-        onUpdateBlock={updateBlock}
-        onAddSection={() => undefined}
-        onAddBlock={addBlock}
-        onDuplicateSection={() => undefined}
-        onDuplicateBlock={duplicateBlock}
-        onMirrorBlock={blockKey => {
-          const block = blocks.find(item => item.blockKey === blockKey)
-          if (block) updateBlock(blockKey, mirrorBlockHorizontally(block, layout.canvasWidth))
-        }}
-        onDeleteSection={() => undefined}
-        onDeleteBlock={deleteBlock}
-        onUpdateTicketGroup={updateTicketGroup}
-        onUpdateStage={updateStage}
-        onAutoArrange={() => commit(autoArrangeSeatLayout(layout))}
-      />
+
+      {/* Right Controls Panel - fixed width, glassmorphism */}
+      <div className="relative z-10 w-80 shrink-0 border-l border-white/10 bg-black/40 backdrop-blur-2xl">
+        <SeatLayoutControls
+          layout={{ ...layout, sections: [], blocks }}
+          activeSectionKey={null}
+          activeBlockKey={activeBlockKey}
+          onSelectSection={() => undefined}
+          onSelectBlock={setActiveBlockKey}
+          onUpdateSection={() => undefined}
+          onUpdateBlock={updateBlock}
+          onAddSection={() => undefined}
+          onAddBlock={addBlock}
+          onDuplicateSection={() => undefined}
+          onDuplicateBlock={duplicateBlock}
+          onMirrorBlock={blockKey => {
+            const block = blocks.find(item => item.blockKey === blockKey)
+            if (block) updateBlock(blockKey, mirrorBlockHorizontally(block, layout.canvasWidth))
+          }}
+          onDeleteSection={() => undefined}
+          onDeleteBlock={deleteBlock}
+          onUpdateTicketGroup={updateTicketGroup}
+          onUpdateStage={updateStage}
+          onAutoArrange={() => commit(autoArrangeSeatLayout(layout))}
+        />
+      </div>
     </div>
   )
 }

@@ -162,6 +162,8 @@ export interface SeatLayoutControlsProps {
 export interface SeatLayoutDesignerProps {
   layout: SeatCraftLayoutDraft
   onChange: (layout: SeatCraftLayoutDraft) => void
+  activeBlockKey?: string | null
+  onActiveBlockKeyChange?: (blockKey: string | null) => void
 }
 
 export function makeDefaultStage(title = '舞台'): SeatCraftStage {

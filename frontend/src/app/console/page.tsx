@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { getAdminSummary } from '@/lib/api'
 import { CalendarDays, ShoppingCart, Ticket } from 'lucide-react'
@@ -9,8 +9,10 @@ export default function ConsoleHome() {
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null)
   const [stats, setStats] = useState<{ activityCount: number; ticketTypeCount: number; paidOrderCount: number } | null>(null)
   const [statsError, setStatsError] = useState('')
+  const loadSummaryRef = useRef(() => {})
+  const lastRefreshRef = useRef(0)
 
-  useEffect(() => {
+  const loadSummary = () => {
     const u = getUser()
     setUser(u)
     if (u) {
@@ -23,6 +25,36 @@ export default function ConsoleHome() {
         .catch(() => {
           setStatsError('统计加载失败')
         })
+    }
+  }
+
+  loadSummaryRef.current = loadSummary
+
+  const refreshWhenVisible = () => {
+    const now = Date.now()
+    if (now - lastRefreshRef.current < 200) return
+    lastRefreshRef.current = now
+    loadSummaryRef.current()
+  }
+
+  useEffect(() => {
+    loadSummary()
+  }, [])
+
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) refreshWhenVisible()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshWhenVisible()
+    }
+
+    window.addEventListener('pageshow', handlePageShow)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])
 

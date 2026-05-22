@@ -2,6 +2,8 @@ package com.omni.ticket.service;
 
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
+import com.omni.ticket.dto.SeatCraftLayoutDtos;
+import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.dto.InternalUserRefResponse;
@@ -38,12 +40,17 @@ class VenueApplicationServiceTest {
     private VenueMapper venueMapper;
     @Mock
     private UserAccessService userAccessService;
+    @Mock
+    private SeatCraftBlockLayoutService blockLayoutService;
+    @Mock
+    private VenueDefaultLayoutService venueDefaultLayoutService;
 
     private VenueApplicationService service;
 
     @BeforeEach
     void setUp() {
-        service = new VenueApplicationService(venueApplicationMapper, venueMapper, userAccessService);
+        service = new VenueApplicationService(venueApplicationMapper, venueMapper, userAccessService,
+                blockLayoutService, venueDefaultLayoutService);
     }
 
     @Test
@@ -139,6 +146,35 @@ class VenueApplicationServiceTest {
         assertEquals(application, result);
     }
 
+    @Test
+    void listSeatLayoutTemplatesReturnsApprovedApplicationAndLegacyDefaultCandidates() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(venueMapper.selectById(99L)).thenReturn(activeVenue(99L));
+        VenueApplication application = approvedApplication(301L, 99L);
+        when(venueApplicationMapper.selectList(any())).thenReturn(List.of(application));
+        when(blockLayoutService.getLayout("venue_application", 301L)).thenReturn(layout());
+        SeatCraftLayoutDtos.LayoutResponse legacy = new SeatCraftLayoutDtos.LayoutResponse();
+        legacy.setId(7L);
+        legacy.setName("历史地点模板");
+        legacy.setTemplateType("concert");
+        legacy.setStageTitle("舞台");
+        legacy.setStageX(0);
+        legacy.setStageY(0);
+        legacy.setCanvasWidth(1000);
+        legacy.setCanvasHeight(800);
+        when(venueDefaultLayoutService.getLayout(99L)).thenReturn(legacy);
+
+        List<SeatLayoutTemplateCandidateResponse> candidates = service.listSeatLayoutTemplates(2003L, 99L);
+
+        assertEquals(2, candidates.size());
+        assertEquals("venue_application", candidates.get(0).getSourceType());
+        assertEquals(301L, candidates.get(0).getSourceId());
+        assertEquals("国家体育馆历史申请模板", candidates.get(0).getName());
+        assertEquals("legacy_venue_default", candidates.get(1).getSourceType());
+        assertEquals(7L, candidates.get(1).getSourceId());
+        assertEquals("历史地点模板", candidates.get(1).getName());
+    }
+
     private VenueApplicationRequest request() {
         VenueApplicationRequest request = new VenueApplicationRequest();
         request.setUserId(2003L);
@@ -197,6 +233,15 @@ class VenueApplicationServiceTest {
         application.setContactName("张三");
         application.setContactPhone("13800000002");
         application.setStatus(0);
+        return application;
+    }
+
+    private VenueApplication approvedApplication(Long id, Long venueId) {
+        VenueApplication application = pendingApplication();
+        application.setId(id);
+        application.setVenueId(venueId);
+        application.setStatus(1);
+        application.setCreateTime(LocalDateTime.parse("2026-05-01T10:00:00"));
         return application;
     }
 

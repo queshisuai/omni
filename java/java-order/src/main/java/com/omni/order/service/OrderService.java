@@ -11,6 +11,8 @@ import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.PaymentSyncDecisionResponse;
+import com.omni.order.dto.SessionSeatUsageItemResponse;
+import com.omni.order.dto.SessionSeatUsageResponse;
 import com.omni.order.dto.TicketSalesLockRequest;
 import com.omni.order.dto.TicketSalesOrderRequest;
 import com.omni.order.dto.TicketSalesQuoteRequest;
@@ -35,7 +37,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -292,6 +297,43 @@ public class OrderService {
         }
         wrapper.orderByAsc(Order::getId);
         return orderMapper.selectList(wrapper);
+    }
+
+    public SessionSeatUsageResponse inspectSessionSeatUsage(List<Long> sessionSeatIds) {
+        if (sessionSeatIds == null || sessionSeatIds.isEmpty()) {
+            return new SessionSeatUsageResponse(Collections.emptyList());
+        }
+        List<Long> ids = sessionSeatIds.stream()
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return new SessionSeatUsageResponse(Collections.emptyList());
+        }
+
+        Map<Long, OrderSeat> usedSeats = new LinkedHashMap<>();
+        List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
+                .in(OrderSeat::getSessionSeatId, ids));
+        if (orderSeats != null) {
+            for (OrderSeat orderSeat : orderSeats) {
+                Integer status = orderSeat.getStatus();
+                if (orderSeat.getSessionSeatId() != null && status != null
+                        && (status == ORDER_SEAT_LOCKED || status == ORDER_SEAT_SOLD)) {
+                    usedSeats.putIfAbsent(orderSeat.getSessionSeatId(), orderSeat);
+                }
+            }
+        }
+
+        List<SessionSeatUsageItemResponse> seats = new ArrayList<>();
+        for (Long id : ids) {
+            OrderSeat orderSeat = usedSeats.get(id);
+            if (orderSeat != null) {
+                seats.add(new SessionSeatUsageItemResponse(id, true, false, orderSeat.getOrderId(), orderSeat.getStatus()));
+            } else {
+                seats.add(new SessionSeatUsageItemResponse(id, false, true, null, null));
+            }
+        }
+        return new SessionSeatUsageResponse(seats);
     }
 
     public Order getOrderDetail(Long id) {

@@ -15,6 +15,12 @@ class ApiError extends Error {
   }
 }
 
+function assertPositiveInteger(value: number, name: string) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new ApiError(400, `${name}不正确`)
+  }
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getToken()
   const headers: HeadersInit = {
@@ -461,6 +467,8 @@ export async function deleteVenueSeat(seatId: number, userId: number) {
 }
 
 export async function getActivitySeatLayout(activityId: number, userId: number) {
+  assertPositiveInteger(activityId, '活动ID')
+  assertPositiveInteger(userId, '用户ID')
   return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/activities/${activityId}/seat-layout?userId=${userId}`)
 }
 
@@ -476,7 +484,15 @@ export async function updateVenueDefaultLayout(venueId: number, body: { userId: 
   return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/venues/${venueId}/default-layout`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
+export async function listVenueSeatLayoutTemplates(venueId: number, userId: number) {
+  assertPositiveInteger(venueId, '地点ID')
+  assertPositiveInteger(userId, '用户ID')
+  return request<import('@/types/api').SeatLayoutTemplateCandidateVO[]>(`/api/ticket/admin/venues/${venueId}/seat-layout-templates?userId=${userId}`)
+}
+
 export async function getSessionSeatLayout(sessionId: number, userId: number) {
+  assertPositiveInteger(sessionId, '场次ID')
+  assertPositiveInteger(userId, '用户ID')
   return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/sessions/${sessionId}/seat-layout?userId=${userId}`)
 }
 
@@ -484,7 +500,16 @@ export async function updateSessionSeatLayout(sessionId: number, body: { userId:
   return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/sessions/${sessionId}/seat-layout`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
+export async function updateSessionTicketBindings(sessionId: number, body: import('@/types/api').SessionTicketBindingRequest) {
+  return request<void>(`/api/ticket/admin/sessions/${sessionId}/ticket-bindings`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
 export async function getSessionTicketDrafts(sessionId: number, userId: number) {
+  assertPositiveInteger(sessionId, '场次ID')
+  assertPositiveInteger(userId, '用户ID')
   return request<import('@/types/api').SeatCraftSectionVO[]>(`/api/ticket/admin/sessions/${sessionId}/seat-layout/ticket-drafts?userId=${userId}`)
 }
 

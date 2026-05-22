@@ -7,6 +7,8 @@ import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.PaidOrderCountRequest;
 import com.omni.order.dto.PaidOrderCountResponse;
 import com.omni.order.dto.PaidOrdersBySessionsRequest;
+import com.omni.order.dto.SessionSeatUsageRequest;
+import com.omni.order.dto.SessionSeatUsageResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.service.OrderService;
 import org.springframework.beans.factory.annotation.Value;
@@ -114,6 +116,17 @@ public class OrderController {
         }
         List<Long> sessionIds = request != null ? request.getSessionIds() : java.util.Collections.emptyList();
         return Result.success(new PaidOrderCountResponse(orderService.countPaidOrdersBySessions(sessionIds)));
+    }
+
+    @PostMapping("/internal/session-seats/usage")
+    public Result<SessionSeatUsageResponse> inspectInternalSessionSeatUsage(
+            @RequestBody(required = false) SessionSeatUsageRequest request,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        List<Long> sessionSeatIds = request != null ? request.getSessionSeatIds() : java.util.Collections.emptyList();
+        return Result.success(orderService.inspectSessionSeatUsage(sessionSeatIds));
     }
 
     /**

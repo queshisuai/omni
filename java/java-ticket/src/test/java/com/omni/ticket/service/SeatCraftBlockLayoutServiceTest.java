@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class SeatCraftBlockLayoutServiceTest {
@@ -93,6 +94,56 @@ class SeatCraftBlockLayoutServiceTest {
         BusinessException error = assertThrows(BusinessException.class, () -> service.replaceLayout("venue", 9L, layout));
 
         assertEquals(400, error.getCode());
+    }
+
+    @Test
+    void replaceLayoutUpdatesExistingBlockAndGroupWithSameKey() {
+        SeatCraftBlockDtos.LayoutRequest layout = layout();
+        SeatBlock existingBlock = new SeatBlock();
+        existingBlock.setId(101L);
+        existingBlock.setOwnerType("venue");
+        existingBlock.setOwnerId(9L);
+        existingBlock.setBlockKey("block-a");
+        existingBlock.setStatus(0);
+        when(seatBlockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingBlock));
+        TicketGroup existingGroup = new TicketGroup();
+        existingGroup.setId(201L);
+        existingGroup.setOwnerType("venue");
+        existingGroup.setOwnerId(9L);
+        existingGroup.setGroupKey("vip");
+        existingGroup.setStatus(0);
+        when(ticketGroupMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existingGroup));
+
+        service.replaceLayout("venue", 9L, layout);
+
+        verify(seatBlockMapper, never()).insert(any(SeatBlock.class));
+        verify(ticketGroupMapper, never()).insert(any(TicketGroup.class));
+        verify(seatBlockMapper).updateById(org.mockito.ArgumentMatchers.argThat(block -> Long.valueOf(101L).equals(block.getId())
+                && Integer.valueOf(1).equals(block.getStatus())
+                && "gridBlock".equals(block.getBlockType())));
+        verify(ticketGroupMapper).updateById(org.mockito.ArgumentMatchers.argThat(group -> Long.valueOf(201L).equals(group.getId())
+                && Integer.valueOf(1).equals(group.getStatus())
+                && "block-a".equals(group.getSourceBlockIds())));
+        verify(seatOverrideMapper).delete(any(LambdaQueryWrapper.class));
+        verify(seatOverrideMapper).insert(any(SeatOverride.class));
+    }
+
+    @Test
+    void replaceLayoutTreatsNullSourceBlockKeysAsEmptyList() {
+        SeatCraftBlockDtos.LayoutRequest layout = layout();
+        layout.getTicketGroups().get(0).setSourceBlockKeys(null);
+        when(seatBlockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        doAnswer(invocation -> {
+            SeatBlock block = invocation.getArgument(0);
+            block.setId(101L);
+            return 1;
+        }).when(seatBlockMapper).insert(any(SeatBlock.class));
+
+        service.replaceLayout("venue", 9L, layout);
+
+        ArgumentCaptor<TicketGroup> groupCaptor = ArgumentCaptor.forClass(TicketGroup.class);
+        verify(ticketGroupMapper).insert(groupCaptor.capture());
+        assertEquals("", groupCaptor.getValue().getSourceBlockIds());
     }
 
     @Test

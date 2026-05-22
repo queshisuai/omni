@@ -38,6 +38,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     if (!seatMap?.layout || selectedTicket?.id == null) return null
     return buildZoomTargetFromTicketGroup(seatMap.layout, selectedTicket.id)
   }, [seatMap?.layout, selectedTicket?.id])
+  const showsSeatCraftSelection = seatMap?.layout && (seatMap.layout.blockLayout?.blocks?.length || seatMap.layout.blocks?.length) && seatCraftSelectionModel
   const availableSeatIdSet = useMemo(() => {
     if (!seatMap) return null
     const ids = seatCraftSelectionModel?.availableSeatIds
@@ -50,6 +51,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     () => availableSeatIdSet ? selectedSeatIds.filter(id => availableSeatIdSet.has(id)) : selectedSeatIds,
     [availableSeatIdSet, selectedSeatIds],
   )
+  const seatMapPublished = detail?.activity.seatMapVisibility === 'published'
 
   const loadDetail = async () => {
     setLoading(true)
@@ -107,7 +109,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     const requestId = ++seatMapRequestIdRef.current
     let cancelled = false
 
-    if (!selectedSession || !selectedTicket) {
+    if (!selectedSession || !selectedTicket || !seatMapPublished) {
       setSeatMap(null)
       setSelectedSeatIds([])
       setSeatMapLoading(false)
@@ -132,7 +134,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     return () => {
       cancelled = true
     }
-  }, [selectedSession, selectedTicket])
+  }, [selectedSession, selectedTicket, seatMapPublished])
 
   const handleBuy = () => {
     if (!isAuthenticated()) {
@@ -176,9 +178,8 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setOrdering(true)
     setOrderError('')
     try {
-      const hasSeatCraftLayout = Boolean(seatMap?.layout && (seatMap.layout.blockLayout?.blocks?.length || seatMap.layout.blocks?.length) && seatCraftSelectionModel)
-      const seatIds = hasSeatCraftLayout ? validSelectedSeatIds : []
-      if (hasSeatCraftLayout && validSelectedSeatIds.length !== quantity) {
+      const seatIds = Boolean(showsSeatCraftSelection) ? validSelectedSeatIds : []
+      if (showsSeatCraftSelection && validSelectedSeatIds.length !== quantity) {
         setOrderError('请选择对应数量的座位')
         return
       }
@@ -336,9 +337,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                   {selectedTicket && selectedTicket.remainStock > 0 && (
                     <>
                       <div className="mb-5">
-                        {seatMapLoading ? (
+                        {seatMapPublished && seatMapLoading ? (
                           <div className="rounded-lg border border-[#e5e5e5] p-6 text-center text-[13px] text-[#999]">正在加载座位图...</div>
-                        ) : seatMap && seatMap.layout && (seatMap.layout.blockLayout?.blocks?.length || seatMap.layout.blocks?.length) && seatCraftSelectionModel ? (
+                        ) : seatMapPublished && showsSeatCraftSelection ? (
                           <div>
                             <div className="mb-3 flex items-center justify-between">
                               <div className="text-[14px] text-[#666]">已选 {validSelectedSeatIds.length} / {quantity} 座</div>
@@ -380,7 +381,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         </div>
                         <button
                           onClick={handleBuy}
-                          disabled={Boolean(seatMap?.layout && seatCraftSelectionModel && validSelectedSeatIds.length !== quantity)}
+                          disabled={Boolean(showsSeatCraftSelection) && validSelectedSeatIds.length !== quantity}
                           className="ml-auto cursor-pointer border-none outline-none text-white text-[16px] font-medium px-10 py-3 rounded disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ backgroundColor: '#ff1268' }}
                         >

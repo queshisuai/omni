@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -113,12 +114,215 @@ class SessionBlockTicketStockServiceTest {
     void generateForSessionReturnsZeroWhenSeatsAlreadyExist() {
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
         when(sessionSeatMapper.selectCount(any())).thenReturn(1L);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of());
 
         int generated = service.generateForSession(99L);
 
         assertEquals(0, generated);
-        verify(seatBlockMapper, never()).selectList(any());
         verify(ticketTypeMapper, never()).insert(any());
+    }
+
+    @Test
+    void generateForSessionCreatesOnlyMissingBlockSeatsWhenOtherBlocksAlreadyExist() {
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
+        when(sessionSeatMapper.selectCount(any())).thenReturn(1L);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(gridBlock(10L, "floor", "vip"), gridBlock(11L, "balcony", "vip")));
+        when(seatOverrideMapper.selectList(any())).thenReturn(List.of());
+        when(ticketGroupMapper.selectList(any())).thenReturn(List.of(group("vip", "VIP", new BigDecimal("880.00"))));
+        TicketType vip = new TicketType();
+        vip.setId(900L);
+        vip.setSessionId(99L);
+        vip.setName("VIP");
+        vip.setPrice(new BigDecimal("880.00"));
+        vip.setTotalStock(4);
+        vip.setRemainStock(4);
+        vip.setStatus(1);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(vip));
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(
+                existingSeat(10L, 1, 1),
+                existingSeat(10L, 1, 2),
+                existingSeat(10L, 2, 1),
+                existingSeat(10L, 2, 2)
+        ));
+
+        int generated = service.generateForSession(99L);
+
+        assertEquals(4, generated);
+        verify(ticketTypeMapper, never()).insert(any());
+        ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
+        verify(sessionSeatMapper, org.mockito.Mockito.times(4)).insert(seatCaptor.capture());
+        assertEquals(List.of(11L, 11L, 11L, 11L), seatCaptor.getAllValues().stream().map(SessionSeat::getSeatBlockId).toList());
+        assertEquals(List.of(900L, 900L, 900L, 900L), seatCaptor.getAllValues().stream().map(SessionSeat::getTicketTypeId).toList());
+    }
+
+    @Test
+    void generateForSessionCreatesOnlyMissingSeatsInsideExistingBlock() {
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
+        when(sessionSeatMapper.selectCount(any())).thenReturn(1L);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(gridBlock(10L, "floor", "vip")));
+        when(seatOverrideMapper.selectList(any())).thenReturn(List.of());
+        when(ticketGroupMapper.selectList(any())).thenReturn(List.of(group("vip", "VIP", new BigDecimal("880.00"))));
+        TicketType vip = new TicketType();
+        vip.setId(900L);
+        vip.setSessionId(99L);
+        vip.setName("VIP");
+        vip.setPrice(new BigDecimal("880.00"));
+        vip.setStatus(1);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(vip));
+        SessionSeat existing = new SessionSeat();
+        existing.setSessionId(99L);
+        existing.setSeatBlockId(10L);
+        existing.setGeneratedRowNo(1);
+        existing.setGeneratedSeatNo(1);
+        existing.setStatus(1);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(existing));
+
+        int generated = service.generateForSession(99L);
+
+        assertEquals(3, generated);
+        verify(ticketTypeMapper, never()).insert(any());
+        ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
+        verify(sessionSeatMapper, org.mockito.Mockito.times(3)).insert(seatCaptor.capture());
+        assertEquals(List.of(2, 1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).toList());
+        assertEquals(List.of(1, 2, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).toList());
+    }
+
+    @Test
+    void generateForSessionIgnoresDisabledSeatsWhenRebuildingMissingBlockSeats() {
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
+        when(sessionSeatMapper.selectCount(any())).thenReturn(1L);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(gridBlock(10L, "floor", "vip")));
+        when(seatOverrideMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(ticketGroupMapper.selectList(any())).thenReturn(List.of(group("vip", "VIP", new BigDecimal("880.00"))));
+        TicketType vip = new TicketType();
+        vip.setId(900L);
+        vip.setSessionId(99L);
+        vip.setName("VIP");
+        vip.setPrice(new BigDecimal("880.00"));
+        vip.setTotalStock(4);
+        vip.setRemainStock(4);
+        vip.setStatus(1);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(vip));
+        SessionSeat existing = new SessionSeat();
+        existing.setSessionId(99L);
+        existing.setSeatBlockId(10L);
+        existing.setGeneratedRowNo(1);
+        existing.setGeneratedSeatNo(1);
+        existing.setStatus(4);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(existing));
+
+        int generated = service.generateForSession(99L);
+
+        assertEquals(4, generated);
+        verify(ticketTypeMapper, never()).insert(any());
+        ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
+        verify(sessionSeatMapper, org.mockito.Mockito.times(4)).insert(seatCaptor.capture());
+        assertEquals(List.of(10L, 10L, 10L, 10L), seatCaptor.getAllValues().stream().map(SessionSeat::getSeatBlockId).toList());
+        assertEquals(List.of(1, 1, 2, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).toList());
+        assertEquals(List.of(1, 2, 1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).toList());
+    }
+
+    @Test
+    void generateForSessionRejectsPriceMismatchWhenReusingTicketTypeByName() {
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
+        when(sessionSeatMapper.selectCount(any())).thenReturn(1L);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(gridBlock(10L, "floor", "vip"), gridBlock(11L, "balcony", "vip")));
+        when(seatOverrideMapper.selectList(any())).thenReturn(List.of());
+        when(ticketGroupMapper.selectList(any())).thenReturn(List.of(group("vip", "VIP", new BigDecimal("880.00"))));
+        TicketType vipExisting = new TicketType();
+        vipExisting.setId(900L);
+        vipExisting.setSessionId(99L);
+        vipExisting.setName("VIP");
+        vipExisting.setPrice(new BigDecimal("980.00"));
+        vipExisting.setStatus(1);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(vipExisting));
+
+        int generated = service.generateForSession(99L);
+
+        assertEquals(8, generated);
+        verify(ticketTypeMapper).insert(org.mockito.ArgumentMatchers.argThat(ticketType -> "VIP".equals(ticketType.getName())
+                && new BigDecimal("880.00").compareTo(ticketType.getPrice()) == 0));
+    }
+
+    @Test
+    void generateForSessionCreatesTicketTypeForMissingBlockWithNewGroup() {
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
+        when(sessionSeatMapper.selectCount(any())).thenReturn(1L);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(gridBlock(10L, "floor", "vip"), gridBlock(11L, "balcony", "newVip")));
+        when(seatOverrideMapper.selectList(any())).thenReturn(List.of());
+        when(ticketGroupMapper.selectList(any())).thenReturn(List.of(
+                group("vip", "VIP", new BigDecimal("880.00")),
+                group("newVip", "新增VIP", new BigDecimal("1280.00"))));
+        TicketType vip = new TicketType();
+        vip.setId(900L);
+        vip.setSessionId(99L);
+        vip.setName("VIP");
+        vip.setStatus(1);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(vip));
+        doAnswer(invocation -> {
+            TicketType ticketType = invocation.getArgument(0);
+            ticketType.setId(901L);
+            return 1;
+        }).when(ticketTypeMapper).insert(any(TicketType.class));
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(
+                existingSeat(10L, 1, 1),
+                existingSeat(10L, 1, 2),
+                existingSeat(10L, 2, 1),
+                existingSeat(10L, 2, 2)
+        ));
+
+        int generated = service.generateForSession(99L);
+
+        assertEquals(4, generated);
+        verify(ticketTypeMapper).insert(org.mockito.ArgumentMatchers.argThat(ticketType -> "新增VIP".equals(ticketType.getName())
+                && new BigDecimal("1280.00").compareTo(ticketType.getPrice()) == 0
+                && Integer.valueOf(4).equals(ticketType.getTotalStock())
+                && Integer.valueOf(4).equals(ticketType.getRemainStock())));
+        ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
+        verify(sessionSeatMapper, org.mockito.Mockito.times(4)).insert(seatCaptor.capture());
+        assertEquals(List.of(901L, 901L, 901L, 901L), seatCaptor.getAllValues().stream().map(SessionSeat::getTicketTypeId).toList());
+    }
+
+    @Test
+    void generateForSessionDoesNotReuseCachedTicketTypeForSameNameDifferentPriceGroups() {
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
+        when(sessionSeatMapper.selectCount(any())).thenReturn(1L);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(
+                gridBlock(10L, "floor", "vipA"),
+                gridBlock(11L, "balcony", "vipB")
+        ));
+        when(seatOverrideMapper.selectList(any())).thenReturn(List.of());
+        when(ticketGroupMapper.selectList(any())).thenReturn(List.of(
+                group("vipA", "VIP", new BigDecimal("880.00")),
+                group("vipB", "VIP", new BigDecimal("1280.00"))
+        ));
+        TicketType vip = new TicketType();
+        vip.setId(900L);
+        vip.setSessionId(99L);
+        vip.setName("VIP");
+        vip.setPrice(new BigDecimal("880.00"));
+        vip.setStatus(1);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(vip));
+        doAnswer(invocation -> {
+            TicketType ticketType = invocation.getArgument(0);
+            ticketType.setId(901L);
+            return 1;
+        }).when(ticketTypeMapper).insert(any(TicketType.class));
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(
+                existingSeat(10L, 1, 1),
+                existingSeat(10L, 1, 2),
+                existingSeat(10L, 2, 1),
+                existingSeat(10L, 2, 2)
+        ));
+
+        int generated = service.generateForSession(99L);
+
+        assertEquals(4, generated);
+        verify(ticketTypeMapper).insert(org.mockito.ArgumentMatchers.argThat(ticketType -> "VIP".equals(ticketType.getName())
+                && new BigDecimal("1280.00").compareTo(ticketType.getPrice()) == 0));
+        ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
+        verify(sessionSeatMapper, org.mockito.Mockito.times(4)).insert(seatCaptor.capture());
+        assertEquals(List.of(901L, 901L, 901L, 901L), seatCaptor.getAllValues().stream().map(SessionSeat::getTicketTypeId).toList());
     }
 
     private Session session(Long id, Long venueId) {
@@ -126,6 +330,16 @@ class SessionBlockTicketStockServiceTest {
         session.setId(id);
         session.setVenueId(venueId);
         return session;
+    }
+
+    private SessionSeat existingSeat(Long blockId, int rowNo, int seatNo) {
+        SessionSeat seat = new SessionSeat();
+        seat.setSessionId(99L);
+        seat.setSeatBlockId(blockId);
+        seat.setGeneratedRowNo(rowNo);
+        seat.setGeneratedSeatNo(seatNo);
+        seat.setStatus(1);
+        return seat;
     }
 
     private SeatBlock gridBlock(Long id, String blockKey, String groupKey) {
@@ -157,6 +371,12 @@ class SessionBlockTicketStockServiceTest {
         group.setName(name);
         group.setActivityPrice(price);
         group.setStatus(1);
+        return group;
+    }
+
+    private TicketGroup group(String groupKey, String name, BigDecimal activityPrice, BigDecimal defaultPrice) {
+        TicketGroup group = group(groupKey, name, activityPrice);
+        group.setDefaultPrice(defaultPrice);
         return group;
     }
 }

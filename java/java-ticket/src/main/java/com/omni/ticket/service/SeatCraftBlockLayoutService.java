@@ -42,30 +42,36 @@ public class SeatCraftBlockLayoutService {
         validateOwner(ownerType, ownerId);
         validateLayout(layout);
         LocalDateTime now = LocalDateTime.now();
-        disableExisting(ownerType, ownerId, now);
-        Map<String, Long> blockIds = insertBlocks(ownerType, ownerId, layout.getBlocks(), now);
+        List<SeatBlock> existingBlocks = findBlocks(ownerType, ownerId, null);
+        List<TicketGroup> existingGroups = findGroups(ownerType, ownerId, null);
+        Set<String> incomingBlockKeys = layout.getBlocks().stream()
+                .map(SeatCraftBlockDtos.BlockRequest::getBlockKey)
+                .map(this::trim)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<String> incomingGroupKeys = layout.getTicketGroups().stream()
+                .map(SeatCraftBlockDtos.TicketGroupRequest::getGroupKey)
+                .map(this::trim)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        deleteOverrides(existingBlocks);
+        disableBlocks(existingBlocks, incomingBlockKeys, now);
+        disableGroups(existingGroups, incomingGroupKeys, now);
+        Map<String, Long> blockIds = upsertBlocks(ownerType, ownerId, layout.getBlocks(), existingBlocks, now);
         insertOverrides(layout.getOverrides(), blockIds, now);
-        insertTicketGroups(ownerType, ownerId, layout.getTicketGroups(), now);
+        upsertTicketGroups(ownerType, ownerId, layout.getTicketGroups(), existingGroups, now);
     }
 
     public SeatCraftBlockDtos.LayoutRequest getLayout(String ownerType, Long ownerId) {
         validateOwner(ownerType, ownerId);
-        List<SeatBlock> blocks = seatBlockMapper.selectList(new LambdaQueryWrapper<SeatBlock>()
-                .eq(SeatBlock::getOwnerType, ownerType)
-                .eq(SeatBlock::getOwnerId, ownerId)
-                .eq(SeatBlock::getStatus, 1)
-                .orderByAsc(SeatBlock::getSort));
+        List<SeatBlock> blocks = findBlocks(ownerType, ownerId, 1);
         if (blocks == null || blocks.isEmpty()) {
             return null;
         }
         List<Long> blockIds = blocks.stream().map(SeatBlock::getId).collect(Collectors.toList());
         List<SeatOverride> overrides = seatOverrideMapper.selectList(new LambdaQueryWrapper<SeatOverride>()
                 .in(SeatOverride::getBlockId, blockIds));
-        List<TicketGroup> groups = ticketGroupMapper.selectList(new LambdaQueryWrapper<TicketGroup>()
-                .eq(TicketGroup::getOwnerType, ownerType)
-                .eq(TicketGroup::getOwnerId, ownerId)
-                .eq(TicketGroup::getStatus, 1)
-                .orderByAsc(TicketGroup::getSort));
+        List<TicketGroup> groups = findGroups(ownerType, ownerId, 1);
 
         Map<Long, String> blockKeys = blocks.stream().collect(Collectors.toMap(SeatBlock::getId, SeatBlock::getBlockKey));
         SeatCraftBlockDtos.LayoutRequest layout = new SeatCraftBlockDtos.LayoutRequest();
@@ -78,36 +84,77 @@ public class SeatCraftBlockLayoutService {
         return layout;
     }
 
-    private void disableExisting(String ownerType, Long ownerId, LocalDateTime now) {
-        List<SeatBlock> blocks = seatBlockMapper.selectList(new LambdaQueryWrapper<SeatBlock>()
+    private List<SeatBlock> findBlocks(String ownerType, Long ownerId, Integer status) {
+        LambdaQueryWrapper<SeatBlock> wrapper = new LambdaQueryWrapper<SeatBlock>()
                 .eq(SeatBlock::getOwnerType, ownerType)
-                .eq(SeatBlock::getOwnerId, ownerId)
-                .eq(SeatBlock::getStatus, 1));
+                .eq(SeatBlock::getOwnerId, ownerId);
+        if (status != null) {
+            wrapper.eq(SeatBlock::getStatus, status);
+        }
+        return seatBlockMapper.selectList(wrapper.orderByAsc(SeatBlock::getSort));
+    }
+
+    private List<TicketGroup> findGroups(String ownerType, Long ownerId, Integer status) {
+        LambdaQueryWrapper<TicketGroup> wrapper = new LambdaQueryWrapper<TicketGroup>()
+                .eq(TicketGroup::getOwnerType, ownerType)
+                .eq(TicketGroup::getOwnerId, ownerId);
+        if (status != null) {
+            wrapper.eq(TicketGroup::getStatus, status);
+        }
+        return ticketGroupMapper.selectList(wrapper.orderByAsc(TicketGroup::getSort));
+    }
+
+    private void deleteOverrides(List<SeatBlock> blocks) {
+        if (blocks == null || blocks.isEmpty()) {
+            return;
+        }
+        List<Long> blockIds = blocks.stream().map(SeatBlock::getId).filter(Objects::nonNull).collect(Collectors.toList());
+        if (!blockIds.isEmpty()) {
+            seatOverrideMapper.delete(new LambdaQueryWrapper<SeatOverride>().in(SeatOverride::getBlockId, blockIds));
+        }
+    }
+
+    private void disableBlocks(List<SeatBlock> blocks, Set<String> exceptKeys, LocalDateTime now) {
+        if (blocks == null) {
+            return;
+        }
         for (SeatBlock block : blocks) {
+            if (exceptKeys.contains(trim(block.getBlockKey()))) {
+                continue;
+            }
             block.setStatus(0);
             block.setUpdateTime(now);
             seatBlockMapper.updateById(block);
         }
+    }
 
-        List<TicketGroup> groups = ticketGroupMapper.selectList(new LambdaQueryWrapper<TicketGroup>()
-                .eq(TicketGroup::getOwnerType, ownerType)
-                .eq(TicketGroup::getOwnerId, ownerId)
-                .eq(TicketGroup::getStatus, 1));
+    private void disableGroups(List<TicketGroup> groups, Set<String> exceptKeys, LocalDateTime now) {
+        if (groups == null) {
+            return;
+        }
         for (TicketGroup group : groups) {
+            if (exceptKeys.contains(trim(group.getGroupKey()))) {
+                continue;
+            }
             group.setStatus(0);
             group.setUpdateTime(now);
             ticketGroupMapper.updateById(group);
         }
     }
 
-    private Map<String, Long> insertBlocks(String ownerType, Long ownerId, List<SeatCraftBlockDtos.BlockRequest> blocks, LocalDateTime now) {
+    private Map<String, Long> upsertBlocks(String ownerType, Long ownerId, List<SeatCraftBlockDtos.BlockRequest> blocks,
+                                           List<SeatBlock> existingBlocks, LocalDateTime now) {
         Map<String, Long> ids = new HashMap<>();
+        Map<String, SeatBlock> existingByKey = existingBlocks == null ? Collections.emptyMap()
+                : existingBlocks.stream().filter(block -> trim(block.getBlockKey()) != null)
+                .collect(Collectors.toMap(block -> trim(block.getBlockKey()), block -> block, (first, second) -> first));
         for (int i = 0; i < blocks.size(); i++) {
             SeatCraftBlockDtos.BlockRequest request = blocks.get(i);
-            SeatBlock block = new SeatBlock();
+            String blockKey = trim(request.getBlockKey());
+            SeatBlock block = existingByKey.getOrDefault(blockKey, new SeatBlock());
             block.setOwnerType(ownerType);
             block.setOwnerId(ownerId);
-            block.setBlockKey(trim(request.getBlockKey()));
+            block.setBlockKey(blockKey);
             block.setName(defaultText(request.getName(), block.getBlockKey()));
             block.setBlockType(trim(request.getBlockType()));
             block.setTicketGroupKey(trim(request.getTicketGroupKey()));
@@ -129,9 +176,13 @@ public class SeatCraftBlockLayoutService {
             block.setColor(defaultText(request.getColor(), "#ff1268"));
             block.setSort(request.getSort() != null ? request.getSort() : i);
             block.setStatus(1);
-            block.setCreateTime(now);
             block.setUpdateTime(now);
-            seatBlockMapper.insert(block);
+            if (block.getId() == null) {
+                block.setCreateTime(now);
+                seatBlockMapper.insert(block);
+            } else {
+                seatBlockMapper.updateById(block);
+            }
             ids.put(block.getBlockKey(), block.getId());
         }
         return ids;
@@ -160,22 +211,31 @@ public class SeatCraftBlockLayoutService {
         }
     }
 
-    private void insertTicketGroups(String ownerType, Long ownerId, List<SeatCraftBlockDtos.TicketGroupRequest> groups, LocalDateTime now) {
+    private void upsertTicketGroups(String ownerType, Long ownerId, List<SeatCraftBlockDtos.TicketGroupRequest> groups,
+                                    List<TicketGroup> existingGroups, LocalDateTime now) {
+        Map<String, TicketGroup> existingByKey = existingGroups == null ? Collections.emptyMap()
+                : existingGroups.stream().filter(group -> trim(group.getGroupKey()) != null)
+                .collect(Collectors.toMap(group -> trim(group.getGroupKey()), group -> group, (first, second) -> first));
         for (int i = 0; i < groups.size(); i++) {
             SeatCraftBlockDtos.TicketGroupRequest request = groups.get(i);
-            TicketGroup group = new TicketGroup();
+            String groupKey = trim(request.getGroupKey());
+            TicketGroup group = existingByKey.getOrDefault(groupKey, new TicketGroup());
             group.setOwnerType(ownerType);
             group.setOwnerId(ownerId);
-            group.setGroupKey(trim(request.getGroupKey()));
+            group.setGroupKey(groupKey);
             group.setName(defaultText(request.getName(), group.getGroupKey()));
             group.setDefaultPrice(request.getDefaultPrice());
             group.setActivityPrice(request.getActivityPrice());
-            group.setSourceBlockIds(String.join(",", request.getSourceBlockKeys()));
+            group.setSourceBlockIds(String.join(",", request.getSourceBlockKeys() == null ? Collections.emptyList() : request.getSourceBlockKeys()));
             group.setSort(request.getSort() != null ? request.getSort() : i);
             group.setStatus(1);
-            group.setCreateTime(now);
             group.setUpdateTime(now);
-            ticketGroupMapper.insert(group);
+            if (group.getId() == null) {
+                group.setCreateTime(now);
+                ticketGroupMapper.insert(group);
+            } else {
+                ticketGroupMapper.updateById(group);
+            }
         }
     }
 

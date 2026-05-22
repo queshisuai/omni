@@ -5,6 +5,7 @@ import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
+import com.omni.ticket.entity.SeatBlock;
 import com.omni.ticket.entity.SessionSeatLayout;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.SessionSeatLayoutSection;
@@ -16,6 +17,7 @@ import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutMapper;
 import com.omni.ticket.mapper.ActivitySeatLayoutSectionMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import com.omni.ticket.mapper.SeatBlockMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutMapper;
 import com.omni.ticket.mapper.SessionSeatLayoutSectionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
@@ -29,6 +31,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -75,6 +78,12 @@ class SessionSeatLayoutServiceTest {
     private SeatCraftBlockLayoutService blockLayoutService;
     @Mock
     private SessionBlockTicketStockService blockTicketStockService;
+    @Mock
+    private SeatBlockMapper seatBlockMapper;
+    @Mock
+    private SessionSeatProtectionService sessionSeatProtectionService;
+    @Mock
+    private TicketTypeStockRecalculationService stockRecalculationService;
 
     private SessionSeatLayoutService service;
 
@@ -83,7 +92,8 @@ class SessionSeatLayoutServiceTest {
         service = new SessionSeatLayoutService(sessionMapper, activityMapper, userAccessService,
                 activityLayoutMapper, activitySectionMapper, sessionLayoutMapper,
                 sessionSectionMapper, sessionSeatMapper, ticketTypeMapper, venueAreaMapper, venueSeatMapper,
-                blockLayoutService, blockTicketStockService);
+                blockLayoutService, blockTicketStockService, seatBlockMapper, sessionSeatProtectionService,
+                stockRecalculationService);
     }
 
     @Test
@@ -151,6 +161,177 @@ class SessionSeatLayoutServiceTest {
         SeatCraftLayoutDtos.LayoutResponse response = service.getLayout(2003L, 99L);
 
         assertSame(blockLayout, response.getBlockLayout());
+    }
+
+    @Test
+    void updateLayoutAcceptsBlockOnlyLayoutAndPersistsBlocks() {
+        SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
+        SeatCraftLayoutDtos.LayoutResponse request = new SeatCraftLayoutDtos.LayoutResponse();
+        request.setName("场次 SeatCraft 座位图");
+        request.setTemplateType("concert");
+        request.setStageTitle("舞台");
+        request.setStageX(80);
+        request.setStageY(40);
+        request.setCanvasWidth(960);
+        request.setCanvasHeight(720);
+        request.setSections(List.of());
+        request.setBlockLayout(blockLayout);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
+        when(sessionSectionMapper.selectList(any())).thenReturn(List.of());
+        when(blockLayoutService.getLayout("session", 99L)).thenReturn(blockLayout);
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.updateLayout(2003L, 99L, request);
+
+        assertEquals("场次 SeatCraft 座位图", response.getName());
+        assertEquals(0, response.getSections().size());
+        verify(sessionLayoutMapper).updateById(argThat(layout -> "场次 SeatCraft 座位图".equals(layout.getName())));
+        verify(blockLayoutService).replaceLayout(eq("session"), eq(99L), same(blockLayout));
+    }
+
+    @Test
+    void updateLayoutTreatsNullSectionsAsEmptyList() {
+        SeatCraftLayoutDtos.LayoutResponse request = new SeatCraftLayoutDtos.LayoutResponse();
+        request.setName("场次 SeatCraft 座位图");
+        request.setTemplateType("concert");
+        request.setStageTitle("舞台");
+        request.setStageX(80);
+        request.setStageY(40);
+        request.setCanvasWidth(960);
+        request.setCanvasHeight(720);
+        request.setSections(null);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.updateLayout(2003L, 99L, request);
+
+        assertEquals(0, response.getSections().size());
+        verify(sessionSectionMapper, never()).insert(any());
+    }
+
+    @Test
+    void updateLayoutDisablesUnprotectedSeatsWhenBlockRemovedAndRecalculatesStock() {
+        SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayout("A");
+        SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
+        when(sessionSectionMapper.selectList(any())).thenReturn(List.of());
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(seatBlock(500L, "A"), seatBlock(501L, "B")));
+        SessionSeat b1 = sessionSeat(7003L, 501L, 800L);
+        SessionSeat b2 = sessionSeat(7004L, 501L, 800L);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(b1, b2));
+        when(sessionSeatProtectionService.findProtectedSeatIds(99L)).thenReturn(java.util.Set.of());
+        when(blockLayoutService.getLayout("session", 99L)).thenReturn(blockLayout);
+
+        service.updateLayout(2003L, 99L, request);
+
+        verify(sessionSeatMapper, times(2)).updateById(argThat(seat -> Long.valueOf(501L).equals(seat.getSeatBlockId())
+                && Integer.valueOf(4).equals(seat.getStatus())
+                && seat.getUpdateTime() != null));
+        verify(blockLayoutService).replaceLayout(eq("session"), eq(99L), same(blockLayout));
+        verify(blockTicketStockService).generateForSession(99L);
+        verify(stockRecalculationService).recalculateForSession(99L);
+    }
+
+    @Test
+    void updateLayoutRejectsRemovedBlockWhenSeatProtected() {
+        SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayout("A");
+        SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(seatBlock(500L, "A"), seatBlock(501L, "B")));
+        SessionSeat protectedSeat = sessionSeat(99L, 501L, 800L);
+        protectedSeat.setStatus(3);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(protectedSeat));
+        when(sessionSeatProtectionService.findProtectedSeatIds(99L)).thenReturn(java.util.Set.of(99L));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.updateLayout(2003L, 99L, request));
+
+        assertEquals("该座位区域已有购票订单，请先完成退款后再调整或删除。", error.getMessage());
+        verify(blockLayoutService, never()).replaceLayout(any(), any(), any());
+        verify(sessionSeatMapper, never()).updateById(any());
+        verify(stockRecalculationService, never()).recalculateForSession(any());
+    }
+
+    @Test
+    void updateLayoutDisablesUnprotectedSeatsWhenGridBlockShrinks() {
+        SeatCraftBlockDtos.LayoutRequest blockLayout = gridBlockLayout("A", 1, 1);
+        SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
+        when(sessionSectionMapper.selectList(any())).thenReturn(List.of());
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(seatBlock(500L, "A")));
+        SessionSeat a11 = sessionSeat(7001L, 500L, 800L, 1, 1);
+        SessionSeat a12 = sessionSeat(7002L, 500L, 800L, 1, 2);
+        SessionSeat a21 = sessionSeat(7003L, 500L, 800L, 2, 1);
+        SessionSeat a22 = sessionSeat(7004L, 500L, 800L, 2, 2);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(a11, a12, a21, a22));
+        when(sessionSeatProtectionService.findProtectedSeatIds(99L)).thenReturn(java.util.Set.of());
+        when(blockLayoutService.getLayout("session", 99L)).thenReturn(blockLayout);
+
+        service.updateLayout(2003L, 99L, request);
+
+        verify(sessionSeatMapper, never()).updateById(argThat(seat -> Long.valueOf(7001L).equals(seat.getId())));
+        verify(sessionSeatMapper, times(3)).updateById(argThat(seat -> Long.valueOf(500L).equals(seat.getSeatBlockId())
+                && Integer.valueOf(4).equals(seat.getStatus())
+                && seat.getUpdateTime() != null));
+        verify(stockRecalculationService).recalculateForSession(99L);
+    }
+
+    @Test
+    void updateLayoutRejectsGridShrinkWhenRemovedCoordinateProtected() {
+        SeatCraftBlockDtos.LayoutRequest blockLayout = gridBlockLayout("A", 1, 1);
+        SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(seatBlock(500L, "A")));
+        SessionSeat a11 = sessionSeat(7001L, 500L, 800L, 1, 1);
+        SessionSeat a12 = sessionSeat(7002L, 500L, 800L, 1, 2);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(a11, a12));
+        when(sessionSeatProtectionService.findProtectedSeatIds(99L)).thenReturn(java.util.Set.of(7002L));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.updateLayout(2003L, 99L, request));
+
+        assertEquals("该座位区域已有购票订单，请先完成退款后再调整或删除。", error.getMessage());
+        assertEquals(400, error.getCode());
+        verify(blockLayoutService, never()).replaceLayout(any(), any(), any());
+        verify(sessionLayoutMapper, never()).updateById(any());
+        verify(sessionSeatMapper, never()).updateById(any());
+    }
+
+    @Test
+    void updateLayoutDisablesUnprotectedSeatsWhenSeatBlockBecomesStandingBlock() {
+        SeatCraftBlockDtos.LayoutRequest blockLayout = standingBlockLayout("A", 300);
+        SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
+        when(sessionSectionMapper.selectList(any())).thenReturn(List.of());
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(seatBlock(500L, "A")));
+        SessionSeat a11 = sessionSeat(7001L, 500L, 800L, 1, 1);
+        SessionSeat a12 = sessionSeat(7002L, 500L, 800L, 1, 2);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(a11, a12));
+        when(sessionSeatProtectionService.findProtectedSeatIds(99L)).thenReturn(java.util.Set.of());
+        when(blockLayoutService.getLayout("session", 99L)).thenReturn(blockLayout);
+
+        service.updateLayout(2003L, 99L, request);
+
+        verify(sessionSeatMapper, times(2)).updateById(argThat(seat -> Long.valueOf(500L).equals(seat.getSeatBlockId())
+                && Integer.valueOf(4).equals(seat.getStatus())));
+        verify(blockLayoutService).replaceLayout(eq("session"), eq(99L), same(blockLayout));
     }
 
     @Test
@@ -345,6 +526,105 @@ class SessionSeatLayoutServiceTest {
         assertEquals("场次已有旧版座位快照，不能直接生成SeatCraft座位", error.getMessage());
     }
 
+    @Test
+    void updateTicketBindingsRejectsProtectedSeatWhenTicketTypeChanges() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        TicketType ticketType = new TicketType();
+        ticketType.setId(900L);
+        ticketType.setSessionId(99L);
+        when(ticketTypeMapper.selectById(900L)).thenReturn(ticketType);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(seatBlock(500L, "floor")));
+        SessionSeat seat = sessionSeat(7001L, 500L, 800L);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(seat));
+        when(sessionSeatProtectionService.findProtectedSeatIds(99L)).thenReturn(java.util.Set.of(7001L));
+        SessionSeatLayoutService.TicketBindingInput binding = new SessionSeatLayoutService.TicketBindingInput();
+        binding.setTicketTypeId(900L);
+        binding.setBlockKeys(List.of("floor"));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.updateTicketBindings(2003L, 99L, List.of(binding)));
+
+        assertEquals("该座位区域已有购票订单，请先完成退款后再调整或删除。", error.getMessage());
+        verify(sessionSeatMapper, never()).updateById(any());
+        verify(stockRecalculationService, never()).recalculateForSession(any());
+    }
+
+    @Test
+    void updateTicketBindingsUpdatesUnprotectedSeatsAndRecalculatesStock() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        TicketType ticketType = new TicketType();
+        ticketType.setId(900L);
+        ticketType.setSessionId(99L);
+        when(ticketTypeMapper.selectById(900L)).thenReturn(ticketType);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(seatBlock(500L, "floor")));
+        SessionSeat seat = sessionSeat(7001L, 500L, 800L);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(seat));
+        when(sessionSeatProtectionService.findProtectedSeatIds(99L)).thenReturn(java.util.Set.of());
+        SessionSeatLayoutService.TicketBindingInput binding = new SessionSeatLayoutService.TicketBindingInput();
+        binding.setTicketTypeId(900L);
+        binding.setBlockKeys(List.of("floor"));
+
+        service.updateTicketBindings(2003L, 99L, List.of(binding));
+
+        verify(sessionSeatMapper).updateById(argThat(updated -> Long.valueOf(7001L).equals(updated.getId())
+                && Long.valueOf(900L).equals(updated.getTicketTypeId())
+                && updated.getUpdateTime() != null));
+        verify(stockRecalculationService).recalculateForSession(99L);
+    }
+
+    @Test
+    void updateTicketBindingsRejectsTicketTypeFromOtherSession() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        TicketType ticketType = new TicketType();
+        ticketType.setId(900L);
+        ticketType.setSessionId(100L);
+        when(ticketTypeMapper.selectById(900L)).thenReturn(ticketType);
+        SessionSeatLayoutService.TicketBindingInput binding = new SessionSeatLayoutService.TicketBindingInput();
+        binding.setTicketTypeId(900L);
+        binding.setBlockKeys(List.of("floor"));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.updateTicketBindings(2003L, 99L, List.of(binding)));
+
+        assertEquals("票档不属于当前场次", error.getMessage());
+        verify(sessionSeatMapper, never()).updateById(any());
+        verify(stockRecalculationService, never()).recalculateForSession(any());
+    }
+
+    @Test
+    void updateTicketBindingsRejectsDuplicateBlockAcrossTicketTypes() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        TicketType vip = new TicketType();
+        vip.setId(900L);
+        vip.setSessionId(99L);
+        TicketType normal = new TicketType();
+        normal.setId(901L);
+        normal.setSessionId(99L);
+        when(ticketTypeMapper.selectById(900L)).thenReturn(vip);
+        when(ticketTypeMapper.selectById(901L)).thenReturn(normal);
+        SessionSeatLayoutService.TicketBindingInput first = new SessionSeatLayoutService.TicketBindingInput();
+        first.setTicketTypeId(900L);
+        first.setBlockKeys(List.of("floor"));
+        SessionSeatLayoutService.TicketBindingInput second = new SessionSeatLayoutService.TicketBindingInput();
+        second.setTicketTypeId(901L);
+        second.setBlockKeys(List.of("floor"));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.updateTicketBindings(2003L, 99L, List.of(first, second)));
+
+        assertEquals("同一座位区域不能绑定多个票档", error.getMessage());
+        verify(sessionSeatMapper, never()).updateById(any());
+        verify(stockRecalculationService, never()).recalculateForSession(any());
+    }
+
     private SessionSeatLayoutSection sessionSection(Long id, String sectionKey, String name, int rows, int cols) {
         SessionSeatLayoutSection section = new SessionSeatLayoutSection();
         section.setId(id);
@@ -367,6 +647,90 @@ class SessionSeatLayoutServiceTest {
         SessionSeatLayoutSection section = sessionSection(id, "floor", "池座内场", rows, cols);
         section.setTicketTypeId(ticketTypeId);
         return section;
+    }
+
+    private SeatBlock seatBlock(Long id, String blockKey) {
+        SeatBlock block = new SeatBlock();
+        block.setId(id);
+        block.setOwnerType("session");
+        block.setOwnerId(99L);
+        block.setBlockKey(blockKey);
+        block.setStatus(1);
+        return block;
+    }
+
+    private SessionSeat sessionSeat(Long id, Long blockId, Long ticketTypeId) {
+        SessionSeat seat = new SessionSeat();
+        seat.setId(id);
+        seat.setSessionId(99L);
+        seat.setSeatBlockId(blockId);
+        seat.setTicketTypeId(ticketTypeId);
+        seat.setStatus(1);
+        return seat;
+    }
+
+    private SessionSeat sessionSeat(Long id, Long blockId, Long ticketTypeId, Integer rowNo, Integer seatNo) {
+        SessionSeat seat = sessionSeat(id, blockId, ticketTypeId);
+        seat.setGeneratedRowNo(rowNo);
+        seat.setGeneratedSeatNo(seatNo);
+        seat.setRowNo(rowNo);
+        seat.setSeatNo(seatNo);
+        return seat;
+    }
+
+    private SeatCraftLayoutDtos.LayoutResponse layoutUpdateRequest(SeatCraftBlockDtos.LayoutRequest blockLayout) {
+        SeatCraftLayoutDtos.LayoutResponse request = new SeatCraftLayoutDtos.LayoutResponse();
+        request.setName("场次 SeatCraft 座位图");
+        request.setTemplateType("concert");
+        request.setStageTitle("舞台");
+        request.setStageX(80);
+        request.setStageY(40);
+        request.setCanvasWidth(960);
+        request.setCanvasHeight(720);
+        request.setSections(List.of());
+        request.setBlockLayout(blockLayout);
+        return request;
+    }
+
+    private SeatCraftBlockDtos.LayoutRequest blockLayout(String... blockKeys) {
+        SeatCraftBlockDtos.LayoutRequest layout = new SeatCraftBlockDtos.LayoutRequest();
+        layout.setBlocks(java.util.Arrays.stream(blockKeys).map(this::blockRequest).collect(java.util.stream.Collectors.toList()));
+        SeatCraftBlockDtos.TicketGroupRequest group = new SeatCraftBlockDtos.TicketGroupRequest();
+        group.setGroupKey("G");
+        group.setName("票档组");
+        group.setSourceBlockKeys(java.util.Arrays.asList(blockKeys));
+        layout.setTicketGroups(List.of(group));
+        return layout;
+    }
+
+    private SeatCraftBlockDtos.LayoutRequest gridBlockLayout(String blockKey, int rows, int cols) {
+        SeatCraftBlockDtos.LayoutRequest layout = blockLayout(blockKey);
+        SeatCraftBlockDtos.BlockRequest block = layout.getBlocks().get(0);
+        block.setBlockType("gridBlock");
+        block.setRows(rows);
+        block.setCols(cols);
+        block.setX(BigDecimal.ZERO);
+        block.setY(BigDecimal.ZERO);
+        return layout;
+    }
+
+    private SeatCraftBlockDtos.LayoutRequest standingBlockLayout(String blockKey, int capacity) {
+        SeatCraftBlockDtos.LayoutRequest layout = blockLayout(blockKey);
+        SeatCraftBlockDtos.BlockRequest block = layout.getBlocks().get(0);
+        block.setBlockType("standingBlock");
+        block.setCapacity(capacity);
+        return layout;
+    }
+
+    private SeatCraftBlockDtos.BlockRequest blockRequest(String blockKey) {
+        SeatCraftBlockDtos.BlockRequest block = new SeatCraftBlockDtos.BlockRequest();
+        block.setBlockKey(blockKey);
+        block.setName(blockKey);
+        block.setBlockType("gridBlock");
+        block.setTicketGroupKey("G");
+        block.setRows(2);
+        block.setCols(2);
+        return block;
     }
 
     private boolean assertSeatLabel(VenueSeat seat) {

@@ -90,6 +90,7 @@ class AdminSummaryServiceTest {
         assertEquals(6L, summary.getTicketTypeCount());
         assertEquals(3L, summary.getPaidOrderCount());
         verify(orderInternalClient).countPaidBySessions(any(PaidOrderCountRequest.class), eq("internal-token"));
+        verify(activityMapper).selectList(any());
     }
 
     @Test

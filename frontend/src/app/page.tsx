@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Header } from '@/components/Header'
 import { CategoryNav } from '@/components/CategoryNav'
 import { Banner } from '@/components/Banner'
@@ -45,6 +45,8 @@ export default function HomePage() {
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [sections, setSections] = useState<SectionData[]>([])
   const [loading, setLoading] = useState(true)
+  const fetchDataRef = useRef(() => {})
+  const lastRefreshRef = useRef(0)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -64,9 +66,35 @@ export default function HomePage() {
     }
   }, [])
 
+  fetchDataRef.current = fetchData
+
+  const refreshWhenVisible = () => {
+    const now = Date.now()
+    if (now - lastRefreshRef.current < 200) return
+    lastRefreshRef.current = now
+    fetchDataRef.current()
+  }
+
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) refreshWhenVisible()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshWhenVisible()
+    }
+
+    window.addEventListener('pageshow', handlePageShow)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('pageshow', handlePageShow)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
 
   const navCategories = categories.map((c) => ({ id: String(c.id), name: c.name }))
 

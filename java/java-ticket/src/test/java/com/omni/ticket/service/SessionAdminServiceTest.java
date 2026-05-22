@@ -3,10 +3,12 @@ package com.omni.ticket.service;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
+import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.service.SessionSeatLayoutService;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,10 +17,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.annotation.Transactional;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,6 +47,8 @@ class SessionAdminServiceTest {
     @Mock
     private UserAccessService userAccessService;
     @Mock
+    private TicketTypeMapper ticketTypeMapper;
+    @Mock
     private SessionSeatService sessionSeatService;
     @Mock
     private SessionSeatLayoutService sessionSeatLayoutService;
@@ -50,7 +57,7 @@ class SessionAdminServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userAccessService, null, sessionSeatService, sessionSeatLayoutService);
+        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, sessionSeatService, sessionSeatLayoutService);
     }
 
     @Test
@@ -148,6 +155,7 @@ class SessionAdminServiceTest {
 
         service.deleteSession(2003L, 50L);
 
+        verify(ticketTypeMapper).delete(any());
         verify(sessionSeatService).deleteBySessionId(50L);
         verify(sessionMapper).deleteById(50L);
     }
@@ -157,6 +165,31 @@ class SessionAdminServiceTest {
         assertTrue(SessionAdminService.class
                 .getMethod("deleteSession", Long.class, Long.class)
                 .isAnnotationPresent(Transactional.class));
+    }
+
+    @Test
+    void listSessionsIncludesTicketTypesForManagement() {
+        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        Session session = new Session();
+        session.setId(501L);
+        session.setActivityId(10L);
+        session.setVenueId(101L);
+        session.setStartTime(LocalDateTime.of(2026, 6, 1, 20, 0));
+        session.setEndTime(LocalDateTime.of(2026, 6, 1, 22, 0));
+        session.setStatus(1);
+        Page<Session> page = new Page<>(1, 10, 1);
+        page.setRecords(List.of(session));
+        when(sessionMapper.selectPage(any(), any())).thenReturn(page);
+        when(activityMapper.selectBatchIds(any())).thenReturn(List.of(activity(10L, 2003L)));
+        when(venueMapper.selectBatchIds(any())).thenReturn(List.of(venue(101L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType(801L, 501L, "VIP票", 980, 60, 58)));
+
+        Page<com.omni.ticket.dto.SessionAdminResponse> result = service.listSessions(2002L, 1, 10, null, null, null);
+
+        assertEquals(1, result.getRecords().size());
+        assertEquals(1, result.getRecords().get(0).getTicketTypes().size());
+        assertEquals(801L, result.getRecords().get(0).getTicketTypes().get(0).getId());
+        assertEquals("VIP票", result.getRecords().get(0).getTicketTypes().get(0).getName());
     }
 
     private Map<String, Object> baseBody() {
@@ -182,5 +215,17 @@ class SessionAdminServiceTest {
         venue.setId(id);
         venue.setStatus(1);
         return venue;
+    }
+
+    private TicketType ticketType(Long id, Long sessionId, String name, int price, int totalStock, int remainStock) {
+        TicketType ticketType = new TicketType();
+        ticketType.setId(id);
+        ticketType.setSessionId(sessionId);
+        ticketType.setName(name);
+        ticketType.setPrice(BigDecimal.valueOf(price));
+        ticketType.setTotalStock(totalStock);
+        ticketType.setRemainStock(remainStock);
+        ticketType.setStatus(1);
+        return ticketType;
     }
 }

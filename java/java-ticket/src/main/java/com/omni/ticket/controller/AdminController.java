@@ -11,6 +11,7 @@ import com.omni.ticket.dto.AdminSummaryResponse;
 import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
+import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatTemplateResponse;
 import com.omni.ticket.dto.SeatTemplateSyncResponse;
@@ -32,8 +33,10 @@ import com.omni.ticket.service.VenueDefaultLayoutService;
 import com.omni.ticket.service.SeatTemplateService;
 import com.omni.ticket.service.SessionAdminService;
 import com.omni.ticket.service.SessionSeatLayoutService;
+import com.omni.ticket.service.SessionSeatProtectionService;
 import com.omni.ticket.service.SessionSeatService;
 import com.omni.ticket.service.TicketTypeAreaService;
+import com.omni.ticket.service.TicketTypeStockRecalculationService;
 import com.omni.ticket.service.TourStationService;
 import com.omni.ticket.service.VenueApplicationService;
 import com.omni.ticket.service.OrderAdminQueryService;
@@ -46,6 +49,8 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -58,8 +63,11 @@ import java.util.stream.Collectors;
 public class AdminController {
 
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String SEAT_MAP_VISIBILITY_HIDDEN = "hidden";
+    private static final String SEAT_MAP_VISIBILITY_PUBLISHED = "published";
 
     private final ActivityMapper activityMapper;
+    private final ArtistMapper artistMapper;
     private final SessionMapper sessionMapper;
     private final TicketTypeMapper ticketTypeMapper;
     private final VenueMapper venueMapper;
@@ -76,6 +84,8 @@ public class AdminController {
     private final SessionSeatLayoutService sessionSeatLayoutService;
     private final TourStationService tourStationService;
     private final OrderAdminQueryService orderAdminQueryService;
+    private final SessionSeatProtectionService sessionSeatProtectionService;
+    private final TicketTypeStockRecalculationService stockRecalculationService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -88,13 +98,13 @@ public class AdminController {
                                 AdminSummaryService adminSummaryService,
                                  SessionSeatService sessionSeatService,
                                  VenueDefaultLayoutService venueDefaultLayoutService) {
-        this(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
+        this(activityMapper, null, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
-                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null);
+                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null);
     }
 
     @Autowired
-    public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
+    public AdminController(ActivityMapper activityMapper, ArtistMapper artistMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
                             UserAccessService userAccessService,
                              ActivityAdminService activityAdminService,
@@ -108,8 +118,11 @@ public class AdminController {
                                    ActivitySeatLayoutService activitySeatLayoutService,
                                    SessionSeatLayoutService sessionSeatLayoutService,
                                    TourStationService tourStationService,
-                                   OrderAdminQueryService orderAdminQueryService) {
+                                   OrderAdminQueryService orderAdminQueryService,
+                                   SessionSeatProtectionService sessionSeatProtectionService,
+                                   TicketTypeStockRecalculationService stockRecalculationService) {
         this.activityMapper = activityMapper;
+        this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
         this.venueMapper = venueMapper;
@@ -126,6 +139,8 @@ public class AdminController {
         this.sessionSeatLayoutService = sessionSeatLayoutService;
         this.tourStationService = tourStationService;
         this.orderAdminQueryService = orderAdminQueryService;
+        this.sessionSeatProtectionService = sessionSeatProtectionService;
+        this.stockRecalculationService = stockRecalculationService;
     }
 
     @GetMapping("/summary")
@@ -169,6 +184,24 @@ public class AdminController {
         return userAccessService.requireAdminOrOrganizerRole(userId);
     }
 
+    private Long resolveArtistId(Map<String, Object> body) {
+        Long artistId = parsePositiveLong(body.get("artistId"));
+        if (artistId != null) return artistId;
+        String artistName = parseNonBlankString(body.get("artistName"));
+        if (artistName == null || artistMapper == null) return null;
+        Artist existing = artistMapper.selectOne(new LambdaQueryWrapper<Artist>()
+                .eq(Artist::getName, artistName)
+                .eq(Artist::getStatus, 1)
+                .last("LIMIT 1"));
+        if (existing != null && existing.getId() != null) return existing.getId();
+        Artist artist = new Artist();
+        artist.setName(artistName);
+        artist.setStatus(1);
+        artist.setCreateTime(LocalDateTime.now());
+        artistMapper.insert(artist);
+        return artist.getId();
+    }
+
     /** 检查organizer是否拥有此活动 */
     private boolean ownsActivity(Long activityId, Long userId) {
         Activity a = activityMapper.selectById(activityId);
@@ -186,8 +219,8 @@ public class AdminController {
 
         Long categoryId = parsePositiveLong(body.get("categoryId"));
         if (categoryId == null) return Result.fail(400, "分类ID不正确");
-        Long artistId = parsePositiveLong(body.get("artistId"));
-        if (artistId == null) return Result.fail(400, "艺人ID不正确");
+        Long artistId = resolveArtistId(body);
+        if (artistId == null) return Result.fail(400, "艺人/团队名称不能为空");
         String name = parseNonBlankString(body.get("name"));
         if (name == null) return Result.fail(400, "活动名称不能为空");
 
@@ -197,7 +230,13 @@ public class AdminController {
         activity.setTourId(parsePositiveLong(body.get("tourId")));
         activity.setStationId(parsePositiveLong(body.get("stationId")));
         activity.setVenueApplicationId(parsePositiveLong(body.get("venueApplicationId")));
+        activity.setVenueApprovalNo(parseNonBlankString(body.get("venueApprovalNo")));
+        activity.setVenueApprovalFileUrl(parseNonBlankString(body.get("venueApprovalFileUrl")));
+        activity.setVenueApprovalNote(parseNonBlankString(body.get("venueApprovalNote")));
         activity.setPublishStatus(body.get("publishStatus") != null ? body.get("publishStatus").toString() : "draft");
+        String seatMapVisibility = parseSeatMapVisibility(body.get("seatMapVisibility"), SEAT_MAP_VISIBILITY_HIDDEN);
+        if (seatMapVisibility == null) return Result.fail(400, "座位图展示策略不正确");
+        activity.setSeatMapVisibility(seatMapVisibility);
         activity.setName(name);
         activity.setDescription(body.get("description") != null ? body.get("description").toString() : null);
         activity.setPoster(body.get("poster") != null ? body.get("poster").toString() : null);
@@ -238,6 +277,11 @@ public class AdminController {
             Long artistId = parsePositiveLong(body.get("artistId"));
             if (artistId == null) return Result.fail(400, "艺人ID不正确");
             activity.setArtistId(artistId);
+        }
+        if (body.containsKey("seatMapVisibility")) {
+            String seatMapVisibility = parseSeatMapVisibility(body.get("seatMapVisibility"), null);
+            if (seatMapVisibility == null) return Result.fail(400, "座位图展示策略不正确");
+            activity.setSeatMapVisibility(seatMapVisibility);
         }
         activityMapper.updateById(activity);
         return Result.success(activity);
@@ -330,6 +374,15 @@ public class AdminController {
         return StringUtils.hasText(text) ? text : null;
     }
 
+    private String parseSeatMapVisibility(Object value, String defaultValue) {
+        if (value == null) return defaultValue;
+        String visibility = value.toString().trim();
+        if (SEAT_MAP_VISIBILITY_PUBLISHED.equals(visibility) || SEAT_MAP_VISIBILITY_HIDDEN.equals(visibility)) {
+            return visibility;
+        }
+        return null;
+    }
+
     @DeleteMapping("/activities/{id}")
     public Result<DeleteActivityResponse> deleteActivity(@PathVariable Long id,
                                                          @RequestBody DeleteActivityRequest request) {
@@ -399,13 +452,32 @@ public class AdminController {
 
     @GetMapping("/sessions/{sessionId}/seat-layout")
     public Result<SeatCraftLayoutDtos.LayoutResponse> getSessionSeatLayout(@PathVariable Long sessionId,
-                                                                            @RequestParam Long userId) {
+                                                                             @RequestParam Long userId) {
         return Result.success(sessionSeatLayoutService.getLayout(userId, sessionId));
+    }
+
+    @PutMapping("/sessions/{sessionId}/seat-layout")
+    public Result<SeatCraftLayoutDtos.LayoutResponse> updateSessionSeatLayout(@PathVariable Long sessionId,
+                                                                                 @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
+        if (request == null) {
+            return Result.fail(400, "座位图参数不能为空");
+        }
+        return Result.success(sessionSeatLayoutService.updateLayout(request.getUserId(), sessionId, request.getLayout()));
+    }
+
+    @PutMapping("/sessions/{sessionId}/ticket-bindings")
+    public Result<Void> updateSessionTicketBindings(@PathVariable Long sessionId,
+                                                     @RequestBody TicketBindingUpdateRequest request) {
+        if (request == null) {
+            return Result.fail(400, "票档绑定参数不能为空");
+        }
+        sessionSeatLayoutService.updateTicketBindings(request.getUserId(), sessionId, request.getBindings());
+        return Result.success();
     }
 
     @GetMapping("/sessions/{sessionId}/seat-layout/ticket-drafts")
     public Result<List<SeatCraftLayoutDtos.SectionResponse>> getTicketDrafts(@PathVariable Long sessionId,
-                                                                              @RequestParam Long userId) {
+                                                                               @RequestParam Long userId) {
         return Result.success(sessionSeatLayoutService.buildTicketDraftsForSession(userId, sessionId));
     }
 
@@ -503,8 +575,33 @@ public class AdminController {
         if ("organizer".equals(role) && !ownsActivity(session.getActivityId(), userId))
             return Result.fail(403, "只能删除自己主办的票档");
 
+        Set<Long> protectedSeatIds = sessionSeatProtectionService.findProtectedSeatIds(tt.getSessionId());
+        List<SessionSeat> ticketSeats = sessionSeatService.listBySession(tt.getSessionId()).stream()
+                .filter(seat -> Objects.equals(seat.getTicketTypeId(), id))
+                .collect(Collectors.toList());
+        boolean hasProtectedSeat = ticketSeats.stream()
+                .map(SessionSeat::getId)
+                .anyMatch(protectedSeatIds::contains);
+        if (hasProtectedSeat) {
+            return Result.fail(400, "该票档已有购票订单，请先完成退款后再删除。");
+        }
+        ticketSeats.forEach(seat -> {
+            seat.setTicketTypeId(null);
+            sessionSeatService.update(seat);
+        });
         ticketTypeMapper.deleteById(id);
+        stockRecalculationService.recalculateForSession(tt.getSessionId());
         return Result.success();
+    }
+
+    public static class TicketBindingUpdateRequest {
+        private Long userId;
+        private List<SessionSeatLayoutService.TicketBindingInput> bindings;
+
+        public Long getUserId() { return userId; }
+        public void setUserId(Long userId) { this.userId = userId; }
+        public List<SessionSeatLayoutService.TicketBindingInput> getBindings() { return bindings; }
+        public void setBindings(List<SessionSeatLayoutService.TicketBindingInput> bindings) { this.bindings = bindings; }
     }
 
     // ========== 场馆管理（admin全权限，organizer只读） ==========
@@ -583,8 +680,14 @@ public class AdminController {
 
     @PutMapping("/venues/{venueId}/default-layout")
     public Result<SeatCraftLayoutDtos.LayoutResponse> updateVenueDefaultLayout(@PathVariable Long venueId,
-                                                                                @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
+                                                                                 @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
         return Result.success(venueDefaultLayoutService.saveLayout(request.getUserId(), venueId, request.getLayout()));
+    }
+
+    @GetMapping("/venues/{venueId}/seat-layout-templates")
+    public Result<List<SeatLayoutTemplateCandidateResponse>> listVenueSeatLayoutTemplates(@PathVariable Long venueId,
+                                                                                           @RequestParam Long userId) {
+        return Result.success(venueApplicationService.listSeatLayoutTemplates(userId, venueId));
     }
 
     @PostMapping("/venues/{id}/seats")

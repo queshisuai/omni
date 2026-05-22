@@ -222,6 +222,8 @@ INSERT INTO activity (id, category_id, artist_id, organizer_id, name, descriptio
 (28, 10, 28, 2007, '江南水乡旅行节 杭州站', '文旅节庆体验活动。', 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee', 1),
 (29, 10, 29, 2007, '巴蜀非遗体验展 成都站', '非遗体验与展演。', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e', 1),
 (30, 10, 30, 2007, '丝路城市旅游展 西安站', '多目的地旅游展。', 'https://images.unsplash.com/photo-1488646953014-85cb44e25828', 1);
+UPDATE activity SET seat_map_visibility = 'hidden' WHERE id IN (1, 2, 3);
+UPDATE activity SET seat_map_visibility = 'published' WHERE id IN (4, 5);
 SELECT setval('activity_id_seq', 30, true);
 
 -- ========== 未来场次；同一场馆时间错开 ==========
@@ -330,6 +332,11 @@ END $$;
 SELECT setval('ticket_type_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type), 1), true);
 SELECT setval('ticket_type_area_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type_area), 1), true);
 
+-- 音乐节演示站区：独立票档与价格，不生成座位号。
+INSERT INTO ticket_type (id, session_id, name, price, total_stock, remain_stock, status)
+VALUES (91, 3, '站区票', 280.00, 300, 300, 1);
+SELECT setval('ticket_type_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type), 1), true);
+
 -- ========== 场次级 SeatCraft 座位图与真实座位关联 ==========
 INSERT INTO session_seat_layout (id, session_id, name, template_type, stage_title, stage_x, stage_y, canvas_width, canvas_height, status)
 SELECT s.id, s.id, a.name || ' 场次座位图', 'concert', '舞台', 80, 40, 960, 720, 1
@@ -337,12 +344,15 @@ FROM session s
 JOIN activity a ON a.id = s.activity_id
 ORDER BY s.id;
 
-INSERT INTO ticket_group (owner_type, owner_id, group_key, name, source_block_ids, sort, status)
-SELECT 'session', tta.session_id, 'area-' || tta.area_id, tt.name, 'area-' || tta.area_id, va.sort, 1
+INSERT INTO ticket_group (owner_type, owner_id, group_key, name, activity_price, source_block_ids, sort, status)
+SELECT 'session', tta.session_id, 'area-' || tta.area_id, tt.name, tt.price, 'area-' || tta.area_id, va.sort, 1
 FROM ticket_type_area tta
 JOIN ticket_type tt ON tt.id = tta.ticket_type_id
 JOIN venue_area va ON va.id = tta.area_id
 ORDER BY tta.session_id, va.sort, va.id;
+
+INSERT INTO ticket_group (owner_type, owner_id, group_key, name, activity_price, source_block_ids, sort, status)
+VALUES ('session', 3, 'standing-3', '站区票', 280.00, 'standing-3', 99, 1);
 
 INSERT INTO seat_block (owner_type, owner_id, block_key, name, block_type, ticket_group_key, x, y, rows, cols, row_spacing, seat_spacing, color, sort, status)
 SELECT
@@ -364,6 +374,9 @@ SELECT
 FROM ticket_type_area tta
 JOIN venue_area va ON va.id = tta.area_id
 ORDER BY tta.session_id, va.sort, va.id;
+
+INSERT INTO seat_block (owner_type, owner_id, block_key, name, block_type, ticket_group_key, x, y, capacity, color, sort, status)
+VALUES ('session', 3, 'standing-3', '站区', 'standingBlock', 'standing-3', 120, 470, 300, '#7c3aed', 99, 1);
 
 INSERT INTO session_seat_layout_section (id, session_layout_id, ticket_type_id, section_key, name, rows, cols, x, y, color, type, layout, seat_count, sort, status)
 SELECT
@@ -449,6 +462,10 @@ BEGIN
     WHERE id = refunded_seat_id;
 
     UPDATE ticket_type SET remain_stock = remain_stock - 1 WHERE id = 1;
+    UPDATE ticket_type
+    SET total_stock = GREATEST(total_stock - 1, 0),
+        remain_stock = GREATEST(remain_stock - 1, 0)
+    WHERE id = 11;
 
     INSERT INTO payment (id, order_id, payment_no, payment_method, out_trade_no, trade_no, buyer_id, amount, status, pay_time, create_time)
     VALUES

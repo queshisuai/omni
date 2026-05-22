@@ -16,6 +16,8 @@ export function SeatCraftTicketEditor({
   onTicketPriceChange,
   estimatedSeatCount,
   onSubmit,
+  allowSubmitWithoutSelection = false,
+  submitLabel = '保存票档',
 }: SeatCraftTicketEditorProps) {
   const unifiedLayout = useMemo(() => toUnifiedSeatCraftLayout(layout), [layout])
   const selectedIdSet = useMemo(() => new Set(selectedSectionIds), [selectedSectionIds])
@@ -37,7 +39,7 @@ export function SeatCraftTicketEditor({
   }
 
   if (unifiedLayout.blocks.length === 0 && layout.sections.length > 0) {
-    return <div className="rounded-2xl border border-dashed border-[#ffd9e6] bg-white p-8 text-center text-[14px] text-[#999]">请进入场地座位设计器重新创建座位图。</div>
+    return <div className="rounded-2xl border border-dashed border-[#ffd9e6] bg-white p-8 text-center text-[14px] text-[#999]">请进入场次座位设计器重新创建座位图。</div>
   }
 
   return (
@@ -51,7 +53,7 @@ export function SeatCraftTicketEditor({
       <aside className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 text-zinc-100">
         <div>
           <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#ff1268]">票档绑定模式</div>
-          <h3 className="mt-2 text-xl font-semibold">创建票档</h3>
+          <h3 className="mt-2 text-xl font-semibold">{selectedSectionIds.length === 0 ? '创建/编辑票档' : '创建票档'}</h3>
           <p className="mt-2 text-sm text-zinc-500">在左侧座位图选择一个或多个方阵、剧场扇形或站区，再填写票档信息。</p>
         </div>
 
@@ -78,8 +80,8 @@ export function SeatCraftTicketEditor({
           <p className="mt-2 text-xs leading-5 text-zinc-500">真实库存保存后由后端根据可售座位生成。</p>
         </div>
 
-        <button type="button" onClick={onSubmit} disabled={selectedSectionIds.length === 0 || !ticketName.trim() || !ticketPrice.trim()} className="mt-6 w-full rounded-xl bg-[#ff1268] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#e60f5d] disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400">
-          保存票档
+        <button type="button" onClick={onSubmit} disabled={(!allowSubmitWithoutSelection && selectedSectionIds.length === 0) || !ticketName.trim() || !ticketPrice.trim()} className="mt-6 w-full rounded-xl bg-[#ff1268] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#e60f5d] disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400">
+          {submitLabel}
         </button>
       </aside>
     </div>

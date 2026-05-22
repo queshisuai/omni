@@ -6,10 +6,14 @@ import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
+import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.Artist;
+import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.service.UserAccessService;
@@ -21,8 +25,10 @@ import com.omni.ticket.service.VenueDefaultLayoutService;
 import com.omni.ticket.service.SeatTemplateService;
 import com.omni.ticket.service.SessionAdminService;
 import com.omni.ticket.service.SessionSeatLayoutService;
+import com.omni.ticket.service.SessionSeatProtectionService;
 import com.omni.ticket.service.SessionSeatService;
 import com.omni.ticket.service.TicketTypeAreaService;
+import com.omni.ticket.service.TicketTypeStockRecalculationService;
 import com.omni.ticket.service.TourStationService;
 import com.omni.ticket.service.VenueApplicationService;
 import org.junit.jupiter.api.Test;
@@ -38,6 +44,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import com.omni.ticket.entity.Tour;
@@ -47,6 +54,8 @@ class AdminControllerTest {
 
     @Mock
     private ActivityMapper activityMapper;
+    @Mock
+    private ArtistMapper artistMapper;
     @Mock
     private SessionMapper sessionMapper;
     @Mock
@@ -77,6 +86,10 @@ class AdminControllerTest {
     private SessionSeatLayoutService sessionSeatLayoutService;
     @Mock
     private TourStationService tourStationService;
+    @Mock
+    private SessionSeatProtectionService sessionSeatProtectionService;
+    @Mock
+    private TicketTypeStockRecalculationService stockRecalculationService;
 
     @Test
     void deactivateOrganizerUsesAuthorizationTokenAsOperator() {
@@ -178,6 +191,36 @@ class AdminControllerTest {
     }
 
     @Test
+    void deleteTicketTypeRejectsProtectedSeats() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        TicketType ticketType = new TicketType();
+        ticketType.setId(900L);
+        ticketType.setSessionId(99L);
+        when(ticketTypeMapper.selectById(900L)).thenReturn(ticketType);
+        com.omni.ticket.entity.Session session = new com.omni.ticket.entity.Session();
+        session.setId(99L);
+        session.setActivityId(10L);
+        when(sessionMapper.selectById(99L)).thenReturn(session);
+        Activity activity = new Activity();
+        activity.setOrganizerId(2003L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(sessionSeatProtectionService.findProtectedSeatIds(99L)).thenReturn(java.util.Set.of(7001L));
+        SessionSeat protectedSeat = new SessionSeat();
+        protectedSeat.setId(7001L);
+        protectedSeat.setSessionId(99L);
+        protectedSeat.setTicketTypeId(900L);
+        when(sessionSeatService.listBySession(99L)).thenReturn(List.of(protectedSeat));
+
+        Result<Void> result = controller.deleteTicketType(2003L, 900L);
+
+        assertEquals(400, result.getCode());
+        assertEquals("该票档已有购票订单，请先完成退款后再删除。", result.getMessage());
+        verify(ticketTypeMapper, never()).deleteById(900L);
+        verify(stockRecalculationService, never()).recalculateForSession(any());
+    }
+
+    @Test
     void createTourDraftDelegatesToService() {
         AdminController controller = controller();
         Tour tour = new Tour();
@@ -191,7 +234,107 @@ class AdminControllerTest {
         verify(tourStationService).createTourDraft(2003L, Map.of("userId", 2003L, "title", "巡演"));
     }
 
+    @Test
+    void updateSessionSeatLayoutDelegatesToService() {
+        AdminController controller = controller();
+        SeatCraftLayoutDtos.LayoutSaveRequest request = new SeatCraftLayoutDtos.LayoutSaveRequest();
+        request.setUserId(2003L);
+        SeatCraftLayoutDtos.LayoutResponse layout = new SeatCraftLayoutDtos.LayoutResponse();
+        layout.setName("场次 SeatCraft 座位图");
+        request.setLayout(layout);
+        when(sessionSeatLayoutService.updateLayout(2003L, 10L, layout)).thenReturn(layout);
+
+        Result<SeatCraftLayoutDtos.LayoutResponse> result = controller.updateSessionSeatLayout(10L, request);
+
+        assertEquals(200, result.getCode());
+        assertEquals("场次 SeatCraft 座位图", result.getData().getName());
+        verify(sessionSeatLayoutService).updateLayout(2003L, 10L, layout);
+    }
+
+    @Test
+    void createActivityStoresExternalVenueApprovalProof() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+
+        Result<Activity> result = controller.createActivity(Map.of(
+                "userId", 2003L,
+                "categoryId", 1L,
+                "artistId", 1L,
+                "name", "审批凭证演出",
+                "venueApprovalNo", "BJ-WH-2026-001",
+                "venueApprovalFileUrl", "https://example.com/approval.pdf",
+                "venueApprovalNote", "已取得城市主管部门审批"
+        ));
+
+        ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityMapper).insert(captor.capture());
+        assertEquals(200, result.getCode());
+        assertEquals("BJ-WH-2026-001", captor.getValue().getVenueApprovalNo());
+        assertEquals("https://example.com/approval.pdf", captor.getValue().getVenueApprovalFileUrl());
+        assertEquals("已取得城市主管部门审批", captor.getValue().getVenueApprovalNote());
+    }
+
+    @Test
+    void createActivityStoresSeatMapVisibility() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+
+        Result<Activity> result = controller.createActivity(Map.of(
+                "userId", 2003L,
+                "categoryId", 1L,
+                "artistId", 1L,
+                "name", "座位图可见性演出",
+                "seatMapVisibility", "published"
+        ));
+
+        ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityMapper).insert(captor.capture());
+        assertEquals(200, result.getCode());
+        assertEquals("published", captor.getValue().getSeatMapVisibility());
+    }
+
+    @Test
+    void createActivityCreatesArtistFromName() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(artistMapper.insert(any())).thenAnswer(invocation -> {
+            Artist artist = invocation.getArgument(0);
+            artist.setId(88L);
+            return 1;
+        });
+
+        Result<Activity> result = controller.createActivity(Map.of(
+                "userId", 2003L,
+                "categoryId", 1L,
+                "artistName", "新乐队",
+                "name", "按艺人姓名创建活动"
+        ));
+
+        ArgumentCaptor<Artist> artistCaptor = ArgumentCaptor.forClass(Artist.class);
+        ArgumentCaptor<Activity> activityCaptor = ArgumentCaptor.forClass(Activity.class);
+        verify(artistMapper).insert(artistCaptor.capture());
+        verify(activityMapper).insert(activityCaptor.capture());
+        assertEquals(200, result.getCode());
+        assertEquals("新乐队", artistCaptor.getValue().getName());
+        assertEquals(88L, activityCaptor.getValue().getArtistId());
+    }
+
+    @Test
+    void listVenueSeatLayoutTemplatesDelegatesToApplicationService() {
+        AdminController controller = controller();
+        SeatLayoutTemplateCandidateResponse candidate = new SeatLayoutTemplateCandidateResponse();
+        candidate.setSourceType("legacy_venue_default");
+        candidate.setSourceId(7L);
+        when(venueApplicationService.listSeatLayoutTemplates(2003L, 99L)).thenReturn(List.of(candidate));
+
+        Result<List<SeatLayoutTemplateCandidateResponse>> result = controller.listVenueSeatLayoutTemplates(99L, 2003L);
+
+        assertEquals(200, result.getCode());
+        assertEquals("legacy_venue_default", result.getData().get(0).getSourceType());
+        verify(venueApplicationService).listSeatLayoutTemplates(2003L, 99L);
+    }
+
     private AdminController controller() {
-        return new AdminController(activityMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null);
+        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService);
     }
 }

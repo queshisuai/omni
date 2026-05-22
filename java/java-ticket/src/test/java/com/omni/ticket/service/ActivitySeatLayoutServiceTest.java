@@ -29,7 +29,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -232,6 +234,27 @@ class ActivitySeatLayoutServiceTest {
     }
 
     @Test
+    void updateLayoutCreatesActivityLayoutWhenMissing() {
+        SeatCraftLayoutDtos.LayoutResponse requestLayout = baseLayoutRequest();
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(activityLayoutMapper.selectOne(any())).thenReturn(null);
+        doAnswer(invocation -> {
+            ActivitySeatLayout layout = invocation.getArgument(0);
+            layout.setId(88L);
+            return 1;
+        }).when(activityLayoutMapper).insert(any(ActivitySeatLayout.class));
+        when(activitySectionMapper.selectList(any())).thenReturn(List.of());
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.updateLayout(2003L, 10L, requestLayout);
+
+        assertEquals(88L, response.getId());
+        assertEquals("新座位图", response.getName());
+        verify(activityLayoutMapper).insert(argThat(layout -> Long.valueOf(10L).equals(layout.getActivityId())
+                && Integer.valueOf(1).equals(layout.getStatus())));
+    }
+
+    @Test
     void getLayoutIncludesBlockLayout() {
         ActivitySeatLayout existingLayout = activeLayout(88L, 10L);
         SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
@@ -244,6 +267,17 @@ class ActivitySeatLayoutServiceTest {
         SeatCraftLayoutDtos.LayoutResponse response = service.getLayout(2003L, 10L);
 
         assertSame(blockLayout, response.getBlockLayout());
+    }
+
+    @Test
+    void getLayoutReturnsNullWhenActivityHasNoLayout() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(activityLayoutMapper.selectOne(any())).thenReturn(null);
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.getLayout(2003L, 10L);
+
+        assertEquals(null, response);
     }
 
     private InternalUserRefResponse user(Long id, String role) {
