@@ -18,6 +18,7 @@ TRUNCATE TABLE
     session_seat,
     ticket_type,
     session,
+    activity_artist,
     activity,
     seat_override,
     ticket_group,
@@ -71,37 +72,37 @@ INSERT INTO category (id, name, icon, sort, status) VALUES
 SELECT setval('category_id_seq', 10, true);
 
 -- ========== 艺人/团队 ==========
-INSERT INTO artist (id, name, description, avatar, status) VALUES
-(1, '林川', '华语流行唱作人', NULL, 1),
-(2, '银河电台', '城市流行乐队', NULL, 1),
-(3, '仲夏音乐节阵容', '多组独立音乐人联合演出', NULL, 1),
-(4, '城市剧场话剧团', '现实主义话剧团队', NULL, 1),
-(5, '海上歌剧中心', '经典歌剧制作团队', NULL, 1),
-(6, '开心制造喜剧社', '都市喜剧团队', NULL, 1),
-(7, '成都猎鹰篮球俱乐部', '职业篮球俱乐部', NULL, 1),
-(8, '深圳竞速电竞联盟', '电竞赛事运营团队', NULL, 1),
-(9, '西安城墙马拉松组委会', '城市路跑赛事组委会', NULL, 1),
-(10, '童梦剧团', '原创亲子儿童剧团队', NULL, 1),
-(11, '奇妙科学秀', '亲子科学互动团队', NULL, 1),
-(12, '森林马戏团', '亲子马戏演出团队', NULL, 1),
-(13, '未来城市策展组', '城市科技展策展团队', NULL, 1),
-(14, '国风生活市集', '传统文化市集品牌', NULL, 1),
-(15, '重庆山城影像展', '城市影像策展团队', NULL, 1),
-(16, '杭州爱乐室内乐团', '古典室内乐团', NULL, 1),
-(17, '南京交响乐团', '城市交响乐团', NULL, 1),
-(18, '广州爵士四重奏', '爵士乐团', NULL, 1),
-(19, '德云新声相声社', '青年相声团队', NULL, 1),
-(20, '江南评弹社', '传统评弹团队', NULL, 1),
-(21, '山城脱口秀联盟', '脱口秀厂牌', NULL, 1),
-(22, '白鹭现代舞团', '现代舞团', NULL, 1),
-(23, '锦城芭蕾舞团', '古典芭蕾舞团', NULL, 1),
-(24, '长安国风舞集', '国风舞蹈团队', NULL, 1),
-(25, '次元夏日企划', '动漫音乐企划', NULL, 1),
-(26, '星环电竞嘉年华', '二次元电竞嘉年华', NULL, 1),
-(27, '幻境声优见面会', '声优见面会企划', NULL, 1),
-(28, '江南水乡旅行节', '文旅节庆活动', NULL, 1),
-(29, '巴蜀非遗体验展', '非遗体验策展团队', NULL, 1),
-(30, '丝路城市旅游展', '旅游目的地联合展', NULL, 1);
+INSERT INTO artist (id, name, description, avatar, status, alias, birth_date, birth_year, gender, artist_type, country_or_region, agency, representative_works, category_tags, external_links, source_note, risk_status) VALUES
+(1, '周杰伦', '华语流行音乐人、创作歌手。', NULL, 1, 'Jay Chou', '1979-01-18', 1979, 'male', '个人', '中国台湾', '杰威尔音乐', '七里香,青花瓷,稻香', '歌手,创作人,流行', 'https://zh.wikipedia.org/wiki/周杰伦', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(2, '五月天', '华语摇滚乐团。', NULL, 1, 'Mayday', NULL, NULL, NULL, '乐队', '中国台湾', '相信音乐', '突然好想你,倔强,知足', '乐队,摇滚,流行', 'https://zh.wikipedia.org/wiki/五月天', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(3, '林俊杰', '华语流行创作歌手。', NULL, 1, 'JJ Lin', '1981-03-27', 1981, 'male', '个人', '新加坡', NULL, '江南,修炼爱情,可惜没如果', '歌手,创作人,流行', 'https://zh.wikipedia.org/wiki/林俊杰', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(4, '开心麻花', '中国喜剧舞台剧和影视制作团队。', NULL, 1, 'Mahua FunAge', NULL, NULL, NULL, '剧团', '中国大陆', NULL, '乌龙山伯爵,夏洛特烦恼', '话剧,喜剧,舞台剧', 'https://zh.wikipedia.org/wiki/开心麻花', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(5, '上海歌剧院', '综合性歌剧艺术院团。', NULL, 1, 'Shanghai Opera House', NULL, NULL, NULL, '院团', '中国大陆', NULL, '茶花女,卡门', '歌剧,音乐剧,古典', 'https://zh.wikipedia.org/wiki/上海歌剧院', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(6, '孟京辉戏剧工作室', '当代戏剧创作团队。', NULL, 1, NULL, NULL, NULL, NULL, '剧团', '中国大陆', NULL, '恋爱的犀牛,两只狗的生活意见', '话剧,先锋戏剧', 'https://zh.wikipedia.org/wiki/孟京辉', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(7, '郭艾伦', '中国篮球运动员。', NULL, 1, NULL, '1993-11-14', 1993, 'male', '运动员', '中国大陆', NULL, 'CBA,中国男篮', '篮球,体育', 'https://zh.wikipedia.org/wiki/郭艾伦', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(8, '英雄联盟职业联赛', '中国大陆英雄联盟职业电竞联赛。', NULL, 1, 'LPL', NULL, NULL, NULL, '赛事品牌', '中国大陆', NULL, '英雄联盟职业联赛', '电竞,赛事', 'https://zh.wikipedia.org/wiki/英雄联盟职业联赛', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(9, '中国田径协会', '中国田径运动全国性组织。', NULL, 1, 'CAA', NULL, NULL, NULL, '组织', '中国大陆', NULL, '路跑赛事,田径赛事', '体育,马拉松', 'https://zh.wikipedia.org/wiki/中国田径协会', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(10, '中国儿童艺术剧院', '国家级儿童艺术院团。', NULL, 1, 'China National Theatre for Children', NULL, NULL, NULL, '剧团', '中国大陆', NULL, '儿童剧,亲子剧', '儿童剧,亲子', 'https://zh.wikipedia.org/wiki/中国儿童艺术剧院', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(11, '科学队长', '面向青少年的科学教育内容品牌。', NULL, 1, NULL, NULL, NULL, NULL, '团队', '中国大陆', NULL, '科学实验秀,科普课程', '科学,亲子,互动', NULL, '公开资料整理；模拟档期非真实售票', 'normal'),
+(12, '广州长隆国际大马戏', '大型马戏演艺品牌。', NULL, 1, 'Chimelong International Circus', NULL, NULL, NULL, '演艺团队', '中国大陆', NULL, '国际大马戏', '马戏,亲子,演艺', 'https://zh.wikipedia.org/wiki/广州长隆旅游度假区', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(13, 'teamLab', '国际艺术团体。', NULL, 1, 'teamLab', NULL, NULL, NULL, '艺术团队', '日本', NULL, '无界美术馆,数字艺术展', '数字艺术,展览,沉浸式', 'https://zh.wikipedia.org/wiki/TeamLab', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(14, '故宫博物院', '中国综合性博物馆。', NULL, 1, 'The Palace Museum', NULL, NULL, NULL, '机构', '中国大陆', NULL, '故宫,文创,传统文化展', '国风,展览,传统文化', 'https://zh.wikipedia.org/wiki/故宫博物院', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(15, '中国摄影家协会', '全国性摄影艺术组织。', NULL, 1, NULL, NULL, NULL, NULL, '组织', '中国大陆', NULL, '摄影展,影像艺术', '摄影,影像,展览', 'https://zh.wikipedia.org/wiki/中国摄影家协会', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(16, '中国爱乐乐团', '中国交响乐团。', NULL, 1, 'China Philharmonic Orchestra', NULL, NULL, NULL, '乐团', '中国大陆', NULL, '交响音乐会,室内乐', '古典,交响,音乐会', 'https://zh.wikipedia.org/wiki/中国爱乐乐团', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(17, '上海交响乐团', '中国历史悠久的交响乐团。', NULL, 1, 'Shanghai Symphony Orchestra', NULL, NULL, NULL, '乐团', '中国大陆', NULL, '新年音乐会,交响音乐会', '古典,交响,音乐会', 'https://zh.wikipedia.org/wiki/上海交响乐团', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(18, '李泉', '华语音乐人、爵士流行歌手。', NULL, 1, NULL, '1969-10-12', 1969, 'male', '个人', '中国大陆', NULL, '走钢索的人,岛中央', '爵士,流行,音乐会', 'https://zh.wikipedia.org/wiki/李泉', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(19, '德云社', '相声演出团体。', NULL, 1, 'Deyun Club', NULL, NULL, NULL, '曲艺团体', '中国大陆', NULL, '相声大会,小剧场演出', '相声,曲艺', 'https://zh.wikipedia.org/wiki/德云社', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(20, '上海评弹团', '评弹艺术表演团体。', NULL, 1, NULL, NULL, NULL, NULL, '曲艺团体', '中国大陆', NULL, '评弹,苏州评弹', '评弹,曲艺,传统文化', NULL, '公开资料整理；模拟档期非真实售票', 'normal'),
+(21, '笑果文化', '脱口秀内容与演出厂牌。', NULL, 1, NULL, NULL, NULL, NULL, '厂牌', '中国大陆', NULL, '脱口秀大会,线下喜剧', '脱口秀,喜剧', 'https://zh.wikipedia.org/wiki/笑果文化', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(22, '陶身体剧场', '中国现代舞团。', NULL, 1, 'TAO Dance Theater', NULL, NULL, NULL, '舞团', '中国大陆', NULL, '数字系列,现代舞剧场', '现代舞,舞蹈', 'https://zh.wikipedia.org/wiki/陶身体剧场', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(23, '中央芭蕾舞团', '中国国家芭蕾舞团。', NULL, 1, 'National Ballet of China', NULL, NULL, NULL, '舞团', '中国大陆', NULL, '天鹅湖,红色娘子军', '芭蕾,舞蹈', 'https://zh.wikipedia.org/wiki/中央芭蕾舞团', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(24, '中国歌剧舞剧院', '国家级艺术院团。', NULL, 1, 'China National Opera and Dance Drama Theater', NULL, NULL, NULL, '院团', '中国大陆', NULL, '孔子,李白,舞剧', '国风,舞蹈,舞剧', 'https://zh.wikipedia.org/wiki/中国歌剧舞剧院', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(25, '初音未来', '虚拟歌手。', NULL, 1, 'Hatsune Miku', NULL, NULL, NULL, '虚拟艺人', '日本', 'Crypton Future Media', 'Tell Your World,世界第一的公主殿下', '二次元,虚拟歌手,演唱会', 'https://zh.wikipedia.org/wiki/初音未来', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(26, '哔哩哔哩', '综合性视频社区及二次元文化品牌。', NULL, 1, 'Bilibili', NULL, NULL, NULL, '平台品牌', '中国大陆', NULL, 'Bilibili Macro Link,电竞嘉年华', '二次元,电竞,嘉年华', 'https://zh.wikipedia.org/wiki/哔哩哔哩', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(27, '山口胜平', '日本男性声优。', NULL, 1, 'Kappei Yamaguchi', '1965-05-23', 1965, 'male', '个人', '日本', NULL, '名侦探柯南,犬夜叉,海贼王', '声优,二次元,见面会', 'https://zh.wikipedia.org/wiki/山口胜平', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(28, '乌镇旅游股份有限公司', '乌镇景区运营与文化旅游机构。', NULL, 1, 'Wuzhen Tourism', NULL, NULL, NULL, '机构', '中国大陆', NULL, '乌镇戏剧节,江南水乡', '文旅,节庆,旅行', 'https://zh.wikipedia.org/wiki/乌镇镇', '公开百科资料整理；模拟档期非真实售票', 'normal'),
+(29, '成都非遗博览园', '非遗展示与体验园区。', NULL, 1, NULL, NULL, NULL, NULL, '机构', '中国大陆', NULL, '非遗体验,传统手作', '非遗,展览,文旅', NULL, '公开资料整理；模拟档期非真实售票', 'normal'),
+(30, '中国旅游集团', '综合性旅游产业集团。', NULL, 1, 'China Tourism Group', NULL, NULL, NULL, '机构', '中国大陆', NULL, '城市旅游展,目的地推广', '旅游,展览,文旅', 'https://zh.wikipedia.org/wiki/中国旅游集团', '公开百科资料整理；模拟档期非真实售票', 'normal');
 SELECT setval('artist_id_seq', 30, true);
 
 -- ========== 城市公共场馆 ==========
@@ -192,10 +193,10 @@ SELECT setval('ticket_group_id_seq', COALESCE((SELECT MAX(id) FROM ticket_group)
 
 -- ========== 活动 ==========
 INSERT INTO activity (id, category_id, artist_id, organizer_id, name, description, poster, status) VALUES
-(1, 1, 1, 2003, '林川「重逢在星河」巡回演唱会 北京站', '华语流行唱作人林川全新巡演，适合座位选座购票演示。', 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a', 1),
-(2, 1, 2, 2003, '银河电台「午夜频率」演唱会 上海站', '城市流行乐队银河电台年度专场。', 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f', 1),
-(3, 1, 3, 2003, '仲夏音乐节 广州站', '多舞台音乐节，分区域票档售卖。', 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea', 1),
-(4, 2, 4, 2005, '话剧《下一站，春天》北京站', '都市现实主义话剧，剧场座位图演示。', 'https://images.unsplash.com/photo-1503095396549-807759245b35', 1),
+(1, 1, 1, 2003, '周杰伦「嘉年华」世界巡回演唱会 北京站', '模拟档期演示数据，非真实售票；适合座位选座购票演示。', 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a', 1),
+(2, 1, 2, 2003, '五月天「回到那一天」巡回演唱会 上海站', '模拟档期演示数据，非真实售票；城市体育馆演唱会场景。', 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f', 1),
+(3, 1, 1, 2003, '华语音乐联合演唱会 广州站', '周杰伦、五月天、林俊杰联合阵容模拟演示，含站区票档。', 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea', 1),
+(4, 2, 4, 2005, '开心麻花爆笑舞台剧《乌龙山伯爵》北京站', '模拟档期演示数据，非真实售票；剧场座位图演示。', 'https://images.unsplash.com/photo-1503095396549-807759245b35', 1),
 (5, 2, 5, 2005, '经典歌剧《茶花女》上海站', '经典歌剧制作，剧院分区票档。', 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf', 1),
 (6, 2, 6, 2005, '开心制造喜剧夜 成都站', '轻松都市喜剧专场。', 'https://images.unsplash.com/photo-1527224857830-43a7acc85260', 1),
 (7, 3, 7, 2006, '成都猎鹰篮球主场揭幕战', '职业篮球主场赛事。', 'https://images.unsplash.com/photo-1546519638-68e109498ffc', 1),
@@ -225,6 +226,42 @@ INSERT INTO activity (id, category_id, artist_id, organizer_id, name, descriptio
 UPDATE activity SET seat_map_visibility = 'hidden' WHERE id IN (1, 2, 3);
 UPDATE activity SET seat_map_visibility = 'published' WHERE id IN (4, 5);
 SELECT setval('activity_id_seq', 30, true);
+
+INSERT INTO activity_artist (activity_id, artist_id, sort, is_primary, role_type, role_name, visibility, status) VALUES
+(1, 1, 1, TRUE, 'primary', '主艺人', 'public', 1),
+(1, 3, 2, FALSE, 'special_guest', '特邀嘉宾', 'hidden', 1),
+(2, 2, 1, TRUE, 'primary', '主艺人', 'public', 1),
+(3, 1, 1, FALSE, 'co_headliner', '联合主艺人', 'public', 1),
+(3, 2, 2, FALSE, 'co_headliner', '联合主艺人', 'public', 1),
+(3, 3, 3, FALSE, 'co_headliner', '联合主艺人', 'public', 1),
+(4, 4, 1, TRUE, 'primary', '主演团队', 'public', 1),
+(5, 5, 1, TRUE, 'primary', '演出院团', 'public', 1),
+(6, 6, 1, TRUE, 'primary', '导演团队', 'public', 1),
+(7, 7, 1, TRUE, 'primary', '明星球员', 'public', 1),
+(8, 8, 1, TRUE, 'primary', '赛事品牌', 'public', 1),
+(9, 9, 1, TRUE, 'primary', '赛事组织', 'public', 1),
+(10, 10, 1, TRUE, 'primary', '演出院团', 'public', 1),
+(11, 11, 1, TRUE, 'primary', '科普团队', 'public', 1),
+(12, 12, 1, TRUE, 'primary', '演艺团队', 'public', 1),
+(13, 13, 1, TRUE, 'primary', '艺术团队', 'public', 1),
+(14, 14, 1, TRUE, 'primary', '文化机构', 'public', 1),
+(15, 15, 1, TRUE, 'primary', '策展机构', 'public', 1),
+(16, 16, 1, TRUE, 'primary', '演奏乐团', 'public', 1),
+(17, 17, 1, TRUE, 'primary', '演奏乐团', 'public', 1),
+(18, 18, 1, TRUE, 'primary', '主艺人', 'public', 1),
+(19, 19, 1, TRUE, 'primary', '演出团体', 'public', 1),
+(20, 20, 1, TRUE, 'primary', '演出团体', 'public', 1),
+(21, 21, 1, TRUE, 'primary', '喜剧厂牌', 'public', 1),
+(22, 22, 1, TRUE, 'primary', '舞团', 'public', 1),
+(23, 23, 1, TRUE, 'primary', '舞团', 'public', 1),
+(24, 24, 1, TRUE, 'primary', '演出院团', 'public', 1),
+(25, 25, 1, TRUE, 'primary', '虚拟艺人', 'public', 1),
+(26, 26, 1, TRUE, 'primary', '活动品牌', 'public', 1),
+(27, 27, 1, TRUE, 'primary', '嘉宾声优', 'public', 1),
+(28, 28, 1, TRUE, 'primary', '文旅机构', 'public', 1),
+(29, 29, 1, TRUE, 'primary', '展览机构', 'public', 1),
+(30, 30, 1, TRUE, 'primary', '展览机构', 'public', 1);
+SELECT setval('activity_artist_id_seq', COALESCE((SELECT MAX(id) FROM activity_artist), 1), true);
 
 -- ========== 未来场次；同一场馆时间错开 ==========
 INSERT INTO session (id, activity_id, venue_id, start_time, end_time, status) VALUES
