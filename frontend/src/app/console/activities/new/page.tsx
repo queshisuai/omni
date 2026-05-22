@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, listVenueSeatLayoutTemplates, updateActivitySeatLayout } from '@/lib/api'
+import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, listVenueSeatLayoutTemplates, updateActivitySeatLayout, uploadTicketAsset } from '@/lib/api'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
+import { LocalFileUpload } from '@/components/LocalFileUpload'
 import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatLayoutTemplateCandidateVO, UserRole, ActivityArtistVO } from '@/types/api'
 
 type SessionDraft = {
@@ -263,8 +264,20 @@ export default function NewActivityPage() {
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268] resize-none" placeholder="描述活动内容..." />
             </div>
             <div className="mb-4">
-              <label className="block text-[13px] font-medium text-[#333] mb-1.5">海报URL</label>
-              <input value={poster} onChange={e => setPoster(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="https://..." />
+              <LocalFileUpload
+                label="活动海报"
+                value={poster}
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                uploading={submitting}
+                onUpload={async (file) => {
+                  const u = getUser()
+                  if (!u?.userId) throw new Error('请先登录')
+                  const asset = await uploadTicketAsset({ userId: u.userId, bizType: 'activity-poster', file })
+                  return asset.publicUrl
+                }}
+                onChange={setPoster}
+                hint="支持 JPG、PNG、WEBP、GIF，上传后自动写入海报地址。"
+              />
             </div>
             <div className="mb-4">
               <label className="block text-[13px] font-medium text-[#333] mb-1.5">个人限购</label>

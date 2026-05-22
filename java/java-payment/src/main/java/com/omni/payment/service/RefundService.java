@@ -25,6 +25,7 @@ import com.omni.payment.entity.Payment;
 import com.omni.payment.entity.RefundRequest;
 import com.omni.payment.mapper.PaymentMapper;
 import com.omni.payment.mapper.RefundRequestMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -72,13 +73,14 @@ public class RefundService {
     private final String internalApiToken;
     private final Supplier<AlipayClient> alipayClientFactory;
 
+    @Autowired
     public RefundService(AlipayProperties alipayProperties,
-                         OrderClient orderClient,
-                         RefundRequestMapper refundRequestMapper,
-                         PaymentMapper paymentMapper,
-                         UserInternalClient userInternalClient,
-                         TicketRefundReviewInternalClient ticketRefundReviewInternalClient,
-                         @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+                          OrderClient orderClient,
+                          RefundRequestMapper refundRequestMapper,
+                          PaymentMapper paymentMapper,
+                          UserInternalClient userInternalClient,
+                          TicketRefundReviewInternalClient ticketRefundReviewInternalClient,
+                          @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this(alipayProperties, orderClient, refundRequestMapper, paymentMapper,
                 userInternalClient, ticketRefundReviewInternalClient, internalApiToken, null);
     }

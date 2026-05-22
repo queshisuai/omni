@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { getAdminActivity, listCategories, updateAdminActivity } from '@/lib/api'
+import { getAdminActivity, listCategories, updateAdminActivity, uploadTicketAsset } from '@/lib/api'
 import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
+import { LocalFileUpload } from '@/components/LocalFileUpload'
 import type { ActivityArtistVO, CategoryVO, UserRole } from '@/types/api'
 
 type ActivityForm = {
@@ -186,10 +187,19 @@ export default function EditActivityPage() {
 
           <ActivityArtistSelector value={form.artists} onChange={artists => setForm({ ...form, artists })} />
 
-          <label className="block text-[13px] font-medium text-[#333]">
-            海报 URL
-            <input value={form.poster} onChange={event => setForm({ ...form, poster: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="https://..." />
-          </label>
+          <LocalFileUpload
+            label="活动海报"
+            value={form.poster}
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            uploading={saving}
+            onUpload={async (file) => {
+              if (!userId) throw new Error('请先登录')
+              const asset = await uploadTicketAsset({ userId, bizType: 'activity-poster', file })
+              return asset.publicUrl
+            }}
+            onChange={(poster) => setForm({ ...form, poster })}
+            hint="支持 JPG、PNG、WEBP、GIF，上传后自动写入海报地址。"
+          />
 
           <label className="block text-[13px] font-medium text-[#333]">
             描述

@@ -19,6 +19,7 @@ export function Header() {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [nickname, setNickname] = useState("");
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [searchText, setSearchText] = useState("");
   const [currentCity, setCurrentCity] = useState("北京");
@@ -40,9 +41,11 @@ export function Header() {
       if (auth) {
         const user = getUser()
         setNickname(user?.nickname || user?.phone || "")
+        setAvatar(user?.avatar || null)
         setRole(user?.role || null)
       } else {
         setNickname("")
+        setAvatar(null)
         setRole(null)
       }
     }
@@ -200,7 +203,11 @@ export function Header() {
               onClick={() => router.push("/orders")}
               className="flex items-center gap-1 text-sm text-[#111] hover:text-[#ff1268] bg-transparent border-none cursor-pointer outline-none h-full"
             >
-              <User className="w-5 h-5" />
+              {avatar ? (
+                <img src={avatar} alt={nickname || '用户头像'} className="h-8 w-8 rounded-full object-cover" />
+              ) : (
+                <User className="w-5 h-5" />
+              )}
               <span className="max-w-[80px] truncate">{nickname}</span>
               <ChevronDown className="w-3 h-3" />
             </button>
