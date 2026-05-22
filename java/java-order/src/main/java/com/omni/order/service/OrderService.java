@@ -472,6 +472,9 @@ public class OrderService {
         if (limit == null) {
             return;
         }
+        if (quote.getActivityId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "活动限购信息不完整");
+        }
         Integer existing = orderMapper.sumEffectiveQuantityByUserAndActivity(userId, quote.getActivityId());
         int effective = existing == null ? 0 : existing;
         if (effective + quantity > limit) {

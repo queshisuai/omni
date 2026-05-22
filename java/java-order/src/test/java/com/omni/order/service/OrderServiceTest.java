@@ -8,6 +8,7 @@ import com.omni.order.client.UserInternalClient;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.TicketSalesLockRequest;
 import com.omni.order.dto.TicketSalesQuoteResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.mapper.OrderMapper;
@@ -94,10 +95,79 @@ class OrderServiceTest {
         verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
     }
 
+    @Test
+    void createOrderCountsPendingOrdersAgainstActivityLimit() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setQuantity(2);
+
+        TicketSalesQuoteResponse quote = quoteWithLimit(2);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(2);
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        assertEquals("超过本活动个人限购数量", ex.getMessage());
+        verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+    }
+
+    @Test
+    void createOrderDoesNotCheckQuantityWhenActivityHasNoPerUserLimit() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setQuantity(5);
+
+        TicketSalesQuoteResponse quote = quoteWithoutLimit(5);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), anyString())).thenReturn(Result.success());
+
+        service.createOrder(request);
+
+        verify(orderMapper, never()).sumEffectiveQuantityByUserAndActivity(any(), any());
+        verify(orderMapper).insert(any(Order.class));
+    }
+
+    @Test
+    void createOrderRejectsLimitQuoteWithoutActivityId() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setQuantity(1);
+
+        TicketSalesQuoteResponse quote = quoteWithLimit(1);
+        quote.setActivityId(null);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        assertEquals("活动限购信息不完整", ex.getMessage());
+        verify(orderMapper, never()).sumEffectiveQuantityByUserAndActivity(any(), any());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+    }
+
     private TicketSalesQuoteResponse quoteWithLimit(int quantity) {
         TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
         quote.setActivityId(100L);
         quote.setPerUserLimit(3);
+        quote.setUnitPrice(new BigDecimal("100.00"));
+        quote.setQuantity(quantity);
+        return quote;
+    }
+
+    private TicketSalesQuoteResponse quoteWithoutLimit(int quantity) {
+        TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
+        quote.setActivityId(100L);
         quote.setUnitPrice(new BigDecimal("100.00"));
         quote.setQuantity(quantity);
         return quote;

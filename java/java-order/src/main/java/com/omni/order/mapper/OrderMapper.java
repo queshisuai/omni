@@ -50,7 +50,7 @@ public interface OrderMapper extends BaseMapper<Order> {
             "JOIN order_snapshot os ON os.order_id = o.id " +
             "WHERE o.user_id = #{userId} " +
             "AND os.activity_id = #{activityId} " +
-            "AND o.status = 2")
+            "AND o.status IN (1, 2)")
     Integer sumEffectiveQuantityByUserAndActivity(@Param("userId") Long userId, @Param("activityId") Long activityId);
 
     @Update("UPDATE \"order\" SET status = #{nextStatus}, update_time = CURRENT_TIMESTAMP WHERE id = #{id} AND status = #{expectedStatus}")
