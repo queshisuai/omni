@@ -95,7 +95,10 @@
       "Bash(taskkill //PID 30748 //F)",
       "Bash(PGPASSWORD=123456 \"C:/Program Files/PostgreSQL/17/bin/psql\" -U postgres -d damai_ticket -c \"UPDATE \\\\\"user\\\\\" SET role='admin' WHERE id=1002; INSERT INTO \\\\\"user\\\\\" \\(id, phone, password, nickname, role, organizer_name\\) VALUES \\(1000, '13800000000', 'test', '平台管理员', 'admin', '平台'\\) ON CONFLICT DO NOTHING;\")",
       "Bash(PGPASSWORD=123456 \"C:/Program Files/PostgreSQL/17/bin/psql\" -U postgres -d damai_ticket -c \"INSERT INTO \\\\\"user\\\\\" \\(id, phone, password, nickname, role, organizer_name\\) VALUES \\(1000, '13800000000', 'test', '平台管理员', 'admin', '平台'\\) ON CONFLICT DO NOTHING;\")",
-      "Bash(PGPASSWORD=123456 \"C:/Program Files/PostgreSQL/17/bin/psql\" -U postgres -d damai_ticket -c \"UPDATE \\\\\"user\\\\\" SET role='admin', organizer_name='Platform' WHERE phone='13800000001'; UPDATE \\\\\"user\\\\\" SET role='organizer', organizer_name='Beijing Music' WHERE phone='13800000002';\")"
+      "Bash(PGPASSWORD=123456 \"C:/Program Files/PostgreSQL/17/bin/psql\" -U postgres -d damai_ticket -c \"UPDATE \\\\\"user\\\\\" SET role='admin', organizer_name='Platform' WHERE phone='13800000001'; UPDATE \\\\\"user\\\\\" SET role='organizer', organizer_name='Beijing Music' WHERE phone='13800000002';\")",
+      "Bash(grep *)",
+      "Bash(pnpm typecheck *)",
+      "Bash(mvn -q -pl . -am compile -DskipTests)"
     ]
   }
 }
