@@ -11,21 +11,13 @@ import type { NotificationVO } from '@/types/api'
 
 const TYPE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
   IN_APP: { label: '站内消息', color: '#ff1268', bg: '#fff0f5' },
-  CAST_CHANGE: { label: '阵容变更', color: '#b91c1c', bg: '#fef2f2' },
-  RISK_SUSPENDED: { label: '风险停售', color: '#b91c1c', bg: '#fef2f2' },
-  RISK_RESUMED: { label: '恢复售票', color: '#16a34a', bg: '#f0fdf4' },
   SMS: { label: '短信', color: '#2563eb', bg: '#eff6ff' },
   EMAIL: { label: '邮件', color: '#2563eb', bg: '#eff6ff' },
 }
 
-function detectType(notification: NotificationVO): string {
+function getTypeMeta(notification: NotificationVO) {
   const raw = (notification.type || 'IN_APP').toUpperCase()
-  if (raw !== 'IN_APP') return raw
-  const content = notification.content || ''
-  if (content.includes('阵容变更') || content.includes('阵容调整')) return 'CAST_CHANGE'
-  if (content.includes('风险停售') || content.includes('暂停售票')) return 'RISK_SUSPENDED'
-  if (content.includes('恢复售票')) return 'RISK_RESUMED'
-  return 'IN_APP'
+  return TYPE_LABEL[raw] || TYPE_LABEL.IN_APP
 }
 
 function formatTime(value?: string | null): string {
@@ -41,7 +33,6 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<NotificationVO[]>([])
-  const [filter, setFilter] = useState<'all' | 'risk'>('all')
   const [userId, setUserId] = useState(0)
   const [readAt, setReadAt] = useState(0)
   const [hiddenIds, setHiddenIds] = useState<number[]>([])
@@ -71,11 +62,6 @@ export default function NotificationsPage() {
   }, [router])
 
   const visibleNotifications = filterVisibleNotifications(notifications, hiddenIds)
-  const visible = visibleNotifications.filter((item) => {
-    if (filter === 'all') return true
-    const type = detectType(item)
-    return type === 'CAST_CHANGE' || type === 'RISK_SUSPENDED' || type === 'RISK_RESUMED'
-  })
 
   const unreadCount = visibleNotifications.reduce((acc, item) => acc + (isNotificationUnread(item, readAt) ? 1 : 0), 0)
   const readCount = getReadNotificationIds(visibleNotifications, readAt).length
@@ -125,41 +111,18 @@ export default function NotificationsPage() {
           </div>
         </div>
 
-        <div className="flex gap-0 mb-6 border-b border-[#e5e5e5]">
-          {(
-            [
-              { key: 'all', label: '全部消息' },
-              { key: 'risk', label: '风险与阵容变更' },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setFilter(tab.key)}
-              className="cursor-pointer border-none bg-transparent outline-none px-6 py-3 text-[14px] transition-colors border-b-2 -mb-[1px]"
-              style={{
-                color: filter === tab.key ? '#ff1268' : '#666',
-                borderBottomColor: filter === tab.key ? '#ff1268' : 'transparent',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
         {loading && <div className="text-[14px] text-[#666]">加载中...</div>}
         {error && <div className="rounded bg-[#fef2f2] px-4 py-3 text-[14px] text-[#b91c1c]">{error}</div>}
 
-        {!loading && !error && visible.length === 0 && (
+        {!loading && !error && visibleNotifications.length === 0 && (
           <div className="rounded bg-white border border-[#eee] px-6 py-10 text-center text-[14px] text-[#999]">
             暂无消息
           </div>
         )}
 
         <div className="space-y-3">
-          {visible.map((item) => {
-            const type = detectType(item)
-            const meta = TYPE_LABEL[type] || TYPE_LABEL.IN_APP
-            const isCastChange = type === 'CAST_CHANGE'
+          {visibleNotifications.map((item) => {
+            const meta = getTypeMeta(item)
             const unread = isNotificationUnread(item, readAt)
             return (
               <div key={item.id} className="rounded border border-[#eee] bg-white px-4 py-4">
@@ -178,11 +141,6 @@ export default function NotificationsPage() {
                   )}
                 </div>
                 <div className="mt-2 whitespace-pre-line text-[14px] leading-6 text-[#333]">{item.content}</div>
-                {isCastChange && item.orderId && (
-                  <div className="mt-3 rounded bg-[#fff7fa] px-3 py-2 text-[12px] leading-5 text-[#b91c1c]">
-                    如阵容调整影响您的观演决策，可在「订单管理」中选择「阵容变更专属退款」走加速通道。
-                  </div>
-                )}
               </div>
             )
           })}

@@ -257,12 +257,6 @@ export function Header() {
                   >
                     订单管理
                   </button>
-                  <button
-                    onClick={() => { setShowUserDropdown(false); router.push("/notifications") }}
-                    className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
-                  >
-                    站内消息
-                  </button>
                   {(role === 'admin' || role === 'organizer') && (
                     <button
                       onClick={() => { setShowUserDropdown(false); router.push("/console") }}
