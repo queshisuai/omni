@@ -51,6 +51,7 @@ export default function TourDetailPage() {
   const [error, setError] = useState('')
   const [loginRequired, setLoginRequired] = useState(false)
   const [publishForms, setPublishForms] = useState<Record<number, PublishForm>>({})
+  const [publishErrors, setPublishErrors] = useState<Record<number, string>>({})
   const [publishingStationId, setPublishingStationId] = useState<number | null>(null)
 
   useEffect(() => {
@@ -92,17 +93,26 @@ export default function TourDetailPage() {
     }
     const form = publishForms[stationId]
     if (!form?.startTime || !form.endTime) {
-      setError('请填写城市站发布场次时间')
+      setPublishErrors(prev => ({ ...prev, [stationId]: '请填写城市站发布场次时间' }))
       return
     }
-    setError('')
+    const limitText = form.perUserLimit.trim()
+    if (limitText && (!/^\d+$/.test(limitText) || Number(limitText) <= 0)) {
+      setPublishErrors(prev => ({ ...prev, [stationId]: '个人限购张数必须为正整数' }))
+      return
+    }
+    setPublishErrors(prev => {
+      const next = { ...prev }
+      delete next[stationId]
+      return next
+    })
     setPublishingStationId(stationId)
     try {
       await publishStation(stationId, {
         userId: user.userId,
         startTime: form.startTime,
         endTime: form.endTime,
-        perUserLimit: form.perUserLimit.trim() ? Number(form.perUserLimit) : null,
+        perUserLimit: limitText ? Number(limitText) : null,
       })
       const nextDetail = await getAdminTourDetail(user.userId, tourId)
       setDetail(nextDetail)
@@ -112,7 +122,7 @@ export default function TourDetailPage() {
         return next
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '发布失败')
+      setPublishErrors(prev => ({ ...prev, [stationId]: err instanceof Error ? err.message : '发布失败' }))
     } finally {
       setPublishingStationId(null)
     }
@@ -184,6 +194,7 @@ export default function TourDetailPage() {
           <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">暂无城市站点，先新增一个站点草稿。</div>
         ) : stationDetails.map(item => {
           const publishForm = publishForms[item.station.id] || { startTime: '', endTime: '', perUserLimit: '' }
+          const publishError = publishErrors[item.station.id]
           const canPublish = item.station.publishStatus !== 'published' && item.station.venueApplicationId != null
           return <div key={item.station.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -218,6 +229,7 @@ export default function TourDetailPage() {
                   </label>
                 </div>
                 <p className="mt-2 text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</p>
+                {publishError && <div className="mt-3 rounded-lg bg-[#fff0f3] px-3 py-2 text-[13px] text-[#ff4d4f]">{publishError}</div>}
                 <button onClick={() => handlePublishStation(item.station.id)} disabled={publishingStationId === item.station.id} className="mt-3 rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-60">
                   {publishingStationId === item.station.id ? '发布中...' : '发布城市站'}
                 </button>
