@@ -176,9 +176,17 @@ public class AdminController {
     }
 
     @PostMapping("/assets")
-    public Result<AssetUploadResponse> uploadAsset(@RequestParam Long userId,
+    public Result<AssetUploadResponse> uploadAsset(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                                   @RequestParam Long userId,
                                                    @RequestParam String bizType,
                                                    @RequestParam MultipartFile file) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        if (!operatorId.equals(userId)) {
+            return Result.fail(ResultCode.FORBIDDEN);
+        }
         checkRole(userId);
         return Result.success(ticketAssetService.upload(userId, bizType, file));
     }

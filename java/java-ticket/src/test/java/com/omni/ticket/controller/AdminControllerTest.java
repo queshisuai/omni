@@ -508,12 +508,32 @@ class AdminControllerTest {
         response.setPublicUrl("/uploads/ticket/activity-poster/2026/05/a.png");
         when(ticketAssetService.upload(2003L, "activity-poster", file)).thenReturn(response);
 
-        Result<AssetUploadResponse> result = controller.uploadAsset(2003L, "activity-poster", file);
+        Result<AssetUploadResponse> result = controller.uploadAsset(
+                "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer"),
+                2003L,
+                "activity-poster",
+                file);
 
         assertEquals(200, result.getCode());
         assertEquals("/uploads/ticket/activity-poster/2026/05/a.png", result.getData().getPublicUrl());
         verify(userAccessService).requireAdminOrOrganizerRole(2003L);
         verify(ticketAssetService).upload(2003L, "activity-poster", file);
+    }
+
+    @Test
+    void uploadAssetRejectsMismatchedTokenUserId() {
+        AdminController controller = controller();
+        MockMultipartFile file = new MockMultipartFile("file", "poster.png", "image/png", new byte[] {1, 2, 3});
+
+        Result<AssetUploadResponse> result = controller.uploadAsset(
+                "Bearer " + JwtUtil.generateToken(2002L, "13800000001", "admin"),
+                2003L,
+                "activity-poster",
+                file);
+
+        assertEquals(403, result.getCode());
+        verify(userAccessService, never()).requireAdminOrOrganizerRole(any());
+        verify(ticketAssetService, never()).upload(any(), any(), any());
     }
 
     @Test
