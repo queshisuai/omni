@@ -17,6 +17,7 @@ public class TicketSalesQuoteResponse {
     private LocalDateTime sessionTime;
     private Long tourId;
     private Long stationId;
+    private Integer perUserLimit;
     private String seatLabels;
 
     public Long getSessionId() { return sessionId; }
@@ -45,6 +46,8 @@ public class TicketSalesQuoteResponse {
     public void setTourId(Long tourId) { this.tourId = tourId; }
     public Long getStationId() { return stationId; }
     public void setStationId(Long stationId) { this.stationId = stationId; }
+    public Integer getPerUserLimit() { return perUserLimit; }
+    public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
     public String getSeatLabels() { return seatLabels; }
     public void setSeatLabels(String seatLabels) { this.seatLabels = seatLabels; }
 }

@@ -210,6 +210,7 @@ public class TicketSalesInternalService {
             response.setActivityPoster(activity.getPoster());
             response.setTourId(activity.getTourId());
             response.setStationId(activity.getStationId());
+            response.setPerUserLimit(activity.getPerUserLimit());
         }
         Venue venue = venueMapper.selectById(session.getVenueId());
         if (venue != null) {

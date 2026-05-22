@@ -299,6 +299,45 @@ class TicketSalesInternalServiceTest {
         assertEquals("国家体育馆", response.getVenueName());
     }
 
+    @Test
+    void quoteReturnsPerUserLimitFromActivity() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionMapper sessionMapper = mock(SessionMapper.class);
+        ActivityMapper activityMapper = mock(ActivityMapper.class);
+        VenueMapper venueMapper = mock(VenueMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = new TicketSalesInternalService(
+                ticketTypeMapper, sessionMapper, activityMapper, venueMapper, sessionSeatMapper);
+
+        TicketType ticketType = new TicketType();
+        ticketType.setId(3001L);
+        ticketType.setSessionId(2001L);
+        ticketType.setName("看台");
+        ticketType.setPrice(new BigDecimal("380.00"));
+        ticketType.setStatus(1);
+        when(ticketTypeMapper.selectById(3001L)).thenReturn(ticketType);
+
+        Session session = new Session();
+        session.setId(2001L);
+        session.setActivityId(1001L);
+        when(sessionMapper.selectById(2001L)).thenReturn(session);
+
+        Activity activity = new Activity();
+        activity.setId(1001L);
+        activity.setName("南京站");
+        activity.setPerUserLimit(2);
+        when(activityMapper.selectById(1001L)).thenReturn(activity);
+
+        TicketSalesQuoteRequest request = new TicketSalesQuoteRequest();
+        request.setSessionId(2001L);
+        request.setTicketTypeId(3001L);
+        request.setQuantity(1);
+
+        TicketSalesQuoteResponse response = service.quote(request);
+
+        assertEquals(2, response.getPerUserLimit());
+    }
+
     private TicketSalesInternalService service(TicketTypeMapper ticketTypeMapper, SessionSeatMapper sessionSeatMapper) {
         return new TicketSalesInternalService(
                 ticketTypeMapper, mock(SessionMapper.class), mock(ActivityMapper.class),
