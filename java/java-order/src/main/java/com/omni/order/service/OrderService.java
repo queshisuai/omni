@@ -282,6 +282,8 @@ public class OrderService {
         refundTickets(order, selectedSeats, quantity);
         if (!selectedSeats.isEmpty()) {
             orderSeatMapper.updateStatusByIds(selectedSeats.stream().map(OrderSeat::getId).collect(Collectors.toList()), ORDER_SEAT_REFUNDED);
+        } else {
+            recordQuantityOnlyRefund(order, quantity);
         }
 
         if (refunded + quantity >= order.getQuantity()) {
@@ -379,6 +381,20 @@ public class OrderService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "可退款票数不足");
         }
         return selected;
+    }
+
+    private void recordQuantityOnlyRefund(Order order, int quantity) {
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < quantity; i++) {
+            OrderSeat refundRecord = new OrderSeat();
+            refundRecord.setOrderId(order.getId());
+            refundRecord.setSessionId(order.getSessionId());
+            refundRecord.setTicketTypeId(order.getTicketTypeId());
+            refundRecord.setStatus(ORDER_SEAT_REFUNDED);
+            refundRecord.setCreateTime(now);
+            refundRecord.setUpdateTime(now);
+            orderSeatMapper.insert(refundRecord);
+        }
     }
 
     public Long countPaidOrdersBySessions(List<Long> sessionIds) {

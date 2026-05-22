@@ -137,6 +137,61 @@ class OrderPartialRefundServiceTest {
         assertEquals(900L, response.getSeats().get(0).getOrderSeatId());
     }
 
+    @Test
+    void quantityOnlyRefundPersistsProgressAndReducesRefundOptions() {
+        Order order = paidOrder(10L, 2);
+        when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of());
+        when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(0, 1);
+        when(ticketSalesInternalClient.refund(any(), anyString())).thenReturn(Result.success());
+
+        MarkPartialRefundedRequest request = new MarkPartialRefundedRequest();
+        request.setQuantity(1);
+
+        service.markPartialRefunded(10L, request);
+        RefundOptionsResponse response = service.getRefundOptions(10L);
+
+        assertEquals(1, response.getRefundedQuantity());
+        assertEquals(1, response.getRefundableQuantity());
+        verify(orderSeatMapper).insert(any(OrderSeat.class));
+    }
+
+    @Test
+    void quantityOnlyRefundMarksOrderRefundedWhenAllTicketsRefunded() {
+        Order order = paidOrder(10L, 2);
+        when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of());
+        when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(1);
+        when(ticketSalesInternalClient.refund(any(), anyString())).thenReturn(Result.success());
+
+        MarkPartialRefundedRequest request = new MarkPartialRefundedRequest();
+        request.setQuantity(1);
+
+        Order result = service.markPartialRefunded(10L, request);
+
+        assertEquals(OrderService.STATUS_REFUNDED, result.getStatus());
+        verify(orderSeatMapper).insert(any(OrderSeat.class));
+        verify(orderMapper).updateById(any(Order.class));
+    }
+
+    @Test
+    void quantityOnlyRefundRejectsQuantityMoreThanRemaining() {
+        Order order = paidOrder(10L, 2);
+        when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of());
+        when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(1);
+
+        MarkPartialRefundedRequest request = new MarkPartialRefundedRequest();
+        request.setQuantity(2);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.markPartialRefunded(10L, request));
+
+        assertEquals("可退款票数不足", ex.getMessage());
+        verify(orderSeatMapper, never()).insert(any(OrderSeat.class));
+        verify(ticketSalesInternalClient, never()).refund(any(), anyString());
+    }
+
     private Order paidOrder(Long id, int quantity) {
         Order order = new Order();
         order.setId(id);
