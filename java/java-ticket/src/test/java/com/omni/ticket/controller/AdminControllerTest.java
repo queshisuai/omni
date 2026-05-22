@@ -10,6 +10,7 @@ import com.omni.ticket.dto.ActivityArtistDto;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
+import com.omni.ticket.dto.AssetUploadResponse;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
@@ -35,6 +36,7 @@ import com.omni.ticket.service.SessionAdminService;
 import com.omni.ticket.service.SessionSeatLayoutService;
 import com.omni.ticket.service.SessionSeatProtectionService;
 import com.omni.ticket.service.SessionSeatService;
+import com.omni.ticket.service.TicketAssetService;
 import com.omni.ticket.service.TicketTypeAreaService;
 import com.omni.ticket.service.TicketTypeStockRecalculationService;
 import com.omni.ticket.service.TourStationService;
@@ -44,6 +46,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -107,6 +110,8 @@ class AdminControllerTest {
     private SessionSeatProtectionService sessionSeatProtectionService;
     @Mock
     private TicketTypeStockRecalculationService stockRecalculationService;
+    @Mock
+    private TicketAssetService ticketAssetService;
 
     @Test
     void deactivateOrganizerUsesAuthorizationTokenAsOperator() {
@@ -494,6 +499,24 @@ class AdminControllerTest {
     }
 
     @Test
+    void uploadAssetRequiresAdminOrOrganizerAndDelegatesToService() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        MockMultipartFile file = new MockMultipartFile("file", "poster.png", "image/png", new byte[] {1, 2, 3});
+        AssetUploadResponse response = new AssetUploadResponse();
+        response.setBizType("activity-poster");
+        response.setPublicUrl("/uploads/ticket/activity-poster/2026/05/a.png");
+        when(ticketAssetService.upload(2003L, "activity-poster", file)).thenReturn(response);
+
+        Result<AssetUploadResponse> result = controller.uploadAsset(2003L, "activity-poster", file);
+
+        assertEquals(200, result.getCode());
+        assertEquals("/uploads/ticket/activity-poster/2026/05/a.png", result.getData().getPublicUrl());
+        verify(userAccessService).requireAdminOrOrganizerRole(2003L);
+        verify(ticketAssetService).upload(2003L, "activity-poster", file);
+    }
+
+    @Test
     void submitArtistDelegatesToGovernanceService() {
         AdminController controller = controller();
         ArtistSubmissionRequest request = new ArtistSubmissionRequest();
@@ -560,6 +583,6 @@ class AdminControllerTest {
     }
 
     private AdminController controller() {
-        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService);
+        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService);
     }
 }

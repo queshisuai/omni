@@ -16,6 +16,7 @@ import com.omni.ticket.dto.ActivityRiskCaseResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
+import com.omni.ticket.dto.AssetUploadResponse;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSearchResponse;
@@ -51,6 +52,7 @@ import com.omni.ticket.service.SessionSeatService;
 import com.omni.ticket.service.TicketTypeAreaService;
 import com.omni.ticket.service.TicketTypeStockRecalculationService;
 import com.omni.ticket.service.TourStationService;
+import com.omni.ticket.service.TicketAssetService;
 import com.omni.ticket.service.VenueApplicationService;
 import com.omni.ticket.service.OrderAdminQueryService;
 import io.jsonwebtoken.Claims;
@@ -58,6 +60,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -104,6 +107,7 @@ public class AdminController {
     private final ArtistAdminService artistAdminService;
     private final ArtistGovernanceService artistGovernanceService;
     private final ActivityRiskResponseService activityRiskResponseService;
+    private final TicketAssetService ticketAssetService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -118,7 +122,7 @@ public class AdminController {
                                  VenueDefaultLayoutService venueDefaultLayoutService) {
         this(activityMapper, null, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
-                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null);
+                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Autowired
@@ -139,10 +143,11 @@ public class AdminController {
                                     OrderAdminQueryService orderAdminQueryService,
                                      SessionSeatProtectionService sessionSeatProtectionService,
                                      TicketTypeStockRecalculationService stockRecalculationService,
-                                     ActivityArtistService activityArtistService,
-                                     ArtistAdminService artistAdminService,
-                                     ArtistGovernanceService artistGovernanceService,
-                                     ActivityRiskResponseService activityRiskResponseService) {
+                                      ActivityArtistService activityArtistService,
+                                      ArtistAdminService artistAdminService,
+                                      ArtistGovernanceService artistGovernanceService,
+                                      ActivityRiskResponseService activityRiskResponseService,
+                                      TicketAssetService ticketAssetService) {
         this.activityMapper = activityMapper;
         this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
@@ -167,6 +172,15 @@ public class AdminController {
         this.artistAdminService = artistAdminService;
         this.artistGovernanceService = artistGovernanceService;
         this.activityRiskResponseService = activityRiskResponseService;
+        this.ticketAssetService = ticketAssetService;
+    }
+
+    @PostMapping("/assets")
+    public Result<AssetUploadResponse> uploadAsset(@RequestParam Long userId,
+                                                   @RequestParam String bizType,
+                                                   @RequestParam MultipartFile file) {
+        checkRole(userId);
+        return Result.success(ticketAssetService.upload(userId, bizType, file));
     }
 
     @GetMapping("/artists/search")
