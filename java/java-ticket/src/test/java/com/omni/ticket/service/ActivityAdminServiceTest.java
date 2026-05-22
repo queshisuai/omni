@@ -13,10 +13,14 @@ import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.ActivityArtist;
+import com.omni.ticket.entity.Artist;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.ActivityArtistMapper;
+import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.service.UserAccessService;
@@ -53,6 +57,10 @@ class ActivityAdminServiceTest {
     private OrderInternalClient orderInternalClient;
     @Mock
     private PaymentInternalClient paymentInternalClient;
+    @Mock
+    private ActivityArtistMapper activityArtistMapper;
+    @Mock
+    private ArtistMapper artistMapper;
 
     private ActivityAdminService service;
 
@@ -65,6 +73,8 @@ class ActivityAdminServiceTest {
                 userAccessService,
                 orderInternalClient,
                 paymentInternalClient,
+                activityArtistMapper,
+                artistMapper,
                 "test-token");
     }
 
@@ -342,6 +352,85 @@ class ActivityAdminServiceTest {
         verify(activityMapper, never()).updateById(any());
     }
 
+    @Test
+    void publishActivityRejectsWhenNoLineupArtist() {
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
+        when(activityArtistMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(1);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.updateActivityStatus(10L, request));
+
+        assertEquals("上架活动前至少需要一个已审核艺人", exception.getMessage());
+        verify(activityMapper, never()).updateById(any());
+    }
+
+    @Test
+    void publishActivityRejectsPendingLineupArtist() {
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
+        when(activityArtistMapper.selectList(any())).thenReturn(Collections.singletonList(activityArtist(501L)));
+        when(artistMapper.selectBatchIds(any())).thenReturn(Collections.singletonList(artist(501L, "pending", "normal", 1)));
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(1);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.updateActivityStatus(10L, request));
+
+        assertEquals("阵容中存在未审核艺人，请先完成艺人档案审核", exception.getMessage());
+        verify(activityMapper, never()).updateById(any());
+    }
+
+    @Test
+    void publishActivityRejectsRiskyLineupArtist() {
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
+        when(activityArtistMapper.selectList(any())).thenReturn(Collections.singletonList(activityArtist(501L)));
+        when(artistMapper.selectBatchIds(any())).thenReturn(Collections.singletonList(artist(501L, "approved", "risky", 1)));
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(1);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.updateActivityStatus(10L, request));
+
+        assertEquals("阵容中存在风险艺人，暂不能上架", exception.getMessage());
+        verify(activityMapper, never()).updateById(any());
+    }
+
+    @Test
+    void publishActivityAllowsApprovedNormalLineupArtist() {
+        Activity activity = activity(10L, 2003L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
+        when(activityArtistMapper.selectList(any())).thenReturn(Collections.singletonList(activityArtist(501L)));
+        when(artistMapper.selectBatchIds(any())).thenReturn(Collections.singletonList(artist(501L, "approved", "normal", 1)));
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(1);
+
+        service.updateActivityStatus(10L, request);
+
+        assertEquals(1, activity.getStatus());
+        verify(activityMapper).updateById(activity);
+    }
+
     private Activity activity(Long id, Long organizerId) {
         Activity activity = new Activity();
         activity.setId(id);
@@ -372,6 +461,24 @@ class ActivityAdminServiceTest {
         ticketType.setSessionId(sessionId);
         ticketType.setStatus(1);
         return ticketType;
+    }
+
+    private ActivityArtist activityArtist(Long artistId) {
+        ActivityArtist activityArtist = new ActivityArtist();
+        activityArtist.setActivityId(10L);
+        activityArtist.setArtistId(artistId);
+        activityArtist.setStatus(1);
+        return activityArtist;
+    }
+
+    private Artist artist(Long id, String reviewStatus, String riskStatus, Integer status) {
+        Artist artist = new Artist();
+        artist.setId(id);
+        artist.setName("测试艺人");
+        artist.setReviewStatus(reviewStatus);
+        artist.setRiskStatus(riskStatus);
+        artist.setStatus(status);
+        return artist;
     }
 
     private OrderInfoResponse order(Long id, String orderNo, Long sessionId) {

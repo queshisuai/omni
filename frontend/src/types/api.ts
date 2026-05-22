@@ -95,6 +95,8 @@ export interface OrganizerApplicationVO {
 // ========== 票务/活动 ==========
 
 export type ActivityArtistVisibility = 'public' | 'hidden'
+export type ArtistReviewStatus = 'pending' | 'approved' | 'rejected'
+export type ArtistRiskStatus = 'normal' | 'risky'
 
 export interface ActivityArtistVO {
   artistId: number
@@ -121,7 +123,34 @@ export interface ArtistSearchVO {
   categoryTags?: string | null
   avatar?: string | null
   representativeWorks?: string | null
-  riskStatus?: string | null
+  reviewStatus?: ArtistReviewStatus | string | null
+  reviewNote?: string | null
+  riskStatus?: ArtistRiskStatus | string | null
+}
+
+export interface ArtistSubmissionRequest {
+  userId: number
+  name: string
+  alias?: string | null
+  artistType?: string | null
+  countryOrRegion?: string | null
+  agency?: string | null
+  representativeWorks?: string | null
+  categoryTags?: string | null
+  description?: string | null
+  sourceNote?: string | null
+}
+
+export interface ArtistReviewRequest {
+  userId: number
+  action: 'approve' | 'reject'
+  note?: string | null
+}
+
+export interface ArtistRiskRequest {
+  userId: number
+  riskStatus: ArtistRiskStatus
+  reason?: string | null
 }
 
 /** 分页结果 */
@@ -195,7 +224,13 @@ export interface ArtistEntity {
   countryOrRegion?: string | null
   categoryTags?: string | null
   representativeWorks?: string | null
-  riskStatus?: string | null
+  reviewStatus?: ArtistReviewStatus | string | null
+  reviewNote?: string | null
+  submittedBy?: number | null
+  reviewedBy?: number | null
+  reviewedAt?: string | null
+  riskStatus?: ArtistRiskStatus | string | null
+  riskReason?: string | null
   avatar: string | null
   description: string | null
 }

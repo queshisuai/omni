@@ -7,6 +7,9 @@ import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.ActivityArtistDto;
+import com.omni.ticket.dto.ArtistReviewRequest;
+import com.omni.ticket.dto.ArtistRiskRequest;
+import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
@@ -22,6 +25,7 @@ import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
 import com.omni.ticket.service.ArtistAdminService;
+import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
 import com.omni.ticket.service.VenueDefaultLayoutService;
@@ -74,6 +78,8 @@ class AdminControllerTest {
     private ActivityArtistService activityArtistService;
     @Mock
     private ArtistAdminService artistAdminService;
+    @Mock
+    private ArtistGovernanceService artistGovernanceService;
     @Mock
     private SessionAdminService sessionAdminService;
     @Mock
@@ -484,7 +490,73 @@ class AdminControllerTest {
         verify(venueApplicationService).listSeatLayoutTemplates(2003L, 99L);
     }
 
+    @Test
+    void submitArtistDelegatesToGovernanceService() {
+        AdminController controller = controller();
+        ArtistSubmissionRequest request = new ArtistSubmissionRequest();
+        request.setUserId(2003L);
+        request.setName("新艺人");
+        Artist artist = new Artist();
+        artist.setId(99L);
+        when(artistGovernanceService.submit(request)).thenReturn(artist);
+
+        Result<Artist> result = controller.submitArtist(request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(99L, result.getData().getId());
+        verify(artistGovernanceService).submit(request);
+    }
+
+    @Test
+    void listPendingArtistsDelegatesToGovernanceService() {
+        AdminController controller = controller();
+        Artist artist = new Artist();
+        artist.setId(99L);
+        when(artistGovernanceService.listPending(2002L)).thenReturn(List.of(artist));
+
+        Result<List<Artist>> result = controller.listPendingArtists(2002L);
+
+        assertEquals(200, result.getCode());
+        assertEquals(1, result.getData().size());
+        verify(artistGovernanceService).listPending(2002L);
+    }
+
+    @Test
+    void reviewArtistDelegatesToGovernanceService() {
+        AdminController controller = controller();
+        ArtistReviewRequest request = new ArtistReviewRequest();
+        request.setUserId(2002L);
+        request.setAction("approve");
+        Artist artist = new Artist();
+        artist.setId(99L);
+        when(artistGovernanceService.review(99L, request)).thenReturn(artist);
+
+        Result<Artist> result = controller.reviewArtist(99L, request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(99L, result.getData().getId());
+        verify(artistGovernanceService).review(99L, request);
+    }
+
+    @Test
+    void updateArtistRiskDelegatesToGovernanceService() {
+        AdminController controller = controller();
+        ArtistRiskRequest request = new ArtistRiskRequest();
+        request.setUserId(2002L);
+        request.setRiskStatus("risky");
+        request.setReason("风险原因");
+        Artist artist = new Artist();
+        artist.setId(99L);
+        when(artistGovernanceService.updateRisk(99L, request)).thenReturn(artist);
+
+        Result<Artist> result = controller.updateArtistRisk(99L, request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(99L, result.getData().getId());
+        verify(artistGovernanceService).updateRisk(99L, request);
+    }
+
     private AdminController controller() {
-        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService);
+        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService);
     }
 }

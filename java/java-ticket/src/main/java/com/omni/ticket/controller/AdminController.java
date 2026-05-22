@@ -12,7 +12,10 @@ import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.ActivityArtistDto;
+import com.omni.ticket.dto.ArtistReviewRequest;
+import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSearchResponse;
+import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatTemplateResponse;
@@ -30,6 +33,7 @@ import com.omni.ticket.mapper.*;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
 import com.omni.ticket.service.ArtistAdminService;
+import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
 import com.omni.ticket.service.UserAccessService;
@@ -93,6 +97,7 @@ public class AdminController {
     private final TicketTypeStockRecalculationService stockRecalculationService;
     private final ActivityArtistService activityArtistService;
     private final ArtistAdminService artistAdminService;
+    private final ArtistGovernanceService artistGovernanceService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -107,7 +112,7 @@ public class AdminController {
                                  VenueDefaultLayoutService venueDefaultLayoutService) {
         this(activityMapper, null, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
-                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null);
+                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null);
     }
 
     @Autowired
@@ -126,10 +131,11 @@ public class AdminController {
                                    SessionSeatLayoutService sessionSeatLayoutService,
                                     TourStationService tourStationService,
                                     OrderAdminQueryService orderAdminQueryService,
-                                    SessionSeatProtectionService sessionSeatProtectionService,
-                                    TicketTypeStockRecalculationService stockRecalculationService,
-                                    ActivityArtistService activityArtistService,
-                                    ArtistAdminService artistAdminService) {
+                                     SessionSeatProtectionService sessionSeatProtectionService,
+                                     TicketTypeStockRecalculationService stockRecalculationService,
+                                     ActivityArtistService activityArtistService,
+                                     ArtistAdminService artistAdminService,
+                                     ArtistGovernanceService artistGovernanceService) {
         this.activityMapper = activityMapper;
         this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
@@ -152,6 +158,7 @@ public class AdminController {
         this.stockRecalculationService = stockRecalculationService;
         this.activityArtistService = activityArtistService;
         this.artistAdminService = artistAdminService;
+        this.artistGovernanceService = artistGovernanceService;
     }
 
     @GetMapping("/artists/search")
@@ -164,6 +171,26 @@ public class AdminController {
         Artist artist = artistAdminService.getById(id);
         if (artist == null) return Result.fail(404, "艺人不存在");
         return Result.success(artist);
+    }
+
+    @PostMapping("/artists/submissions")
+    public Result<Artist> submitArtist(@RequestBody ArtistSubmissionRequest request) {
+        return Result.success(artistGovernanceService.submit(request));
+    }
+
+    @GetMapping("/artists/pending")
+    public Result<List<Artist>> listPendingArtists(@RequestParam Long userId) {
+        return Result.success(artistGovernanceService.listPending(userId));
+    }
+
+    @PostMapping("/artists/{id}/review")
+    public Result<Artist> reviewArtist(@PathVariable Long id, @RequestBody ArtistReviewRequest request) {
+        return Result.success(artistGovernanceService.review(id, request));
+    }
+
+    @PostMapping("/artists/{id}/risk")
+    public Result<Artist> updateArtistRisk(@PathVariable Long id, @RequestBody ArtistRiskRequest request) {
+        return Result.success(artistGovernanceService.updateRisk(id, request));
     }
 
     @GetMapping("/summary")

@@ -17,10 +17,14 @@ import com.omni.ticket.dto.PaidOrdersBySessionsRequest;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.ActivityArtist;
+import com.omni.ticket.entity.Artist;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.ActivityArtistMapper;
+import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.service.UserAccessService;
@@ -52,7 +56,20 @@ public class ActivityAdminService {
     private final UserAccessService userAccessService;
     private final OrderInternalClient orderInternalClient;
     private final PaymentInternalClient paymentInternalClient;
+    private final ActivityArtistMapper activityArtistMapper;
+    private final ArtistMapper artistMapper;
     private final String internalApiToken;
+
+    public ActivityAdminService(ActivityMapper activityMapper,
+                                SessionMapper sessionMapper,
+                                TicketTypeMapper ticketTypeMapper,
+                                 UserAccessService userAccessService,
+                                 OrderInternalClient orderInternalClient,
+                                 PaymentInternalClient paymentInternalClient,
+                                 @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+        this(activityMapper, sessionMapper, ticketTypeMapper, userAccessService, orderInternalClient, paymentInternalClient,
+                null, null, internalApiToken);
+    }
 
     public ActivityAdminService(ActivityMapper activityMapper,
                                 SessionMapper sessionMapper,
@@ -60,6 +77,8 @@ public class ActivityAdminService {
                                 UserAccessService userAccessService,
                                 OrderInternalClient orderInternalClient,
                                 PaymentInternalClient paymentInternalClient,
+                                ActivityArtistMapper activityArtistMapper,
+                                ArtistMapper artistMapper,
                                 @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
@@ -67,6 +86,8 @@ public class ActivityAdminService {
         this.userAccessService = userAccessService;
         this.orderInternalClient = orderInternalClient;
         this.paymentInternalClient = paymentInternalClient;
+        this.activityArtistMapper = activityArtistMapper;
+        this.artistMapper = artistMapper;
         this.internalApiToken = internalApiToken;
     }
 
@@ -274,6 +295,42 @@ public class ActivityAdminService {
                 .eq(TicketType::getStatus, 1));
         if (activeTicketTypes == null || activeTicketTypes.isEmpty()) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "上架活动前至少需要一个可售票档");
+        }
+        validatePublishableArtists(activityId);
+    }
+
+    private void validatePublishableArtists(Long activityId) {
+        if (activityArtistMapper == null || artistMapper == null) {
+            return;
+        }
+        List<ActivityArtist> lineup = activityArtistMapper.selectList(new LambdaQueryWrapper<ActivityArtist>()
+                .eq(ActivityArtist::getActivityId, activityId)
+                .eq(ActivityArtist::getStatus, 1));
+        if (lineup == null || lineup.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "上架活动前至少需要一个已审核艺人");
+        }
+        List<Long> artistIds = lineup.stream()
+                .map(ActivityArtist::getArtistId)
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .collect(Collectors.toList());
+        if (artistIds.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "阵容中存在不可用艺人，暂不能上架");
+        }
+        List<Artist> artists = artistMapper.selectBatchIds(artistIds);
+        if (artists == null || artists.size() != artistIds.size()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "阵容中存在不可用艺人，暂不能上架");
+        }
+        for (Artist artist : artists) {
+            if (artist == null || artist.getId() == null || !Integer.valueOf(1).equals(artist.getStatus())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "阵容中存在不可用艺人，暂不能上架");
+            }
+            if (StringUtils.hasText(artist.getReviewStatus()) && !"approved".equals(artist.getReviewStatus())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "阵容中存在未审核艺人，请先完成艺人档案审核");
+            }
+            if ("risky".equals(artist.getRiskStatus())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "阵容中存在风险艺人，暂不能上架");
+            }
         }
     }
 

@@ -37,6 +37,12 @@ public class Artist {
     private LocalDateTime riskMarkedAt;
     private Long riskClearedBy;
     private LocalDateTime riskClearedAt;
+    private String reviewStatus;
+    private String reviewNote;
+    private Long submittedBy;
+    private Long reviewedBy;
+    private LocalDateTime reviewedAt;
+    private LocalDateTime updateTime;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -84,4 +90,16 @@ public class Artist {
     public void setRiskClearedBy(Long riskClearedBy) { this.riskClearedBy = riskClearedBy; }
     public LocalDateTime getRiskClearedAt() { return riskClearedAt; }
     public void setRiskClearedAt(LocalDateTime riskClearedAt) { this.riskClearedAt = riskClearedAt; }
+    public String getReviewStatus() { return reviewStatus; }
+    public void setReviewStatus(String reviewStatus) { this.reviewStatus = reviewStatus; }
+    public String getReviewNote() { return reviewNote; }
+    public void setReviewNote(String reviewNote) { this.reviewNote = reviewNote; }
+    public Long getSubmittedBy() { return submittedBy; }
+    public void setSubmittedBy(Long submittedBy) { this.submittedBy = submittedBy; }
+    public Long getReviewedBy() { return reviewedBy; }
+    public void setReviewedBy(Long reviewedBy) { this.reviewedBy = reviewedBy; }
+    public LocalDateTime getReviewedAt() { return reviewedAt; }
+    public void setReviewedAt(LocalDateTime reviewedAt) { this.reviewedAt = reviewedAt; }
+    public LocalDateTime getUpdateTime() { return updateTime; }
+    public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
 }

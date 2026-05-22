@@ -175,6 +175,34 @@ export async function getAdminArtist(id: number) {
   return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}`)
 }
 
+export async function submitAdminArtist(params: import('@/types/api').ArtistSubmissionRequest) {
+  return request<import('@/types/api').ArtistEntity>('/api/ticket/admin/artists/submissions', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function listPendingAdminArtists(userId: number) {
+  assertPositiveInteger(userId, 'userId')
+  return request<import('@/types/api').ArtistEntity[]>(`/api/ticket/admin/artists/pending?userId=${userId}`)
+}
+
+export async function reviewAdminArtist(id: number, params: import('@/types/api').ArtistReviewRequest) {
+  assertPositiveInteger(id, 'artistId')
+  return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}/review`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function updateAdminArtistRisk(id: number, params: import('@/types/api').ArtistRiskRequest) {
+  assertPositiveInteger(id, 'artistId')
+  return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}/risk`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
 export async function createReservation(userId: number, sessionId: number) {
   return request<void>('/api/ticket/reservations', {
     method: 'POST',

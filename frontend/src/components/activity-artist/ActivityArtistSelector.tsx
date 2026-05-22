@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, startTransition } from 'react'
-import { searchAdminArtists } from '@/lib/api'
+import { searchAdminArtists, submitAdminArtist } from '@/lib/api'
+import { getUser } from '@/lib/auth'
 import type { ActivityArtistVO, ArtistSearchVO, ActivityArtistVisibility } from '@/types/api'
 
 const ROLE_OPTIONS = [
@@ -25,6 +26,8 @@ export function ActivityArtistSelector({ value, onChange }: Props) {
   const [keyword, setKeyword] = useState('')
   const [results, setResults] = useState<ArtistSearchVO[]>([])
   const [searching, setSearching] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitMessage, setSubmitMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (!keyword.trim()) {
@@ -72,6 +75,24 @@ export function ActivityArtistSelector({ value, onChange }: Props) {
     setResults([])
   }
 
+  const submitMissingArtist = async () => {
+    const name = keyword.trim()
+    const user = getUser()
+    if (!name || !user?.userId) return
+    setSubmitting(true)
+    setSubmitMessage(null)
+    try {
+      await submitAdminArtist({ userId: user.userId, name, sourceNote: '活动表单搜索不到时提交' })
+      setSubmitMessage('已提交艺人档案审核，通过后可加入活动阵容。')
+      setKeyword('')
+      setResults([])
+    } catch (error) {
+      setSubmitMessage(error instanceof Error ? error.message : '提交失败，请稍后重试')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const update = (artistId: number, patch: Partial<ActivityArtistVO>) => {
     onChange(normalize(value.map(item => item.artistId === artistId ? { ...item, ...patch } : item)))
   }
@@ -102,14 +123,26 @@ export function ActivityArtistSelector({ value, onChange }: Props) {
       <input value={keyword} onChange={event => setKeyword(event.target.value)} className="h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="搜索艺人/团队名称、别名、代表作品" />
       {keyword.trim() && (
         <div className="mt-2 max-h-56 overflow-auto rounded-lg border border-[#e5e5e5] bg-white">
-          {searching ? <div className="p-3 text-[13px] text-[#999]">搜索中...</div> : results.length === 0 ? <div className="p-3 text-[13px] text-[#999]">未找到艺人，请联系平台补充艺人档案。</div> : results.map(artist => (
+          {searching ? <div className="p-3 text-[13px] text-[#999]">搜索中...</div> : results.length === 0 ? (
+            <div className="p-3 text-[13px] text-[#666]">
+              <div>未找到艺人，可提交平台审核。</div>
+              <button type="button" disabled={submitting} onClick={submitMissingArtist} className="mt-2 rounded-full bg-[#ff1268] px-3 py-1 text-[12px] text-white disabled:bg-[#f7a8c6]">
+                {submitting ? '提交中...' : `提交“${keyword.trim()}”审核`}
+              </button>
+            </div>
+          ) : results.map(artist => (
             <button key={artist.id} type="button" onClick={() => addArtist(artist)} className="block w-full border-b border-[#f5f5f5] bg-white px-3 py-2 text-left hover:bg-[#fff7fa]">
-              <div className="text-[14px] font-medium text-[#333]">{artist.name}{artist.alias ? ` / ${artist.alias}` : ''}</div>
+              <div className="flex flex-wrap items-center gap-2 text-[14px] font-medium text-[#333]">
+                <span>{artist.name}{artist.alias ? ` / ${artist.alias}` : ''}</span>
+                {artist.reviewStatus && artist.reviewStatus !== 'approved' && <span className="rounded-full bg-[#fff7ed] px-2 py-0.5 text-[11px] text-[#c2410c]">待审核</span>}
+                {artist.riskStatus === 'risky' && <span className="rounded-full bg-[#fef2f2] px-2 py-0.5 text-[11px] text-[#dc2626]">风险艺人</span>}
+              </div>
               <div className="mt-0.5 text-[12px] text-[#999]">{[artist.countryOrRegion, artist.artistType, artist.categoryTags].filter(Boolean).join(' · ') || '暂无身份信息'}</div>
             </button>
           ))}
         </div>
       )}
+      {submitMessage && <div className="mt-2 text-[12px] text-[#666]">{submitMessage}</div>}
       <div className="mt-4 space-y-3">
         {value.map((item, index) => (
           <div key={item.artistId} className="rounded-lg border border-[#e5e5e5] bg-white p-3">
