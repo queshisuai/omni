@@ -18,10 +18,12 @@ import com.omni.user.dto.UserInfoResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.omni.user.service.OrganizerApplicationService;
+import com.omni.user.service.UserAssetService;
 import com.omni.user.service.UserService;
 import io.jsonwebtoken.Claims;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -40,14 +42,17 @@ public class UserController {
     private final OrganizerApplicationService organizerApplicationService;
     private final String internalApiToken;
 
+    @Autowired
+    private UserAssetService userAssetService;
+
     public UserController(UserService userService, OrganizerApplicationService organizerApplicationService) {
         this(userService, organizerApplicationService, "");
     }
 
     @Autowired
     public UserController(UserService userService,
-                           OrganizerApplicationService organizerApplicationService,
-                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+                            OrganizerApplicationService organizerApplicationService,
+                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.userService = userService;
         this.organizerApplicationService = organizerApplicationService;
         this.internalApiToken = internalApiToken;
@@ -87,12 +92,21 @@ public class UserController {
      */
     @PutMapping("/profile")
     public Result<UserInfoResponse> updateProfile(@RequestHeader(value = "Authorization", required = false) String authorization,
-                                                  @RequestBody UpdateProfileRequest request) {
+                                                   @RequestBody UpdateProfileRequest request) {
         Long userId = requireAuthUserId(authorization);
         if (request != null) {
             request.setUserId(userId);
         }
         UserInfoResponse response = userService.updateProfile(request);
+        return Result.success(response);
+    }
+
+    @PostMapping("/assets/avatar")
+    public Result<UserInfoResponse> uploadAvatar(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestPart("file") MultipartFile file) {
+        Long userId = requireAuthUserId(authorization);
+        UserInfoResponse response = userAssetService.uploadAvatar(userId, file);
         return Result.success(response);
     }
 
