@@ -38,7 +38,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
     try {
       const data = await login({ loginType: 'password', account: account.trim(), password })
       setToken(data.token)
-      setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, role: data.role })
+      setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, avatar: data.avatar || null, role: data.role })
       if (data.role === 'admin' || data.role === 'organizer') {
         router.push('/console')
       } else {
@@ -61,7 +61,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
     try {
       const data = await login({ loginType: 'sms', account: smsMobile.trim(), smsCode: smsCode.trim() })
       setToken(data.token)
-      setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, role: data.role })
+      setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, avatar: data.avatar || null, role: data.role })
       if (data.role === 'admin' || data.role === 'organizer') {
         router.push('/console')
       } else {

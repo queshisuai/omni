@@ -77,7 +77,7 @@ export default function ProfileAccountPage() {
         email: next.email || '',
         avatar: next.avatar || '',
       })
-      updateStoredUser({ nickname: next.nickname || null })
+      updateStoredUser({ nickname: next.nickname || null, avatar: next.avatar || null })
       setProfileMessage('个人资料已更新')
     } catch (err: unknown) {
       setProfileMessage(err instanceof Error ? err.message : '保存失败')
@@ -95,7 +95,7 @@ export default function ProfileAccountPage() {
 
       setUser(next)
       setForm((prev) => ({ ...prev, avatar }))
-      updateStoredUser({ nickname: next.nickname || null })
+      updateStoredUser({ nickname: next.nickname || null, avatar })
       return avatar
     } finally {
       setUploadingAvatar(false)

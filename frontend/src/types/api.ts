@@ -22,6 +22,7 @@ export interface LoginResponse {
   userId: number
   phone: string
   nickname: string | null
+  avatar?: string | null
   token: string
   role: UserRole
 }

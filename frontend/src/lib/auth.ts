@@ -11,6 +11,7 @@ interface StoredUser {
   userId: number
   phone: string
   nickname: string | null
+  avatar?: string | null
   role?: UserRole
 }
 
