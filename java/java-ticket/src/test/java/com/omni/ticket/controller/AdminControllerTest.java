@@ -6,6 +6,7 @@ import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
+import com.omni.ticket.dto.ActivityArtistDto;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.entity.Activity;
@@ -19,6 +20,8 @@ import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.service.ActivityAdminService;
+import com.omni.ticket.service.ActivityArtistService;
+import com.omni.ticket.service.ArtistAdminService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
 import com.omni.ticket.service.VenueDefaultLayoutService;
@@ -66,6 +69,10 @@ class AdminControllerTest {
     private UserAccessService userAccessService;
     @Mock
     private ActivityAdminService activityAdminService;
+    @Mock
+    private ActivityArtistService activityArtistService;
+    @Mock
+    private ArtistAdminService artistAdminService;
     @Mock
     private SessionAdminService sessionAdminService;
     @Mock
@@ -366,6 +373,53 @@ class AdminControllerTest {
     }
 
     @Test
+    void createActivityStoresLineupAndSyncsPrimaryArtist() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+
+        Result<Activity> result = controller.createActivity(Map.of(
+                "userId", 2003L,
+                "categoryId", 1L,
+                "name", "多艺人活动",
+                "artists", List.of(
+                        Map.of("artistId", 1L, "isPrimary", false, "sort", 1, "visibility", "public"),
+                        Map.of("artistId", 2L, "isPrimary", true, "sort", 2, "visibility", "public")
+                )
+        ));
+
+        ArgumentCaptor<Activity> activityCaptor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityMapper).insert(activityCaptor.capture());
+        verify(activityArtistService).saveLineup(any(), any());
+        assertEquals(200, result.getCode());
+        assertEquals(2L, activityCaptor.getValue().getArtistId());
+    }
+
+    @Test
+    void getAdminActivityReturnsFullLineupIncludingHiddenGuest() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setOrganizerId(2003L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        ActivityArtistDto visible = new ActivityArtistDto();
+        visible.setArtistId(1L);
+        visible.setName("周杰伦");
+        visible.setVisibility("public");
+        ActivityArtistDto hidden = new ActivityArtistDto();
+        hidden.setArtistId(2L);
+        hidden.setName("保密嘉宾");
+        hidden.setVisibility("hidden");
+        when(activityArtistService.listAdminLineup(10L)).thenReturn(List.of(visible, hidden));
+
+        Result<Activity> result = controller.getAdminActivity(10L, 2003L);
+
+        assertEquals(200, result.getCode());
+        assertEquals(2, result.getData().getArtists().size());
+        assertEquals("周杰伦", result.getData().getArtistName());
+    }
+
+    @Test
     void listVenueSeatLayoutTemplatesDelegatesToApplicationService() {
         AdminController controller = controller();
         SeatLayoutTemplateCandidateResponse candidate = new SeatLayoutTemplateCandidateResponse();
@@ -381,6 +435,6 @@ class AdminControllerTest {
     }
 
     private AdminController controller() {
-        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService);
+        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService);
     }
 }

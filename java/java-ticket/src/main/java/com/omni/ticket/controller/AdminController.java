@@ -11,6 +11,8 @@ import com.omni.ticket.dto.AdminSummaryResponse;
 import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
+import com.omni.ticket.dto.ActivityArtistDto;
+import com.omni.ticket.dto.ArtistSearchResponse;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatTemplateResponse;
@@ -26,6 +28,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
 import com.omni.ticket.service.ActivityAdminService;
+import com.omni.ticket.service.ActivityArtistService;
+import com.omni.ticket.service.ArtistAdminService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
 import com.omni.ticket.service.UserAccessService;
@@ -47,6 +51,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -86,6 +91,8 @@ public class AdminController {
     private final OrderAdminQueryService orderAdminQueryService;
     private final SessionSeatProtectionService sessionSeatProtectionService;
     private final TicketTypeStockRecalculationService stockRecalculationService;
+    private final ActivityArtistService activityArtistService;
+    private final ArtistAdminService artistAdminService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -100,7 +107,7 @@ public class AdminController {
                                  VenueDefaultLayoutService venueDefaultLayoutService) {
         this(activityMapper, null, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
-                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null);
+                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null);
     }
 
     @Autowired
@@ -117,10 +124,12 @@ public class AdminController {
                                    VenueDefaultLayoutService venueDefaultLayoutService,
                                    ActivitySeatLayoutService activitySeatLayoutService,
                                    SessionSeatLayoutService sessionSeatLayoutService,
-                                   TourStationService tourStationService,
-                                   OrderAdminQueryService orderAdminQueryService,
-                                   SessionSeatProtectionService sessionSeatProtectionService,
-                                   TicketTypeStockRecalculationService stockRecalculationService) {
+                                    TourStationService tourStationService,
+                                    OrderAdminQueryService orderAdminQueryService,
+                                    SessionSeatProtectionService sessionSeatProtectionService,
+                                    TicketTypeStockRecalculationService stockRecalculationService,
+                                    ActivityArtistService activityArtistService,
+                                    ArtistAdminService artistAdminService) {
         this.activityMapper = activityMapper;
         this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
@@ -141,6 +150,20 @@ public class AdminController {
         this.orderAdminQueryService = orderAdminQueryService;
         this.sessionSeatProtectionService = sessionSeatProtectionService;
         this.stockRecalculationService = stockRecalculationService;
+        this.activityArtistService = activityArtistService;
+        this.artistAdminService = artistAdminService;
+    }
+
+    @GetMapping("/artists/search")
+    public Result<List<ArtistSearchResponse>> searchArtists(@RequestParam(required = false) String keyword) {
+        return Result.success(artistAdminService.search(keyword));
+    }
+
+    @GetMapping("/artists/{id}")
+    public Result<Artist> getArtist(@PathVariable Long id) {
+        Artist artist = artistAdminService.getById(id);
+        if (artist == null) return Result.fail(404, "艺人不存在");
+        return Result.success(artist);
     }
 
     @GetMapping("/summary")
@@ -219,7 +242,13 @@ public class AdminController {
 
         Long categoryId = parsePositiveLong(body.get("categoryId"));
         if (categoryId == null) return Result.fail(400, "分类ID不正确");
-        Long artistId = resolveArtistId(body);
+        List<ActivityArtistDto> artists = parseArtists(body.get("artists"));
+        Long artistId = artists.stream()
+                .filter(a -> Boolean.TRUE.equals(a.getPrimary()))
+                .map(ActivityArtistDto::getArtistId)
+                .findFirst()
+                .orElseGet(() -> resolveArtistId(body));
+        if (artistId == null && !artists.isEmpty()) artistId = artists.get(0).getArtistId();
         if (artistId == null) return Result.fail(400, "艺人/团队名称不能为空");
         String name = parseNonBlankString(body.get("name"));
         if (name == null) return Result.fail(400, "活动名称不能为空");
@@ -243,6 +272,7 @@ public class AdminController {
         activity.setStatus(1);
         activity.setOrganizerId(userId); // 记录创建者
         activityMapper.insert(activity);
+        if (!artists.isEmpty()) activityArtistService.saveLineup(activity.getId(), artists);
         return Result.success(activity);
     }
 
@@ -282,6 +312,15 @@ public class AdminController {
             if (artistId == null) return Result.fail(400, "艺人/团队名称不能为空");
             activity.setArtistId(artistId);
         }
+        if (body.containsKey("artists")) {
+            List<ActivityArtistDto> artists = parseArtists(body.get("artists"));
+            activityArtistService.saveLineup(id, artists);
+            artists.stream()
+                    .filter(a -> Boolean.TRUE.equals(a.getPrimary()))
+                    .findFirst()
+                    .map(ActivityArtistDto::getArtistId)
+                    .ifPresent(activity::setArtistId);
+        }
         if (body.containsKey("seatMapVisibility")) {
             String seatMapVisibility = parseSeatMapVisibility(body.get("seatMapVisibility"), null);
             if (seatMapVisibility == null) return Result.fail(400, "座位图展示策略不正确");
@@ -305,7 +344,19 @@ public class AdminController {
         if ("organizer".equals(role) && !userId.equals(activity.getOrganizerId()))
             return Result.fail(403, "只能查看自己主办的活动");
 
-        attachArtistName(activity);
+        if (activityArtistService != null) {
+            List<ActivityArtistDto> lineup = activityArtistService.listAdminLineup(id);
+            activity.setArtists(lineup);
+            String summary = lineup.stream()
+                    .filter(a -> "public".equals(a.getVisibility()))
+                    .map(ActivityArtistDto::getName)
+                    .filter(StringUtils::hasText)
+                    .collect(Collectors.joining("、"));
+            activity.setArtistName(summary);
+            if (!StringUtils.hasText(summary)) attachArtistName(activity);
+        } else {
+            attachArtistName(activity);
+        }
 
         return Result.success(activity);
     }
@@ -314,6 +365,26 @@ public class AdminController {
         if (activity == null || activity.getArtistId() == null || artistMapper == null) return;
         Artist artist = artistMapper.selectById(activity.getArtistId());
         if (artist != null) activity.setArtistName(artist.getName());
+    }
+
+    private List<ActivityArtistDto> parseArtists(Object value) {
+        if (!(value instanceof List<?>)) return List.of();
+        List<?> list = (List<?>) value;
+        List<ActivityArtistDto> artists = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?>)) continue;
+            Map<?, ?> map = (Map<?, ?>) item;
+            ActivityArtistDto dto = new ActivityArtistDto();
+            dto.setArtistId(parsePositiveLong(map.get("artistId")));
+            dto.setPrimary(Boolean.TRUE.equals(map.get("isPrimary")) || Boolean.TRUE.equals(map.get("primary")));
+            dto.setRoleType(parseNonBlankString(map.get("roleType")));
+            dto.setRoleName(parseNonBlankString(map.get("roleName")));
+            dto.setVisibility(parseNonBlankString(map.get("visibility")));
+            Long sort = parsePositiveLong(map.get("sort"));
+            dto.setSort(sort == null ? null : sort.intValue());
+            artists.add(dto);
+        }
+        return artists;
     }
 
     @PutMapping("/activities/{id}/status")

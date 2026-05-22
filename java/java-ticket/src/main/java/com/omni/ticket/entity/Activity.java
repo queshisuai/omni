@@ -4,8 +4,10 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.omni.ticket.dto.ActivityArtistDto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 活动
@@ -36,6 +38,8 @@ public class Activity {
     private Long deletedBy;
     @TableField(exist = false)
     private String artistName;
+    @TableField(exist = false)
+    private List<ActivityArtistDto> artists;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -79,4 +83,6 @@ public class Activity {
     public void setDeletedBy(Long deletedBy) { this.deletedBy = deletedBy; }
     public String getArtistName() { return artistName; }
     public void setArtistName(String artistName) { this.artistName = artistName; }
+    public List<ActivityArtistDto> getArtists() { return artists; }
+    public void setArtists(List<ActivityArtistDto> artists) { this.artists = artists; }
 }
