@@ -13,7 +13,8 @@
       "key": "ticket",
       "targetInstance": "pg-ticket",
       "targetDatabase": "omni_ticket",
-      "tables": ["category", "artist", "tour", "station", "activity", "venue", "venue_application", "session", "ticket_type", "ticket_type_area", "session_seat", "venue_area", "venue_seat", "reservation", "seat", "stock_log", "venue_default_layout", "venue_default_layout_section", "activity_seat_layout", "activity_seat_layout_section", "session_seat_layout", "session_seat_layout_section", "seat_block", "seat_override", "ticket_group", "ticket_asset"]
+      "tables": ["category", "artist", "tour", "station", "activity", "venue", "venue_application", "session", "ticket_type", "ticket_type_area", "session_seat", "venue_area", "venue_seat", "reservation", "seat", "stock_log", "venue_default_layout", "venue_default_layout_section", "activity_seat_layout", "activity_seat_layout_section", "session_seat_layout", "session_seat_layout_section", "seat_block", "seat_override", "ticket_group", "ticket_asset"],
+      "migrations": ["ticket/20260522_activity_purchase_limit.sql"]
     },
     {
       "service": "java-order",
@@ -27,7 +28,8 @@
       "key": "payment",
       "targetInstance": "pg-payment",
       "targetDatabase": "omni_payment",
-      "tables": ["payment", "refund_request"]
+      "tables": ["payment", "refund_request"],
+      "migrations": ["payment/20260522_partial_refund.sql"]
     },
     {
       "service": "java-notification",

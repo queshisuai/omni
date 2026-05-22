@@ -45,7 +45,7 @@ function Get-ColumnList([string] $columns) {
 }
 
 $schemaColumns = @{
-    "activity" = New-ColumnSet @("id", "category_id", "artist_id")
+    "activity" = New-ColumnSet @("id", "category_id", "artist_id", "per_user_limit")
     "activity_seat_layout" = New-ColumnSet @("id", "activity_id", "source_venue_layout_id")
     "activity_seat_layout_section" = New-ColumnSet @("id", "activity_layout_id")
     "artist" = New-ColumnSet @("id")
@@ -56,7 +56,7 @@ $schemaColumns = @{
     "order_snapshot" = New-ColumnSet @("id", "order_id")
     "organizer_application" = New-ColumnSet @("id", "user_id", "reviewer_id")
     "payment" = New-ColumnSet @("id")
-    "refund_request" = New-ColumnSet @("id", "payment_id")
+    "refund_request" = New-ColumnSet @("id", "payment_id", "quantity", "order_seat_ids", "refund_type")
     "reservation" = New-ColumnSet @("id", "session_id")
     "seat" = New-ColumnSet @("id", "session_id", "ticket_type_id")
     "seat_block" = New-ColumnSet @("id")
