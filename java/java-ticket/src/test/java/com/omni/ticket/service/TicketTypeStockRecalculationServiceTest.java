@@ -2,7 +2,6 @@ package com.omni.ticket.service;
 
 import com.omni.ticket.entity.SeatBlock;
 import com.omni.ticket.entity.SessionSeat;
-import com.omni.ticket.entity.TicketGroup;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.mapper.SeatBlockMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
@@ -15,7 +14,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -92,17 +90,15 @@ class TicketTypeStockRecalculationServiceTest {
     }
 
     @Test
-    void recalculateForSessionKeepsStandingBlockCapacityStock() {
+    void recalculateForSessionKeepsBoundStandingBlockCapacityStock() {
         TicketType standing = ticketType(1003L, 99L);
-        standing.setName("普通站区");
-        standing.setPrice(new BigDecimal("380.00"));
         standing.setTotalStock(0);
         standing.setRemainStock(0);
         standing.setStatus(1);
+        standing.setSeatBlockId(20L);
         when(ticketTypeMapper.selectList(any())).thenReturn(List.of(standing));
         when(sessionSeatMapper.selectList(any())).thenReturn(List.of());
-        when(seatBlockMapper.selectList(any())).thenReturn(List.of(standingBlock(20L, "general", 300)));
-        when(ticketGroupMapper.selectList(any())).thenReturn(List.of(group("general", "普通站区", new BigDecimal("380.00"))));
+        when(seatBlockMapper.selectById(20L)).thenReturn(standingBlock(20L, "general", 300));
 
         service.recalculateForSession(99L);
 
@@ -112,12 +108,29 @@ class TicketTypeStockRecalculationServiceTest {
     }
 
     @Test
+    void recalculateForSessionDoesNotInferStandingStockWithoutExplicitBinding() {
+        TicketType standing = ticketType(1003L, 99L);
+        standing.setTotalStock(0);
+        standing.setRemainStock(0);
+        standing.setStatus(1);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(standing));
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of());
+
+        service.recalculateForSession(99L);
+
+        verify(ticketTypeMapper).updateById(standing);
+        verify(seatBlockMapper, never()).selectList(any());
+        verify(ticketGroupMapper, never()).selectList(any());
+        assertEquals(0, standing.getTotalStock());
+        assertEquals(0, standing.getRemainStock());
+    }
+
+    @Test
     void recalculateForSessionFailsClosedWhenStandingDependenciesMissing() {
         TicketTypeStockRecalculationService legacyService = new TicketTypeStockRecalculationService(ticketTypeMapper, sessionSeatMapper);
         TicketType standing = ticketType(1003L, 99L);
-        standing.setName("普通站区");
-        standing.setPrice(new BigDecimal("380.00"));
         standing.setStatus(1);
+        standing.setSeatBlockId(20L);
         when(ticketTypeMapper.selectList(any())).thenReturn(List.of(standing));
         when(sessionSeatMapper.selectList(any())).thenReturn(List.of());
 
@@ -156,14 +169,5 @@ class TicketTypeStockRecalculationServiceTest {
         block.setCapacity(capacity);
         block.setStatus(1);
         return block;
-    }
-
-    private TicketGroup group(String groupKey, String name, BigDecimal price) {
-        TicketGroup group = new TicketGroup();
-        group.setGroupKey(groupKey);
-        group.setName(name);
-        group.setActivityPrice(price);
-        group.setStatus(1);
-        return group;
     }
 }

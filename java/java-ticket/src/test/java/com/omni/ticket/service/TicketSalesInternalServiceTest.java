@@ -132,21 +132,28 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
-    void lockSeatsFallsBackToTicketStockForSeatlessStandingTicketType() {
+    void lockSeatsFallsBackToTicketStockForBoundSeatlessStandingTicketType() {
         TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
         SeatBlockMapper seatBlockMapper = mock(SeatBlockMapper.class);
         TicketGroupMapper ticketGroupMapper = mock(TicketGroupMapper.class);
         TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper, seatBlockMapper, ticketGroupMapper);
         TicketType ticketType = ticketType(4001L, "站区票", new BigDecimal("280.00"));
+        ticketType.setSeatBlockId(7001L);
         SeatBlock standingBlock = new SeatBlock();
+        standingBlock.setId(7001L);
+        standingBlock.setOwnerType("session");
+        standingBlock.setOwnerId(3001L);
+        standingBlock.setBlockType("standingBlock");
         standingBlock.setTicketGroupKey("standing-1");
+        standingBlock.setCapacity(300);
+        standingBlock.setStatus(1);
         TicketGroup standingGroup = new TicketGroup();
         standingGroup.setName("站区票");
         standingGroup.setActivityPrice(new BigDecimal("280.00"));
         when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType);
         when(sessionSeatMapper.selectRandomAvailableSeatIds(3001L, 4001L, 2)).thenReturn(List.of());
-        when(seatBlockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(standingBlock));
+        when(seatBlockMapper.selectById(7001L)).thenReturn(standingBlock);
         when(ticketGroupMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(standingGroup);
         when(ticketTypeMapper.decreaseRemainStockIfEnough(4001L, 2)).thenReturn(1);
 
@@ -159,6 +166,34 @@ class TicketSalesInternalServiceTest {
         assertEquals(List.of("系统分配站区票 x2"), response.getSeatLabels());
         verify(ticketTypeMapper).decreaseRemainStockIfEnough(4001L, 2);
         verify(sessionSeatMapper, never()).lockSeat(any(), any(), any(), any());
+    }
+
+    @Test
+    void lockSeatsRejectsSeatlessStandingTicketTypeWithoutExplicitSeatBlockBinding() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        SeatBlockMapper seatBlockMapper = mock(SeatBlockMapper.class);
+        TicketGroupMapper ticketGroupMapper = mock(TicketGroupMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper, seatBlockMapper, ticketGroupMapper);
+        TicketType ticketType = ticketType(4001L, "站区票", new BigDecimal("280.00"));
+        SeatBlock standingBlock = new SeatBlock();
+        standingBlock.setId(7001L);
+        standingBlock.setTicketGroupKey("standing-1");
+        TicketGroup standingGroup = new TicketGroup();
+        standingGroup.setName("站区票");
+        standingGroup.setActivityPrice(new BigDecimal("280.00"));
+        when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType);
+        when(sessionSeatMapper.selectRandomAvailableSeatIds(3001L, 4001L, 2)).thenReturn(List.of());
+
+        TicketSalesLockRequest request = lockRequest(null, 2);
+        request.setAllocateRandom(true);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.lockSeats(request));
+
+        assertEquals("票档库存不足", exception.getMessage());
+        verify(seatBlockMapper, never()).selectList(any(LambdaQueryWrapper.class));
+        verify(ticketGroupMapper, never()).selectOne(any(LambdaQueryWrapper.class));
+        verify(ticketTypeMapper, never()).decreaseRemainStockIfEnough(4001L, 2);
     }
 
     @Test

@@ -20,6 +20,8 @@ public class TicketType {
     private BigDecimal price;
     private Integer totalStock;
     private Integer remainStock;
+    private Long seatBlockId;
+    private String ticketGroupKey;
     private Integer status;
     private LocalDateTime createTime;
 
@@ -35,6 +37,10 @@ public class TicketType {
     public void setTotalStock(Integer totalStock) { this.totalStock = totalStock; }
     public Integer getRemainStock() { return remainStock; }
     public void setRemainStock(Integer remainStock) { this.remainStock = remainStock; }
+    public Long getSeatBlockId() { return seatBlockId; }
+    public void setSeatBlockId(Long seatBlockId) { this.seatBlockId = seatBlockId; }
+    public String getTicketGroupKey() { return ticketGroupKey; }
+    public void setTicketGroupKey(String ticketGroupKey) { this.ticketGroupKey = ticketGroupKey; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public LocalDateTime getCreateTime() { return createTime; }

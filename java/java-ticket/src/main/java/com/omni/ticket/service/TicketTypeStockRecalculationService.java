@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.entity.SeatBlock;
 import com.omni.ticket.entity.SessionSeat;
-import com.omni.ticket.entity.TicketGroup;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.mapper.SeatBlockMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
@@ -13,7 +12,6 @@ import com.omni.ticket.mapper.TicketTypeMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +23,6 @@ public class TicketTypeStockRecalculationService {
     private final TicketTypeMapper ticketTypeMapper;
     private final SessionSeatMapper sessionSeatMapper;
     private final SeatBlockMapper seatBlockMapper;
-    private final TicketGroupMapper ticketGroupMapper;
 
     public TicketTypeStockRecalculationService(TicketTypeMapper ticketTypeMapper,
                                                 SessionSeatMapper sessionSeatMapper) {
@@ -40,7 +37,6 @@ public class TicketTypeStockRecalculationService {
         this.ticketTypeMapper = ticketTypeMapper;
         this.sessionSeatMapper = sessionSeatMapper;
         this.seatBlockMapper = seatBlockMapper;
-        this.ticketGroupMapper = ticketGroupMapper;
     }
 
     public void recalculateForSession(Long sessionId) {
@@ -75,61 +71,32 @@ public class TicketTypeStockRecalculationService {
     }
 
     private Map<Long, Integer> standingCapacityByTicketTypeId(Long sessionId, List<TicketType> ticketTypes) {
-        if (seatBlockMapper == null || ticketGroupMapper == null) {
-            if (hasPossibleStandingTicketType(ticketTypes)) {
-                throw new BusinessException(503, "无法确认站区库存配置，请稍后重试。");
-            }
-            return Collections.emptyMap();
-        }
-        List<SeatBlock> standingBlocks = seatBlockMapper.selectList(new LambdaQueryWrapper<SeatBlock>()
-                .eq(SeatBlock::getOwnerType, "session")
-                .eq(SeatBlock::getOwnerId, sessionId)
-                .eq(SeatBlock::getBlockType, "standingBlock")
-                .eq(SeatBlock::getStatus, 1));
-        if (standingBlocks == null || standingBlocks.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        List<TicketGroup> groups = ticketGroupMapper.selectList(new LambdaQueryWrapper<TicketGroup>()
-                .eq(TicketGroup::getOwnerType, "session")
-                .eq(TicketGroup::getOwnerId, sessionId)
-                .eq(TicketGroup::getStatus, 1));
-        Map<String, TicketGroup> groupsByKey = (groups == null ? Collections.<TicketGroup>emptyList() : groups).stream()
-                .filter(group -> group != null && group.getGroupKey() != null)
-                .collect(Collectors.toMap(TicketGroup::getGroupKey, group -> group, (first, second) -> first));
-        return standingBlocks.stream().collect(Collectors.groupingBy(
-                block -> findStandingTicketTypeId(block, groupsByKey, ticketTypes),
-                Collectors.summingInt(block -> requirePositiveCapacity(block.getCapacity()))));
-    }
-
-    private boolean hasPossibleStandingTicketType(List<TicketType> ticketTypes) {
-        return (ticketTypes == null ? Collections.<TicketType>emptyList() : ticketTypes).stream()
-                .filter(Objects::nonNull)
-                .anyMatch(ticketType -> ticketType.getId() != null
-                        && Integer.valueOf(1).equals(ticketType.getStatus())
-                        && !hasSeatStock(ticketType));
-    }
-
-    private boolean hasSeatStock(TicketType ticketType) {
-        return (ticketType.getTotalStock() != null && ticketType.getTotalStock() > 0)
-                || (ticketType.getRemainStock() != null && ticketType.getRemainStock() > 0);
-    }
-
-    private Long findStandingTicketTypeId(SeatBlock block, Map<String, TicketGroup> groupsByKey, List<TicketType> ticketTypes) {
-        TicketGroup group = groupsByKey.get(block.getTicketGroupKey());
-        if (group == null) {
-            throw new BusinessException(400, "站区未绑定有效票档组，无法重算库存。");
-        }
-        BigDecimal expectedPrice = groupPrice(group);
-        List<TicketType> matches = (ticketTypes == null ? Collections.<TicketType>emptyList() : ticketTypes).stream()
+        List<TicketType> boundStandingTicketTypes = (ticketTypes == null ? Collections.<TicketType>emptyList() : ticketTypes).stream()
                 .filter(ticketType -> ticketType != null && ticketType.getId() != null)
-                .filter(ticketType -> Integer.valueOf(1).equals(ticketType.getStatus()))
-                .filter(ticketType -> Objects.equals(ticketType.getName(), group.getName()))
-                .filter(ticketType -> samePrice(ticketType.getPrice(), expectedPrice))
+                .filter(ticketType -> ticketType.getSeatBlockId() != null)
                 .collect(Collectors.toList());
-        if (matches.size() != 1) {
-            throw new BusinessException(400, "站区票档匹配不唯一，无法安全重算库存。");
+        if (boundStandingTicketTypes.isEmpty()) {
+            return Collections.emptyMap();
         }
-        return matches.get(0).getId();
+        if (seatBlockMapper == null) {
+            throw new BusinessException(503, "无法确认站区库存配置，请稍后重试。");
+        }
+        return boundStandingTicketTypes.stream().collect(Collectors.toMap(
+                TicketType::getId,
+                ticketType -> standingCapacity(sessionId, ticketType),
+                Integer::sum));
+    }
+
+    private int standingCapacity(Long sessionId, TicketType ticketType) {
+        SeatBlock block = seatBlockMapper.selectById(ticketType.getSeatBlockId());
+        if (block == null
+                || !Objects.equals("session", block.getOwnerType())
+                || !Objects.equals(sessionId, block.getOwnerId())
+                || !Objects.equals("standingBlock", block.getBlockType())
+                || !Integer.valueOf(1).equals(block.getStatus())) {
+            throw new BusinessException(400, "站区票档未绑定有效站区，无法重算库存。");
+        }
+        return requirePositiveCapacity(block.getCapacity());
     }
 
     private int requirePositiveCapacity(Integer capacity) {
@@ -137,18 +104,6 @@ public class TicketTypeStockRecalculationService {
             throw new BusinessException(400, "站区容量必须大于0");
         }
         return capacity;
-    }
-
-    private boolean samePrice(BigDecimal left, BigDecimal right) {
-        return defaultPrice(left).compareTo(defaultPrice(right)) == 0;
-    }
-
-    private BigDecimal groupPrice(TicketGroup group) {
-        return group.getActivityPrice() != null ? group.getActivityPrice() : defaultPrice(group.getDefaultPrice());
-    }
-
-    private BigDecimal defaultPrice(BigDecimal price) {
-        return price == null ? BigDecimal.ZERO : price;
     }
 
     private boolean countsTowardTotalStock(SessionSeat seat) {

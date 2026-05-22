@@ -369,11 +369,6 @@ END $$;
 SELECT setval('ticket_type_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type), 1), true);
 SELECT setval('ticket_type_area_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type_area), 1), true);
 
--- 音乐节演示站区：独立票档与价格，不生成座位号。
-INSERT INTO ticket_type (id, session_id, name, price, total_stock, remain_stock, status)
-VALUES (91, 3, '站区票', 280.00, 300, 300, 1);
-SELECT setval('ticket_type_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type), 1), true);
-
 -- ========== 场次级 SeatCraft 座位图与真实座位关联 ==========
 INSERT INTO session_seat_layout (id, session_id, name, template_type, stage_title, stage_x, stage_y, canvas_width, canvas_height, status)
 SELECT s.id, s.id, a.name || ' 场次座位图', 'concert', '舞台', 80, 40, 960, 720, 1
@@ -414,6 +409,15 @@ ORDER BY tta.session_id, va.sort, va.id;
 
 INSERT INTO seat_block (owner_type, owner_id, block_key, name, block_type, ticket_group_key, x, y, capacity, color, sort, status)
 VALUES ('session', 3, 'standing-3', '站区', 'standingBlock', 'standing-3', 120, 470, 300, '#7c3aed', 99, 1);
+
+-- 音乐节演示站区：独立票档与价格，不生成座位号。
+INSERT INTO ticket_type (id, session_id, name, price, total_stock, remain_stock, seat_block_id, ticket_group_key, status)
+SELECT 91, 3, '站区票', 280.00, sb.capacity, sb.capacity, sb.id, sb.ticket_group_key, 1
+FROM seat_block sb
+WHERE sb.owner_type = 'session'
+  AND sb.owner_id = 3
+  AND sb.block_key = 'standing-3';
+SELECT setval('ticket_type_id_seq', COALESCE((SELECT MAX(id) FROM ticket_type), 1), true);
 
 INSERT INTO session_seat_layout_section (id, session_layout_id, ticket_type_id, section_key, name, rows, cols, x, y, color, type, layout, seat_count, sort, status)
 SELECT
