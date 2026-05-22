@@ -1,6 +1,6 @@
 'use client'
 
-import { ChangeEvent, useRef, useState } from 'react'
+import { ChangeEvent, useId, useRef, useState } from 'react'
 
 type LocalFileUploadProps = {
   label: string
@@ -13,10 +13,11 @@ type LocalFileUploadProps = {
 }
 
 function isImageUrl(url: string) {
-  return /\.(jpg|jpeg|png|webp|gif|bmp|svg)(\?.*)?$/i.test(url) || url.startsWith('data:image/') || url.startsWith('/uploads/')
+  return url.startsWith('/uploads/') && /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(url)
 }
 
 export function LocalFileUpload({ label, value, accept, uploading, onUpload, onChange, hint }: LocalFileUploadProps) {
+  const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
@@ -42,7 +43,7 @@ export function LocalFileUpload({ label, value, accept, uploading, onUpload, onC
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <label className="text-sm font-medium text-gray-700">{label}</label>
+        <label htmlFor={inputId} className="text-sm font-medium text-gray-700">{label}</label>
         {value && (
           <button
             type="button"
@@ -64,6 +65,7 @@ export function LocalFileUpload({ label, value, accept, uploading, onUpload, onC
 
         <div className="flex-1 space-y-2">
           <input
+            id={inputId}
             ref={inputRef}
             type="file"
             accept={accept}
@@ -82,8 +84,8 @@ export function LocalFileUpload({ label, value, accept, uploading, onUpload, onC
             />
           )}
           {hint && <p className="text-xs leading-5 text-gray-500">{hint}</p>}
-          {disabled && <p className="text-xs text-[#ff1268]">上传中...</p>}
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {disabled && <p className="text-xs text-[#ff1268]" aria-live="polite">上传中...</p>}
+          {error && <p className="text-xs text-red-500" role="alert">{error}</p>}
         </div>
       </div>
     </div>

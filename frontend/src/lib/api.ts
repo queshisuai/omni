@@ -84,6 +84,16 @@ async function multipartRequest<T>(url: string, formData: FormData, options?: Om
     clearTimeout(timeoutId)
   }
 
+  if (!response.ok) {
+    try {
+      const result = await response.json() as ApiResult<unknown>
+      throw new ApiError(result.code || response.status, result.message || response.statusText || '请求失败')
+    } catch (err) {
+      if (err instanceof ApiError) throw err
+      throw new ApiError(response.status, response.statusText || '请求失败')
+    }
+  }
+
   let result: ApiResult<T>
   try {
     result = await response.json()
