@@ -120,6 +120,49 @@ class RefundServiceBoundaryTest {
     }
 
     @Test
+    void applyRefundRejectsFailedRefundThatNeedsCompensation() {
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        order.setUserId(2004L);
+        RefundRequest failedAfterAlipay = refund(3L, 10L, new BigDecimal("380.00"), 3);
+        failedAfterAlipay.setRefundType("partial");
+        failedAfterAlipay.setAlipayRefundNo("ALI-REFUND-NEEDS-COMP");
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(refundRequestMapper.selectOne(any())).thenReturn(failedAfterAlipay);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.applyRefund(10L, 2004L, "再次申请", null, 1, List.of()));
+
+        assertEquals("该订单已有退款申请，不允许重复申请", error.getMessage());
+        verify(orderClient, never()).getRefundOptions(anyLong(), anyString());
+        verify(paymentMapper, never()).selectOne(any());
+        verify(refundRequestMapper, never()).insert(any());
+    }
+
+    @Test
+    void applyRefundAllowsPlainFailedRefundWithoutAlipayRefundNo() {
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        order.setUserId(2004L);
+        OrderRefundOptionsResponse options = refundOptions(10L, 2, 1, 1, new BigDecimal("380.00"));
+        RefundRequest plainFailed = refund(4L, 10L, new BigDecimal("380.00"), 3);
+        plainFailed.setRefundType("partial");
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(refundRequestMapper.selectOne(any())).thenReturn(null);
+        when(orderClient.getRefundOptions(10L, "test-internal-token")).thenReturn(Result.success(options));
+        when(paymentMapper.selectOne(any())).thenReturn(successPayment(order));
+        when(refundRequestMapper.insert(any(RefundRequest.class))).thenAnswer(invocation -> {
+            RefundRequest refund = invocation.getArgument(0);
+            refund.setId(5L);
+            return 1;
+        });
+
+        RefundRequestVO result = service.applyRefund(10L, 2004L, "重新申请", null, 1, List.of());
+
+        assertEquals(5L, result.getId());
+        assertEquals(new BigDecimal("380.00"), result.getAmount());
+        verify(refundRequestMapper).insert(any(RefundRequest.class));
+    }
+
+    @Test
     void applyPartialRefundRequiresSeatIdsWhenOrderHasRefundableSeats() {
         OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
         order.setUserId(2004L);

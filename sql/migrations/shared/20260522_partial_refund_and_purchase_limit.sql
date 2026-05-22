@@ -39,4 +39,6 @@ DROP INDEX IF EXISTS idx_refund_order_active_unique;
 
 CREATE UNIQUE INDEX idx_refund_order_active_unique
     ON refund_request(order_id)
-    WHERE status IN (0, 4) OR (status = 1 AND refund_type = 'full');
+    WHERE status IN (0, 4)
+        OR (status = 1 AND refund_type = 'full')
+        OR (status = 3 AND alipay_refund_no IS NOT NULL);

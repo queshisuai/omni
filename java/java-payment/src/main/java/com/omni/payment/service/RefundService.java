@@ -644,7 +644,9 @@ public class RefundService {
         wrapper.eq(RefundRequest::getOrderId, orderId)
                 .and(w -> w.in(RefundRequest::getStatus, REFUND_STATUS_PENDING, REFUND_STATUS_PROCESSING)
                         .or(q -> q.eq(RefundRequest::getStatus, REFUND_STATUS_REFUNDED)
-                                .eq(RefundRequest::getRefundType, "full")))
+                                .eq(RefundRequest::getRefundType, "full"))
+                        .or(q -> q.eq(RefundRequest::getStatus, REFUND_STATUS_FAILED)
+                                .isNotNull(RefundRequest::getAlipayRefundNo)))
                 .last("LIMIT 1");
         return refundRequestMapper.selectOne(wrapper) != null;
     }
