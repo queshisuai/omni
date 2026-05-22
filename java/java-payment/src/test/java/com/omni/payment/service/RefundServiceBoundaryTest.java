@@ -1,15 +1,22 @@
 package com.omni.payment.service;
 
+import com.alipay.api.AlipayClient;
+import com.alipay.api.request.AlipayTradeRefundRequest;
+import com.alipay.api.response.AlipayTradeRefundResponse;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.payment.client.OrderClient;
+import com.omni.payment.config.AlipayProperties;
 import com.omni.payment.client.TicketRefundReviewInternalClient;
 import com.omni.payment.client.UserInternalClient;
 import com.omni.payment.dto.InternalUserRefResponse;
+import com.omni.payment.dto.MarkPartialRefundedRequest;
 import com.omni.payment.dto.OrderInfoResponse;
+import com.omni.payment.dto.OrderRefundOptionsResponse;
 import com.omni.payment.dto.RefundRequestVO;
 import com.omni.payment.dto.TicketRefundReviewPermissionResponse;
+import com.omni.payment.entity.Payment;
 import com.omni.payment.entity.RefundRequest;
 import com.omni.payment.mapper.PaymentMapper;
 import com.omni.payment.mapper.RefundRequestMapper;
@@ -17,9 +24,11 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -32,6 +41,7 @@ class RefundServiceBoundaryTest {
     private PaymentMapper paymentMapper;
     private UserInternalClient userInternalClient;
     private TicketRefundReviewInternalClient ticketRefundReviewInternalClient;
+    private AlipayClient alipayClient;
     private RefundService service;
 
     @BeforeEach
@@ -42,9 +52,131 @@ class RefundServiceBoundaryTest {
         paymentMapper = mock(PaymentMapper.class);
         userInternalClient = mock(UserInternalClient.class);
         ticketRefundReviewInternalClient = mock(TicketRefundReviewInternalClient.class);
+        alipayClient = mock(AlipayClient.class);
         service = new RefundService(
-                null, orderClient, refundRequestMapper, paymentMapper,
-                userInternalClient, ticketRefundReviewInternalClient, "test-internal-token");
+                alipayProperties(), orderClient, refundRequestMapper, paymentMapper,
+                userInternalClient, ticketRefundReviewInternalClient, "test-internal-token", () -> alipayClient);
+    }
+
+    @Test
+    void applyPartialRefundCalculatesAmountFromOrderOptions() {
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        order.setUserId(2004L);
+        OrderRefundOptionsResponse options = refundOptions(10L, 2, 0, 2, new BigDecimal("380.00"));
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(orderClient.getRefundOptions(10L, "test-internal-token")).thenReturn(Result.success(options));
+        when(paymentMapper.selectOne(any())).thenReturn(successPayment(order));
+        when(refundRequestMapper.insert(any(RefundRequest.class))).thenAnswer(invocation -> {
+            RefundRequest refund = invocation.getArgument(0);
+            refund.setId(1L);
+            return 1;
+        });
+
+        RefundRequestVO result = service.applyRefund(10L, 2004L, "只退一张", null, 1, List.of());
+
+        assertEquals(new BigDecimal("380.00"), result.getAmount());
+        assertEquals("partial", result.getRefundType());
+        assertEquals(1, result.getQuantity());
+        ArgumentCaptor<RefundRequest> captor = ArgumentCaptor.forClass(RefundRequest.class);
+        verify(refundRequestMapper).insert(captor.capture());
+        assertEquals("partial", captor.getValue().getRefundType());
+        assertEquals(1, captor.getValue().getQuantity());
+    }
+
+    @Test
+    void applyPartialRefundRejectsQuantityOverRefundable() {
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        order.setUserId(2004L);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(orderClient.getRefundOptions(10L, "test-internal-token"))
+                .thenReturn(Result.success(refundOptions(10L, 2, 1, 1, new BigDecimal("380.00"))));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.applyRefund(10L, 2004L, "超量", null, 2, List.of()));
+
+        assertEquals("可退款票数不足", error.getMessage());
+        verify(refundRequestMapper, never()).insert(any());
+    }
+
+    @Test
+    void approvePartialRefundMarksOrderPartialRefunded() throws Exception {
+        Long refundId = 500L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("380.00"), 0);
+        pending.setUserId(2004L);
+        pending.setPaymentId(90L);
+        pending.setRefundNo("RF-PARTIAL-1");
+        pending.setRefundType("partial");
+        pending.setQuantity(1);
+        pending.setOrderSeatIds("101");
+        RefundRequest processing = refund(refundId, 10L, new BigDecimal("380.00"), 4);
+        processing.setUserId(2004L);
+        processing.setPaymentId(90L);
+        processing.setRefundNo("RF-PARTIAL-1");
+        processing.setRefundType("partial");
+        processing.setQuantity(1);
+        processing.setOrderSeatIds("101");
+        RefundRequest succeeded = refund(refundId, 10L, new BigDecimal("380.00"), 1);
+        succeeded.setUserId(2004L);
+        succeeded.setPaymentId(90L);
+        succeeded.setRefundNo("RF-PARTIAL-1");
+        succeeded.setRefundType("partial");
+        succeeded.setQuantity(1);
+        succeeded.setOrderSeatIds("101");
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, processing, succeeded);
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        order.setSessionId(3001L);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+        AlipayTradeRefundResponse alipayResponse = mock(AlipayTradeRefundResponse.class);
+        when(alipayResponse.isSuccess()).thenReturn(true);
+        when(alipayResponse.getTradeNo()).thenReturn("ALI-REFUND-1");
+        when(alipayClient.execute(any(AlipayTradeRefundRequest.class))).thenReturn(alipayResponse);
+        when(orderClient.markPartialRefunded(eq(10L), any(MarkPartialRefundedRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success(order));
+
+        RefundRequestVO result = service.approve(refundId, reviewerId, "同意");
+
+        assertEquals(1, result.getStatus());
+        ArgumentCaptor<MarkPartialRefundedRequest> captor = ArgumentCaptor.forClass(MarkPartialRefundedRequest.class);
+        verify(orderClient).markPartialRefunded(eq(10L), captor.capture(), eq("test-internal-token"));
+        assertEquals(1, captor.getValue().getQuantity());
+        assertEquals(List.of(101L), captor.getValue().getOrderSeatIds());
+        verify(orderClient, never()).markRefunded(anyLong(), anyString());
+    }
+
+    @Test
+    void approvePartialRefundKeepsProcessingWhenOrderUpdateFailsAfterAlipaySuccess() throws Exception {
+        Long refundId = 501L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("380.00"), 0);
+        pending.setPaymentId(90L);
+        pending.setRefundNo("RF-PARTIAL-2");
+        pending.setRefundType("partial");
+        pending.setQuantity(1);
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, pending);
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+        AlipayTradeRefundResponse alipayResponse = mock(AlipayTradeRefundResponse.class);
+        when(alipayResponse.isSuccess()).thenReturn(true);
+        when(alipayResponse.getTradeNo()).thenReturn("ALI-REFUND-2");
+        when(alipayClient.execute(any(AlipayTradeRefundRequest.class))).thenReturn(alipayResponse);
+        when(orderClient.markPartialRefunded(eq(10L), any(MarkPartialRefundedRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.fail(500, "order failed"));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.approve(refundId, reviewerId, "同意"));
+
+        assertEquals("支付宝退款已成功，但订单状态更新失败，退款申请保持处理中，请人工补偿/重试", error.getMessage());
+        verify(orderClient).markPartialRefunded(eq(10L), any(MarkPartialRefundedRequest.class), eq("test-internal-token"));
+        verify(refundRequestMapper, times(2)).update(any(), any());
     }
 
     @Test
@@ -233,5 +365,44 @@ class RefundServiceBoundaryTest {
         o.setAmount(amount);
         o.setStatus(status);
         return o;
+    }
+
+    private OrderRefundOptionsResponse refundOptions(Long orderId, int totalQuantity, int refundedQuantity,
+                                                     int refundableQuantity, BigDecimal unitPrice) {
+        OrderRefundOptionsResponse options = new OrderRefundOptionsResponse();
+        options.setOrderId(orderId);
+        options.setTotalQuantity(totalQuantity);
+        options.setRefundedQuantity(refundedQuantity);
+        options.setRefundableQuantity(refundableQuantity);
+        options.setUnitPrice(unitPrice);
+        options.setSeats(List.of());
+        return options;
+    }
+
+    private Payment successPayment(OrderInfoResponse order) {
+        Payment payment = new Payment();
+        payment.setId(90L);
+        payment.setOrderId(order.getId());
+        payment.setOutTradeNo(order.getOrderNo());
+        payment.setTradeNo("ALI-TRADE-1");
+        payment.setAmount(order.getAmount());
+        payment.setStatus(PaymentService.STATUS_SUCCESS);
+        return payment;
+    }
+
+    private InternalUserRefResponse adminUser(Long reviewerId) {
+        InternalUserRefResponse admin = new InternalUserRefResponse();
+        admin.setId(reviewerId);
+        admin.setRole("admin");
+        return admin;
+    }
+
+    private AlipayProperties alipayProperties() {
+        AlipayProperties properties = new AlipayProperties();
+        properties.setGatewayUrl("https://openapi-sandbox.dl.alipaydev.com/gateway.do");
+        properties.setAppId("app-id");
+        properties.setMerchantPrivateKey("merchant-private-key");
+        properties.setAlipayPublicKey("alipay-public-key");
+        return properties;
     }
 }

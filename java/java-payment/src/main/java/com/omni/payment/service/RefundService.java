@@ -16,7 +16,9 @@ import com.omni.payment.client.UserInternalClient;
 import com.omni.payment.config.AlipayProperties;
 import com.omni.payment.dto.DirectRefundResponse;
 import com.omni.payment.dto.InternalUserRefResponse;
+import com.omni.payment.dto.MarkPartialRefundedRequest;
 import com.omni.payment.dto.OrderInfoResponse;
+import com.omni.payment.dto.OrderRefundOptionsResponse;
 import com.omni.payment.dto.RefundRequestVO;
 import com.omni.payment.dto.TicketRefundReviewPermissionResponse;
 import com.omni.payment.entity.Payment;
@@ -38,6 +40,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +70,7 @@ public class RefundService {
     private final UserInternalClient userInternalClient;
     private final TicketRefundReviewInternalClient ticketRefundReviewInternalClient;
     private final String internalApiToken;
+    private final Supplier<AlipayClient> alipayClientFactory;
 
     public RefundService(AlipayProperties alipayProperties,
                          OrderClient orderClient,
@@ -75,6 +79,18 @@ public class RefundService {
                          UserInternalClient userInternalClient,
                          TicketRefundReviewInternalClient ticketRefundReviewInternalClient,
                          @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+        this(alipayProperties, orderClient, refundRequestMapper, paymentMapper,
+                userInternalClient, ticketRefundReviewInternalClient, internalApiToken, null);
+    }
+
+    public RefundService(AlipayProperties alipayProperties,
+                         OrderClient orderClient,
+                         RefundRequestMapper refundRequestMapper,
+                         PaymentMapper paymentMapper,
+                         UserInternalClient userInternalClient,
+                         TicketRefundReviewInternalClient ticketRefundReviewInternalClient,
+                         String internalApiToken,
+                         Supplier<AlipayClient> alipayClientFactory) {
         this.alipayProperties = alipayProperties;
         this.orderClient = orderClient;
         this.refundRequestMapper = refundRequestMapper;
@@ -82,6 +98,7 @@ public class RefundService {
         this.userInternalClient = userInternalClient;
         this.ticketRefundReviewInternalClient = ticketRefundReviewInternalClient;
         this.internalApiToken = internalApiToken;
+        this.alipayClientFactory = alipayClientFactory;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -91,6 +108,12 @@ public class RefundService {
 
     @Transactional(rollbackFor = Exception.class)
     public RefundRequestVO applyRefund(Long orderId, Long userId, String reason, String reasonType) {
+        return applyRefund(orderId, userId, reason, reasonType, null, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public RefundRequestVO applyRefund(Long orderId, Long userId, String reason, String reasonType,
+                                       Integer quantity, List<Long> orderSeatIds) {
         if (userId == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
         }
@@ -103,15 +126,28 @@ public class RefundService {
         }
 
         RefundRequest latestRefund = getLatestRefundByOrderId(orderId);
-        if (latestRefund != null && isActiveRefundStatus(latestRefund.getStatus())) {
+        if (isBlockingRefund(latestRefund)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "该订单已有退款申请，不允许重复申请");
         }
+
+        OrderRefundOptionsResponse options = getRefundOptionsOrThrow(orderId);
+        int refundableQuantity = valueOrZero(options.getRefundableQuantity());
+        int refundedQuantity = valueOrZero(options.getRefundedQuantity());
+        int refundQuantity = quantity == null ? refundableQuantity : quantity;
+        if (refundQuantity <= 0 || refundQuantity > refundableQuantity) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "可退款票数不足");
+        }
+        validateOrderSeatIds(orderSeatIds, refundQuantity, options);
+        BigDecimal amount = normalizeAmount(options.getUnitPrice())
+                .multiply(BigDecimal.valueOf(refundQuantity))
+                .setScale(2, RoundingMode.HALF_UP);
+        String refundType = refundQuantity >= refundableQuantity && refundedQuantity == 0 ? "full" : "partial";
 
         Payment payment = getLatestSuccessfulPayment(order.getOrderNo());
         validatePaymentForOrder(payment, order);
 
         latestRefund = getLatestRefundByOrderId(orderId);
-        if (latestRefund != null && isActiveRefundStatus(latestRefund.getStatus())) {
+        if (isBlockingRefund(latestRefund)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "该订单已有退款申请，不允许重复申请");
         }
 
@@ -120,7 +156,10 @@ public class RefundService {
         refund.setUserId(userId);
         refund.setPaymentId(payment.getId());
         refund.setRefundNo(generateRefundNo());
-        refund.setAmount(normalizeAmount(order.getAmount()));
+        refund.setAmount(amount);
+        refund.setQuantity(refundQuantity);
+        refund.setOrderSeatIds(joinIds(orderSeatIds));
+        refund.setRefundType(refundType);
         refund.setReason(formatRefundReason(reason, reasonType));
         refund.setStatus(REFUND_STATUS_PENDING);
         refund.setCreateTime(LocalDateTime.now());
@@ -230,7 +269,7 @@ public class RefundService {
             if (response != null && response.isSuccess()) {
                 String alipayRefundNo = firstText(response.getTradeNo(), response.getOutTradeNo());
                 try {
-                    markOrderRefunded(order.getId());
+                    markOrderRefundedByType(order.getId(), refund);
                 } catch (RuntimeException e) {
                     updateRefundCompensationRequired(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), e.getMessage(), now);
                     throw new BusinessException(ResultCode.INTERNAL_ERROR,
@@ -434,6 +473,26 @@ public class RefundService {
         }
     }
 
+    private void markOrderRefundedByType(Long orderId, RefundRequest refund) {
+        if ("partial".equals(refund.getRefundType())) {
+            markOrderPartialRefunded(orderId, refund);
+            return;
+        }
+        markOrderRefunded(orderId);
+    }
+
+    private void markOrderPartialRefunded(Long orderId, RefundRequest refund) {
+        MarkPartialRefundedRequest request = new MarkPartialRefundedRequest();
+        request.setQuantity(refund.getQuantity());
+        request.setOrderSeatIds(parseIds(refund.getOrderSeatIds()));
+        String token = requireInternalApiToken();
+        Result<OrderInfoResponse> result = orderClient.markPartialRefunded(orderId, request, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+            String message = result != null && StringUtils.hasText(result.getMessage()) ? result.getMessage() : "更新订单部分退款状态失败";
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "更新订单部分退款状态失败: " + message);
+        }
+    }
+
     private OrderInfoResponse getOrderOrThrow(Long orderId) {
         if (orderId == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "订单ID不能为空");
@@ -455,6 +514,28 @@ public class RefundService {
         }
         if (result.getData() == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
+        }
+        return result.getData();
+    }
+
+    private OrderRefundOptionsResponse getRefundOptionsOrThrow(Long orderId) {
+        String token = requireInternalApiToken();
+        Result<OrderRefundOptionsResponse> result;
+        try {
+            result = orderClient.getRefundOptions(orderId, token);
+        } catch (RuntimeException e) {
+            log.error("订单退款明细调用失败: orderId={}", orderId, e);
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "订单服务无响应");
+        }
+        if (result == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "加载可退款明细失败: 订单服务无响应");
+        }
+        if (result.getCode() != ResultCode.SUCCESS.getCode()) {
+            String message = StringUtils.hasText(result.getMessage()) ? result.getMessage() : "订单服务返回失败";
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "加载可退款明细失败: " + message);
+        }
+        if (result.getData() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "可退款明细不存在");
         }
         return result.getData();
     }
@@ -589,7 +670,7 @@ public class RefundService {
 
     private void validateRefundAmount(RefundRequest refund, OrderInfoResponse order) {
         normalizeAmount(refund.getAmount());
-        if (!amountEquals(refund.getAmount(), order.getAmount())) {
+        if (!"partial".equals(refund.getRefundType()) && !amountEquals(refund.getAmount(), order.getAmount())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "退款金额与订单金额不一致");
         }
     }
@@ -598,6 +679,13 @@ public class RefundService {
         return REFUND_STATUS_PENDING.equals(status)
                 || REFUND_STATUS_REFUNDED.equals(status)
                 || REFUND_STATUS_PROCESSING.equals(status);
+    }
+
+    private boolean isBlockingRefund(RefundRequest refund) {
+        if (refund == null || !isActiveRefundStatus(refund.getStatus())) {
+            return false;
+        }
+        return !REFUND_STATUS_REFUNDED.equals(refund.getStatus()) || !"partial".equals(refund.getRefundType());
     }
 
     private boolean isUniqueViolation(Throwable error) {
@@ -625,6 +713,9 @@ public class RefundService {
         vo.setPaymentId(refund.getPaymentId());
         vo.setRefundNo(refund.getRefundNo());
         vo.setAmount(refund.getAmount());
+        vo.setQuantity(refund.getQuantity());
+        vo.setOrderSeatIds(refund.getOrderSeatIds());
+        vo.setRefundType(refund.getRefundType());
         vo.setReason(refund.getReason());
         vo.setStatus(refund.getStatus());
         vo.setReviewerId(refund.getReviewerId());
@@ -647,6 +738,50 @@ public class RefundService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "退款金额必须大于0");
         }
         return amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private int valueOrZero(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private void validateOrderSeatIds(List<Long> orderSeatIds, int refundQuantity, OrderRefundOptionsResponse options) {
+        if (orderSeatIds == null || orderSeatIds.isEmpty()) {
+            return;
+        }
+        if (orderSeatIds.size() != refundQuantity) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "选择座位数量与退款票数不一致");
+        }
+        if (orderSeatIds.stream().distinct().count() != orderSeatIds.size()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "选择座位重复");
+        }
+        List<Long> allowedIds = options.getSeats() == null ? List.of() : options.getSeats().stream()
+                .map(seat -> seat.getOrderSeatId())
+                .collect(Collectors.toList());
+        if (!allowedIds.containsAll(orderSeatIds)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "选择座位不可退款");
+        }
+    }
+
+    private String joinIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return null;
+        }
+        return ids.stream()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+    }
+
+    private List<Long> parseIds(String text) {
+        if (!StringUtils.hasText(text)) {
+            return List.of();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (String part : text.split(",")) {
+            if (StringUtils.hasText(part)) {
+                ids.add(Long.valueOf(part.trim()));
+            }
+        }
+        return ids;
     }
 
     private boolean amountEquals(BigDecimal left, BigDecimal right) {
@@ -685,6 +820,9 @@ public class RefundService {
     }
 
     private AlipayClient createClient() {
+        if (alipayClientFactory != null) {
+            return alipayClientFactory.get();
+        }
         return new DefaultAlipayClient(
                 alipayProperties.getGatewayUrl(),
                 alipayProperties.getAppId(),

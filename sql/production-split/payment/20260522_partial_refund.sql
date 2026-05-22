@@ -26,3 +26,9 @@ ALTER TABLE refund_request
 ALTER TABLE refund_request
     ADD CONSTRAINT ck_refund_request_refund_type
     CHECK (refund_type IN ('full', 'partial'));
+
+DROP INDEX IF EXISTS idx_refund_order_active_unique;
+
+CREATE UNIQUE INDEX idx_refund_order_active_unique
+    ON refund_request(order_id)
+    WHERE status IN (0, 4) OR (status = 1 AND refund_type = 'full');

@@ -49,7 +49,13 @@ public class RefundController {
             throw new BusinessException(ResultCode.BAD_REQUEST, "退款申请参数不能为空");
         }
         AuthUser authUser = requireAuthUser(authorization);
-        return Result.success(refundService.applyRefund(request.getOrderId(), authUser.userId, request.getReason(), request.getReasonType()));
+        return Result.success(refundService.applyRefund(
+                request.getOrderId(),
+                authUser.userId,
+                request.getReason(),
+                request.getReasonType(),
+                request.getQuantity(),
+                request.getOrderSeatIds()));
     }
 
     @GetMapping("/my")

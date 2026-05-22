@@ -20,6 +20,9 @@ public class RefundRequest {
     private Long paymentId;
     private String refundNo;
     private BigDecimal amount;
+    private Integer quantity;
+    private String orderSeatIds;
+    private String refundType;
     private String reason;
     /** 状态: 0=待审核, 1=已退款, 2=已拒绝, 3=退款失败, 4=退款处理中 */
     private Integer status;
@@ -43,6 +46,12 @@ public class RefundRequest {
     public void setRefundNo(String refundNo) { this.refundNo = refundNo; }
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
+    public Integer getQuantity() { return quantity; }
+    public void setQuantity(Integer quantity) { this.quantity = quantity; }
+    public String getOrderSeatIds() { return orderSeatIds; }
+    public void setOrderSeatIds(String orderSeatIds) { this.orderSeatIds = orderSeatIds; }
+    public String getRefundType() { return refundType; }
+    public void setRefundType(String refundType) { this.refundType = refundType; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
     public Integer getStatus() { return status; }
