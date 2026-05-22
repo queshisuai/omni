@@ -128,6 +128,7 @@ public class OrderService {
         int quantity = requirePositiveQuantity(request.getQuantity());
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), null, quantity);
+        validatePerUserLimit(request.getUserId(), quote, quantity);
         Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity, quote.getUnitPrice());
         lockStockForOrder(order);
         orderMapper.insert(order);
@@ -168,6 +169,7 @@ public class OrderService {
         int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
+        validatePerUserLimit(request.getUserId(), quote, quantity);
         TicketSalesLockRequest lockRequest = new TicketSalesLockRequest();
         lockRequest.setOrderId(0L);
         lockRequest.setSessionId(request.getSessionId());
@@ -463,6 +465,18 @@ public class OrderService {
             throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
         }
         return result.getData();
+    }
+
+    private void validatePerUserLimit(Long userId, TicketSalesQuoteResponse quote, int quantity) {
+        Integer limit = quote.getPerUserLimit();
+        if (limit == null) {
+            return;
+        }
+        Integer existing = orderMapper.sumEffectiveQuantityByUserAndActivity(userId, quote.getActivityId());
+        int effective = existing == null ? 0 : existing;
+        if (effective + quantity > limit) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "超过本活动个人限购数量");
+        }
     }
 
     private void lockStockForOrder(Order order) {

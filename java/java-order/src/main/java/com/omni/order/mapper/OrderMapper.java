@@ -45,6 +45,14 @@ public interface OrderMapper extends BaseMapper<Order> {
             "</script>"})
     Long countPaidOrdersBySessions(@Param("sessionIds") List<Long> sessionIds);
 
+    @Select("SELECT COALESCE(SUM(o.quantity), 0) " +
+            "FROM \"order\" o " +
+            "JOIN order_snapshot os ON os.order_id = o.id " +
+            "WHERE o.user_id = #{userId} " +
+            "AND os.activity_id = #{activityId} " +
+            "AND o.status = 2")
+    Integer sumEffectiveQuantityByUserAndActivity(@Param("userId") Long userId, @Param("activityId") Long activityId);
+
     @Update("UPDATE \"order\" SET status = #{nextStatus}, update_time = CURRENT_TIMESTAMP WHERE id = #{id} AND status = #{expectedStatus}")
     int updateStatusIfCurrent(@Param("id") Long id,
                               @Param("expectedStatus") Integer expectedStatus,

@@ -18,6 +18,7 @@ public class TicketSalesQuoteResponse {
     private Long tourId;
     private Long stationId;
     private String seatLabels;
+    private Integer perUserLimit;
 
     public Long getSessionId() { return sessionId; }
     public void setSessionId(Long sessionId) { this.sessionId = sessionId; }
@@ -47,4 +48,6 @@ public class TicketSalesQuoteResponse {
     public void setStationId(Long stationId) { this.stationId = stationId; }
     public String getSeatLabels() { return seatLabels; }
     public void setSeatLabels(String seatLabels) { this.seatLabels = seatLabels; }
+    public Integer getPerUserLimit() { return perUserLimit; }
+    public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
 }
