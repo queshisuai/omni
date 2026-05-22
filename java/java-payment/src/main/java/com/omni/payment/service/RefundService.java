@@ -125,8 +125,7 @@ public class RefundService {
             throw new BusinessException(ResultCode.FORBIDDEN, "只能申请自己的订单退款");
         }
 
-        RefundRequest latestRefund = getLatestRefundByOrderId(orderId);
-        if (isBlockingRefund(latestRefund)) {
+        if (hasBlockingRefund(orderId)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "该订单已有退款申请，不允许重复申请");
         }
 
@@ -137,7 +136,7 @@ public class RefundService {
         if (refundQuantity <= 0 || refundQuantity > refundableQuantity) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "可退款票数不足");
         }
-        validateOrderSeatIds(orderSeatIds, refundQuantity, options);
+        validateOrderSeatIds(orderSeatIds, refundQuantity, options, false);
         BigDecimal amount = normalizeAmount(options.getUnitPrice())
                 .multiply(BigDecimal.valueOf(refundQuantity))
                 .setScale(2, RoundingMode.HALF_UP);
@@ -146,8 +145,7 @@ public class RefundService {
         Payment payment = getLatestSuccessfulPayment(order.getOrderNo());
         validatePaymentForOrder(payment, order);
 
-        latestRefund = getLatestRefundByOrderId(orderId);
-        if (isBlockingRefund(latestRefund)) {
+        if (hasBlockingRefund(orderId)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "该订单已有退款申请，不允许重复申请");
         }
 
@@ -246,6 +244,7 @@ public class RefundService {
         Payment payment = getPaymentOrThrow(refund.getPaymentId(), order.getOrderNo());
         validatePaymentForOrder(payment, order);
         validateRefundAmount(refund, order);
+        validatePartialRefundBeforeAlipay(refund, reviewerId, reviewNote);
 
         LocalDateTime now = LocalDateTime.now();
         if (REFUND_STATUS_PENDING.equals(refund.getStatus())) {
@@ -273,7 +272,7 @@ public class RefundService {
                 } catch (RuntimeException e) {
                     updateRefundCompensationRequired(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), e.getMessage(), now);
                     throw new BusinessException(ResultCode.INTERNAL_ERROR,
-                            "支付宝退款已成功，但订单状态更新失败，退款申请保持处理中，请人工补偿/重试");
+                            "支付宝退款已成功，但订单状态更新失败，需人工补偿");
                 }
                 refund = updateRefundSucceeded(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), now);
                 return toVO(refund, order.getOrderNo());
@@ -394,6 +393,17 @@ public class RefundService {
         return getRefundOrThrow(refundId);
     }
 
+    private RefundRequest markPendingRefundFailed(Long refundId, Long reviewerId, String reviewNote, String rawResponse, LocalDateTime now) {
+        LambdaUpdateWrapper<RefundRequest> wrapper = pendingUpdateWrapper(refundId)
+                .set(RefundRequest::getStatus, REFUND_STATUS_FAILED)
+                .set(RefundRequest::getReviewerId, reviewerId)
+                .set(RefundRequest::getReviewNote, reviewNote)
+                .set(RefundRequest::getRawResponse, rawResponse)
+                .set(RefundRequest::getReviewTime, now);
+        updatePendingOrThrow(wrapper);
+        return getRefundOrThrow(refundId);
+    }
+
     private RefundRequest updateRefundUnknown(Long refundId, Long reviewerId, String reviewNote, String rawResponse, LocalDateTime now) {
         LambdaUpdateWrapper<RefundRequest> wrapper = processingUpdateWrapper(refundId)
                 .set(RefundRequest::getReviewerId, reviewerId)
@@ -428,6 +438,7 @@ public class RefundService {
                                                   String failureMessage, LocalDateTime now) {
         String message = "支付宝退款已成功，但订单退款状态更新失败，需要人工补偿/重试: " + failureMessage;
         LambdaUpdateWrapper<RefundRequest> wrapper = processingUpdateWrapper(refundId)
+                .set(RefundRequest::getStatus, REFUND_STATUS_FAILED)
                 .set(RefundRequest::getReviewerId, reviewerId)
                 .set(RefundRequest::getReviewNote, appendMessage(reviewNote, message))
                 .set(RefundRequest::getAlipayRefundNo, alipayRefundNo)
@@ -628,6 +639,16 @@ public class RefundService {
         return refundRequestMapper.selectOne(wrapper);
     }
 
+    private boolean hasBlockingRefund(Long orderId) {
+        LambdaQueryWrapper<RefundRequest> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(RefundRequest::getOrderId, orderId)
+                .and(w -> w.in(RefundRequest::getStatus, REFUND_STATUS_PENDING, REFUND_STATUS_PROCESSING)
+                        .or(q -> q.eq(RefundRequest::getStatus, REFUND_STATUS_REFUNDED)
+                                .eq(RefundRequest::getRefundType, "full")))
+                .last("LIMIT 1");
+        return refundRequestMapper.selectOne(wrapper) != null;
+    }
+
     private Payment getLatestSuccessfulPayment(String outTradeNo) {
         if (!StringUtils.hasText(outTradeNo)) {
             return null;
@@ -672,6 +693,51 @@ public class RefundService {
         normalizeAmount(refund.getAmount());
         if (!"partial".equals(refund.getRefundType()) && !amountEquals(refund.getAmount(), order.getAmount())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "退款金额与订单金额不一致");
+        }
+    }
+
+    private void validatePartialRefundBeforeAlipay(RefundRequest refund, Long reviewerId, String reviewNote) {
+        if (!"partial".equals(refund.getRefundType())) {
+            return;
+        }
+        try {
+            validatePartialRefundAgainstOptions(refund, getRefundOptionsOrThrow(refund.getOrderId()), true);
+        } catch (BusinessException e) {
+            markRefundValidationFailed(refund, reviewerId, appendMessage(reviewNote, e.getMessage()), e.getMessage(), LocalDateTime.now());
+            throw e;
+        }
+    }
+
+    private void markRefundValidationFailed(RefundRequest refund, Long reviewerId, String reviewNote, String rawResponse, LocalDateTime now) {
+        if (REFUND_STATUS_PROCESSING.equals(refund.getStatus())) {
+            updateRefundFailed(refund.getId(), reviewerId, reviewNote, rawResponse, now);
+            return;
+        }
+        markPendingRefundFailed(refund.getId(), reviewerId, reviewNote, rawResponse, now);
+    }
+
+    private void validatePartialRefundAgainstOptions(RefundRequest refund, OrderRefundOptionsResponse options, boolean approval) {
+        int refundQuantity = valueOrZero(refund.getQuantity());
+        int refundableQuantity = valueOrZero(options.getRefundableQuantity());
+        if (refundQuantity <= 0 || refundQuantity > refundableQuantity) {
+            throw new BusinessException(ResultCode.BAD_REQUEST,
+                    approval ? "当前可退款票数不足，请拒绝后让用户重新申请" : "可退款票数不足");
+        }
+        List<Long> orderSeatIds = parseIds(refund.getOrderSeatIds());
+        try {
+            validateOrderSeatIds(orderSeatIds, refundQuantity, options, approval);
+        } catch (BusinessException e) {
+            if (approval && "选择座位不可退款".equals(e.getMessage())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "退款座位当前不可退，请拒绝后让用户重新申请");
+            }
+            throw e;
+        }
+        BigDecimal expectedAmount = normalizeAmount(options.getUnitPrice())
+                .multiply(BigDecimal.valueOf(refundQuantity))
+                .setScale(2, RoundingMode.HALF_UP);
+        if (!amountEquals(refund.getAmount(), expectedAmount)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST,
+                    approval ? "退款金额已变化，请拒绝后让用户重新申请" : "退款金额与可退款明细不一致");
         }
     }
 
@@ -744,7 +810,12 @@ public class RefundService {
         return value == null ? 0 : value;
     }
 
-    private void validateOrderSeatIds(List<Long> orderSeatIds, int refundQuantity, OrderRefundOptionsResponse options) {
+    private void validateOrderSeatIds(List<Long> orderSeatIds, int refundQuantity, OrderRefundOptionsResponse options, boolean approval) {
+        boolean hasSeatOptions = options.getSeats() != null && !options.getSeats().isEmpty();
+        if (hasSeatOptions && (orderSeatIds == null || orderSeatIds.isEmpty())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST,
+                    approval ? "退款座位当前不可退，请拒绝后让用户重新申请" : "有座订单必须选择退款座位");
+        }
         if (orderSeatIds == null || orderSeatIds.isEmpty()) {
             return;
         }

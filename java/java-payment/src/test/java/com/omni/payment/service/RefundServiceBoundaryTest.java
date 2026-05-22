@@ -14,6 +14,7 @@ import com.omni.payment.dto.InternalUserRefResponse;
 import com.omni.payment.dto.MarkPartialRefundedRequest;
 import com.omni.payment.dto.OrderInfoResponse;
 import com.omni.payment.dto.OrderRefundOptionsResponse;
+import com.omni.payment.dto.RefundSeatOptionResponse;
 import com.omni.payment.dto.RefundRequestVO;
 import com.omni.payment.dto.TicketRefundReviewPermissionResponse;
 import com.omni.payment.entity.Payment;
@@ -99,6 +100,42 @@ class RefundServiceBoundaryTest {
     }
 
     @Test
+    void applyRefundRejectsAnyPendingRefundEvenWhenLatestIsPartialSuccess() {
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        order.setUserId(2004L);
+        RefundRequest partialSuccess = refund(1L, 10L, new BigDecimal("380.00"), 1);
+        partialSuccess.setRefundType("partial");
+        RefundRequest pending = refund(2L, 10L, new BigDecimal("380.00"), 0);
+        pending.setRefundType("partial");
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(refundRequestMapper.selectOne(any())).thenReturn(partialSuccess);
+        when(refundRequestMapper.selectList(any())).thenReturn(List.of(pending));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.applyRefund(10L, 2004L, "再次申请", null, 1, List.of()));
+
+        assertEquals("该订单已有退款申请，不允许重复申请", error.getMessage());
+        verify(orderClient, never()).getRefundOptions(anyLong(), anyString());
+        verify(refundRequestMapper, never()).insert(any());
+    }
+
+    @Test
+    void applyPartialRefundRequiresSeatIdsWhenOrderHasRefundableSeats() {
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        order.setUserId(2004L);
+        OrderRefundOptionsResponse options = refundOptions(10L, 2, 0, 2, new BigDecimal("380.00"));
+        options.setSeats(List.of(refundSeat(101L), refundSeat(102L)));
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(orderClient.getRefundOptions(10L, "test-internal-token")).thenReturn(Result.success(options));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.applyRefund(10L, 2004L, "有座订单", null, 1, List.of()));
+
+        assertEquals("有座订单必须选择退款座位", error.getMessage());
+        verify(refundRequestMapper, never()).insert(any());
+    }
+
+    @Test
     void approvePartialRefundMarksOrderPartialRefunded() throws Exception {
         Long refundId = 500L;
         Long reviewerId = 2002L;
@@ -127,6 +164,9 @@ class RefundServiceBoundaryTest {
         OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
         order.setSessionId(3001L);
         when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        OrderRefundOptionsResponse options = refundOptions(10L, 2, 0, 2, new BigDecimal("380.00"));
+        options.setSeats(List.of(refundSeat(101L), refundSeat(102L)));
+        when(orderClient.getRefundOptions(10L, "test-internal-token")).thenReturn(Result.success(options));
         when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
                 .thenReturn(Result.success(adminUser(reviewerId)));
         when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
@@ -149,7 +189,7 @@ class RefundServiceBoundaryTest {
     }
 
     @Test
-    void approvePartialRefundKeepsProcessingWhenOrderUpdateFailsAfterAlipaySuccess() throws Exception {
+    void approvePartialRefundMarksFailedWhenOrderUpdateFailsAfterAlipaySuccess() throws Exception {
         Long refundId = 501L;
         Long reviewerId = 2002L;
         RefundRequest pending = refund(refundId, 10L, new BigDecimal("380.00"), 0);
@@ -157,9 +197,21 @@ class RefundServiceBoundaryTest {
         pending.setRefundNo("RF-PARTIAL-2");
         pending.setRefundType("partial");
         pending.setQuantity(1);
-        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, pending);
+        RefundRequest processing = refund(refundId, 10L, new BigDecimal("380.00"), 4);
+        processing.setPaymentId(90L);
+        processing.setRefundNo("RF-PARTIAL-2");
+        processing.setRefundType("partial");
+        processing.setQuantity(1);
+        RefundRequest failed = refund(refundId, 10L, new BigDecimal("380.00"), 3);
+        failed.setPaymentId(90L);
+        failed.setRefundNo("RF-PARTIAL-2");
+        failed.setRefundType("partial");
+        failed.setQuantity(1);
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, processing, failed);
         OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
         when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(orderClient.getRefundOptions(10L, "test-internal-token"))
+                .thenReturn(Result.success(refundOptions(10L, 2, 0, 2, new BigDecimal("380.00"))));
         when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
                 .thenReturn(Result.success(adminUser(reviewerId)));
         when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
@@ -174,9 +226,65 @@ class RefundServiceBoundaryTest {
         BusinessException error = assertThrows(BusinessException.class,
                 () -> service.approve(refundId, reviewerId, "同意"));
 
-        assertEquals("支付宝退款已成功，但订单状态更新失败，退款申请保持处理中，请人工补偿/重试", error.getMessage());
+        assertEquals("支付宝退款已成功，但订单状态更新失败，需人工补偿", error.getMessage());
         verify(orderClient).markPartialRefunded(eq(10L), any(MarkPartialRefundedRequest.class), eq("test-internal-token"));
         verify(refundRequestMapper, times(2)).update(any(), any());
+    }
+
+    @Test
+    void approvePartialRefundRejectsQuantityDriftBeforeAlipay() throws Exception {
+        Long refundId = 502L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("760.00"), 0);
+        pending.setPaymentId(90L);
+        pending.setRefundNo("RF-PARTIAL-3");
+        pending.setRefundType("partial");
+        pending.setQuantity(2);
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending);
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+        when(orderClient.getRefundOptions(10L, "test-internal-token"))
+                .thenReturn(Result.success(refundOptions(10L, 2, 1, 1, new BigDecimal("380.00"))));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.approve(refundId, reviewerId, "同意"));
+
+        assertEquals("当前可退款票数不足，请拒绝后让用户重新申请", error.getMessage());
+        verify(alipayClient, never()).execute(any(AlipayTradeRefundRequest.class));
+        verify(refundRequestMapper).update(any(), any());
+    }
+
+    @Test
+    void approvePartialRefundRejectsUnavailableSeatBeforeAlipay() throws Exception {
+        Long refundId = 503L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("380.00"), 0);
+        pending.setPaymentId(90L);
+        pending.setRefundNo("RF-PARTIAL-4");
+        pending.setRefundType("partial");
+        pending.setQuantity(1);
+        pending.setOrderSeatIds("101");
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending);
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+        OrderRefundOptionsResponse options = refundOptions(10L, 2, 0, 2, new BigDecimal("380.00"));
+        options.setSeats(List.of(refundSeat(102L)));
+        when(orderClient.getRefundOptions(10L, "test-internal-token")).thenReturn(Result.success(options));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.approve(refundId, reviewerId, "同意"));
+
+        assertEquals("退款座位当前不可退，请拒绝后让用户重新申请", error.getMessage());
+        verify(alipayClient, never()).execute(any(AlipayTradeRefundRequest.class));
+        verify(refundRequestMapper).update(any(), any());
     }
 
     @Test
@@ -377,6 +485,12 @@ class RefundServiceBoundaryTest {
         options.setUnitPrice(unitPrice);
         options.setSeats(List.of());
         return options;
+    }
+
+    private RefundSeatOptionResponse refundSeat(Long orderSeatId) {
+        RefundSeatOptionResponse seat = new RefundSeatOptionResponse();
+        seat.setOrderSeatId(orderSeatId);
+        return seat;
     }
 
     private Payment successPayment(OrderInfoResponse order) {
