@@ -456,7 +456,7 @@ export async function createTourDraft(body: Record<string, unknown>) {
   })
 }
 
-export async function createStationDraft(tourId: number, body: Record<string, unknown> & { perUserLimit?: number | null }) {
+export async function createStationDraft(tourId: number, body: Record<string, unknown>) {
   return request<import('@/types/api').StationEntity>(`/api/ticket/admin/tours/${tourId}/stations/draft`, {
     method: 'POST', body: JSON.stringify(body),
   })

@@ -49,6 +49,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -346,6 +347,59 @@ class AdminControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals(3, result.getData().getPerUserLimit());
+    }
+
+    @Test
+    void createActivityRejectsNonNumericPerUserLimit() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Map<String, Object> body = validCreateActivityBody();
+        body.put("perUserLimit", "abc");
+
+        Result<Activity> result = controller.createActivity(body);
+
+        assertEquals(400, result.getCode());
+        assertEquals("个人限购张数必须为数字", result.getMessage());
+        verify(activityMapper, never()).insert(any(Activity.class));
+    }
+
+    @Test
+    void updateActivitySavesPerUserLimit() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setOrganizerId(2003L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+
+        Result<Activity> result = controller.updateActivity(10L, Map.of(
+                "userId", 2003L,
+                "perUserLimit", 5
+        ));
+
+        assertEquals(200, result.getCode());
+        assertEquals(5, result.getData().getPerUserLimit());
+        verify(activityMapper).updateById(activity);
+    }
+
+    @Test
+    void updateActivityClearsBlankPerUserLimit() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setOrganizerId(2003L);
+        activity.setPerUserLimit(5);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", 2003L);
+        body.put("perUserLimit", " ");
+
+        Result<Activity> result = controller.updateActivity(10L, body);
+
+        assertEquals(200, result.getCode());
+        assertNull(result.getData().getPerUserLimit());
+        verify(activityMapper).updateById(activity);
     }
 
     @Test
