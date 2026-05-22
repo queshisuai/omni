@@ -12,6 +12,9 @@ import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.ActivityArtistDto;
+import com.omni.ticket.dto.ActivityRiskResolutionRequest;
+import com.omni.ticket.dto.ActivityRiskResolutionResponse;
+import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSearchResponse;
@@ -34,6 +37,7 @@ import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
 import com.omni.ticket.service.ArtistAdminService;
 import com.omni.ticket.service.ArtistGovernanceService;
+import com.omni.ticket.service.ActivityRiskResponseService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
 import com.omni.ticket.service.UserAccessService;
@@ -98,6 +102,7 @@ public class AdminController {
     private final ActivityArtistService activityArtistService;
     private final ArtistAdminService artistAdminService;
     private final ArtistGovernanceService artistGovernanceService;
+    private final ActivityRiskResponseService activityRiskResponseService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -112,7 +117,7 @@ public class AdminController {
                                  VenueDefaultLayoutService venueDefaultLayoutService) {
         this(activityMapper, null, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
-                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null);
+                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Autowired
@@ -135,7 +140,8 @@ public class AdminController {
                                      TicketTypeStockRecalculationService stockRecalculationService,
                                      ActivityArtistService activityArtistService,
                                      ArtistAdminService artistAdminService,
-                                     ArtistGovernanceService artistGovernanceService) {
+                                     ArtistGovernanceService artistGovernanceService,
+                                     ActivityRiskResponseService activityRiskResponseService) {
         this.activityMapper = activityMapper;
         this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
@@ -159,6 +165,7 @@ public class AdminController {
         this.activityArtistService = activityArtistService;
         this.artistAdminService = artistAdminService;
         this.artistGovernanceService = artistGovernanceService;
+        this.activityRiskResponseService = activityRiskResponseService;
     }
 
     @GetMapping("/artists/search")
@@ -191,6 +198,24 @@ public class AdminController {
     @PostMapping("/artists/{id}/risk")
     public Result<Artist> updateArtistRisk(@PathVariable Long id, @RequestBody ArtistRiskRequest request) {
         return Result.success(artistGovernanceService.updateRisk(id, request));
+    }
+
+    @PostMapping("/activities/{id}/risk-resolution")
+    public Result<ActivityRiskResolutionResponse> submitRiskResolution(@PathVariable Long id,
+                                                                       @RequestBody ActivityRiskResolutionRequest request) {
+        return Result.success(activityRiskResponseService.submitResolution(id, request));
+    }
+
+    @GetMapping("/risk-resolutions")
+    public Result<List<ActivityRiskResolutionResponse>> listRiskResolutions(@RequestParam Long userId,
+                                                                            @RequestParam(required = false) String status) {
+        return Result.success(activityRiskResponseService.listResolutions(userId, status));
+    }
+
+    @PostMapping("/risk-resolutions/{id}/review")
+    public Result<ActivityRiskResolutionResponse> reviewRiskResolution(@PathVariable Long id,
+                                                                       @RequestBody ActivityRiskResolutionReviewRequest request) {
+        return Result.success(activityRiskResponseService.reviewResolution(id, request));
     }
 
     @GetMapping("/summary")

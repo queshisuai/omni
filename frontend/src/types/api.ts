@@ -153,6 +153,30 @@ export interface ArtistRiskRequest {
   reason?: string | null
 }
 
+export interface ActivityRiskResolutionRequest {
+  userId: number
+  resolutionNote?: string | null
+}
+
+export interface ActivityRiskResolutionReviewRequest {
+  userId: number
+  action: 'approve' | 'reject'
+  reviewNote?: string | null
+}
+
+export interface ActivityRiskResolutionVO {
+  id: number
+  activityId: number
+  organizerId: number
+  riskArtistId?: number | null
+  status: 'pending' | 'approved' | 'rejected' | string
+  resolutionNote?: string | null
+  reviewNote?: string | null
+  submittedBy?: number | null
+  reviewedBy?: number | null
+  reviewedAt?: string | null
+}
+
 /** 分页结果 */
 export interface PageResult<T> {
   records: T[]
@@ -201,6 +225,9 @@ export interface ActivityEntity {
   description: string | null
   poster: string
   publishStatus?: string | null
+  riskSuspendedReason?: string | null
+  riskSuspendedAt?: string | null
+  riskRestoredAt?: string | null
   seatMapVisibility?: 'published' | 'hidden' | null
   status: number
   createTime: string

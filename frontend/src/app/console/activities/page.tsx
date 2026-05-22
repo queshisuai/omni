@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
-import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity } from '@/lib/api'
+import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity, submitActivityRiskResolution } from '@/lib/api'
 import { Plus, Edit, Trash2, Eye, EyeOff, RefreshCw, Search } from 'lucide-react'
 import type { ActivityEntity, UserRole } from '@/types/api'
 
@@ -113,6 +113,18 @@ export default function ActivitiesPage() {
     loadData(page)
   }
 
+  const handleRiskResolution = async (activity: ActivityEntity) => {
+    const note = window.prompt('请说明已完成的风险处理，例如移除风险艺人或补充合规证明。')
+    if (note === null) return
+    if (!note.trim()) {
+      alert('处理说明不能为空')
+      return
+    }
+    await submitActivityRiskResolution(activity.id, { userId, resolutionNote: note.trim() })
+    alert('已提交恢复售票申请，等待平台审核。')
+    loadData(page)
+  }
+
   const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setPage(1)
@@ -203,7 +215,7 @@ export default function ActivitiesPage() {
                   </td>
                   <td className="p-3">
                     <span className={`text-[12px] px-2 py-0.5 rounded-full ${a.status === 1 ? 'bg-[#f0fff4] text-[#22c55e]' : 'bg-[#f5f5f5] text-[#999]'}`}>
-                      {a.status === 1 ? '上架' : '下架'}
+                      {a.publishStatus === 'risk_suspended' ? '风险停票' : a.status === 1 ? '上架' : '下架'}
                     </span>
                   </td>
                   <td className="p-3 text-[#999]">{a.createTime?.substring(0, 10)}</td>
@@ -230,6 +242,15 @@ export default function ActivitiesPage() {
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
+                      {a.publishStatus === 'risk_suspended' && (
+                        <button
+                          onClick={() => handleRiskResolution(a)}
+                          className="rounded px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]"
+                          title="提交恢复售票申请"
+                        >
+                          申请恢复
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

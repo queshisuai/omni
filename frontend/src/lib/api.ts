@@ -203,6 +203,29 @@ export async function updateAdminArtistRisk(id: number, params: import('@/types/
   })
 }
 
+export async function submitActivityRiskResolution(id: number, params: import('@/types/api').ActivityRiskResolutionRequest) {
+  assertPositiveInteger(id, 'activityId')
+  return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/activities/${id}/risk-resolution`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function listActivityRiskResolutions(userId: number, status?: string) {
+  assertPositiveInteger(userId, 'userId')
+  const params = new URLSearchParams({ userId: String(userId) })
+  if (status) params.set('status', status)
+  return request<import('@/types/api').ActivityRiskResolutionVO[]>(`/api/ticket/admin/risk-resolutions?${params.toString()}`)
+}
+
+export async function reviewActivityRiskResolution(id: number, params: import('@/types/api').ActivityRiskResolutionReviewRequest) {
+  assertPositiveInteger(id, 'resolutionId')
+  return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/risk-resolutions/${id}/review`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
 export async function createReservation(userId: number, sessionId: number) {
   return request<void>('/api/ticket/reservations', {
     method: 'POST',

@@ -1,8 +1,11 @@
 package com.omni.notification.controller;
 
 import com.omni.common.result.Result;
+import com.omni.notification.dto.InternalNotificationRequest;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.service.NotificationService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -16,9 +19,21 @@ import java.util.Map;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final String internalApiToken;
 
-    public NotificationController(NotificationService notificationService) {
+    public NotificationController(NotificationService notificationService,
+                                  @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.notificationService = notificationService;
+        this.internalApiToken = internalApiToken;
+    }
+
+    @PostMapping("/internal/messages")
+    public Result<Notification> createInternalMessage(@RequestHeader(value = "X-Internal-Token", required = false) String token,
+                                                      @RequestBody(required = false) InternalNotificationRequest request) {
+        if (!StringUtils.hasText(internalApiToken) || !internalApiToken.equals(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(notificationService.createInternalMessage(request));
     }
 
     /**

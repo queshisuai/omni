@@ -24,10 +24,17 @@ public class ArtistGovernanceService {
 
     private final ArtistMapper artistMapper;
     private final UserAccessService userAccessService;
+    private final ActivityRiskResponseService activityRiskResponseService;
 
     public ArtistGovernanceService(ArtistMapper artistMapper, UserAccessService userAccessService) {
+        this(artistMapper, userAccessService, null);
+    }
+
+    public ArtistGovernanceService(ArtistMapper artistMapper, UserAccessService userAccessService,
+                                   ActivityRiskResponseService activityRiskResponseService) {
         this.artistMapper = artistMapper;
         this.userAccessService = userAccessService;
+        this.activityRiskResponseService = activityRiskResponseService;
     }
 
     public Artist submit(ArtistSubmissionRequest request) {
@@ -105,6 +112,9 @@ public class ArtistGovernanceService {
             artist.setRiskReason(request.getReason().trim());
             artist.setRiskMarkedBy(request.getUserId());
             artist.setRiskMarkedAt(now);
+            if (activityRiskResponseService != null) {
+                activityRiskResponseService.suspendPublishedActivitiesForRiskArtist(artistId, artist.getRiskReason());
+            }
         } else if (RISK_NORMAL.equals(request.getRiskStatus())) {
             artist.setRiskStatus(RISK_NORMAL);
             artist.setRiskReason(null);

@@ -1,11 +1,20 @@
 package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.omni.common.result.Result;
+import com.omni.ticket.client.NotificationInternalClient;
+import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.dto.ActivityArtistDto;
+import com.omni.ticket.dto.NotificationMessageRequest;
+import com.omni.ticket.dto.OrderInfoResponse;
+import com.omni.ticket.dto.PaidOrdersBySessionsRequest;
 import com.omni.ticket.entity.ActivityArtist;
 import com.omni.ticket.entity.Artist;
+import com.omni.ticket.entity.Session;
 import com.omni.ticket.mapper.ActivityArtistMapper;
 import com.omni.ticket.mapper.ArtistMapper;
+import com.omni.ticket.mapper.SessionMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -27,15 +36,33 @@ public class ActivityArtistService {
 
     private final ActivityArtistMapper activityArtistMapper;
     private final ArtistMapper artistMapper;
+    private final SessionMapper sessionMapper;
+    private final OrderInternalClient orderInternalClient;
+    private final NotificationInternalClient notificationInternalClient;
+    private final String internalToken;
 
     public ActivityArtistService(ActivityArtistMapper activityArtistMapper, ArtistMapper artistMapper) {
+        this(activityArtistMapper, artistMapper, null, null, null, null);
+    }
+
+    public ActivityArtistService(ActivityArtistMapper activityArtistMapper,
+                                 ArtistMapper artistMapper,
+                                 SessionMapper sessionMapper,
+                                 OrderInternalClient orderInternalClient,
+                                 NotificationInternalClient notificationInternalClient,
+                                 @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalToken) {
         this.activityArtistMapper = activityArtistMapper;
         this.artistMapper = artistMapper;
+        this.sessionMapper = sessionMapper;
+        this.orderInternalClient = orderInternalClient;
+        this.notificationInternalClient = notificationInternalClient;
+        this.internalToken = internalToken;
     }
 
     @Transactional
     public void saveLineup(Long activityId, List<ActivityArtistDto> artists) {
         if (activityId == null || activityId <= 0) throw new IllegalArgumentException("活动ID不正确");
+        List<ActivityArtistDto> before = listAdminLineup(activityId);
         activityArtistMapper.delete(new LambdaQueryWrapper<ActivityArtist>().eq(ActivityArtist::getActivityId, activityId));
         List<ActivityArtistDto> normalized = normalize(artists);
         LocalDateTime now = LocalDateTime.now();
@@ -53,6 +80,7 @@ public class ActivityArtistService {
             row.setUpdateTime(now);
             activityArtistMapper.insert(row);
         }
+        notifyCastChange(activityId, before, normalized);
     }
 
     public List<ActivityArtistDto> listAdminLineup(Long activityId) {
@@ -151,5 +179,22 @@ public class ActivityArtistService {
 
     private String defaultText(String value, String defaultValue) {
         return StringUtils.hasText(value) ? value.trim() : defaultValue;
+    }
+
+    private void notifyCastChange(Long activityId, List<ActivityArtistDto> before, List<ActivityArtistDto> after) {
+        if (sessionMapper == null || orderInternalClient == null || notificationInternalClient == null || !StringUtils.hasText(internalToken)) return;
+        String beforeKey = before.stream().map(ActivityArtistDto::getArtistId).map(String::valueOf).collect(Collectors.joining(","));
+        String afterKey = after.stream().map(ActivityArtistDto::getArtistId).map(String::valueOf).collect(Collectors.joining(","));
+        if (beforeKey.equals(afterKey)) return;
+        List<Session> sessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>().eq(Session::getActivityId, activityId));
+        List<Long> sessionIds = sessions.stream().map(Session::getId).collect(Collectors.toList());
+        if (sessionIds.isEmpty()) return;
+        Result<List<OrderInfoResponse>> result = orderInternalClient.listPaidBySessions(new PaidOrdersBySessionsRequest(sessionIds), internalToken);
+        if (result == null || result.getData() == null) return;
+        Set<Long> notifiedUsers = new HashSet<>();
+        for (OrderInfoResponse order : result.getData()) {
+            if (order == null || order.getUserId() == null || !notifiedUsers.add(order.getUserId())) continue;
+            notificationInternalClient.createMessage(new NotificationMessageRequest(order.getUserId(), order.getId(), "IN_APP", "你购买的活动阵容发生变更，可在订单页申请阵容变更退款。"), internalToken);
+        }
     }
 }

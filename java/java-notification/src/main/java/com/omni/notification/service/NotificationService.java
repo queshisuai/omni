@@ -1,11 +1,15 @@
 package com.omni.notification.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.omni.common.result.ResultCode;
+import com.omni.exception.BusinessException;
+import com.omni.notification.dto.InternalNotificationRequest;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.mapper.NotificationMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -55,6 +59,23 @@ public class NotificationService {
         log.info("======= 模拟邮件通知 =======");
         log.info("用户ID: {}, 订单ID: {}, 内容: {}", userId, orderId, content);
         log.info("============================");
+    }
+
+    public Notification createInternalMessage(InternalNotificationRequest request) {
+        if (request == null || request.getUserId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "通知参数不能为空");
+        }
+        if (!StringUtils.hasText(request.getContent())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "通知内容不能为空");
+        }
+        Notification notification = new Notification();
+        notification.setUserId(request.getUserId());
+        notification.setOrderId(request.getOrderId());
+        notification.setType(StringUtils.hasText(request.getType()) ? request.getType().trim() : "IN_APP");
+        notification.setContent(request.getContent().trim());
+        notification.setStatus(1);
+        notificationMapper.insert(notification);
+        return notification;
     }
 
     /**

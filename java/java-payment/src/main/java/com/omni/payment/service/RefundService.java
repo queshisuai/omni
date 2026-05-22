@@ -86,6 +86,11 @@ public class RefundService {
 
     @Transactional(rollbackFor = Exception.class)
     public RefundRequestVO applyRefund(Long orderId, Long userId, String reason) {
+        return applyRefund(orderId, userId, reason, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public RefundRequestVO applyRefund(Long orderId, Long userId, String reason, String reasonType) {
         if (userId == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
         }
@@ -116,7 +121,7 @@ public class RefundService {
         refund.setPaymentId(payment.getId());
         refund.setRefundNo(generateRefundNo());
         refund.setAmount(normalizeAmount(order.getAmount()));
-        refund.setReason(reason);
+        refund.setReason(formatRefundReason(reason, reasonType));
         refund.setStatus(REFUND_STATUS_PENDING);
         refund.setCreateTime(LocalDateTime.now());
         try {
@@ -128,6 +133,14 @@ public class RefundService {
             throw e;
         }
         return toVO(refund, order.getOrderNo());
+    }
+
+    private String formatRefundReason(String reason, String reasonType) {
+        String text = reason == null ? "" : reason.trim();
+        if ("cast_change".equals(reasonType)) {
+            return text.isEmpty() ? "阵容变更" : "阵容变更：" + text;
+        }
+        return reason;
     }
 
     public List<RefundRequestVO> listUserRefunds(Long userId) {

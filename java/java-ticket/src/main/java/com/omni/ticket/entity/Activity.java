@@ -36,6 +36,9 @@ public class Activity {
     private String deleteReason;
     private LocalDateTime deletedAt;
     private Long deletedBy;
+    private String riskSuspendedReason;
+    private LocalDateTime riskSuspendedAt;
+    private LocalDateTime riskRestoredAt;
     @TableField(exist = false)
     private String artistName;
     @TableField(exist = false)
@@ -81,6 +84,12 @@ public class Activity {
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
     public Long getDeletedBy() { return deletedBy; }
     public void setDeletedBy(Long deletedBy) { this.deletedBy = deletedBy; }
+    public String getRiskSuspendedReason() { return riskSuspendedReason; }
+    public void setRiskSuspendedReason(String riskSuspendedReason) { this.riskSuspendedReason = riskSuspendedReason; }
+    public LocalDateTime getRiskSuspendedAt() { return riskSuspendedAt; }
+    public void setRiskSuspendedAt(LocalDateTime riskSuspendedAt) { this.riskSuspendedAt = riskSuspendedAt; }
+    public LocalDateTime getRiskRestoredAt() { return riskRestoredAt; }
+    public void setRiskRestoredAt(LocalDateTime riskRestoredAt) { this.riskRestoredAt = riskRestoredAt; }
     public String getArtistName() { return artistName; }
     public void setArtistName(String artistName) { this.artistName = artistName; }
     public List<ActivityArtistDto> getArtists() { return artists; }

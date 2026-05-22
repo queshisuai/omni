@@ -282,6 +282,10 @@ public class ActivityAdminService {
         return response;
     }
 
+    public void validatePublishableForReview(Long activityId) {
+        validatePublishable(activityId);
+    }
+
     private void validatePublishable(Long activityId) {
         List<Session> activeSessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>()
                 .eq(Session::getActivityId, activityId)

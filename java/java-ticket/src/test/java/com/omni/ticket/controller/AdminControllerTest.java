@@ -26,6 +26,7 @@ import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
 import com.omni.ticket.service.ArtistAdminService;
 import com.omni.ticket.service.ArtistGovernanceService;
+import com.omni.ticket.service.ActivityRiskResponseService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
 import com.omni.ticket.service.VenueDefaultLayoutService;
@@ -80,6 +81,8 @@ class AdminControllerTest {
     private ArtistAdminService artistAdminService;
     @Mock
     private ArtistGovernanceService artistGovernanceService;
+    @Mock
+    private ActivityRiskResponseService activityRiskResponseService;
     @Mock
     private SessionAdminService sessionAdminService;
     @Mock
@@ -557,6 +560,6 @@ class AdminControllerTest {
     }
 
     private AdminController controller() {
-        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService);
+        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService);
     }
 }
