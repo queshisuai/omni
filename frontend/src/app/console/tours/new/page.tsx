@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { createTourDraft } from '@/lib/api'
+import { LocalFileUpload } from '@/components/LocalFileUpload'
+import { createTourDraft, uploadTicketAsset } from '@/lib/api'
 import type { UserRole } from '@/types/api'
 
 export default function NewTourPage() {
@@ -15,6 +16,7 @@ export default function NewTourPage() {
   const [role, setRole] = useState<UserRole | ''>('')
   const [checkingRole, setCheckingRole] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [uploadingPoster, setUploadingPoster] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -78,6 +80,20 @@ export default function NewTourPage() {
     }
   }
 
+  const handlePosterUpload = async (file: File) => {
+    const user = getUser()
+    if (!user) throw new Error('请先登录后再上传海报')
+
+    setUploadingPoster(true)
+    try {
+      const asset = await uploadTicketAsset({ userId: user.userId, bizType: 'tour-poster', file })
+      setPoster(asset.publicUrl)
+      return asset.publicUrl
+    } finally {
+      setUploadingPoster(false)
+    }
+  }
+
   return (
     <div>
       <h1 className="mb-5 text-[22px] font-bold text-[#1a1a2e]">创建巡演草稿</h1>
@@ -88,17 +104,24 @@ export default function NewTourPage() {
             <span className="mb-1 block text-[13px] text-[#666]">巡演名称 *</span>
             <input value={title} onChange={e => setTitle(e.target.value)} className="w-full rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" placeholder="例：2026 万象巡回演唱会" />
           </label>
-          <label className="mb-3 block">
-            <span className="mb-1 block text-[13px] text-[#666]">主海报 URL</span>
-            <input value={poster} onChange={e => setPoster(e.target.value)} className="w-full rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" placeholder="https://..." />
-          </label>
+          <div className="mb-3">
+            <LocalFileUpload
+              label="主海报"
+              value={poster}
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              uploading={uploadingPoster}
+              onUpload={handlePosterUpload}
+              onChange={setPoster}
+              hint="支持 JPG、PNG、WebP、GIF，上传后会自动写入主海报地址。"
+            />
+          </div>
           <label className="block">
             <span className="mb-1 block text-[13px] text-[#666]">巡演简介</span>
             <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} className="w-full resize-none rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" />
           </label>
         </div>
         {error && <div className="mb-4 rounded-lg bg-[#fff0f3] px-3 py-2 text-[13px] text-[#ff1268]">{error}</div>}
-        <button onClick={handleSubmit} disabled={submitting} className="rounded-lg bg-[#ff1268] px-5 py-2.5 text-[14px] font-medium text-white disabled:opacity-60">
+        <button onClick={handleSubmit} disabled={submitting || uploadingPoster} className="rounded-lg bg-[#ff1268] px-5 py-2.5 text-[14px] font-medium text-white disabled:opacity-60">
           {submitting ? '创建中...' : '保存草稿'}
         </button>
       </div>

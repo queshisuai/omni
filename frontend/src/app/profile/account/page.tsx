@@ -3,10 +3,11 @@
 import type { FormEvent, ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Save, LockKeyhole, User, Mail, Image as ImageIcon, MessageSquare } from 'lucide-react'
+import { Loader2, Save, LockKeyhole, User, Mail, MessageSquare } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { changePassword, getUserInfo, sendSmsCode, updateProfile } from '@/lib/api'
+import { LocalFileUpload } from '@/components/LocalFileUpload'
+import { changePassword, getUserInfo, sendSmsCode, updateProfile, uploadUserAvatar } from '@/lib/api'
 import { isAuthenticated, updateStoredUser } from '@/lib/auth'
 import type { UserInfo } from '@/types/api'
 
@@ -22,6 +23,7 @@ export default function ProfileAccountPage() {
   const [form, setForm] = useState<FormState>({ nickname: '', email: '', avatar: '' })
   const [loading, setLoading] = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
   const [sendingPasswordCode, setSendingPasswordCode] = useState(false)
   const [profileMessage, setProfileMessage] = useState('')
@@ -81,6 +83,22 @@ export default function ProfileAccountPage() {
       setProfileMessage(err instanceof Error ? err.message : '保存失败')
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  const handleAvatarUpload = async (file: File) => {
+    setUploadingAvatar(true)
+    try {
+      const next = await uploadUserAvatar(file)
+      const avatar = next.avatar || ''
+      if (!avatar) throw new Error('上传成功但未返回头像地址')
+
+      setUser(next)
+      setForm((prev) => ({ ...prev, avatar }))
+      updateStoredUser({ nickname: next.nickname || null })
+      return avatar
+    } finally {
+      setUploadingAvatar(false)
     }
   }
 
@@ -172,18 +190,22 @@ export default function ProfileAccountPage() {
                     placeholder="请输入邮箱"
                     type="email"
                   />
-                  <Field
-                    icon={<ImageIcon className="h-4 w-4" />}
-                    label="头像地址"
-                    value={form.avatar}
-                    onChange={(value) => setForm((prev) => ({ ...prev, avatar: value }))}
-                    placeholder="请输入头像图片 URL"
-                  />
+                  <div className="sm:col-span-2">
+                    <LocalFileUpload
+                      label="头像"
+                      value={form.avatar}
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      uploading={uploadingAvatar}
+                      onUpload={handleAvatarUpload}
+                      onChange={(value) => setForm((prev) => ({ ...prev, avatar: value }))}
+                      hint="支持 JPG、PNG、WebP、GIF，上传后会自动写入头像地址。"
+                    />
+                  </div>
                   <div className="sm:col-span-2 flex flex-col gap-3 border-t border-[#f0f0f0] pt-4 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-[#666]">{profileMessage || `当前账号：${user?.phone || ''}`}</p>
                     <button
                       type="submit"
-                      disabled={savingProfile}
+                      disabled={savingProfile || uploadingAvatar}
                       className="inline-flex items-center justify-center gap-2 rounded-full bg-[#ff1268] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#e60f5f] disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
