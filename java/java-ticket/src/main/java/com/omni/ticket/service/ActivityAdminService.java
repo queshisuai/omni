@@ -28,6 +28,7 @@ import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.service.UserAccessService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -71,6 +72,7 @@ public class ActivityAdminService {
                 null, null, internalApiToken);
     }
 
+    @Autowired
     public ActivityAdminService(ActivityMapper activityMapper,
                                 SessionMapper sessionMapper,
                                 TicketTypeMapper ticketTypeMapper,

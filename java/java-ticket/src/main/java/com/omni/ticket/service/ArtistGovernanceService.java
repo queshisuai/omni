@@ -8,6 +8,7 @@ import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.entity.Artist;
 import com.omni.ticket.mapper.ArtistMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -30,8 +31,9 @@ public class ArtistGovernanceService {
         this(artistMapper, userAccessService, null);
     }
 
+    @Autowired
     public ArtistGovernanceService(ArtistMapper artistMapper, UserAccessService userAccessService,
-                                   ActivityRiskResponseService activityRiskResponseService) {
+                                    ActivityRiskResponseService activityRiskResponseService) {
         this.artistMapper = artistMapper;
         this.userAccessService = userAccessService;
         this.activityRiskResponseService = activityRiskResponseService;

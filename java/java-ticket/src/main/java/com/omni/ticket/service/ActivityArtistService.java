@@ -14,6 +14,7 @@ import com.omni.ticket.entity.Session;
 import com.omni.ticket.mapper.ActivityArtistMapper;
 import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +46,7 @@ public class ActivityArtistService {
         this(activityArtistMapper, artistMapper, null, null, null, null);
     }
 
+    @Autowired
     public ActivityArtistService(ActivityArtistMapper activityArtistMapper,
                                  ArtistMapper artistMapper,
                                  SessionMapper sessionMapper,

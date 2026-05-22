@@ -5,11 +5,14 @@ import com.omni.ticket.entity.ActivityArtist;
 import com.omni.ticket.entity.Artist;
 import com.omni.ticket.mapper.ActivityArtistMapper;
 import com.omni.ticket.mapper.ArtistMapper;
+import com.omni.ticket.mapper.SessionMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import java.util.List;
 
@@ -21,6 +24,23 @@ import static org.mockito.Mockito.*;
 class ActivityArtistServiceTest {
     @Mock ActivityArtistMapper activityArtistMapper;
     @Mock ArtistMapper artistMapper;
+
+    @Test
+    void springCanCreateActivityArtistServiceWithConstructorInjection() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(AutowiredAnnotationBeanPostProcessor.class);
+            context.registerBean(ActivityArtistMapper.class, () -> mock(ActivityArtistMapper.class));
+            context.registerBean(ArtistMapper.class, () -> mock(ArtistMapper.class));
+            context.registerBean(SessionMapper.class, () -> mock(SessionMapper.class));
+            context.registerBean(com.omni.ticket.client.OrderInternalClient.class, () -> mock(com.omni.ticket.client.OrderInternalClient.class));
+            context.registerBean(com.omni.ticket.client.NotificationInternalClient.class, () -> mock(com.omni.ticket.client.NotificationInternalClient.class));
+            context.registerBean(ActivityArtistService.class);
+
+            context.refresh();
+
+            assertNotNull(context.getBean(ActivityArtistService.class));
+        }
+    }
 
     @Test
     void saveLineupMovesPrimaryToFirstAndPersistsRows() {

@@ -29,6 +29,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -38,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,6 +66,26 @@ class ActivityAdminServiceTest {
     private ArtistMapper artistMapper;
 
     private ActivityAdminService service;
+
+    @Test
+    void springCanCreateActivityAdminServiceWithConstructorInjection() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(AutowiredAnnotationBeanPostProcessor.class);
+            context.registerBean(ActivityMapper.class, () -> mock(ActivityMapper.class));
+            context.registerBean(SessionMapper.class, () -> mock(SessionMapper.class));
+            context.registerBean(TicketTypeMapper.class, () -> mock(TicketTypeMapper.class));
+            context.registerBean(UserAccessService.class, () -> mock(UserAccessService.class));
+            context.registerBean(OrderInternalClient.class, () -> mock(OrderInternalClient.class));
+            context.registerBean(PaymentInternalClient.class, () -> mock(PaymentInternalClient.class));
+            context.registerBean(ActivityArtistMapper.class, () -> mock(ActivityArtistMapper.class));
+            context.registerBean(ArtistMapper.class, () -> mock(ArtistMapper.class));
+            context.registerBean(ActivityAdminService.class);
+
+            context.refresh();
+
+            org.junit.jupiter.api.Assertions.assertNotNull(context.getBean(ActivityAdminService.class));
+        }
+    }
 
     @BeforeEach
     void setUp() {
