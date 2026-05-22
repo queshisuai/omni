@@ -218,6 +218,24 @@ export async function listActivityRiskResolutions(userId: number, status?: strin
   return request<import('@/types/api').ActivityRiskResolutionVO[]>(`/api/ticket/admin/risk-resolutions?${params.toString()}`)
 }
 
+export async function listMyNotifications(userId: number) {
+  assertPositiveInteger(userId, 'userId')
+  return request<import('@/types/api').NotificationVO[]>(`/api/notification/list?userId=${userId}`)
+}
+
+export async function suspendActivityForRisk(id: number, params: { userId: number; reason?: string }) {
+  assertPositiveInteger(id, 'activityId')
+  return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/activities/${id}/suspend`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function listAdminRiskCases(userId: number) {
+  assertPositiveInteger(userId, 'userId')
+  return request<import('@/types/api').ActivityRiskCaseVO[]>(`/api/ticket/admin/risk-cases?userId=${userId}`)
+}
+
 export async function reviewActivityRiskResolution(id: number, params: import('@/types/api').ActivityRiskResolutionReviewRequest) {
   assertPositiveInteger(id, 'resolutionId')
   return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/risk-resolutions/${id}/review`, {
@@ -299,10 +317,10 @@ export async function syncAlipayPayment(orderId: number) {
   return request<import('@/types/api').PaymentStatusResponse>(`/api/payment/alipay/sync/${orderId}`)
 }
 
-export async function applyRefund(orderId: number, reason?: string) {
+export async function applyRefund(orderId: number, reason?: string, reasonType?: string) {
   return request<import('@/types/api').RefundRequestVO>('/api/payment/refunds/apply', {
     method: 'POST',
-    body: JSON.stringify({ orderId, reason }),
+    body: JSON.stringify({ orderId, reason, reasonType }),
   })
 }
 
@@ -363,6 +381,10 @@ export async function listAdminTours(userId: number, params: { page?: number; si
   return request<import('@/types/api').PageResult<import('@/types/api').TourEntity>>(
     `/api/ticket/admin/tours?${searchParams.toString()}`
   )
+}
+
+export async function getAdminTourDetail(userId: number, tourId: number) {
+  return request<import('@/types/api').TourAdminDetailVO>(`/api/ticket/admin/tours/${tourId}?userId=${userId}`)
 }
 
 export async function createTourDraft(body: Record<string, unknown>) {

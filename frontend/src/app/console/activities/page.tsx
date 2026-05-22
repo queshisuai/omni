@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
-import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity, submitActivityRiskResolution } from '@/lib/api'
+import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity, submitActivityRiskResolution, suspendActivityForRisk } from '@/lib/api'
 import { Plus, Edit, Trash2, Eye, EyeOff, RefreshCw, Search } from 'lucide-react'
 import type { ActivityEntity, UserRole } from '@/types/api'
 
@@ -113,16 +113,68 @@ export default function ActivitiesPage() {
     loadData(page)
   }
 
-  const handleRiskResolution = async (activity: ActivityEntity) => {
-    const note = window.prompt('请说明已完成的风险处理，例如移除风险艺人或补充合规证明。')
-    if (note === null) return
-    if (!note.trim()) {
+  const [riskTarget, setRiskTarget] = useState<ActivityEntity | null>(null)
+  const [riskNote, setRiskNote] = useState('')
+  const [riskType, setRiskType] = useState<'remove_artist' | 'reschedule' | 'refund' | 'explain'>('explain')
+  const [riskSubmitting, setRiskSubmitting] = useState(false)
+
+  const handleRiskResolution = (activity: ActivityEntity) => {
+    setRiskTarget(activity)
+    setRiskNote('')
+    setRiskType('explain')
+  }
+
+  const closeRiskDialog = () => {
+    if (riskSubmitting) return
+    setRiskTarget(null)
+    setRiskNote('')
+    setRiskType('explain')
+  }
+
+  const submitRiskResolution = async () => {
+    if (!riskTarget) return
+    if (!riskNote.trim()) {
       alert('处理说明不能为空')
       return
     }
-    await submitActivityRiskResolution(activity.id, { userId, resolutionNote: note.trim() })
-    alert('已提交恢复售票申请，等待平台审核。')
-    loadData(page)
+    const TYPE_PREFIX: Record<typeof riskType, string> = {
+      remove_artist: '[移除阵容]',
+      reschedule: '[改期]',
+      refund: '[全额退款]',
+      explain: '[补充说明]',
+    }
+    setRiskSubmitting(true)
+    try {
+      await submitActivityRiskResolution(riskTarget.id, {
+        userId,
+        resolutionNote: `${TYPE_PREFIX[riskType]} ${riskNote.trim()}`,
+      })
+      alert('已提交恢复售票申请，等待平台审核。')
+      setRiskTarget(null)
+      setRiskNote('')
+      setRiskType('explain')
+      loadData(page)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '提交失败')
+    } finally {
+      setRiskSubmitting(false)
+    }
+  }
+
+  const handleAdminSuspend = async (activity: ActivityEntity) => {
+    const reason = window.prompt('请输入停售原因（将记录到风险案例并通知主办方）：')
+    if (reason === null) return
+    if (!reason.trim()) {
+      alert('停售原因不能为空')
+      return
+    }
+    try {
+      await suspendActivityForRisk(activity.id, { userId, reason: reason.trim() })
+      alert('活动已被主动停售，已通知主办方处理。')
+      loadData(page)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '停售失败')
+    }
   }
 
   const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
@@ -251,6 +303,15 @@ export default function ActivitiesPage() {
                           申请恢复
                         </button>
                       )}
+                      {isAdmin && a.publishStatus === 'published' && a.status === 1 && (
+                        <button
+                          onClick={() => handleAdminSuspend(a)}
+                          className="rounded px-2 py-1 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"
+                          title="风险停售"
+                        >
+                          风险停售
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -273,6 +334,69 @@ export default function ActivitiesPage() {
                 className="rounded-lg border border-[#e5e5e5] px-3 py-1.5 disabled:cursor-not-allowed disabled:text-[#bbb]"
               >
                 下一页
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {riskTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
+          <div className="w-full max-w-[480px] rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="mb-2 text-[18px] font-medium text-[#111]">提交恢复售票申请</h2>
+            <p className="mb-4 text-[13px] leading-5 text-[#666]">
+              活动：{riskTarget.name}<br />
+              请选择处置方式并描述已完成的整改动作，平台审核通过后将恢复售票。
+            </p>
+            <div className="mb-3">
+              <div className="mb-2 text-[13px] text-[#333]">处置方式</div>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    { value: 'remove_artist', label: '移除阵容' },
+                    { value: 'reschedule', label: '改期' },
+                    { value: 'refund', label: '全额退款' },
+                    { value: 'explain', label: '补充说明' },
+                  ] as const
+                ).map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setRiskType(option.value)}
+                    disabled={riskSubmitting}
+                    className="cursor-pointer rounded border bg-white px-3 py-2 text-[13px] outline-none"
+                    style={{
+                      borderColor: riskType === option.value ? '#ff1268' : '#ddd',
+                      color: riskType === option.value ? '#ff1268' : '#666',
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <textarea
+              value={riskNote}
+              onChange={(event) => setRiskNote(event.target.value)}
+              placeholder="请描述具体处置动作，例如：已下线风险艺人 张三，并向 218 名购票用户发出阵容变更通知。"
+              className="mb-4 h-[120px] w-full resize-none rounded border border-[#ddd] px-3 py-2 text-[14px] text-[#333] outline-none focus:border-[#ff1268]"
+              maxLength={500}
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={closeRiskDialog}
+                disabled={riskSubmitting}
+                className="cursor-pointer rounded border border-[#ddd] bg-white px-5 py-2 text-[14px] text-[#666] outline-none"
+                style={{ opacity: riskSubmitting ? 0.7 : 1 }}
+              >
+                取消
+              </button>
+              <button
+                onClick={submitRiskResolution}
+                disabled={riskSubmitting}
+                className="cursor-pointer rounded border-none bg-[#ff1268] px-5 py-2 text-[14px] text-white outline-none"
+                style={{ opacity: riskSubmitting ? 0.7 : 1 }}
+              >
+                {riskSubmitting ? '提交中...' : '提交申请'}
               </button>
             </div>
           </div>

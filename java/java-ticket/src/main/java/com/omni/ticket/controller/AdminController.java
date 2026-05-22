@@ -12,6 +12,7 @@ import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.ActivityArtistDto;
+import com.omni.ticket.dto.ActivityRiskCaseResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
@@ -218,6 +219,19 @@ public class AdminController {
         return Result.success(activityRiskResponseService.reviewResolution(id, request));
     }
 
+    @PostMapping("/activities/{id}/suspend")
+    public Result<ActivityRiskResolutionResponse> suspendActivityForRisk(@PathVariable Long id,
+                                                                          @RequestBody Map<String, Object> body) {
+        Long userId = body.get("userId") == null ? null : Long.valueOf(body.get("userId").toString());
+        String reason = body.get("reason") == null ? null : body.get("reason").toString();
+        return Result.success(activityRiskResponseService.adminSuspendActivity(id, userId, reason));
+    }
+
+    @GetMapping("/risk-cases")
+    public Result<List<ActivityRiskCaseResponse>> listRiskCases(@RequestParam Long userId) {
+        return Result.success(activityRiskResponseService.listRiskCases(userId));
+    }
+
     @GetMapping("/summary")
     public Result<AdminSummaryResponse> getAdminSummary(@RequestParam Long userId) {
         return Result.success(adminSummaryService.getSummary(userId));
@@ -237,9 +251,14 @@ public class AdminController {
 
     @GetMapping("/tours")
     public Result<Page<Tour>> listTours(@RequestParam Long userId,
-                                        @RequestParam(defaultValue = "1") Integer page,
-                                        @RequestParam(defaultValue = "10") Integer size) {
+                                         @RequestParam(defaultValue = "1") Integer page,
+                                         @RequestParam(defaultValue = "10") Integer size) {
         return Result.success(tourStationService.listManageableTours(userId, page, size));
+    }
+
+    @GetMapping("/tours/{tourId}")
+    public Result<Map<String, Object>> getTour(@PathVariable Long tourId, @RequestParam Long userId) {
+        return Result.success(tourStationService.getManageableTourDetail(userId, tourId));
     }
 
     @PostMapping("/tours/{tourId}/stations/draft")

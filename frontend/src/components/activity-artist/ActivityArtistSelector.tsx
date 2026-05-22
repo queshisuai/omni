@@ -56,6 +56,14 @@ export function ActivityArtistSelector({ value, onChange }: Props) {
 
   const addArtist = (artist: ArtistSearchVO) => {
     if (value.some(item => item.artistId === artist.id)) return
+    if (artist.riskStatus === 'risky') {
+      setSubmitMessage(`无法添加风险艺人「${artist.name}」，请先由管理员解除风险标记`)
+      return
+    }
+    if (artist.reviewStatus && artist.reviewStatus !== 'approved') {
+      setSubmitMessage(`艺人「${artist.name}」尚未审核通过，无法加入阵容`)
+      return
+    }
     const next: ActivityArtistVO = {
       artistId: artist.id,
       name: artist.name,
@@ -73,6 +81,7 @@ export function ActivityArtistSelector({ value, onChange }: Props) {
     onChange(normalize([...value, next]))
     setKeyword('')
     setResults([])
+    setSubmitMessage(null)
   }
 
   const submitMissingArtist = async () => {

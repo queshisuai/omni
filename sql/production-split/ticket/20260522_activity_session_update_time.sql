@@ -1,0 +1,7 @@
+-- owner: java-ticket
+
+ALTER TABLE activity ADD COLUMN IF NOT EXISTS update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE session ADD COLUMN IF NOT EXISTS update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+UPDATE activity SET update_time = COALESCE(update_time, create_time, CURRENT_TIMESTAMP);
+UPDATE session SET update_time = COALESCE(update_time, create_time, CURRENT_TIMESTAMP);

@@ -85,6 +85,7 @@ export default function OrdersPage() {
   const [refunds, setRefunds] = useState<RefundRequestVO[]>([])
   const [refundTarget, setRefundTarget] = useState<EnrichedOrder | null>(null)
   const [refundReason, setRefundReason] = useState('')
+  const [refundReasonType, setRefundReasonType] = useState<'general' | 'cast_change'>('general')
   const [refundSubmitting, setRefundSubmitting] = useState(false)
   const [trashOrders, setTrashOrders] = useState<EnrichedOrder[]>([])
   const [hiding, setHiding] = useState<number | null>(null)
@@ -244,10 +245,15 @@ export default function OrdersPage() {
     if (!refundTarget) return
     setRefundSubmitting(true)
     try {
-      const next = await applyRefund(refundTarget.id, refundReason.trim() || undefined)
+      const next = await applyRefund(
+        refundTarget.id,
+        refundReason.trim() || undefined,
+        refundReasonType === 'cast_change' ? 'cast_change' : undefined,
+      )
       setRefunds((prev) => [next, ...prev.filter((item) => item.id !== next.id)])
       setRefundTarget(null)
       setRefundReason('')
+      setRefundReasonType('general')
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : '申请退款失败')
     } finally {
@@ -258,12 +264,14 @@ export default function OrdersPage() {
   const openRefundDialog = (order: EnrichedOrder) => {
     setRefundTarget(order)
     setRefundReason('')
+    setRefundReasonType('general')
   }
 
   const closeRefundDialog = () => {
     if (refundSubmitting) return
     setRefundTarget(null)
     setRefundReason('')
+    setRefundReasonType('general')
   }
 
   const refundMap = buildRefundMap(refunds)
@@ -509,10 +517,44 @@ export default function OrdersPage() {
               订单号：{refundTarget.orderNo}<br />
               退款金额：¥{refundTarget.amount.toFixed(2)}
             </p>
+            <div className="mb-3">
+              <div className="mb-2 text-[13px] text-[#333]">退款原因类型</div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRefundReasonType('general')}
+                  disabled={refundSubmitting}
+                  className="cursor-pointer rounded border bg-white px-3 py-1.5 text-[13px] outline-none"
+                  style={{
+                    borderColor: refundReasonType === 'general' ? '#ff1268' : '#ddd',
+                    color: refundReasonType === 'general' ? '#ff1268' : '#666',
+                  }}
+                >
+                  常规退款
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefundReasonType('cast_change')}
+                  disabled={refundSubmitting}
+                  className="cursor-pointer rounded border bg-white px-3 py-1.5 text-[13px] outline-none"
+                  style={{
+                    borderColor: refundReasonType === 'cast_change' ? '#ff1268' : '#ddd',
+                    color: refundReasonType === 'cast_change' ? '#ff1268' : '#666',
+                  }}
+                >
+                  阵容变更专属退款
+                </button>
+              </div>
+              {refundReasonType === 'cast_change' && (
+                <div className="mt-2 rounded bg-[#fff7fa] px-3 py-2 text-[12px] leading-5 text-[#b91c1c]">
+                  仅当活动因艺人调整发出阵容变更通知时使用，可优先走加速审核通道。
+                </div>
+              )}
+            </div>
             <textarea
               value={refundReason}
               onChange={(event) => setRefundReason(event.target.value)}
-              placeholder="请输入退款原因，可不填"
+              placeholder={refundReasonType === 'cast_change' ? '可补充阵容变更对您的影响，可不填' : '请输入退款原因，可不填'}
               className="mb-4 h-[96px] w-full resize-none rounded border border-[#ddd] px-3 py-2 text-[14px] text-[#333] outline-none focus:border-[#ff1268]"
               maxLength={200}
             />

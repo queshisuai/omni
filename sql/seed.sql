@@ -20,6 +20,8 @@ TRUNCATE TABLE
     session,
     activity_artist,
     activity,
+    station,
+    tour,
     seat_override,
     ticket_group,
     seat_block,
@@ -193,39 +195,73 @@ SELECT setval('ticket_group_id_seq', COALESCE((SELECT MAX(id) FROM ticket_group)
 
 -- ========== 活动 ==========
 INSERT INTO activity (id, category_id, artist_id, organizer_id, name, description, poster, status) VALUES
-(1, 1, 1, 2003, '周杰伦「嘉年华」世界巡回演唱会 北京站', '模拟档期演示数据，非真实售票；适合座位选座购票演示。', 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a', 1),
-(2, 1, 2, 2003, '五月天「回到那一天」巡回演唱会 上海站', '模拟档期演示数据，非真实售票；城市体育馆演唱会场景。', 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f', 1),
-(3, 1, 1, 2003, '华语音乐联合演唱会 广州站', '周杰伦、五月天、林俊杰联合阵容模拟演示，含站区票档。', 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea', 1),
-(4, 2, 4, 2005, '开心麻花爆笑舞台剧《乌龙山伯爵》北京站', '模拟档期演示数据，非真实售票；剧场座位图演示。', 'https://images.unsplash.com/photo-1503095396549-807759245b35', 1),
-(5, 2, 5, 2005, '经典歌剧《茶花女》上海站', '经典歌剧制作，剧院分区票档。', 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf', 1),
-(6, 2, 6, 2005, '孟京辉经典戏剧《恋爱的犀牛》成都站', '模拟档期演示数据，非真实售票；先锋话剧剧场演出。', 'https://images.unsplash.com/photo-1527224857830-43a7acc85260', 1),
-(7, 3, 7, 2006, '郭艾伦篮球明星挑战赛 成都站', '模拟档期演示数据，非真实售票；体育赛事票档演示。', 'https://images.unsplash.com/photo-1546519638-68e109498ffc', 1),
-(8, 3, 8, 2006, 'LPL 英雄联盟职业联赛总决赛 深圳站', '模拟档期演示数据，非真实售票；电竞线下观赛。', 'https://images.unsplash.com/photo-1542751371-adc38448a05e', 1),
-(9, 3, 9, 2006, '中国田径协会城市路跑嘉年华 西安站', '模拟档期演示数据，非真实售票；路跑开幕活动。', 'https://images.unsplash.com/photo-1502904550040-7534597429ae', 1),
-(10, 4, 10, 2007, '中国儿童艺术剧院儿童剧《小王子》成都站', '模拟档期演示数据，非真实售票；亲子儿童剧。', 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9', 1),
-(11, 4, 11, 2007, '科学队长亲子科学实验秀 杭州站', '模拟档期演示数据，非真实售票；互动科普舞台。', 'https://images.unsplash.com/photo-1532094349884-543bc11b234d', 1),
-(12, 4, 12, 2007, '广州长隆国际大马戏巡演 南京站', '模拟档期演示数据，非真实售票；亲子马戏演出。', 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819', 1),
-(13, 5, 13, 2007, 'teamLab 数字艺术沉浸展 武汉站', '模拟档期演示数据，非真实售票；数字艺术展览。', 'https://images.unsplash.com/photo-1518005020951-eccb494ad742', 1),
-(14, 5, 14, 2007, '故宫博物院国风生活美学展 重庆站', '模拟档期演示数据，非真实售票；传统文化主题展。', 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622', 1),
-(15, 5, 15, 2007, '中国摄影家协会城市影像艺术展 重庆站', '模拟档期演示数据，非真实售票；摄影影像展。', 'https://images.unsplash.com/photo-1531058020387-3be344556be6', 1),
-(16, 6, 16, 2003, '中国爱乐乐团室内乐音乐会 杭州站', '模拟档期演示数据，非真实售票；古典室内乐精选。', 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6', 1),
-(17, 6, 17, 2003, '上海交响乐团新年音乐会 南京站', '模拟档期演示数据，非真实售票；交响音乐会。', 'https://images.unsplash.com/photo-1507838153414-b4b713384a76', 1),
-(18, 6, 18, 2003, '李泉爵士流行音乐会 广州站', '模拟档期演示数据，非真实售票；爵士流行现场。', 'https://images.unsplash.com/photo-1511192336575-5a79af67a629', 1),
-(19, 7, 19, 2005, '德云社相声大会 北京站', '模拟档期演示数据，非真实售票；曲艺相声专场。', 'https://images.unsplash.com/photo-1529139574466-a303027c1d8b', 1),
-(20, 7, 20, 2005, '上海评弹团经典评弹雅集 上海站', '模拟档期演示数据，非真实售票；传统评弹演出。', 'https://images.unsplash.com/photo-1499364615650-ec38552f4f34', 1),
-(21, 7, 21, 2005, '笑果文化脱口秀周末秀 重庆站', '模拟档期演示数据，非真实售票；城市脱口秀现场。', 'https://images.unsplash.com/photo-1527224857830-43a7acc85260', 1),
-(22, 8, 22, 2005, '陶身体剧场现代舞《13》深圳站', '模拟档期演示数据，非真实售票；现代舞剧场作品。', 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad', 1),
-(23, 8, 23, 2005, '中央芭蕾舞团《天鹅湖》成都站', '模拟档期演示数据，非真实售票；经典芭蕾舞剧。', 'https://images.unsplash.com/photo-1518834107812-67b0b7c58434', 1),
-(24, 8, 24, 2005, '中国歌剧舞剧院舞剧《李白》西安站', '模拟档期演示数据，非真实售票；国风舞剧专场。', 'https://images.unsplash.com/photo-1508807526345-15e9b5f4eaff', 1),
-(25, 9, 25, 2003, '初音未来未来有你演唱会 上海站', '模拟档期演示数据，非真实售票；虚拟歌手演唱会。', 'https://images.unsplash.com/photo-1511512578047-dfb367046420', 1),
-(26, 9, 26, 2006, 'Bilibili 二次元电竞嘉年华 深圳站', '模拟档期演示数据，非真实售票；二次元电竞嘉年华。', 'https://images.unsplash.com/photo-1511882150382-421056c89033', 1),
-(27, 9, 27, 2003, '山口胜平声优见面会 南京站', '模拟档期演示数据，非真实售票；声优互动见面会。', 'https://images.unsplash.com/photo-1523580846011-d3a5bc25702b', 1),
-(28, 10, 28, 2007, '乌镇江南水乡旅行节 杭州站', '模拟档期演示数据，非真实售票；文旅节庆体验活动。', 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee', 1),
-(29, 10, 29, 2007, '成都非遗博览园体验展 成都站', '模拟档期演示数据，非真实售票；非遗体验与展演。', 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e', 1),
-(30, 10, 30, 2007, '中国旅游集团丝路城市旅游展 西安站', '模拟档期演示数据，非真实售票；多目的地旅游展。', 'https://images.unsplash.com/photo-1488646953014-85cb44e25828', 1);
+(1, 1, 1, 2003, '周杰伦「嘉年华」世界巡回演唱会 北京站', '模拟档期演示数据，非真实售票；适合座位选座购票演示。', '/seed-posters/activity-01.jpg', 1),
+(2, 1, 2, 2003, '五月天「回到那一天」巡回演唱会 上海站', '模拟档期演示数据，非真实售票；城市体育馆演唱会场景。', '/seed-posters/activity-02.jpg', 1),
+(3, 1, 1, 2003, '华语音乐联合演唱会 广州站', '周杰伦、五月天、林俊杰联合阵容模拟演示，含站区票档。', '/seed-posters/activity-03.jpg', 1),
+(4, 2, 4, 2005, '开心麻花爆笑舞台剧《乌龙山伯爵》北京站', '模拟档期演示数据，非真实售票；剧场座位图演示。', '/seed-posters/activity-04.jpg', 1),
+(5, 2, 5, 2005, '经典歌剧《茶花女》上海站', '经典歌剧制作，剧院分区票档。', '/seed-posters/activity-05.jpg', 1),
+(6, 2, 6, 2005, '孟京辉经典戏剧《恋爱的犀牛》成都站', '模拟档期演示数据，非真实售票；先锋话剧剧场演出。', '/seed-posters/activity-06.jpg', 1),
+(7, 3, 7, 2006, '郭艾伦篮球明星挑战赛 成都站', '模拟档期演示数据，非真实售票；体育赛事票档演示。', '/seed-posters/activity-07.jpg', 1),
+(8, 3, 8, 2006, 'LPL 英雄联盟职业联赛总决赛 深圳站', '模拟档期演示数据，非真实售票；电竞线下观赛。', '/seed-posters/activity-08.jpg', 1),
+(9, 3, 9, 2006, '中国田径协会城市路跑嘉年华 西安站', '模拟档期演示数据，非真实售票；路跑开幕活动。', '/seed-posters/activity-09.jpg', 1),
+(10, 4, 10, 2007, '中国儿童艺术剧院儿童剧《小王子》成都站', '模拟档期演示数据，非真实售票；亲子儿童剧。', '/seed-posters/activity-10.jpg', 1),
+(11, 4, 11, 2007, '科学队长亲子科学实验秀 杭州站', '模拟档期演示数据，非真实售票；互动科普舞台。', '/seed-posters/activity-11.jpg', 1),
+(12, 4, 12, 2007, '广州长隆国际大马戏巡演 南京站', '模拟档期演示数据，非真实售票；亲子马戏演出。', '/seed-posters/activity-12.jpg', 1),
+(13, 5, 13, 2007, 'teamLab 数字艺术沉浸展 武汉站', '模拟档期演示数据，非真实售票；数字艺术展览。', '/seed-posters/activity-13.jpg', 1),
+(14, 5, 14, 2007, '故宫博物院国风生活美学展 重庆站', '模拟档期演示数据，非真实售票；传统文化主题展。', '/seed-posters/activity-14.jpg', 1),
+(15, 5, 15, 2007, '中国摄影家协会城市影像艺术展 重庆站', '模拟档期演示数据，非真实售票；摄影影像展。', '/seed-posters/activity-15.jpg', 1),
+(16, 6, 16, 2003, '中国爱乐乐团室内乐音乐会 杭州站', '模拟档期演示数据，非真实售票；古典室内乐精选。', '/seed-posters/activity-16.jpg', 1),
+(17, 6, 17, 2003, '上海交响乐团新年音乐会 南京站', '模拟档期演示数据，非真实售票；交响音乐会。', '/seed-posters/activity-17.jpg', 1),
+(18, 6, 18, 2003, '李泉爵士流行音乐会 广州站', '模拟档期演示数据，非真实售票；爵士流行现场。', '/seed-posters/activity-18.jpg', 1),
+(19, 7, 19, 2005, '德云社相声大会 北京站', '模拟档期演示数据，非真实售票；曲艺相声专场。', '/seed-posters/activity-19.jpg', 1),
+(20, 7, 20, 2005, '上海评弹团经典评弹雅集 上海站', '模拟档期演示数据，非真实售票；传统评弹演出。', '/seed-posters/activity-20.jpg', 1),
+(21, 7, 21, 2005, '笑果文化脱口秀周末秀 重庆站', '模拟档期演示数据，非真实售票；城市脱口秀现场。', '/seed-posters/activity-21.jpg', 1),
+(22, 8, 22, 2005, '陶身体剧场现代舞《13》深圳站', '模拟档期演示数据，非真实售票；现代舞剧场作品。', '/seed-posters/activity-22.jpg', 1),
+(23, 8, 23, 2005, '中央芭蕾舞团《天鹅湖》成都站', '模拟档期演示数据，非真实售票；经典芭蕾舞剧。', '/seed-posters/activity-23.jpg', 1),
+(24, 8, 24, 2005, '中国歌剧舞剧院舞剧《李白》西安站', '模拟档期演示数据，非真实售票；国风舞剧专场。', '/seed-posters/activity-24.jpg', 1),
+(25, 9, 25, 2003, '初音未来未来有你演唱会 上海站', '模拟档期演示数据，非真实售票；虚拟歌手演唱会。', '/seed-posters/activity-25.jpg', 1),
+(26, 9, 26, 2006, 'Bilibili 二次元电竞嘉年华 深圳站', '模拟档期演示数据，非真实售票；二次元电竞嘉年华。', '/seed-posters/activity-26.jpg', 1),
+(27, 9, 27, 2003, '山口胜平声优见面会 南京站', '模拟档期演示数据，非真实售票；声优互动见面会。', '/seed-posters/activity-27.jpg', 1),
+(28, 10, 28, 2007, '乌镇江南水乡旅行节 杭州站', '模拟档期演示数据，非真实售票；文旅节庆体验活动。', '/seed-posters/activity-28.jpg', 1),
+(29, 10, 29, 2007, '成都非遗博览园体验展 成都站', '模拟档期演示数据，非真实售票；非遗体验与展演。', '/seed-posters/activity-29.jpg', 1),
+(30, 10, 30, 2007, '中国旅游集团丝路城市旅游展 西安站', '模拟档期演示数据，非真实售票；多目的地旅游展。', '/seed-posters/activity-30.jpg', 1);
 UPDATE activity SET seat_map_visibility = 'hidden' WHERE id IN (1, 2, 3);
 UPDATE activity SET seat_map_visibility = 'published' WHERE id IN (4, 5);
 SELECT setval('activity_id_seq', 30, true);
+
+-- ========== 巡演与城市站 demo ==========
+INSERT INTO tour (id, title, artist_id, category_id, poster, description, organizer_id, review_status, status) VALUES
+(1, '伍佰 ROCK STAR 2 巡回演唱会', NULL, 1, '/seed-posters/activity-01.jpg', '多城市巡演 demo，仅用于城市公布流程展示，不关联现有活动。', 2003, 'draft', 1)
+ON CONFLICT (id) DO UPDATE SET
+    title = EXCLUDED.title,
+    artist_id = EXCLUDED.artist_id,
+    category_id = EXCLUDED.category_id,
+    poster = EXCLUDED.poster,
+    description = EXCLUDED.description,
+    organizer_id = EXCLUDED.organizer_id,
+    review_status = EXCLUDED.review_status,
+    status = EXCLUDED.status,
+    update_time = CURRENT_TIMESTAMP;
+
+INSERT INTO station (id, tour_id, city, station_name, poster, description, venue_application_id, publish_status, status) VALUES
+(1, 1, '哈尔滨', '伍佰 ROCK STAR 2 巡回演唱会 哈尔滨站', '/seed-posters/activity-01.jpg', '城市已公布，场馆待确认。', NULL, 'city_announced', 1),
+(2, 1, '西安', '伍佰 ROCK STAR 2 巡回演唱会 西安站', '/seed-posters/activity-01.jpg', '城市已公布，场馆待确认。', NULL, 'city_announced', 1),
+(3, 1, '济南', '伍佰 ROCK STAR 2 巡回演唱会 济南站', '/seed-posters/activity-01.jpg', '城市已公布，场馆待确认。', NULL, 'city_announced', 1),
+(4, 1, '佛山', '伍佰 ROCK STAR 2 巡回演唱会 佛山站', '/seed-posters/activity-01.jpg', '城市已公布，场馆待确认。', NULL, 'city_announced', 1),
+(5, 1, '南京', '伍佰 ROCK STAR 2 巡回演唱会 南京站', '/seed-posters/activity-01.jpg', '城市已公布，场馆待确认。', NULL, 'city_announced', 1)
+ON CONFLICT (id) DO UPDATE SET
+    tour_id = EXCLUDED.tour_id,
+    city = EXCLUDED.city,
+    station_name = EXCLUDED.station_name,
+    poster = EXCLUDED.poster,
+    description = EXCLUDED.description,
+    venue_application_id = EXCLUDED.venue_application_id,
+    publish_status = EXCLUDED.publish_status,
+    status = EXCLUDED.status,
+    update_time = CURRENT_TIMESTAMP;
+
+SELECT setval('tour_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM tour), 1), 1), true);
+SELECT setval('station_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM station), 1), 5), true);
 
 INSERT INTO activity_artist (activity_id, artist_id, sort, is_primary, role_type, role_name, visibility, status) VALUES
 (1, 1, 1, TRUE, 'primary', '主艺人', 'public', 1),

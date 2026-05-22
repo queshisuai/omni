@@ -6,29 +6,55 @@ import com.omni.exception.BusinessException;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.Station;
+import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Tour;
 import com.omni.ticket.dto.InternalUserRefResponse;
+import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueApplication;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.StationMapper;
+import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.TourMapper;
+import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.mapper.VenueApplicationMapper;
 import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
 public class TourStationService {
+
+    private static final String PUBLISH_STATUS_DRAFT = "draft";
+    private static final String PUBLISH_STATUS_CITY_ANNOUNCED = "city_announced";
+    private static final String PUBLISH_STATUS_RISK_SUSPENDED = "risk_suspended";
+    private static final String PUBLISH_STATUS_PUBLISHED = "published";
+    private static final String SALE_STATUS_UNANNOUNCED = "unannounced";
+    private static final String SALE_STATUS_COMING_SOON = "coming_soon";
+    private static final String SALE_STATUS_TO_BE_SCHEDULED = "to_be_scheduled";
+    private static final String SALE_STATUS_SUSPENDED = "suspended";
+    private static final String SALE_STATUS_SOLD_OUT = "sold_out";
+    private static final String SALE_STATUS_ON_SALE = "on_sale";
+    private static final String SALE_STATUS_TEXT_UNANNOUNCED = "未公布";
+    private static final String SALE_STATUS_TEXT_COMING_ANNOUNCE = "即将公布";
+    private static final String SALE_STATUS_TEXT_TO_BE_SCHEDULED = "待定";
+    private static final String SALE_STATUS_TEXT_COMING_SALE = "即将开抢";
+    private static final String SALE_STATUS_TEXT_SUSPENDED = "暂时停止售票";
+    private static final String SALE_STATUS_TEXT_SOLD_OUT = "已售罄";
+    private static final String SALE_STATUS_TEXT_ON_SALE = "售票中";
+    private static final String PRIMARY_ACTION_NONE = "none";
+    private static final String PRIMARY_ACTION_BUY = "buy";
 
     private final TourMapper tourMapper;
     private final StationMapper stationMapper;
@@ -36,16 +62,17 @@ public class TourStationService {
     private final VenueApplicationMapper venueApplicationMapper;
     private final ActivityMapper activityMapper;
     private final SessionMapper sessionMapper;
+    private final TicketTypeMapper ticketTypeMapper;
+    private final VenueMapper venueMapper;
     private final ActivitySeatLayoutService activitySeatLayoutService;
     private final SessionSeatLayoutService sessionSeatLayoutService;
 
     public TourStationService(TourMapper tourMapper,
                                StationMapper stationMapper,
                                UserAccessService userAccessService) {
-        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null);
+        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null, null, null);
     }
 
-    @Autowired
     public TourStationService(TourMapper tourMapper,
                               StationMapper stationMapper,
                               UserAccessService userAccessService,
@@ -54,12 +81,29 @@ public class TourStationService {
                               SessionMapper sessionMapper,
                               ActivitySeatLayoutService activitySeatLayoutService,
                               SessionSeatLayoutService sessionSeatLayoutService) {
+        this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
+                null, null, activitySeatLayoutService, sessionSeatLayoutService);
+    }
+
+    @Autowired
+    public TourStationService(TourMapper tourMapper,
+                               StationMapper stationMapper,
+                               UserAccessService userAccessService,
+                               VenueApplicationMapper venueApplicationMapper,
+                               ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               TicketTypeMapper ticketTypeMapper,
+                               VenueMapper venueMapper,
+                               ActivitySeatLayoutService activitySeatLayoutService,
+                               SessionSeatLayoutService sessionSeatLayoutService) {
         this.tourMapper = tourMapper;
         this.stationMapper = stationMapper;
         this.userAccessService = userAccessService;
         this.venueApplicationMapper = venueApplicationMapper;
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
+        this.ticketTypeMapper = ticketTypeMapper;
+        this.venueMapper = venueMapper;
         this.activitySeatLayoutService = activitySeatLayoutService;
         this.sessionSeatLayoutService = sessionSeatLayoutService;
     }
@@ -101,10 +145,13 @@ public class TourStationService {
         station.setTourId(tourId);
         station.setCity(requireText(body == null ? null : body.get("city"), "城市不能为空"));
         station.setStationName(requireText(body == null ? null : body.get("stationName"), "站点名称不能为空"));
-        station.setVenueApplicationId(parsePositiveLong(body.get("venueApplicationId")));
+        Long venueApplicationId = parsePositiveLong(body.get("venueApplicationId"));
+        station.setVenueApplicationId(venueApplicationId);
         station.setPoster(optionalText(body.get("poster")));
         station.setDescription(optionalText(body.get("description")));
-        station.setPublishStatus("draft");
+        station.setPublishStatus(isTrue(body.get("announceOnly")) && venueApplicationId == null
+                ? PUBLISH_STATUS_CITY_ANNOUNCED
+                : PUBLISH_STATUS_DRAFT);
         station.setStatus(1);
         station.setCreateTime(now);
         station.setUpdateTime(now);
@@ -139,6 +186,18 @@ public class TourStationService {
         return detail;
     }
 
+    public Map<String, Object> getManageableTourDetail(Long userId, Long tourId) {
+        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
+        Tour tour = tourMapper.selectById(tourId);
+        if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
+            throw new BusinessException(404, "演出项目不存在");
+        }
+        if ("organizer".equals(user.getRole()) && !userId.equals(tour.getOrganizerId())) {
+            throw new BusinessException(403, "只能查看自己的演出项目");
+        }
+        return getTourDetail(tourId);
+    }
+
     private List<Map<String, Object>> buildStationDetails(Long tourId, List<Station> stations) {
         if (stations == null || stations.isEmpty() || activityMapper == null || sessionMapper == null) {
             return Collections.emptyList();
@@ -150,20 +209,124 @@ public class TourStationService {
                 .filter(activity -> activity.getStationId() != null)
                 .collect(Collectors.toMap(Activity::getStationId, activity -> activity, (a, b) -> a));
         Set<Long> activityIds = activityByStation.values().stream().map(Activity::getId).collect(Collectors.toSet());
-        Map<Long, List<Session>> sessionsByActivity = activityIds.isEmpty() ? Collections.emptyMap()
+        List<Session> selectedSessions = activityIds.isEmpty() ? Collections.emptyList()
                 : sessionMapper.selectList(new LambdaQueryWrapper<Session>()
                         .in(Session::getActivityId, activityIds)
                         .eq(Session::getStatus, 1)
-                        .orderByAsc(Session::getStartTime))
-                .stream().collect(Collectors.groupingBy(Session::getActivityId));
+                        .orderByAsc(Session::getStartTime));
+        if (selectedSessions == null) {
+            selectedSessions = Collections.emptyList();
+        }
+        Map<Long, List<Session>> sessionsByActivity = selectedSessions.stream()
+                .collect(Collectors.groupingBy(Session::getActivityId));
+        Set<Long> sessionIds = sessionsByActivity.values().stream()
+                .flatMap(List::stream)
+                .map(Session::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<TicketType> selectedTicketTypes = sessionIds.isEmpty() || ticketTypeMapper == null ? Collections.emptyList()
+                : ticketTypeMapper.selectList(new LambdaQueryWrapper<TicketType>()
+                        .in(TicketType::getSessionId, sessionIds)
+                        .eq(TicketType::getStatus, 1));
+        if (selectedTicketTypes == null) {
+            selectedTicketTypes = Collections.emptyList();
+        }
+        Map<Long, List<TicketType>> ticketTypesBySession = selectedTicketTypes.stream()
+                .collect(Collectors.groupingBy(TicketType::getSessionId));
+        Set<Long> venueIds = sessionsByActivity.values().stream()
+                .flatMap(List::stream)
+                .map(Session::getVenueId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<Venue> selectedVenues = venueIds.isEmpty() || venueMapper == null ? Collections.emptyList()
+                : venueMapper.selectBatchIds(venueIds);
+        if (selectedVenues == null) {
+            selectedVenues = Collections.emptyList();
+        }
+        Map<Long, Venue> venueById = selectedVenues.stream()
+                .collect(Collectors.toMap(Venue::getId, venue -> venue, (a, b) -> a));
         return stations.stream().map(station -> {
             Activity activity = activityByStation.get(station.getId());
+            List<Session> sessions = activity == null ? Collections.emptyList() : sessionsByActivity.getOrDefault(activity.getId(), Collections.emptyList());
             Map<String, Object> item = new HashMap<>();
             item.put("station", station);
             item.put("activity", activity);
-            item.put("sessions", activity == null ? Collections.emptyList() : sessionsByActivity.getOrDefault(activity.getId(), Collections.emptyList()));
+            item.put("sessions", sessions);
+            applyStationSaleSummary(item, station, activity, sessions, ticketTypesBySession, venueById);
             return item;
         }).collect(Collectors.toList());
+    }
+
+    private void applyStationSaleSummary(Map<String, Object> item,
+                                         Station station,
+                                         Activity activity,
+                                         List<Session> sessions,
+                                         Map<Long, List<TicketType>> ticketTypesBySession,
+                                         Map<Long, Venue> venueById) {
+        item.put("venueName", null);
+        item.put("venueAddress", null);
+        item.put("priceMin", null);
+        item.put("priceMax", null);
+        item.put("remainStock", null);
+        if (PUBLISH_STATUS_CITY_ANNOUNCED.equals(station.getPublishStatus())) {
+            putSaleState(item, SALE_STATUS_UNANNOUNCED, SALE_STATUS_TEXT_UNANNOUNCED, PRIMARY_ACTION_NONE);
+            return;
+        }
+        if (PUBLISH_STATUS_RISK_SUSPENDED.equals(station.getPublishStatus())) {
+            putSaleState(item, SALE_STATUS_SUSPENDED, SALE_STATUS_TEXT_SUSPENDED, PRIMARY_ACTION_NONE);
+            return;
+        }
+        if (!PUBLISH_STATUS_PUBLISHED.equals(station.getPublishStatus()) || activity == null) {
+            putSaleState(item, SALE_STATUS_COMING_SOON, SALE_STATUS_TEXT_COMING_ANNOUNCE, PRIMARY_ACTION_NONE);
+            return;
+        }
+        if (sessions == null || sessions.isEmpty()) {
+            putSaleState(item, SALE_STATUS_TO_BE_SCHEDULED, SALE_STATUS_TEXT_TO_BE_SCHEDULED, PRIMARY_ACTION_NONE);
+            return;
+        }
+        Venue venue = sessions.stream()
+                .map(Session::getVenueId)
+                .filter(Objects::nonNull)
+                .map(venueById::get)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        if (venue != null) {
+            item.put("venueName", venue.getName());
+            item.put("venueAddress", venue.getAddress());
+        }
+        List<TicketType> ticketTypes = sessions.stream()
+                .flatMap(session -> ticketTypesBySession.getOrDefault(session.getId(), Collections.emptyList()).stream())
+                .collect(Collectors.toList());
+        if (ticketTypes.isEmpty()) {
+            putSaleState(item, SALE_STATUS_COMING_SOON, SALE_STATUS_TEXT_COMING_SALE, PRIMARY_ACTION_NONE);
+            return;
+        }
+        List<BigDecimal> prices = ticketTypes.stream()
+                .map(TicketType::getPrice)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (!prices.isEmpty()) {
+            item.put("priceMin", prices.stream().min(BigDecimal::compareTo).orElse(null));
+            item.put("priceMax", prices.stream().max(BigDecimal::compareTo).orElse(null));
+        }
+        int remainStock = ticketTypes.stream()
+                .map(TicketType::getRemainStock)
+                .filter(Objects::nonNull)
+                .mapToInt(Integer::intValue)
+                .sum();
+        item.put("remainStock", remainStock);
+        if (remainStock > 0) {
+            putSaleState(item, SALE_STATUS_ON_SALE, SALE_STATUS_TEXT_ON_SALE, PRIMARY_ACTION_BUY);
+            return;
+        }
+        putSaleState(item, SALE_STATUS_SOLD_OUT, SALE_STATUS_TEXT_SOLD_OUT, PRIMARY_ACTION_NONE);
+    }
+
+    private void putSaleState(Map<String, Object> item, String saleStatus, String saleStatusText, String primaryAction) {
+        item.put("saleStatus", saleStatus);
+        item.put("saleStatusText", saleStatusText);
+        item.put("primaryAction", primaryAction);
     }
 
     @Transactional
@@ -196,7 +359,15 @@ public class TourStationService {
         ensureNoVenueConflict(application.getVenueId(), startTime, endTime);
 
         LocalDateTime now = LocalDateTime.now();
-        Activity activity = new Activity();
+        Activity activity = activityMapper.selectOne(new LambdaQueryWrapper<Activity>()
+                .eq(Activity::getStationId, station.getId())
+                .eq(Activity::getStatus, 1));
+        boolean existingActivity = activity != null;
+        if (!existingActivity) {
+            activity = new Activity();
+            activity.setCreateTime(now);
+            activity.setStatus(1);
+        }
         activity.setCategoryId(tour.getCategoryId());
         activity.setArtistId(tour.getArtistId());
         activity.setOrganizerId(tour.getOrganizerId());
@@ -207,9 +378,10 @@ public class TourStationService {
         activity.setDescription(defaultText(station.getDescription(), tour.getDescription()));
         activity.setPoster(defaultText(station.getPoster(), tour.getPoster()));
         activity.setPublishStatus("publishing");
-        activity.setStatus(1);
-        activity.setCreateTime(now);
-        activityMapper.insert(activity);
+        activity.setUpdateTime(now);
+        if (!existingActivity) {
+            activityMapper.insert(activity);
+        }
 
         activitySeatLayoutService.copyFromVenueApplication(userId, activity.getId(), application.getId());
 
@@ -220,14 +392,15 @@ public class TourStationService {
         session.setEndTime(endTime);
         session.setStatus(1);
         session.setCreateTime(now);
+        session.setUpdateTime(now);
         sessionMapper.insert(session);
 
         sessionSeatLayoutService.copyFromActivity(userId, session.getId(), activity.getId());
         sessionSeatLayoutService.generateSessionSeats(session.getId());
 
-        activity.setPublishStatus("published");
+        activity.setPublishStatus(PUBLISH_STATUS_PUBLISHED);
         activityMapper.updateById(activity);
-        station.setPublishStatus("published");
+        station.setPublishStatus(PUBLISH_STATUS_PUBLISHED);
         station.setUpdateTime(now);
         stationMapper.updateById(station);
 
@@ -296,6 +469,10 @@ public class TourStationService {
         }
         String text = value.toString().trim();
         return text.isEmpty() ? null : text;
+    }
+
+    private boolean isTrue(Object value) {
+        return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
     private Long parsePositiveLong(Object value) {

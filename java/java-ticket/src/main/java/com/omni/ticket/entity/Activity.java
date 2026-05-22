@@ -33,6 +33,7 @@ public class Activity {
     private String seatMapVisibility;
     private Integer status;
     private LocalDateTime createTime;
+    private LocalDateTime updateTime;
     private String deleteReason;
     private LocalDateTime deletedAt;
     private Long deletedBy;
@@ -78,6 +79,8 @@ public class Activity {
     public void setStatus(Integer status) { this.status = status; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
+    public LocalDateTime getUpdateTime() { return updateTime; }
+    public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
     public String getDeleteReason() { return deleteReason; }
     public void setDeleteReason(String deleteReason) { this.deleteReason = deleteReason; }
     public LocalDateTime getDeletedAt() { return deletedAt; }

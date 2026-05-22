@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.client.NotificationInternalClient;
+import com.omni.ticket.dto.ActivityRiskCaseResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
@@ -76,6 +77,52 @@ public class ActivityRiskResponseService {
         }
         return count;
     }
+
+    public ActivityRiskResolutionResponse adminSuspendActivity(Long activityId, Long adminUserId, String reason) {
+        userAccessService.requireAdmin(adminUserId);
+        Activity activity = requireActivity(activityId);
+        if (!"published".equals(activity.getPublishStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅已发布活动可被主动停售");
+        }
+        String trimmedReason = StringUtils.hasText(reason) ? reason.trim() : "平台主动停售";
+        suspendActivity(activity, null, trimmedReason);
+        ActivityRiskResolution latest = resolutionMapper.selectOne(new LambdaQueryWrapper<ActivityRiskResolution>()
+                .eq(ActivityRiskResolution::getActivityId, activityId)
+                .orderByDesc(ActivityRiskResolution::getCreateTime)
+                .last("LIMIT 1"));
+        return toResponse(latest);
+    }
+
+    public List<ActivityRiskCaseResponse> listRiskCases(Long adminUserId) {
+        userAccessService.requireAdmin(adminUserId);
+        List<Activity> activities = activityMapper.selectList(new LambdaQueryWrapper<Activity>()
+                .eq(Activity::getPublishStatus, "risk_suspended")
+                .orderByDesc(Activity::getRiskSuspendedAt));
+        if (activities == null || activities.isEmpty()) return Collections.emptyList();
+        List<Long> activityIds = activities.stream().map(Activity::getId).collect(Collectors.toList());
+        List<ActivityRiskResolution> resolutions = resolutionMapper.selectList(new LambdaQueryWrapper<ActivityRiskResolution>()
+                .in(ActivityRiskResolution::getActivityId, activityIds)
+                .orderByDesc(ActivityRiskResolution::getCreateTime));
+        return activities.stream().map(activity -> {
+            ActivityRiskCaseResponse vo = new ActivityRiskCaseResponse();
+            vo.setActivityId(activity.getId());
+            vo.setActivityName(activity.getName());
+            vo.setOrganizerId(activity.getOrganizerId());
+            vo.setRiskSuspendedReason(activity.getRiskSuspendedReason());
+            vo.setRiskSuspendedAt(activity.getRiskSuspendedAt());
+            ActivityRiskResolution latest = resolutions.stream()
+                    .filter(r -> r.getActivityId().equals(activity.getId()))
+                    .findFirst().orElse(null);
+            if (latest != null) {
+                vo.setLatestResolutionId(latest.getId());
+                vo.setLatestResolutionStatus(latest.getStatus());
+                vo.setLatestResolutionNote(latest.getResolutionNote());
+                vo.setLatestSubmittedBy(latest.getSubmittedBy());
+            }
+            return vo;
+        }).collect(Collectors.toList());
+    }
+
 
     public ActivityRiskResolutionResponse submitResolution(Long activityId, ActivityRiskResolutionRequest request) {
         if (request == null || request.getUserId() == null) throw new BusinessException(ResultCode.BAD_REQUEST, "处理申请参数不能为空");

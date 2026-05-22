@@ -10,6 +10,7 @@ public class ArtistSearchResponse {
     private String avatar;
     private String representativeWorks;
     private String riskStatus;
+    private String reviewStatus;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -29,4 +30,6 @@ public class ArtistSearchResponse {
     public void setRepresentativeWorks(String representativeWorks) { this.representativeWorks = representativeWorks; }
     public String getRiskStatus() { return riskStatus; }
     public void setRiskStatus(String riskStatus) { this.riskStatus = riskStatus; }
+    public String getReviewStatus() { return reviewStatus; }
+    public void setReviewStatus(String reviewStatus) { this.reviewStatus = reviewStatus; }
 }

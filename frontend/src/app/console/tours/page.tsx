@@ -18,7 +18,12 @@ export default function ToursPage() {
 
   const loadTours = () => {
     const user = getUser()
-    if (!user) return
+    if (!user) {
+      setCheckingRole(false)
+      setLoading(false)
+      setError('请先登录后再查看演出项目')
+      return
+    }
     setRole(user.role || 'user')
     setCheckingRole(false)
     setLoading(true)
@@ -56,8 +61,18 @@ export default function ToursPage() {
     }
   }, [])
 
-  if (checkingRole || !role) {
+  if (checkingRole) {
     return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
+  }
+
+  if (!role) {
+    return (
+      <div className="max-w-[720px] rounded-xl border border-[#e5e5e5] bg-white p-6">
+        <h1 className="mb-2 text-[22px] font-bold text-[#1a1a2e]">请先登录</h1>
+        <p className="mb-5 text-[14px] text-[#666]">登录后可查看和管理演出项目。</p>
+        <Link href="/login" className="inline-flex rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">去登录</Link>
+      </div>
+    )
   }
 
   return (
@@ -90,7 +105,9 @@ export default function ToursPage() {
               {data.records.map(tour => (
                 <tr key={tour.id} className="border-b border-[#f0f0f0]">
                   <td className="p-3 text-[#999]">{tour.id}</td>
-                  <td className="p-3 font-medium text-[#333]">{tour.title}</td>
+                  <td className="p-3 font-medium text-[#333]">
+                    <Link href={`/console/tours/${tour.id}`} className="text-[#1a1a2e] hover:text-[#ff1268]">{tour.title}</Link>
+                  </td>
                   <td className="p-3 text-[#666]">{tour.reviewStatus}</td>
                   <td className="p-3 text-[#999]">{tour.createTime?.substring(0, 10) || '-'}</td>
                 </tr>

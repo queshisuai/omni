@@ -48,6 +48,7 @@ public class ArtistAdminService {
         response.setAvatar(artist.getAvatar());
         response.setRepresentativeWorks(artist.getRepresentativeWorks());
         response.setRiskStatus(artist.getRiskStatus());
+        response.setReviewStatus(artist.getReviewStatus());
         return response;
     }
 }

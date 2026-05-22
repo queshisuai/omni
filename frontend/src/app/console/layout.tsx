@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
-import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, PlusCircle } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, PlusCircle, AlertTriangle } from 'lucide-react'
 
 const menuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
@@ -13,6 +13,8 @@ const menuItems = [
   { href: '/console/sessions', label: '场次管理', icon: Clock },
   { href: '/console/orders', label: '订单查看', icon: ShoppingCart },
   { href: '/console/refunds', label: '退款审核', icon: RotateCcw },
+  { href: '/console/risk-resolutions', label: '恢复售票审核', icon: AlertTriangle, roles: ['admin'] },
+  { href: '/console/risk-cases', label: '风险案例管理', icon: AlertTriangle, roles: ['admin'] },
   { href: '/console/venue', label: '场馆管理', icon: MapPin, roles: ['admin'] },
   { href: '/console/venue/applications', label: '场馆审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/organizer-applications', label: '入驻审核', icon: ClipboardList, roles: ['admin'] },
@@ -25,6 +27,7 @@ const organizerMenuItems = [
   { href: '/console/tours/new', label: '创建我的演出', icon: PlusCircle },
   { href: '/console/activities', label: '我的活动管理', icon: CalendarDays },
   { href: '/console/sessions', label: '我的场次管理', icon: Clock },
+  { href: '/console/risk-events', label: '风险事件待办', icon: AlertTriangle },
   { href: '/console/refunds', label: '主办方退款处理', icon: RotateCcw },
   { href: '/console/venue/apply', label: '场地申请记录', icon: MapPin },
   { href: '/console/orders', label: '订单', icon: ShoppingCart },

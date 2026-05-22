@@ -177,6 +177,28 @@ export interface ActivityRiskResolutionVO {
   reviewedAt?: string | null
 }
 
+export interface NotificationVO {
+  id: number
+  userId: number
+  orderId?: number | null
+  type: string
+  content: string
+  status: number
+  createTime?: string | null
+}
+
+export interface ActivityRiskCaseVO {
+  activityId: number
+  activityName: string
+  organizerId: number
+  riskSuspendedReason?: string | null
+  riskSuspendedAt?: string | null
+  latestResolutionId?: number | null
+  latestResolutionStatus?: string | null
+  latestResolutionNote?: string | null
+  latestSubmittedBy?: number | null
+}
+
 /** 分页结果 */
 export interface PageResult<T> {
   records: T[]
@@ -303,6 +325,27 @@ export interface TourEntity {
   updateTime?: string | null
 }
 
+export type StationPublishStatus =
+  | 'draft'
+  | 'city_announced'
+  | 'venue_pending'
+  | 'venue_rejected'
+  | 'venue_approved'
+  | 'publishing'
+  | 'published'
+  | 'risk_suspended'
+  | 'cancelled'
+  | string
+
+export type StationSaleStatus =
+  | 'unannounced'
+  | 'coming_soon'
+  | 'to_be_scheduled'
+  | 'on_sale'
+  | 'sold_out'
+  | 'suspended'
+  | string
+
 export interface StationEntity {
   id: number
   tourId: number
@@ -311,7 +354,7 @@ export interface StationEntity {
   poster?: string | null
   description?: string | null
   venueApplicationId?: number | null
-  publishStatus: string
+  publishStatus: StationPublishStatus
   status: number
   createTime?: string | null
   updateTime?: string | null
@@ -323,10 +366,22 @@ export interface TourDetailVO {
   stationDetails?: StationPurchaseDetail[]
 }
 
+export interface TourAdminDetailVO extends TourDetailVO {
+  stationDetails: StationPurchaseDetail[]
+}
+
 export interface StationPurchaseDetail {
   station: StationEntity
   activity?: ActivityEntity | null
   sessions: SessionEntity[]
+  venueName?: string | null
+  venueAddress?: string | null
+  priceMin?: number | null
+  priceMax?: number | null
+  remainStock?: number | null
+  saleStatus?: StationSaleStatus | null
+  saleStatusText?: string | null
+  primaryAction?: 'buy' | 'none' | null
 }
 
 /** 场馆 */
