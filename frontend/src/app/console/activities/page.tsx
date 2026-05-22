@@ -197,7 +197,10 @@ export default function ActivitiesPage() {
               {activities.map(a => (
                 <tr key={a.id} className="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
                   <td className="p-3 text-[#999]">{a.id}</td>
-                  <td className="p-3 font-medium text-[#333]">{a.name}</td>
+                  <td className="p-3">
+                    <div className="font-medium text-[#333]">{a.name}</div>
+                    {a.artistName ? <div className="mt-1 text-[12px] font-normal text-[#999]">阵容：{a.artistName}</div> : null}
+                  </td>
                   <td className="p-3">
                     <span className={`text-[12px] px-2 py-0.5 rounded-full ${a.status === 1 ? 'bg-[#f0fff4] text-[#22c55e]' : 'bg-[#f5f5f5] text-[#999]'}`}>
                       {a.status === 1 ? '上架' : '下架'}

@@ -227,6 +227,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   }
 
   const { activity, category, artist, sessions } = detail
+  const artistSummary = detail.artists?.length
+    ? detail.artists.map(item => item.roleName ? `${item.name}（${item.roleName}）` : item.name).filter(Boolean).join('、')
+    : artist?.name
 
   return (
     <>
@@ -250,9 +253,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           {/* 信息 */}
           <div className="flex-1">
             <h1 className="text-[24px] text-[#111] font-medium mb-3">{activity.name}</h1>
-            {artist && (
+            {artistSummary && (
               <p className="text-[14px] text-[#666] mb-2">
-                艺人：<span className="text-[#ff1268]">{artist.name}</span>
+                艺人：<span className="text-[#ff1268]">{artistSummary}</span>
               </p>
             )}
             {category && (
