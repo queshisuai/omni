@@ -46,6 +46,7 @@ class UserServiceTest {
         assertEquals(2004L, response.getUserId());
         assertEquals("13900000001", response.getPhone());
         assertEquals("user", response.getRole());
+        assertEquals("/uploads/user/avatar/2026/05/avatar.webp", response.getAvatar());
         assertNotNull(response.getToken());
     }
 
@@ -323,6 +324,7 @@ class UserServiceTest {
         User user = new User();
         user.setId(2004L);
         user.setPhone("13900000001");
+        user.setAvatar("/uploads/user/avatar/2026/05/avatar.webp");
         user.setRole("user");
         return user;
     }

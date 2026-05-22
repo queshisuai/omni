@@ -98,6 +98,7 @@ public class UserService {
         response.setUserId(user.getId());
         response.setPhone(user.getPhone());
         response.setNickname(user.getNickname());
+        response.setAvatar(user.getAvatar());
         response.setToken(token);
         response.setRole(role);
 
