@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
-import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund } from '@/lib/api'
+import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund, getRefundOptions } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import type { OrderEntity, QrPayResponse, RefundRequestVO, RefundStatus } from '@/types/api'
+import type { OrderEntity, QrPayResponse, RefundOptionsVO, RefundRequestVO, RefundStatus } from '@/types/api'
 
 type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled' | 'trash'
 
@@ -86,6 +86,10 @@ export default function OrdersPage() {
   const [refundTarget, setRefundTarget] = useState<EnrichedOrder | null>(null)
   const [refundReason, setRefundReason] = useState('')
   const [refundReasonType, setRefundReasonType] = useState<'general' | 'cast_change'>('general')
+  const [refundOptions, setRefundOptions] = useState<RefundOptionsVO | null>(null)
+  const [refundQuantity, setRefundQuantity] = useState(1)
+  const [selectedOrderSeatIds, setSelectedOrderSeatIds] = useState<number[]>([])
+  const [refundOptionsLoading, setRefundOptionsLoading] = useState(false)
   const [refundSubmitting, setRefundSubmitting] = useState(false)
   const [trashOrders, setTrashOrders] = useState<EnrichedOrder[]>([])
   const [hiding, setHiding] = useState<number | null>(null)
@@ -243,15 +247,36 @@ export default function OrdersPage() {
 
   const handleApplyRefund = async () => {
     if (!refundTarget) return
+    if (!refundOptions) {
+      alert('退款明细加载中，请稍后再试')
+      return
+    }
+    const hasSeats = refundOptions.seats.length > 0
+    const quantity = hasSeats ? selectedOrderSeatIds.length : refundQuantity
+    if (quantity < 1) {
+      alert(hasSeats ? '请至少选择一个座位' : '请选择退款张数')
+      return
+    }
+    if (quantity > refundOptions.refundableQuantity) {
+      alert('退款张数超过可退张数')
+      return
+    }
     setRefundSubmitting(true)
     try {
       const next = await applyRefund(
         refundTarget.id,
-        refundReason.trim() || undefined,
-        refundReasonType === 'cast_change' ? 'cast_change' : undefined,
+        {
+          reason: refundReason.trim() || undefined,
+          reasonType: refundReasonType === 'cast_change' ? 'cast_change' : undefined,
+          quantity,
+          orderSeatIds: hasSeats ? selectedOrderSeatIds : undefined,
+        },
       )
       setRefunds((prev) => [next, ...prev.filter((item) => item.id !== next.id)])
       setRefundTarget(null)
+      setRefundOptions(null)
+      setRefundQuantity(1)
+      setSelectedOrderSeatIds([])
       setRefundReason('')
       setRefundReasonType('general')
     } catch (err: unknown) {
@@ -261,20 +286,45 @@ export default function OrdersPage() {
     }
   }
 
-  const openRefundDialog = (order: EnrichedOrder) => {
+  const openRefundDialog = async (order: EnrichedOrder) => {
+    const user = getUser()
+    if (!user?.userId) {
+      alert('请先登录后再申请退款')
+      return
+    }
     setRefundTarget(order)
     setRefundReason('')
     setRefundReasonType('general')
+    setRefundOptions(null)
+    setRefundQuantity(1)
+    setSelectedOrderSeatIds([])
+    setRefundOptionsLoading(true)
+    try {
+      const options = await getRefundOptions(order.id, user.userId)
+      setRefundOptions(options)
+      setRefundQuantity(Math.min(1, options.refundableQuantity))
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '加载退款明细失败')
+      setRefundTarget(null)
+    } finally {
+      setRefundOptionsLoading(false)
+    }
   }
 
   const closeRefundDialog = () => {
     if (refundSubmitting) return
     setRefundTarget(null)
+    setRefundOptions(null)
+    setRefundQuantity(1)
+    setSelectedOrderSeatIds([])
     setRefundReason('')
     setRefundReasonType('general')
   }
 
   const refundMap = buildRefundMap(refunds)
+  const refundHasSeats = (refundOptions?.seats.length || 0) > 0
+  const refundSelectedQuantity = refundHasSeats ? selectedOrderSeatIds.length : refundQuantity
+  const estimatedRefundAmount = (refundOptions?.unitPrice || refundTarget?.unitPrice || 0) * refundSelectedQuantity
 
   const filteredOrders = activeTab === 'trash'
     ? trashOrders
@@ -515,8 +565,77 @@ export default function OrdersPage() {
             <h2 className="mb-3 text-[18px] font-medium text-[#111]">申请退款</h2>
             <p className="mb-4 text-[13px] leading-5 text-[#666]">
               订单号：{refundTarget.orderNo}<br />
-              退款金额：¥{refundTarget.amount.toFixed(2)}
+              订单金额：¥{refundTarget.amount.toFixed(2)}
             </p>
+            <div className="mb-4 rounded border border-[#f0f0f0] bg-[#fafafa] px-3 py-2 text-[13px] leading-6 text-[#666]">
+              {refundOptionsLoading ? (
+                <div>退款明细加载中...</div>
+              ) : refundOptions ? (
+                <>
+                  <div className="flex justify-between">
+                    <span>订单总票数：{refundOptions.totalQuantity} 张</span>
+                    <span>已退票数：{refundOptions.refundedQuantity} 张</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>可退票数：{refundOptions.refundableQuantity} 张</span>
+                    <span>单价：¥{refundOptions.unitPrice.toFixed(2)}</span>
+                  </div>
+                  <div className="mt-1 font-medium text-[#ff1268]">
+                    预计退款金额：¥{estimatedRefundAmount.toFixed(2)}
+                  </div>
+                </>
+              ) : (
+                <div>退款明细加载失败，请关闭后重试</div>
+              )}
+            </div>
+            {refundOptions && refundHasSeats && (
+              <div className="mb-4">
+                <div className="mb-2 text-[13px] text-[#333]">选择退款座位</div>
+                <div className="max-h-[132px] overflow-y-auto rounded border border-[#eee] p-2">
+                  {refundOptions.seats.map((seat) => {
+                    const selected = selectedOrderSeatIds.includes(seat.orderSeatId)
+                    return (
+                      <button
+                        key={seat.orderSeatId}
+                        type="button"
+                        onClick={() => {
+                          setSelectedOrderSeatIds((prev) => selected
+                            ? prev.filter((id) => id !== seat.orderSeatId)
+                            : [...prev, seat.orderSeatId])
+                        }}
+                        disabled={refundSubmitting}
+                        className="mb-2 mr-2 cursor-pointer rounded border bg-white px-3 py-1.5 text-[13px] outline-none"
+                        style={{
+                          borderColor: selected ? '#ff1268' : '#ddd',
+                          color: selected ? '#ff1268' : '#666',
+                        }}
+                      >
+                        {seat.seatLabel || `座位 ${seat.orderSeatId}`}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="mt-1 text-[12px] text-[#999]">已选择 {selectedOrderSeatIds.length} 张</div>
+              </div>
+            )}
+            {refundOptions && !refundHasSeats && (
+              <div className="mb-4">
+                <div className="mb-2 text-[13px] text-[#333]">退款张数</div>
+                <input
+                  type="number"
+                  min={1}
+                  max={refundOptions.refundableQuantity}
+                  value={refundQuantity}
+                  onChange={(event) => {
+                    const value = Number(event.target.value)
+                    if (!Number.isFinite(value)) return
+                    setRefundQuantity(Math.max(1, Math.min(refundOptions.refundableQuantity, Math.trunc(value))))
+                  }}
+                  disabled={refundSubmitting || refundOptions.refundableQuantity <= 0}
+                  className="w-full rounded border border-[#ddd] px-3 py-2 text-[14px] text-[#333] outline-none focus:border-[#ff1268]"
+                />
+              </div>
+            )}
             <div className="mb-3">
               <div className="mb-2 text-[13px] text-[#333]">退款原因类型</div>
               <div className="flex gap-2">
@@ -569,9 +688,9 @@ export default function OrdersPage() {
               </button>
               <button
                 onClick={handleApplyRefund}
-                disabled={refundSubmitting}
+                disabled={refundSubmitting || refundOptionsLoading || !refundOptions || refundOptions.refundableQuantity <= 0 || (refundHasSeats && selectedOrderSeatIds.length === 0)}
                 className="cursor-pointer rounded border-none bg-[#ff1268] px-5 py-2 text-[14px] text-white outline-none"
-                style={{ opacity: refundSubmitting ? 0.7 : 1 }}
+                style={{ opacity: refundSubmitting || refundOptionsLoading || !refundOptions || refundOptions.refundableQuantity <= 0 || (refundHasSeats && selectedOrderSeatIds.length === 0) ? 0.7 : 1 }}
               >
                 {refundSubmitting ? '提交中...' : '确认申请'}
               </button>

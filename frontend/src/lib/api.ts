@@ -380,10 +380,21 @@ export async function syncAlipayPayment(orderId: number) {
   return request<import('@/types/api').PaymentStatusResponse>(`/api/payment/alipay/sync/${orderId}`)
 }
 
-export async function applyRefund(orderId: number, reason?: string, reasonType?: string) {
+export async function getRefundOptions(orderId: number, userId: number) {
+  return request<import('@/types/api').RefundOptionsVO>(`/api/order/${orderId}/refund-options?userId=${userId}`)
+}
+
+export async function applyRefund(
+  orderId: number,
+  reasonOrParams?: string | { reason?: string; reasonType?: string; quantity?: number; orderSeatIds?: number[] },
+  reasonType?: string,
+) {
+  const body = typeof reasonOrParams === 'object' && reasonOrParams !== null
+    ? { orderId, ...reasonOrParams }
+    : { orderId, reason: reasonOrParams, reasonType }
   return request<import('@/types/api').RefundRequestVO>('/api/payment/refunds/apply', {
     method: 'POST',
-    body: JSON.stringify({ orderId, reason, reasonType }),
+    body: JSON.stringify(body),
   })
 }
 

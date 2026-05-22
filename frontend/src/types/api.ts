@@ -739,9 +739,29 @@ export interface RefundRequestVO {
   reviewerId: number | null
   reviewNote: string | null
   alipayRefundNo: string | null
+  quantity?: number | null
+  orderSeatIds?: string | null
+  refundType?: 'full' | 'partial' | string | null
   createTime: string
   reviewTime: string | null
   refundTime: string | null
+}
+
+export interface RefundSeatOptionVO {
+  orderSeatId: number
+  sessionSeatId: number
+  sessionId: number
+  ticketTypeId: number
+  seatLabel?: string | null
+}
+
+export interface RefundOptionsVO {
+  orderId: number
+  totalQuantity: number
+  refundedQuantity: number
+  refundableQuantity: number
+  unitPrice: number
+  seats: RefundSeatOptionVO[]
 }
 
 export interface DirectRefundResponse {
