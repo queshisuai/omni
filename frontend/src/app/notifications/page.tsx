@@ -6,6 +6,7 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { listMyNotifications } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
+import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationReadAt, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt } from '@/components/notification-state'
 import type { NotificationVO } from '@/types/api'
 
 const TYPE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
@@ -41,6 +42,9 @@ export default function NotificationsPage() {
   const [error, setError] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<NotificationVO[]>([])
   const [filter, setFilter] = useState<'all' | 'risk'>('all')
+  const [userId, setUserId] = useState(0)
+  const [readAt, setReadAt] = useState(0)
+  const [hiddenIds, setHiddenIds] = useState<number[]>([])
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -52,6 +56,10 @@ export default function NotificationsPage() {
       router.replace('/login')
       return
     }
+    const uid = Number(user.userId)
+    setUserId(uid)
+    setReadAt(getNotificationReadAt(uid))
+    setHiddenIds(getHiddenNotificationIds(uid))
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -62,17 +70,60 @@ export default function NotificationsPage() {
     return () => { cancelled = true }
   }, [router])
 
-  const visible = notifications.filter((item) => {
+  const visibleNotifications = filterVisibleNotifications(notifications, hiddenIds)
+  const visible = visibleNotifications.filter((item) => {
     if (filter === 'all') return true
     const type = detectType(item)
     return type === 'CAST_CHANGE' || type === 'RISK_SUSPENDED' || type === 'RISK_RESUMED'
   })
 
+  const unreadCount = visibleNotifications.reduce((acc, item) => acc + (isNotificationUnread(item, readAt) ? 1 : 0), 0)
+  const readCount = getReadNotificationIds(visibleNotifications, readAt).length
+
+  const markAllRead = () => {
+    if (!userId) return
+    const latest = getLatestNotificationTime(visibleNotifications)
+    setReadAt(latest)
+    setNotificationReadAt(userId, latest)
+  }
+
+  const deleteRead = () => {
+    if (!userId) return
+    const readIds = getReadNotificationIds(visibleNotifications, readAt)
+    if (readIds.length === 0) return
+    const next = Array.from(new Set([...hiddenIds, ...readIds]))
+    setHiddenIds(next)
+    setHiddenNotificationIds(userId, next)
+  }
+
   return (
     <>
       <Header />
       <main className="max-w-[1200px] mx-auto px-5 py-8" style={{ minHeight: 'calc(100vh - 200px)' }}>
-        <h1 className="text-[24px] text-[#111] font-medium mb-6">站内消息</h1>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-[24px] text-[#111] font-medium">站内消息</h1>
+            <p className="mt-1 text-[13px] text-[#999]">删除只会隐藏当前设备上的已读消息，后端消息记录不会被物理删除。</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={markAllRead}
+              disabled={unreadCount === 0}
+              className="cursor-pointer rounded border border-[#ff1268] bg-white px-3 py-1.5 text-[13px] text-[#ff1268] outline-none disabled:cursor-not-allowed disabled:border-[#ddd] disabled:text-[#bbb]"
+            >
+              全部已读
+            </button>
+            <button
+              type="button"
+              onClick={deleteRead}
+              disabled={readCount === 0}
+              className="cursor-pointer rounded border border-[#ef4444] bg-white px-3 py-1.5 text-[13px] text-[#ef4444] outline-none disabled:cursor-not-allowed disabled:border-[#ddd] disabled:text-[#bbb]"
+            >
+              删除已读
+            </button>
+          </div>
+        </div>
 
         <div className="flex gap-0 mb-6 border-b border-[#e5e5e5]">
           {(
@@ -109,10 +160,12 @@ export default function NotificationsPage() {
             const type = detectType(item)
             const meta = TYPE_LABEL[type] || TYPE_LABEL.IN_APP
             const isCastChange = type === 'CAST_CHANGE'
+            const unread = isNotificationUnread(item, readAt)
             return (
               <div key={item.id} className="rounded border border-[#eee] bg-white px-4 py-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full px-2 py-0.5 text-[12px]" style={{ color: meta.color, backgroundColor: meta.bg }}>{meta.label}</span>
+                  {unread && <span className="rounded-full bg-[#ff1268] px-2 py-0.5 text-[11px] text-white">未读</span>}
                   <span className="text-[12px] text-[#999]">{formatTime(item.createTime)}</span>
                   {item.orderId && (
                     <button

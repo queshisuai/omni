@@ -5,9 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Bell } from 'lucide-react'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { listMyNotifications } from '@/lib/api'
+import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationReadAt, getNotificationTime, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt } from './notification-state'
 import type { NotificationVO } from '@/types/api'
-
-const READ_STORAGE_KEY = 'damai-notifications-read-at'
 
 const TYPE_LABEL: Record<string, { label: string; color: string }> = {
   IN_APP: { label: '站内消息', color: '#ff1268' },
@@ -41,30 +40,6 @@ function formatTime(value?: string | null): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
-function getStoredReadAt(userId: number): number {
-  if (typeof window === 'undefined') return 0
-  try {
-    const raw = window.localStorage.getItem(READ_STORAGE_KEY)
-    if (!raw) return 0
-    const map = JSON.parse(raw) as Record<string, number>
-    return map[String(userId)] || 0
-  } catch {
-    return 0
-  }
-}
-
-function setStoredReadAt(userId: number, value: number) {
-  if (typeof window === 'undefined') return
-  try {
-    const raw = window.localStorage.getItem(READ_STORAGE_KEY)
-    const map = raw ? (JSON.parse(raw) as Record<string, number>) : {}
-    map[String(userId)] = value
-    window.localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(map))
-  } catch {
-    // ignore
-  }
-}
-
 export function NotificationBell() {
   const router = useRouter()
   const [loggedIn, setLoggedIn] = useState(false)
@@ -74,6 +49,7 @@ export function NotificationBell() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [readAt, setReadAt] = useState(0)
+  const [hiddenIds, setHiddenIds] = useState<number[]>([])
   const fetchTokenRef = useRef(0)
 
   useEffect(() => {
@@ -84,11 +60,13 @@ export function NotificationBell() {
         const user = getUser()
         const uid = user?.userId || 0
         setUserId(uid)
-        setReadAt(uid ? getStoredReadAt(uid) : 0)
+        setReadAt(uid ? getNotificationReadAt(uid) : 0)
+        setHiddenIds(uid ? getHiddenNotificationIds(uid) : [])
       } else {
         setUserId(0)
         setItems([])
         setReadAt(0)
+        setHiddenIds([])
       }
     }
     checkAuth()
@@ -130,20 +108,24 @@ export function NotificationBell() {
 
   if (!loggedIn) return null
 
-  const unreadCount = items.reduce((acc, item) => {
-    const time = item.createTime ? new Date(item.createTime).getTime() : 0
-    return acc + (time > readAt ? 1 : 0)
-  }, 0)
+  const visibleItems = filterVisibleNotifications(items, hiddenIds)
+  const unreadCount = visibleItems.reduce((acc, item) => acc + (isNotificationUnread(item, readAt) ? 1 : 0), 0)
+  const readCount = getReadNotificationIds(visibleItems, readAt).length
 
   const markAllRead = () => {
-    const latest = items.reduce((max, item) => {
-      const time = item.createTime ? new Date(item.createTime).getTime() : 0
-      return time > max ? time : max
-    }, 0)
+    const latest = getLatestNotificationTime(visibleItems)
     if (latest > readAt) {
       setReadAt(latest)
-      if (userId) setStoredReadAt(userId, latest)
+      if (userId) setNotificationReadAt(userId, latest)
     }
+  }
+
+  const deleteRead = () => {
+    const readIds = getReadNotificationIds(visibleItems, readAt)
+    if (readIds.length === 0 || !userId) return
+    const next = Array.from(new Set([...hiddenIds, ...readIds]))
+    setHiddenIds(next)
+    setHiddenNotificationIds(userId, next)
   }
 
   const handleEnter = () => {
@@ -163,7 +145,7 @@ export function NotificationBell() {
     router.push('/notifications')
   }
 
-  const previewItems = items.slice(0, 5)
+  const previewItems = visibleItems.slice(0, 5)
 
   return (
     <div
@@ -190,12 +172,22 @@ export function NotificationBell() {
         >
           <div className="flex items-center justify-between border-b border-[#f0f0f0] px-4 py-3">
             <span className="text-[14px] font-medium text-[#111]">站内消息</span>
-            <button
-              onClick={() => { markAllRead(); setOpen(false); router.push('/notifications') }}
-              className="cursor-pointer border-none bg-transparent text-[12px] text-[#3b82f6] outline-none hover:underline"
-            >
-              查看全部
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={markAllRead}
+                disabled={unreadCount === 0}
+                className="cursor-pointer border-none bg-transparent text-[12px] text-[#3b82f6] outline-none hover:underline disabled:cursor-not-allowed disabled:text-[#bbb] disabled:no-underline"
+              >
+                全部已读
+              </button>
+              <button
+                onClick={deleteRead}
+                disabled={readCount === 0}
+                className="cursor-pointer border-none bg-transparent text-[12px] text-[#ef4444] outline-none hover:underline disabled:cursor-not-allowed disabled:text-[#bbb] disabled:no-underline"
+              >
+                删除已读
+              </button>
+            </div>
           </div>
           {loading ? (
             <div className="px-4 py-6 text-center text-[13px] text-[#999]">加载中...</div>
@@ -208,8 +200,7 @@ export function NotificationBell() {
               {previewItems.map((item) => {
                 const type = detectType(item)
                 const meta = TYPE_LABEL[type] || TYPE_LABEL.IN_APP
-                const time = item.createTime ? new Date(item.createTime).getTime() : 0
-                const unread = time > readAt
+                const unread = getNotificationTime(item) > readAt
                 return (
                   <li key={item.id} className="border-b border-[#f5f5f5] last:border-b-0">
                     <button

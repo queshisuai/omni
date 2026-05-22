@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Search, Download, MapPin, ChevronDown, User, Menu } from "lucide-react";
 import { getUser, isAuthenticated, logout } from "@/lib/auth";
+import { NotificationBell } from "@/components/NotificationBell";
 import type { UserRole } from "@/types/api";
 
 export const HOT_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '南京', '成都', '武汉', '天津', '沈阳', '西安', '苏州'];
@@ -188,6 +189,8 @@ export function Header() {
             className="bg-transparent border-none outline-none text-sm text-[#111] ml-2 w-full placeholder:text-[#999]"
           />
         </div>
+
+        {loggedIn && <NotificationBell />}
 
         {/* User / Login */}
         <div className="relative flex-shrink-0 h-full flex items-center" onMouseLeave={() => setShowUserDropdown(false)}>
