@@ -128,6 +128,11 @@ export default function NewActivityPage() {
   const handleSubmit = async () => {
     const u = getUser()
     if (!u || !categoryId || !name.trim() || artists.length === 0) return
+    const limitText = perUserLimit.trim()
+    if (limitText && (!/^\d+$/.test(limitText) || Number(limitText) <= 0)) {
+      alert('个人限购张数必须为正整数')
+      return
+    }
     setSubmitting(true)
     try {
       // 1. 创建活动，并保存有序艺人阵容
@@ -149,7 +154,7 @@ export default function NewActivityPage() {
         venueApprovalFileUrl: venueApprovalFileUrl.trim() || null,
         venueApprovalNote: venueApprovalNote.trim() || null,
         seatMapVisibility,
-        perUserLimit: perUserLimit.trim() ? Number(perUserLimit) : null,
+        perUserLimit: limitText ? Number(limitText) : null,
       })
 
       const selectedTemplate = templateCandidates.find(candidate => `${candidate.sourceType}:${candidate.sourceId}` === selectedTemplateSource)

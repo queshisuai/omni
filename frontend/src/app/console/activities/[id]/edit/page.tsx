@@ -99,6 +99,11 @@ export default function EditActivityPage() {
       setError('请至少选择一个活动艺人')
       return
     }
+    const limitText = form.perUserLimit.trim()
+    if (limitText && (!/^\d+$/.test(limitText) || Number(limitText) <= 0)) {
+      setError('个人限购张数必须为正整数')
+      return
+    }
 
     setSaving(true)
     setError('')
@@ -118,7 +123,7 @@ export default function EditActivityPage() {
         })),
         poster: form.poster.trim() || null,
         description: form.description.trim() || null,
-        perUserLimit: form.perUserLimit.trim() ? Number(form.perUserLimit) : null,
+        perUserLimit: limitText ? Number(limitText) : null,
       })
       setMessage(role === 'admin' ? '平台活动基础信息已保存' : '我的活动基础信息已保存')
     } catch (err) {
