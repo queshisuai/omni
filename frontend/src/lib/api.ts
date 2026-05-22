@@ -2,7 +2,7 @@
  * API 客户端 - fetch 封装
  */
 import { getToken } from './auth'
-import type { ApiResult, ChangePasswordRequest, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, ResetPasswordRequest, SeatMapResponse, SubjectType, UserInfo } from '@/types/api'
+import type { ApiResult, AssetUploadVO, ChangePasswordRequest, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, ResetPasswordRequest, SeatMapResponse, SubjectType, UserInfo } from '@/types/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -59,6 +59,45 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return result.data
 }
 
+async function multipartRequest<T>(url: string, formData: FormData, options?: Omit<RequestInit, 'body'>): Promise<T> {
+  const token = getToken()
+  const headers: HeadersInit = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options?.headers,
+  }
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
+
+  let response: Response
+  try {
+    response = await fetch(`${BASE_URL}${url}`, {
+      ...options,
+      method: options?.method || 'POST',
+      headers,
+      body: formData,
+      signal: controller.signal,
+    })
+  } catch {
+    throw new ApiError(503, '服务暂不可用，请稍后重试')
+  } finally {
+    clearTimeout(timeoutId)
+  }
+
+  let result: ApiResult<T>
+  try {
+    result = await response.json()
+  } catch {
+    throw new ApiError(503, '服务暂不可用，请稍后重试')
+  }
+
+  if (result.code !== 200) {
+    throw new ApiError(result.code, result.message)
+  }
+
+  return result.data
+}
+
 // ========== 用户服务 ==========
 
 export async function login(params: { loginType: string; account: string; password?: string; smsCode?: string }) {
@@ -84,6 +123,12 @@ export async function updateProfile(params: { nickname?: string | null; email?: 
     method: 'PUT',
     body: JSON.stringify(params),
   })
+}
+
+export async function uploadUserAvatar(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return multipartRequest<UserInfo>('/api/user/assets/avatar', formData)
 }
 
 export async function changePassword(params: ChangePasswordRequest) {
@@ -242,6 +287,14 @@ export async function reviewActivityRiskResolution(id: number, params: import('@
     method: 'POST',
     body: JSON.stringify(params),
   })
+}
+
+export async function uploadTicketAsset(params: { userId: number; bizType: string; file: File }) {
+  const formData = new FormData()
+  formData.append('userId', String(params.userId))
+  formData.append('bizType', params.bizType)
+  formData.append('file', params.file)
+  return multipartRequest<AssetUploadVO>('/api/ticket/admin/assets', formData)
 }
 
 export async function createReservation(userId: number, sessionId: number) {

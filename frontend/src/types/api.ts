@@ -64,6 +64,15 @@ export interface UserInfo {
   updateTime: string | null
 }
 
+export interface AssetUploadVO {
+  id: number
+  bizType: string
+  publicUrl: string
+  originalName: string | null
+  mimeType: string
+  sizeBytes: number
+}
+
 export type UserRole = 'user' | 'organizer' | 'admin'
 export type OrganizerApplicationStatus = 0 | 1 | 2
 export type OrganizerStatus = 0 | 1 | 2 | 3
