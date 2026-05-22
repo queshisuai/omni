@@ -9,6 +9,7 @@ import com.omni.ticket.dto.ActivityArtistDto;
 import com.omni.ticket.dto.ActivityVO;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -38,6 +39,7 @@ public class ActivityService {
         this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper, null);
     }
 
+    @Autowired
     public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
                            ArtistMapper artistMapper, SessionMapper sessionMapper,
                            VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
