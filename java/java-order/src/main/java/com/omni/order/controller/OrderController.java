@@ -3,10 +3,12 @@ package com.omni.order.controller;
 import com.omni.common.result.Result;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.MarkPartialRefundedRequest;
 import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.PaidOrderCountRequest;
 import com.omni.order.dto.PaidOrderCountResponse;
 import com.omni.order.dto.PaidOrdersBySessionsRequest;
+import com.omni.order.dto.RefundOptionsResponse;
 import com.omni.order.dto.SessionSeatUsageRequest;
 import com.omni.order.dto.SessionSeatUsageResponse;
 import com.omni.order.entity.Order;
@@ -82,6 +84,11 @@ public class OrderController {
         return Result.success(order);
     }
 
+    @GetMapping("/{id}/refund-options")
+    public Result<RefundOptionsResponse> getRefundOptions(@PathVariable Long id, @RequestParam Long userId) {
+        return Result.success(orderService.getUserRefundOptions(id, userId));
+    }
+
     /**
      * 内部订单详情
      */
@@ -93,6 +100,15 @@ public class OrderController {
         }
         Order order = orderService.getOrderDetail(id);
         return Result.success(order);
+    }
+
+    @GetMapping("/internal/{id}/refund-options")
+    public Result<RefundOptionsResponse> getInternalRefundOptions(@PathVariable Long id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(orderService.getRefundOptions(id));
     }
 
     @PostMapping("/internal/paid-by-sessions")
@@ -164,12 +180,22 @@ public class OrderController {
      */
     @PostMapping("/internal/{id}/refunded")
     public Result<Order> markInternalRefunded(@PathVariable Long id,
-                                               @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+                                                @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
             return Result.fail(403, "无权限");
         }
         Order order = orderService.markRefunded(id);
         return Result.success(order);
+    }
+
+    @PostMapping("/internal/{id}/partial-refunded")
+    public Result<Order> markInternalPartialRefunded(@PathVariable Long id,
+            @RequestBody MarkPartialRefundedRequest request,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(orderService.markPartialRefunded(id, request));
     }
 
     private boolean isValidInternalToken(String token) {

@@ -9,8 +9,11 @@ import com.omni.order.client.TicketSalesInternalClient;
 import com.omni.order.client.UserInternalClient;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.MarkPartialRefundedRequest;
 import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.PaymentSyncDecisionResponse;
+import com.omni.order.dto.RefundOptionsResponse;
+import com.omni.order.dto.RefundSeatOptionResponse;
 import com.omni.order.dto.SessionSeatUsageItemResponse;
 import com.omni.order.dto.SessionSeatUsageResponse;
 import com.omni.order.dto.TicketSalesLockRequest;
@@ -34,13 +37,16 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -228,6 +234,64 @@ public class OrderService {
         throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许退款");
     }
 
+    public RefundOptionsResponse getRefundOptions(Long orderId) {
+        Order order = getOrderDetail(orderId);
+        if (order.getStatus() != STATUS_PAID) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅已支付订单可退款");
+        }
+        List<OrderSeat> seats = orderSeatMapper.selectRefundableSeatsByOrderId(orderId);
+        int refunded = safeCount(orderSeatMapper.countRefundedSeatsByOrderId(orderId));
+        int refundable = seats == null || seats.isEmpty() ? order.getQuantity() - refunded : seats.size();
+
+        RefundOptionsResponse response = new RefundOptionsResponse();
+        response.setOrderId(orderId);
+        response.setTotalQuantity(order.getQuantity());
+        response.setRefundedQuantity(refunded);
+        response.setRefundableQuantity(Math.max(refundable, 0));
+        response.setUnitPrice(order.getAmount().divide(BigDecimal.valueOf(order.getQuantity()), 2, RoundingMode.HALF_UP));
+        response.setSeats((seats == null ? Collections.<OrderSeat>emptyList() : seats).stream()
+                .map(this::toRefundSeatOption)
+                .collect(Collectors.toList()));
+        return response;
+    }
+
+    public RefundOptionsResponse getUserRefundOptions(Long orderId, Long userId) {
+        Order order = getUserOwnedOrder(orderId, userId);
+        if (order.getStatus() != STATUS_PAID) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅已支付订单可退款");
+        }
+        return getRefundOptions(orderId);
+    }
+
+    @Transactional
+    public Order markPartialRefunded(Long orderId, MarkPartialRefundedRequest request) {
+        Order order = getOrderDetail(orderId);
+        if (order.getStatus() != STATUS_PAID) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许退款");
+        }
+        int quantity = requireRefundQuantity(request);
+        List<OrderSeat> refundableSeats = orderSeatMapper.selectRefundableSeatsByOrderId(orderId);
+        int refunded = safeCount(orderSeatMapper.countRefundedSeatsByOrderId(orderId));
+        boolean hasSeats = refundableSeats != null && !refundableSeats.isEmpty();
+        int refundable = hasSeats ? refundableSeats.size() : order.getQuantity() - refunded;
+        if (quantity > refundable) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "可退款票数不足");
+        }
+
+        List<OrderSeat> selectedSeats = selectRefundSeats(refundableSeats, request != null ? request.getOrderSeatIds() : null, quantity);
+        refundTickets(order, selectedSeats, quantity);
+        if (!selectedSeats.isEmpty()) {
+            orderSeatMapper.updateStatusByIds(selectedSeats.stream().map(OrderSeat::getId).collect(Collectors.toList()), ORDER_SEAT_REFUNDED);
+        }
+
+        if (refunded + quantity >= order.getQuantity()) {
+            order.setStatus(STATUS_REFUNDED);
+            order.setUpdateTime(LocalDateTime.now());
+            orderMapper.updateById(order);
+        }
+        return order;
+    }
+
     public List<Order> listOrders(Long userId) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Order::getUserId, userId)
@@ -274,6 +338,47 @@ public class OrderService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权限操作该订单");
         }
         return order;
+    }
+
+    private int safeCount(Integer count) {
+        return count == null ? 0 : count;
+    }
+
+    private RefundSeatOptionResponse toRefundSeatOption(OrderSeat seat) {
+        RefundSeatOptionResponse response = new RefundSeatOptionResponse();
+        response.setOrderSeatId(seat.getId());
+        response.setSessionSeatId(seat.getSessionSeatId());
+        response.setSessionId(seat.getSessionId());
+        response.setTicketTypeId(seat.getTicketTypeId());
+        response.setSeatLabel(seat.getSessionSeatId() != null ? String.valueOf(seat.getSessionSeatId()) : null);
+        return response;
+    }
+
+    private int requireRefundQuantity(MarkPartialRefundedRequest request) {
+        if (request == null || request.getQuantity() == null || request.getQuantity() <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款数量不正确");
+        }
+        return request.getQuantity();
+    }
+
+    private List<OrderSeat> selectRefundSeats(List<OrderSeat> refundableSeats, List<Long> orderSeatIds, int quantity) {
+        if (refundableSeats == null || refundableSeats.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (orderSeatIds == null || orderSeatIds.isEmpty()) {
+            return refundableSeats.stream().limit(quantity).collect(Collectors.toList());
+        }
+        if (orderSeatIds.size() != quantity) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款座位数量不匹配");
+        }
+        Set<Long> ids = new HashSet<>(orderSeatIds);
+        List<OrderSeat> selected = refundableSeats.stream()
+                .filter(seat -> ids.contains(seat.getId()))
+                .collect(Collectors.toList());
+        if (selected.size() != quantity) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "可退款票数不足");
+        }
+        return selected;
     }
 
     public Long countPaidOrdersBySessions(List<Long> sessionIds) {
@@ -626,6 +731,22 @@ public class OrderService {
         Result<Void> result = ticketSalesInternalClient.refund(request, token);
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             log.warn("退款恢复票务资源失败: orderId={}", order.getId());
+        }
+    }
+
+    private void refundTickets(Order order, List<OrderSeat> orderSeats, int quantity) {
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setOrderId(order.getId());
+        request.setSessionId(order.getSessionId());
+        request.setTicketTypeId(order.getTicketTypeId());
+        request.setQuantity(quantity);
+        if (orderSeats != null && !orderSeats.isEmpty()) {
+            request.setSeatIds(orderSeats.stream().map(OrderSeat::getSessionSeatId).collect(Collectors.toList()));
+        }
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
+        Result<Void> result = ticketSalesInternalClient.refund(request, token);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
         }
     }
 
