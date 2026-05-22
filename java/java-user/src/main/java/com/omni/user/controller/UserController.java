@@ -40,21 +40,27 @@ public class UserController {
 
     private final UserService userService;
     private final OrganizerApplicationService organizerApplicationService;
+    private final UserAssetService userAssetService;
     private final String internalApiToken;
 
-    @Autowired
-    private UserAssetService userAssetService;
-
     public UserController(UserService userService, OrganizerApplicationService organizerApplicationService) {
-        this(userService, organizerApplicationService, "");
+        this(userService, organizerApplicationService, null, "");
+    }
+
+    public UserController(UserService userService,
+                          OrganizerApplicationService organizerApplicationService,
+                          String internalApiToken) {
+        this(userService, organizerApplicationService, null, internalApiToken);
     }
 
     @Autowired
     public UserController(UserService userService,
-                            OrganizerApplicationService organizerApplicationService,
-                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+                          OrganizerApplicationService organizerApplicationService,
+                          UserAssetService userAssetService,
+                          @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.userService = userService;
         this.organizerApplicationService = organizerApplicationService;
+        this.userAssetService = userAssetService;
         this.internalApiToken = internalApiToken;
     }
 
@@ -106,6 +112,9 @@ public class UserController {
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestPart("file") MultipartFile file) {
         Long userId = requireAuthUserId(authorization);
+        if (userAssetService == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "头像上传服务未配置");
+        }
         UserInfoResponse response = userAssetService.uploadAvatar(userId, file);
         return Result.success(response);
     }

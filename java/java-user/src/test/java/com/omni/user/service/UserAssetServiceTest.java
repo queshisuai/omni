@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class UserAssetServiceTest {
@@ -45,7 +46,7 @@ class UserAssetServiceTest {
                 "file",
                 "avatar.png",
                 "image/png",
-                new byte[] {1, 2, 3, 4}
+                new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4}
         );
 
         UserInfoResponse response = service.uploadAvatar(USER_ID, file);
@@ -92,6 +93,45 @@ class UserAssetServiceTest {
 
         assertEquals("头像图片不能超过2MB", exception.getMessage());
         verify(userAssetMapper, never()).insert(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void uploadAvatarRejectsForgedImageContentType() throws Exception {
+        Path uploadRoot = Files.createTempDirectory("omni-user-avatar-test");
+        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, uploadRoot.toString());
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.png",
+                "image/png",
+                "not-an-image".getBytes()
+        );
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.uploadAvatar(USER_ID, file));
+
+        assertEquals("文件内容不是有效图片", exception.getMessage());
+        verifyNoInteractions(userAssetMapper);
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void uploadAvatarDeletesStoredFileWhenDatabaseInsertFails() throws Exception {
+        Path uploadRoot = Files.createTempDirectory("omni-user-avatar-test");
+        User user = userWithAvatar(null);
+        when(userMapper.selectById(USER_ID)).thenReturn(user);
+        when(userAssetMapper.insert(any(UserAsset.class))).thenThrow(new RuntimeException("db down"));
+
+        UserAssetService service = new UserAssetService(userAssetMapper, userMapper, uploadRoot.toString());
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "avatar.gif",
+                "image/gif",
+                new byte[] {'G', 'I', 'F', '8', '9', 'a', 1, 2, 3}
+        );
+
+        assertThrows(RuntimeException.class, () -> service.uploadAvatar(USER_ID, file));
+
+        assertEquals(0L, Files.walk(uploadRoot).filter(Files::isRegularFile).count());
         verify(userMapper, never()).updateById(any());
     }
 
