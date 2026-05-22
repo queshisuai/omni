@@ -6,14 +6,14 @@
       "key": "user",
       "targetInstance": "pg-user",
       "targetDatabase": "omni_user",
-      "tables": ["user", "user_auth", "sms_code", "organizer_application"]
+      "tables": ["user", "user_auth", "sms_code", "organizer_application", "user_asset"]
     },
     {
       "service": "java-ticket",
       "key": "ticket",
       "targetInstance": "pg-ticket",
       "targetDatabase": "omni_ticket",
-      "tables": ["category", "artist", "tour", "station", "activity", "venue", "venue_application", "session", "ticket_type", "ticket_type_area", "session_seat", "venue_area", "venue_seat", "reservation", "seat", "stock_log", "venue_default_layout", "venue_default_layout_section", "activity_seat_layout", "activity_seat_layout_section", "session_seat_layout", "session_seat_layout_section", "seat_block", "seat_override", "ticket_group"]
+      "tables": ["category", "artist", "tour", "station", "activity", "venue", "venue_application", "session", "ticket_type", "ticket_type_area", "session_seat", "venue_area", "venue_seat", "reservation", "seat", "stock_log", "venue_default_layout", "venue_default_layout_section", "activity_seat_layout", "activity_seat_layout_section", "session_seat_layout", "session_seat_layout_section", "seat_block", "seat_override", "ticket_group", "ticket_asset"]
     },
     {
       "service": "java-order",
