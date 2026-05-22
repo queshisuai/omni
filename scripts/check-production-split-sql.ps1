@@ -44,6 +44,20 @@ function Get-ColumnList([string] $columns) {
     return $result
 }
 
+function Test-SqlStatementTargetOwner($match, [string] $filePath, [string] $serviceKey, [int] $quotedGroup, [int] $bareGroup, [string] $operation) {
+    $table = Get-IdentifierFromMatch $match $quotedGroup $bareGroup
+    $owner = $statementTableOwner[$table]
+    $lineNumber = 1 + ($content.Substring(0, $match.Index).Split("`n").Count - 1)
+    if (-not $owner) {
+        Write-Host "FAIL $operation targets unknown table '$table' in ${filePath}:$lineNumber"
+        exit 1
+    }
+    if ($owner -ne $serviceKey) {
+        Write-Host "FAIL cross-owner $operation in production split SQL: ${filePath}:$lineNumber targets $table owned by $owner"
+        exit 1
+    }
+}
+
 $schemaColumns = @{
     "activity" = New-ColumnSet @("id", "category_id", "artist_id", "per_user_limit")
     "activity_seat_layout" = New-ColumnSet @("id", "activity_id", "source_venue_layout_id")
@@ -156,10 +170,34 @@ foreach ($file in $sqlFiles) {
 }
 
 $identifierPattern = '(?:(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*)?(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))'
+$createTablePattern = 'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?' + $identifierPattern
+$alterTablePattern = 'ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?' + $identifierPattern
+$updatePattern = 'UPDATE\s+(?:ONLY\s+)?' + $identifierPattern
+$createIndexPattern = 'CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s+ON\s+' + $identifierPattern
 $fkPattern = 'ALTER\s+TABLE\s+' + $identifierPattern + '\s+ADD\s+CONSTRAINT\s+(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s+FOREIGN\s+KEY\s*\(([^\)]+)\)\s+REFERENCES\s+' + $identifierPattern + '\s*\(([^\)]+)\)'
 foreach ($file in $sqlFiles) {
     $serviceKey = Split-Path -Leaf (Split-Path -Parent $file.FullName)
     $content = Get-Content -Raw -LiteralPath $file.FullName
+    $statementTableOwner = $tableOwner.Clone()
+    foreach ($match in [regex]::Matches($content, $createTablePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        $table = Get-IdentifierFromMatch $match 1 2
+        $owner = $statementTableOwner[$table]
+        $lineNumber = 1 + ($content.Substring(0, $match.Index).Split("`n").Count - 1)
+        if ($owner -and $owner -ne $serviceKey) {
+            Write-Host "FAIL cross-owner CREATE TABLE in production split SQL: $($file.FullName):$lineNumber targets $table owned by $owner"
+            exit 1
+        }
+        $statementTableOwner[$table] = $serviceKey
+    }
+    foreach ($match in [regex]::Matches($content, $alterTablePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        Test-SqlStatementTargetOwner $match $file.FullName $serviceKey 1 2 "ALTER TABLE"
+    }
+    foreach ($match in [regex]::Matches($content, $updatePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        Test-SqlStatementTargetOwner $match $file.FullName $serviceKey 1 2 "UPDATE"
+    }
+    foreach ($match in [regex]::Matches($content, $createIndexPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        Test-SqlStatementTargetOwner $match $file.FullName $serviceKey 1 2 "CREATE INDEX"
+    }
     foreach ($match in [regex]::Matches($content, $fkPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
         $child = Get-IdentifierFromMatch $match 1 2
         $childColumns = Get-ColumnList $match.Groups[3].Value
