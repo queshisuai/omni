@@ -21,6 +21,8 @@ public class VenueApplicationResponse {
     private LocalDateTime validTo;
     private String proofNote;
     private String proofFileUrl;
+    private Long proofAssetId;
+    private PrivateAssetResponse proofAsset;
     private String layoutSnapshot;
     private Boolean setAsRecommendedLayout;
     private Integer status;
@@ -48,6 +50,7 @@ public class VenueApplicationResponse {
         response.setValidTo(application.getValidTo());
         response.setProofNote(application.getProofNote());
         response.setProofFileUrl(application.getProofFileUrl());
+        response.setProofAssetId(application.getProofAssetId());
         response.setLayoutSnapshot(application.getLayoutSnapshot());
         response.setSetAsRecommendedLayout(application.getSetAsRecommendedLayout());
         response.setStatus(application.getStatus());
@@ -91,6 +94,10 @@ public class VenueApplicationResponse {
     public void setProofNote(String proofNote) { this.proofNote = proofNote; }
     public String getProofFileUrl() { return proofFileUrl; }
     public void setProofFileUrl(String proofFileUrl) { this.proofFileUrl = proofFileUrl; }
+    public Long getProofAssetId() { return proofAssetId; }
+    public void setProofAssetId(Long proofAssetId) { this.proofAssetId = proofAssetId; }
+    public PrivateAssetResponse getProofAsset() { return proofAsset; }
+    public void setProofAsset(PrivateAssetResponse proofAsset) { this.proofAsset = proofAsset; }
     public String getLayoutSnapshot() { return layoutSnapshot; }
     public void setLayoutSnapshot(String layoutSnapshot) { this.layoutSnapshot = layoutSnapshot; }
     public Boolean getSetAsRecommendedLayout() { return setAsRecommendedLayout; }

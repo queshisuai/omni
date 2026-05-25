@@ -4,7 +4,9 @@ import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
+import com.omni.ticket.dto.PrivateAssetResponse;
 import com.omni.ticket.dto.VenueApplicationRequest;
+import com.omni.ticket.dto.VenueApplicationResponse;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.VenueApplication;
@@ -17,16 +19,20 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -44,13 +50,15 @@ class VenueApplicationServiceTest {
     private SeatCraftBlockLayoutService blockLayoutService;
     @Mock
     private VenueDefaultLayoutService venueDefaultLayoutService;
+    @Mock
+    private PrivateAssetService privateAssetService;
 
     private VenueApplicationService service;
 
     @BeforeEach
     void setUp() {
         service = new VenueApplicationService(venueApplicationMapper, venueMapper, userAccessService,
-                blockLayoutService, venueDefaultLayoutService);
+                blockLayoutService, venueDefaultLayoutService, privateAssetService);
     }
 
     @Test
@@ -91,6 +99,114 @@ class VenueApplicationServiceTest {
         BusinessException error = assertThrows(BusinessException.class, () -> service.submit(request));
 
         assertEquals(400, error.getCode());
+    }
+
+    @Test
+    void submitBindsProofAssetAfterCreatingApplication() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(venueApplicationMapper.insert(any())).thenAnswer(invocation -> {
+            VenueApplication application = invocation.getArgument(0);
+            application.setId(99L);
+            return 1;
+        });
+        VenueApplicationRequest request = request();
+        request.setProofFileUrl(null);
+        request.setProofAssetId(10L);
+
+        VenueApplication result = service.submit(request);
+
+        assertEquals(10L, result.getProofAssetId());
+        verify(privateAssetService).bindVenueProof(10L, 99L, 2003L);
+    }
+
+    @Test
+    void submitAllowsOnlyProofAssetAsUsageProof() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(venueApplicationMapper.insert(any())).thenAnswer(invocation -> {
+            VenueApplication application = invocation.getArgument(0);
+            application.setId(99L);
+            return 1;
+        });
+        VenueApplicationRequest request = request();
+        request.setProofNote(null);
+        request.setProofFileUrl(null);
+        request.setProofAssetId(10L);
+
+        VenueApplication result = service.submit(request);
+
+        assertNull(result.getProofNote());
+        assertNull(result.getProofFileUrl());
+        assertEquals(10L, result.getProofAssetId());
+        verify(privateAssetService).bindVenueProof(10L, 99L, 2003L);
+    }
+
+    @Test
+    void submitRejectsProofAssetWhenPrivateAssetServiceUnavailableBeforeInsert() {
+        VenueApplicationService shortConstructorService = new VenueApplicationService(
+                venueApplicationMapper, venueMapper, userAccessService);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        VenueApplicationRequest request = request();
+        request.setProofAssetId(10L);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> shortConstructorService.submit(request));
+
+        assertEquals(500, error.getCode());
+        assertEquals("私有附件服务不可用", error.getMessage());
+        verify(venueApplicationMapper, never()).insert(any());
+    }
+
+    @Test
+    void submitPropagatesBindVenueProofExceptionAfterInsert() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(venueApplicationMapper.insert(any())).thenAnswer(invocation -> {
+            VenueApplication application = invocation.getArgument(0);
+            application.setId(99L);
+            return 1;
+        });
+        BusinessException bindError = new BusinessException(400, "附件不可用");
+        doThrow(bindError).when(privateAssetService).bindVenueProof(10L, 99L, 2003L);
+        VenueApplicationRequest request = request();
+        request.setProofAssetId(10L);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.submit(request));
+
+        assertEquals(bindError, error);
+        verify(venueApplicationMapper).insert(any());
+        verify(privateAssetService).bindVenueProof(10L, 99L, 2003L);
+    }
+
+    @Test
+    void listMineIncludesProofAssetMetadata() {
+        VenueApplication application = pendingApplication();
+        application.setProofAssetId(10L);
+        when(venueApplicationMapper.selectList(any())).thenReturn(List.of(application));
+        PrivateAssetResponse asset = new PrivateAssetResponse();
+        asset.setId(10L);
+        asset.setOriginalFilename("venue-proof.pdf");
+        when(privateAssetService.getById(10L)).thenReturn(asset);
+
+        List<VenueApplicationResponse> responses = service.listMine(2003L);
+
+        assertEquals(1, responses.size());
+        assertNotNull(responses.get(0).getProofAsset());
+        assertEquals(10L, responses.get(0).getProofAsset().getId());
+        assertEquals("venue-proof.pdf", responses.get(0).getProofAsset().getOriginalFilename());
+    }
+
+    @Test
+    void submitIsTransactional() throws NoSuchMethodException {
+        Method method = VenueApplicationService.class.getMethod("submit", VenueApplicationRequest.class);
+
+        assertNotNull(method.getAnnotation(Transactional.class));
+    }
+
+    @Test
+    void approveIsTransactional() throws NoSuchMethodException {
+        Method method = VenueApplicationService.class.getMethod(
+                "approve", Long.class, Long.class, String.class, Long.class, String.class);
+
+        assertNotNull(method.getAnnotation(Transactional.class));
     }
 
     @Test

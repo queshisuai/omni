@@ -25,6 +25,7 @@ public class VenueApplication {
     private LocalDateTime validTo;
     private String proofNote;
     private String proofFileUrl;
+    private Long proofAssetId;
     private String layoutSnapshot;
     private Boolean setAsRecommendedLayout;
     private Integer status;
@@ -66,6 +67,8 @@ public class VenueApplication {
     public void setProofNote(String proofNote) { this.proofNote = proofNote; }
     public String getProofFileUrl() { return proofFileUrl; }
     public void setProofFileUrl(String proofFileUrl) { this.proofFileUrl = proofFileUrl; }
+    public Long getProofAssetId() { return proofAssetId; }
+    public void setProofAssetId(Long proofAssetId) { this.proofAssetId = proofAssetId; }
     public String getLayoutSnapshot() { return layoutSnapshot; }
     public void setLayoutSnapshot(String layoutSnapshot) { this.layoutSnapshot = layoutSnapshot; }
     public Boolean getSetAsRecommendedLayout() { return setAsRecommendedLayout; }

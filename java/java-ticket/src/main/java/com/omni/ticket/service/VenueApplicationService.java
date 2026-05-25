@@ -17,6 +17,7 @@ import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,12 +34,21 @@ public class VenueApplicationService {
     private final UserAccessService userAccessService;
     private final SeatCraftBlockLayoutService blockLayoutService;
     private final VenueDefaultLayoutService venueDefaultLayoutService;
+    private final PrivateAssetService privateAssetService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public VenueApplicationService(VenueApplicationMapper venueApplicationMapper,
-                                    VenueMapper venueMapper,
-                                    UserAccessService userAccessService) {
-        this(venueApplicationMapper, venueMapper, userAccessService, null, null);
+                                     VenueMapper venueMapper,
+                                     UserAccessService userAccessService) {
+        this(venueApplicationMapper, venueMapper, userAccessService, null, null, null);
+    }
+
+    public VenueApplicationService(VenueApplicationMapper venueApplicationMapper,
+                                   VenueMapper venueMapper,
+                                   UserAccessService userAccessService,
+                                   SeatCraftBlockLayoutService blockLayoutService,
+                                   VenueDefaultLayoutService venueDefaultLayoutService) {
+        this(venueApplicationMapper, venueMapper, userAccessService, blockLayoutService, venueDefaultLayoutService, null);
     }
 
     @Autowired
@@ -46,17 +56,23 @@ public class VenueApplicationService {
                                    VenueMapper venueMapper,
                                    UserAccessService userAccessService,
                                    SeatCraftBlockLayoutService blockLayoutService,
-                                   VenueDefaultLayoutService venueDefaultLayoutService) {
+                                   VenueDefaultLayoutService venueDefaultLayoutService,
+                                   PrivateAssetService privateAssetService) {
         this.venueApplicationMapper = venueApplicationMapper;
         this.venueMapper = venueMapper;
         this.userAccessService = userAccessService;
         this.blockLayoutService = blockLayoutService;
         this.venueDefaultLayoutService = venueDefaultLayoutService;
+        this.privateAssetService = privateAssetService;
     }
 
+    @Transactional
     public VenueApplication submit(VenueApplicationRequest request) {
         userAccessService.requireAdminOrOrganizer(request.getUserId());
         validateUsageProof(request);
+        if (request.getProofAssetId() != null && privateAssetService == null) {
+            throw new BusinessException(500, "私有附件服务不可用");
+        }
         LocalDateTime now = LocalDateTime.now();
         VenueApplication application = new VenueApplication();
         application.setApplicantId(request.getUserId());
@@ -73,12 +89,16 @@ public class VenueApplicationService {
         application.setValidTo(request.getValidTo());
         application.setProofNote(trim(request.getProofNote()));
         application.setProofFileUrl(trim(request.getProofFileUrl()));
+        application.setProofAssetId(request.getProofAssetId());
         application.setLayoutSnapshot(resolveLayoutSnapshot(request));
         application.setSetAsRecommendedLayout(Boolean.TRUE.equals(request.getSetAsRecommendedLayout()));
         application.setStatus(0);
         application.setCreateTime(now);
         application.setUpdateTime(now);
         venueApplicationMapper.insert(application);
+        if (request.getProofAssetId() != null) {
+            privateAssetService.bindVenueProof(request.getProofAssetId(), application.getId(), request.getUserId());
+        }
         if (request.getLayout() != null && blockLayoutService != null) {
             blockLayoutService.replaceLayout("venue_application", application.getId(), request.getLayout());
         }
@@ -92,7 +112,7 @@ public class VenueApplicationService {
         if (request.getValidTo() == null || !request.getValidTo().isAfter(request.getValidFrom())) {
             throw new BusinessException(400, "场地使用结束时间必须晚于开始时间");
         }
-        if (trim(request.getProofNote()) == null && trim(request.getProofFileUrl()) == null) {
+        if (trim(request.getProofNote()) == null && trim(request.getProofFileUrl()) == null && request.getProofAssetId() == null) {
             throw new BusinessException(400, "请填写场地审批凭证说明或上传附件");
         }
         validateLayout(request);
@@ -149,7 +169,7 @@ public class VenueApplicationService {
         return venueApplicationMapper.selectList(new LambdaQueryWrapper<VenueApplication>()
                         .eq(VenueApplication::getApplicantId, userId)
                         .orderByDesc(VenueApplication::getCreateTime))
-                .stream().map(VenueApplicationResponse::from).collect(Collectors.toList());
+                .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
     public List<VenueApplicationResponse> listAdmin(Long userId, Integer status) {
@@ -159,7 +179,15 @@ public class VenueApplicationService {
             wrapper.eq(VenueApplication::getStatus, status);
         }
         wrapper.orderByDesc(VenueApplication::getCreateTime);
-        return venueApplicationMapper.selectList(wrapper).stream().map(VenueApplicationResponse::from).collect(Collectors.toList());
+        return venueApplicationMapper.selectList(wrapper).stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    private VenueApplicationResponse toResponse(VenueApplication application) {
+        VenueApplicationResponse response = VenueApplicationResponse.from(application);
+        if (application.getProofAssetId() != null && privateAssetService != null) {
+            response.setProofAsset(privateAssetService.getById(application.getProofAssetId()));
+        }
+        return response;
     }
 
     public List<SeatLayoutTemplateCandidateResponse> listSeatLayoutTemplates(Long userId, Long venueId) {
@@ -201,6 +229,7 @@ public class VenueApplicationService {
         return candidates;
     }
 
+    @Transactional
     public VenueApplication approve(Long id, Long userId, String mode, Long venueId, String reviewNote) {
         userAccessService.requireAdmin(userId);
         VenueApplication application = requirePendingApplication(id);

@@ -17,6 +17,7 @@ public class VenueApplicationRequest {
     private LocalDateTime validTo;
     private String proofNote;
     private String proofFileUrl;
+    private Long proofAssetId;
     private String layoutSnapshot;
     private SeatCraftBlockDtos.LayoutRequest layout;
     private Boolean setAsRecommendedLayout;
@@ -49,6 +50,8 @@ public class VenueApplicationRequest {
     public void setProofNote(String proofNote) { this.proofNote = proofNote; }
     public String getProofFileUrl() { return proofFileUrl; }
     public void setProofFileUrl(String proofFileUrl) { this.proofFileUrl = proofFileUrl; }
+    public Long getProofAssetId() { return proofAssetId; }
+    public void setProofAssetId(Long proofAssetId) { this.proofAssetId = proofAssetId; }
     public String getLayoutSnapshot() { return layoutSnapshot; }
     public void setLayoutSnapshot(String layoutSnapshot) { this.layoutSnapshot = layoutSnapshot; }
     public SeatCraftBlockDtos.LayoutRequest getLayout() { return layout; }

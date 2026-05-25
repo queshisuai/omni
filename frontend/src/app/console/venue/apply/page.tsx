@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { getUser } from '@/lib/auth'
-import { listMyVenueApplications, submitVenueApplication } from '@/lib/api'
+import { listMyVenueApplications, submitVenueApplication, uploadPrivateAsset } from '@/lib/api'
+import { PrivateFileUpload } from '@/components/PrivateFileUpload'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
 import { toSeatCraftLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
-import type { VenueApplicationVO } from '@/types/api'
+import type { PrivateAssetVO, VenueApplicationVO } from '@/types/api'
 
 const statusText: Record<number, string> = { 0: '待审核', 1: '已通过', 2: '已驳回' }
 
@@ -27,7 +28,9 @@ export default function VenueApplyPage() {
   const [userId, setUserId] = useState(0)
   const [applications, setApplications] = useState<VenueApplicationVO[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [uploadingProof, setUploadingProof] = useState(false)
   const [message, setMessage] = useState('')
+  const [proofAsset, setProofAsset] = useState<PrivateAssetVO | null>(null)
   const [form, setForm] = useState({
     venueName: '',
     city: '',
@@ -41,13 +44,12 @@ export default function VenueApplyPage() {
     validFrom: '',
     validTo: '',
     proofNote: '',
-    proofFileUrl: '',
   })
   const [layoutDraft, setLayoutDraft] = useState<SeatCraftLayoutDraft | null>(null)
 
   const loadApplications = (nextUserId = userId) => {
     if (!nextUserId) return
-    listMyVenueApplications(nextUserId).then(setApplications).catch(() => {})
+    listMyVenueApplications().then(setApplications).catch(() => {})
   }
 
   useEffect(() => {
@@ -72,7 +74,7 @@ export default function VenueApplyPage() {
     if (!form.validFrom) return '请选择凭证有效开始时间'
     if (!form.validTo) return '请选择凭证有效结束时间'
     if (form.validTo <= form.validFrom) return '凭证有效结束时间必须晚于开始时间'
-    if (!form.proofNote.trim() && !form.proofFileUrl.trim()) return '请填写场地审批凭证说明或附件链接'
+    if (!form.proofNote.trim() && !proofAsset) return '请填写场地审批凭证说明或上传私有附件'
     if (!layoutDraft || ((layoutDraft.blocks?.length ?? 0) === 0 && layoutDraft.sections.length === 0)) return '请绘制至少一个座位区域'
     if ((layoutDraft.blocks?.length ?? 0) > 0 && (layoutDraft.ticketGroups?.length ?? 0) === 0) return '请至少配置一个票档组'
     return ''
@@ -83,6 +85,10 @@ export default function VenueApplyPage() {
     const error = validate()
     if (error) {
       setMessage(error)
+      return
+    }
+    if (uploadingProof) {
+      setMessage('附件上传中，请稍后提交')
       return
     }
     setSubmitting(true)
@@ -123,19 +129,30 @@ export default function VenueApplyPage() {
       } : undefined
 
       await submitVenueApplication({
-        userId,
         ...form,
         capacity: form.capacity ? Number(form.capacity) : null,
+        proofFileUrl: null,
+        proofAssetId: proofAsset?.id ?? null,
         layout: layoutPayload,
       })
       setMessage('活动地点凭证已提交，等待平台审核')
-      setForm({ venueName: '', city: '', address: '', capacity: '', contactName: '', contactPhone: '', qualificationNo: '', businessScope: '', description: '', validFrom: '', validTo: '', proofNote: '', proofFileUrl: '' })
+      setForm({ venueName: '', city: '', address: '', capacity: '', contactName: '', contactPhone: '', qualificationNo: '', businessScope: '', description: '', validFrom: '', validTo: '', proofNote: '' })
+      setProofAsset(null)
       setLayoutDraft(null)
       loadApplications(userId)
     } catch (err) {
       setMessage(err instanceof Error ? err.message : '提交失败')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleProofUpload = async (file: File) => {
+    setUploadingProof(true)
+    try {
+      return await uploadPrivateAsset({ userId, bizType: 'venue-proof', file })
+    } finally {
+      setUploadingProof(false)
     }
   }
 
@@ -163,8 +180,18 @@ export default function VenueApplyPage() {
           </label>
           <textarea value={form.businessScope} onChange={e => setForm({ ...form, businessScope: e.target.value })} rows={3} className="rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="经营范围" />
           <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} className="rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="资料说明/备注" />
-          <textarea value={form.proofNote} onChange={e => setForm({ ...form, proofNote: e.target.value })} rows={3} className="rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="场地审批凭证说明 *（与附件链接至少填写一项）" />
-          <input value={form.proofFileUrl} onChange={e => setForm({ ...form, proofFileUrl: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="场地审批凭证附件链接" />
+          <textarea value={form.proofNote} onChange={e => setForm({ ...form, proofNote: e.target.value })} rows={3} className="rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="场地审批凭证说明（与私有附件至少填写一项）" />
+          <div className="lg:col-span-2">
+            <PrivateFileUpload
+              label="场地审批凭证私有附件"
+              value={proofAsset}
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              uploading={uploadingProof || submitting}
+              onUpload={handleProofUpload}
+              onChange={setProofAsset}
+              hint="支持 PDF、JPEG、PNG、WEBP。附件以私有文件保存，仅供平台审核，不会公开展示。"
+            />
+          </div>
         </div>
 
         <div className="mt-5">
@@ -178,10 +205,10 @@ export default function VenueApplyPage() {
 
         {message && <div className="mt-3 text-[13px] text-[#666]">{message}</div>}
         <button
-          disabled={submitting || !layoutDraft || ((layoutDraft.blocks?.length ?? 0) === 0 && layoutDraft.sections.length === 0)}
+          disabled={submitting || uploadingProof || !layoutDraft || ((layoutDraft.blocks?.length ?? 0) === 0 && layoutDraft.sections.length === 0)}
           className="mt-4 rounded-lg bg-[#ff1268] px-5 py-2 text-[14px] font-medium text-white disabled:opacity-50"
         >
-          {submitting ? '提交中...' : '提交地点凭证'}
+          {uploadingProof ? '附件上传中...' : submitting ? '提交中...' : '提交地点凭证'}
         </button>
       </form>
 

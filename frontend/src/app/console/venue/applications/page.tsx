@@ -1,11 +1,22 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getUser } from '@/lib/auth'
-import { listAdminVenues, listVenueApplications, reviewVenueApplication } from '@/lib/api'
-import type { VenueApplicationVO, VenueEntity } from '@/types/api'
+import { getToken, getUser } from '@/lib/auth'
+import { listAdminVenues, listVenueApplications, privateAssetDownloadUrl, reviewVenueApplication } from '@/lib/api'
+import type { PrivateAssetVO, VenueApplicationVO, VenueEntity } from '@/types/api'
 
 const statusText: Record<number, string> = { 0: '待审核', 1: '已通过', 2: '已驳回' }
+
+function formatSize(size?: number | null) {
+  if (size === null || size === undefined) return '-'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function getErrorMessage(err: unknown, fallback: string) {
+  return err instanceof Error && err.message ? err.message : fallback
+}
 
 export default function VenueApplicationsPage() {
   const [userId, setUserId] = useState(0)
@@ -20,7 +31,7 @@ export default function VenueApplicationsPage() {
 
   const loadData = (nextUserId = userId) => {
     if (!nextUserId) return
-    listVenueApplications(nextUserId, status === '' ? undefined : Number(status)).then(setApplications).catch(() => {})
+    listVenueApplications({ status: status === '' ? undefined : Number(status) }).then(setApplications).catch(() => {})
     listAdminVenues(nextUserId).then(setVenues).catch(() => {})
   }
 
@@ -39,21 +50,55 @@ export default function VenueApplicationsPage() {
     setMessage('')
   }
 
+  const downloadProofAsset = async (proofAsset: PrivateAssetVO) => {
+    const token = getToken()
+    if (!token) {
+      setMessage('登录已失效，请重新登录后下载')
+      return
+    }
+
+    let objectUrl: string | null = null
+    try {
+      const response = await fetch(privateAssetDownloadUrl(proofAsset.id), {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) throw new Error('download failed')
+
+      const blob = await response.blob()
+      objectUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const disposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition')
+      const filename = disposition?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)?.[1]
+      link.href = objectUrl
+      link.download = filename ? decodeURIComponent(filename) : proofAsset.originalFilename || `proof-asset-${proofAsset.id}`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch {
+      setMessage('附件下载失败，请稍后重试')
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }
+
   const handleApprove = async () => {
     if (!reviewingId) return
     if (mode === 'link' && !venueId) {
       setMessage('请选择要关联的已有场馆')
       return
     }
-    await reviewVenueApplication(reviewingId, {
-      userId,
-      action: 'approve',
-      mode,
-      venueId: mode === 'link' ? Number(venueId) : null,
-      reviewNote,
-    })
-    setReviewingId(null)
-    loadData(userId)
+    try {
+      await reviewVenueApplication(reviewingId, {
+        action: 'approve',
+        mode,
+        venueId: mode === 'link' ? Number(venueId) : null,
+        reviewNote,
+      })
+      setReviewingId(null)
+      loadData(userId)
+    } catch (err) {
+      setMessage(getErrorMessage(err, '审核通过失败，请稍后重试'))
+    }
   }
 
   const handleReject = async () => {
@@ -62,9 +107,13 @@ export default function VenueApplicationsPage() {
       setMessage('驳回必须填写原因')
       return
     }
-    await reviewVenueApplication(reviewingId, { userId, action: 'reject', reviewNote })
-    setReviewingId(null)
-    loadData(userId)
+    try {
+      await reviewVenueApplication(reviewingId, { action: 'reject', reviewNote })
+      setReviewingId(null)
+      loadData(userId)
+    } catch (err) {
+      setMessage(getErrorMessage(err, '审核驳回失败，请稍后重试'))
+    }
   }
 
   return (
@@ -85,6 +134,8 @@ export default function VenueApplicationsPage() {
         </div>
       </div>
 
+      {message && <div className="mb-4 rounded-lg border border-[#fecaca] bg-[#fef2f2] px-4 py-2 text-[13px] text-[#ef4444]">{message}</div>}
+
       <div className="space-y-4">
         {applications.length === 0 ? <div className="rounded-xl border border-[#e5e5e5] bg-white py-20 text-center text-[14px] text-[#999]">暂无地点凭证</div> : applications.map(item => (
           <div key={item.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5">
@@ -99,6 +150,18 @@ export default function VenueApplicationsPage() {
                   <div>经营范围：{item.businessScope || '-'}</div>
                 </div>
                 {item.description && <div className="mt-2 text-[13px] text-[#999]">申请说明：{item.description}</div>}
+                {item.proofAsset && (
+                  <div className="mt-3 rounded-lg border border-[#f0f0f0] bg-[#fafafa] p-3 text-[13px] text-[#666]">
+                    <div className="font-medium text-[#333]">私有凭证附件</div>
+                    <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                      <div>文件名：{item.proofAsset.originalFilename || '-'}</div>
+                      <div>大小：{formatSize(item.proofAsset.fileSize)}</div>
+                      <div>类型：{item.proofAsset.contentType || '-'}</div>
+                    </div>
+                    <button onClick={() => downloadProofAsset(item.proofAsset!)} className="mt-2 rounded-lg border border-[#ff1268] px-3 py-1.5 text-[12px] font-medium text-[#ff1268]">下载凭证</button>
+                  </div>
+                )}
+                {item.proofFileUrl && <div className="mt-2 text-[13px] text-[#999]">历史凭证链接：<a href={item.proofFileUrl} target="_blank" rel="noreferrer" className="text-[#666] underline break-all">{item.proofFileUrl}</a></div>}
                 {item.reviewNote && <div className="mt-2 text-[13px] text-[#999]">审核备注：{item.reviewNote}</div>}
               </div>
               <div className="flex flex-col items-start gap-2 sm:items-end">
