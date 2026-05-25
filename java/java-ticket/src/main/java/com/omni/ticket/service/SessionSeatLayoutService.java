@@ -35,8 +35,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -177,6 +179,19 @@ public class SessionSeatLayoutService {
         return copyFromActivityLayout(userId, sessionId, activityLayout.getId());
     }
 
+    @Transactional
+    public SeatCraftLayoutDtos.LayoutResponse createBlankLayout(Long userId, Long sessionId) {
+        Session session = requireManageableSession(userId, sessionId);
+        rejectLegacySnapshot(sessionId);
+
+        LocalDateTime now = LocalDateTime.now();
+        SessionSeatLayout layout = upsertLayout(session.getId(), null,
+                "场次座位图", "concert", "舞台", 0, 0, 800, 600, now);
+        disableSections(layout.getId(), now);
+
+        return toLayoutResponse(layout, java.util.Collections.emptyList());
+    }
+
     public SeatCraftLayoutDtos.LayoutResponse getLayout(Long userId, Long sessionId) {
         Session session = requireManageableSession(userId, sessionId);
         SessionSeatLayout layout = findActiveLayout(session.getId());
@@ -219,11 +234,25 @@ public class SessionSeatLayoutService {
         }
 
         Long layoutId = layout.getId();
+        Map<String, SessionSeatLayoutSection> existingSections = findSectionsByKey(layoutId);
         disableSections(layoutId, now);
-        List<SessionSeatLayoutSection> sections = (request.getSections() == null ? List.<SeatCraftLayoutDtos.SectionResponse>of() : request.getSections()).stream()
-                .map(section -> buildSection(layoutId, section, now))
-                .collect(Collectors.toList());
-        sections.forEach(sessionSectionMapper::insert);
+        List<SessionSeatLayoutSection> sections = new ArrayList<>();
+        Set<String> incomingSectionKeys = new HashSet<>();
+        for (SeatCraftLayoutDtos.SectionResponse sectionRequest : request.getSections() == null ? List.<SeatCraftLayoutDtos.SectionResponse>of() : request.getSections()) {
+            SessionSeatLayoutSection section = buildSection(layoutId, sectionRequest, now);
+            if (!incomingSectionKeys.add(section.getSectionKey())) {
+                throw new BusinessException(400, "分区标识不能重复");
+            }
+            SessionSeatLayoutSection existingSection = existingSections.get(section.getSectionKey());
+            if (existingSection == null) {
+                sessionSectionMapper.insert(section);
+            } else {
+                section.setId(existingSection.getId());
+                section.setCreateTime(existingSection.getCreateTime());
+                sessionSectionMapper.updateById(section);
+            }
+            sections.add(section);
+        }
         if (request.getBlockLayout() != null && blockLayoutService != null) {
             blockLayoutService.replaceLayout("session", sessionId, request.getBlockLayout());
             if (blockTicketStockService != null) {
@@ -766,6 +795,19 @@ public class SessionSeatLayoutService {
                 .orderByAsc(SessionSeatLayoutSection::getId));
     }
 
+    private Map<String, SessionSeatLayoutSection> findSectionsByKey(Long sessionLayoutId) {
+        List<SessionSeatLayoutSection> sections = sessionSectionMapper.selectList(new LambdaQueryWrapper<SessionSeatLayoutSection>()
+                .eq(SessionSeatLayoutSection::getSessionLayoutId, sessionLayoutId)
+                .orderByDesc(SessionSeatLayoutSection::getStatus)
+                .orderByDesc(SessionSeatLayoutSection::getId));
+        if (sections == null || sections.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return sections.stream()
+                .filter(section -> section.getSectionKey() != null)
+                .collect(Collectors.toMap(SessionSeatLayoutSection::getSectionKey, section -> section, (first, second) -> first));
+    }
+
     private SeatCraftLayoutDtos.LayoutResponse toLayoutResponse(SessionSeatLayout layout, List<SessionSeatLayoutSection> sections) {
         SeatCraftLayoutDtos.LayoutResponse response = new SeatCraftLayoutDtos.LayoutResponse();
         response.setId(layout.getId());
@@ -781,6 +823,12 @@ public class SessionSeatLayoutService {
         if (blockLayoutService != null) {
             response.setBlockLayout(blockLayoutService.getLayout("session", layout.getSessionId()));
         }
+        response.setSeats(sessionSeatMapper.selectList(new LambdaQueryWrapper<SessionSeat>()
+                .eq(SessionSeat::getSessionId, layout.getSessionId())
+                .orderByAsc(SessionSeat::getSeatBlockId)
+                .orderByAsc(SessionSeat::getGeneratedRowNo)
+                .orderByAsc(SessionSeat::getGeneratedSeatNo)
+                .orderByAsc(SessionSeat::getId)));
         return response;
     }
 

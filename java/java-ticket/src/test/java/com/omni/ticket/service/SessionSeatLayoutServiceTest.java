@@ -149,18 +149,44 @@ class SessionSeatLayoutServiceTest {
     }
 
     @Test
+    void createBlankLayoutDoesNotPersistInvalidEmptyBlockLayout() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(sessionSeatMapper.selectCount(any())).thenReturn(0L);
+        when(sessionLayoutMapper.selectList(any())).thenReturn(List.of());
+        doAnswer(invocation -> {
+            SessionSeatLayout layout = invocation.getArgument(0);
+            layout.setId(66L);
+            return 1;
+        }).when(sessionLayoutMapper).insert(any(SessionSeatLayout.class));
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.createBlankLayout(2003L, 99L);
+
+        assertEquals(66L, response.getId());
+        assertEquals(99L, response.getSessionId());
+        assertEquals(0, response.getSections().size());
+        verify(blockLayoutService, never()).replaceLayout(eq("session"), eq(99L), any());
+    }
+
+    @Test
     void getLayoutIncludesBlockLayout() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
+        SessionSeat soldSeat = sessionSeat(701L, 501L, 7L, 1, 1);
+        soldSeat.setStatus(3);
+        soldSeat.setOrderId(9001L);
         when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
         when(sessionSectionMapper.selectList(any())).thenReturn(List.of());
         when(blockLayoutService.getLayout("session", 99L)).thenReturn(blockLayout);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(soldSeat));
 
         SeatCraftLayoutDtos.LayoutResponse response = service.getLayout(2003L, 99L);
 
         assertSame(blockLayout, response.getBlockLayout());
+        assertEquals(List.of(soldSeat), response.getSeats());
     }
 
     @Test
@@ -211,6 +237,51 @@ class SessionSeatLayoutServiceTest {
 
         assertEquals(0, response.getSections().size());
         verify(sessionSectionMapper, never()).insert(any());
+    }
+
+    @Test
+    void updateLayoutReusesExistingSectionKeyInsteadOfInsertingDuplicate() {
+        SeatCraftLayoutDtos.LayoutResponse request = new SeatCraftLayoutDtos.LayoutResponse();
+        request.setName("场次 SeatCraft 座位图");
+        request.setTemplateType("concert");
+        request.setStageTitle("舞台");
+        request.setStageX(80);
+        request.setStageY(40);
+        request.setCanvasWidth(960);
+        request.setCanvasHeight(720);
+        SeatCraftLayoutDtos.SectionResponse section = new SeatCraftLayoutDtos.SectionResponse();
+        section.setSectionKey("area-1");
+        section.setName("A区");
+        section.setRows(10);
+        section.setCols(20);
+        section.setX(120);
+        section.setY(160);
+        section.setColor("#ff1268");
+        section.setType("core");
+        section.setLayout("grid");
+        section.setSort(0);
+        section.setTicketTypeId(900L);
+        request.setSections(List.of(section));
+
+        SessionSeatLayoutSection existing = sessionSection(11L, "area-1", "旧A区", 8, 18);
+        existing.setSessionLayoutId(55L);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
+        when(sessionSectionMapper.selectList(any())).thenReturn(List.of(existing));
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.updateLayout(2003L, 99L, request);
+
+        assertEquals(1, response.getSections().size());
+        assertEquals(11L, response.getSections().get(0).getId());
+        verify(sessionSectionMapper, never()).insert(any());
+        verify(sessionSectionMapper, times(2)).updateById(any(SessionSeatLayoutSection.class));
+        verify(sessionSectionMapper).updateById(argThat(updated -> Long.valueOf(11L).equals(updated.getId())
+                && "area-1".equals(updated.getSectionKey())
+                && "A区".equals(updated.getName())
+                && Long.valueOf(900L).equals(updated.getTicketTypeId())
+                && Integer.valueOf(1).equals(updated.getStatus())));
     }
 
     @Test

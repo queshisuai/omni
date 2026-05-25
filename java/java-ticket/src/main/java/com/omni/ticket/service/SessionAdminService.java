@@ -6,10 +6,12 @@ import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SessionAdminResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
+import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.service.UserAccessService;
@@ -35,12 +37,13 @@ public class SessionAdminService {
     private final TicketTypeMapper ticketTypeMapper;
     private final SessionSeatService sessionSeatService;
     private final SessionSeatLayoutService sessionSeatLayoutService;
+    private final SessionSeatMapper sessionSeatMapper;
 
     public SessionAdminService(ActivityMapper activityMapper,
-                                SessionMapper sessionMapper,
-                                VenueMapper venueMapper,
-                                UserAccessService userAccessService) {
-        this(activityMapper, sessionMapper, venueMapper, userAccessService, null, null, null);
+                                 SessionMapper sessionMapper,
+                                 VenueMapper venueMapper,
+                                 UserAccessService userAccessService) {
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, null, null, null, null);
     }
 
     public SessionAdminService(ActivityMapper activityMapper,
@@ -48,7 +51,18 @@ public class SessionAdminService {
                                VenueMapper venueMapper,
                                UserAccessService userAccessService,
                                TicketTypeMapper ticketTypeMapper) {
-        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, null, null);
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, null, null, null);
+    }
+
+    public SessionAdminService(ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               VenueMapper venueMapper,
+                               UserAccessService userAccessService,
+                               TicketTypeMapper ticketTypeMapper,
+                               SessionSeatService sessionSeatService,
+                               SessionSeatLayoutService sessionSeatLayoutService) {
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper,
+                sessionSeatService, sessionSeatLayoutService, null);
     }
 
     @Autowired
@@ -58,7 +72,8 @@ public class SessionAdminService {
                                UserAccessService userAccessService,
                                TicketTypeMapper ticketTypeMapper,
                                SessionSeatService sessionSeatService,
-                               SessionSeatLayoutService sessionSeatLayoutService) {
+                               SessionSeatLayoutService sessionSeatLayoutService,
+                               SessionSeatMapper sessionSeatMapper) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.venueMapper = venueMapper;
@@ -66,6 +81,7 @@ public class SessionAdminService {
         this.ticketTypeMapper = ticketTypeMapper;
         this.sessionSeatService = sessionSeatService;
         this.sessionSeatLayoutService = sessionSeatLayoutService;
+        this.sessionSeatMapper = sessionSeatMapper;
     }
 
     @Transactional
@@ -212,24 +228,81 @@ public class SessionAdminService {
         Map<Long, List<TicketType>> ticketTypes = ticketTypeMapper == null || sessionIds.isEmpty() ? Collections.emptyMap()
                 : ticketTypeMapper.selectList(new LambdaQueryWrapper<TicketType>().in(TicketType::getSessionId, sessionIds))
                 .stream().collect(Collectors.groupingBy(TicketType::getSessionId));
+        Map<Long, List<SessionSeat>> seatsByTicketType = sessionSeatMapper == null || sessionIds.isEmpty() ? Collections.emptyMap()
+                : sessionSeatMapper.selectList(new LambdaQueryWrapper<SessionSeat>()
+                .in(SessionSeat::getSessionId, sessionIds)
+                .isNotNull(SessionSeat::getTicketTypeId))
+                .stream()
+                .filter(seat -> seat != null && seat.getTicketTypeId() != null)
+                .collect(Collectors.groupingBy(SessionSeat::getTicketTypeId));
 
         return sessions.stream().map(session -> {
             SessionAdminResponse response = SessionAdminResponse.from(session);
             Activity activity = activities.get(session.getActivityId());
             Venue venue = venues.get(session.getVenueId());
             List<TicketType> types = ticketTypes.getOrDefault(session.getId(), Collections.emptyList());
-            int totalStock = types.stream().map(TicketType::getTotalStock).filter(Objects::nonNull).mapToInt(Integer::intValue).sum();
-            int remainStock = types.stream().map(TicketType::getRemainStock).filter(Objects::nonNull).mapToInt(Integer::intValue).sum();
+            StockSummary stockSummary = summarizeStock(types, seatsByTicketType);
             response.setActivityName(activity == null ? null : activity.getName());
             response.setVenueName(venue == null ? null : venue.getName());
             response.setVenueCity(venue == null ? null : venue.getCity());
             response.setTicketTypeCount(types.size());
-            response.setTotalStock(totalStock);
-            response.setRemainStock(remainStock);
-            response.setSoldStock(Math.max(0, totalStock - remainStock));
+            response.setTotalStock(stockSummary.totalStock);
+            response.setRemainStock(stockSummary.remainStock);
+            response.setSoldStock(stockSummary.soldStock);
             response.setTicketTypes(types);
             return response;
         }).collect(Collectors.toList());
+    }
+
+    private StockSummary summarizeStock(List<TicketType> ticketTypes, Map<Long, List<SessionSeat>> seatsByTicketType) {
+        int totalStock = 0;
+        int remainStock = 0;
+        int soldStock = 0;
+        for (TicketType ticketType : ticketTypes == null ? Collections.<TicketType>emptyList() : ticketTypes) {
+            List<SessionSeat> seats = ticketType.getId() == null ? Collections.emptyList()
+                    : seatsByTicketType.getOrDefault(ticketType.getId(), Collections.emptyList());
+            if (seats.isEmpty()) {
+                int ticketTotal = safeInt(ticketType.getTotalStock());
+                int ticketRemain = safeInt(ticketType.getRemainStock());
+                totalStock += ticketTotal;
+                remainStock += ticketRemain;
+                soldStock += Math.max(0, ticketTotal - ticketRemain);
+                continue;
+            }
+            totalStock += (int) seats.stream()
+                    .filter(seat -> Integer.valueOf(1).equals(seat.getStatus())
+                            || Integer.valueOf(2).equals(seat.getStatus())
+                            || Integer.valueOf(3).equals(seat.getStatus())
+                            || seat.getOrderId() != null)
+                    .count();
+            remainStock += (int) seats.stream()
+                    .filter(seat -> Integer.valueOf(1).equals(seat.getStatus()))
+                    .filter(seat -> seat.getOrderId() == null)
+                    .filter(seat -> seat.getLockExpireTime() == null)
+                    .count();
+            soldStock += (int) seats.stream()
+                    .filter(seat -> Integer.valueOf(2).equals(seat.getStatus())
+                            || Integer.valueOf(3).equals(seat.getStatus())
+                            || seat.getOrderId() != null)
+                    .count();
+        }
+        return new StockSummary(totalStock, remainStock, soldStock);
+    }
+
+    private int safeInt(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private static class StockSummary {
+        private final int totalStock;
+        private final int remainStock;
+        private final int soldStock;
+
+        private StockSummary(int totalStock, int remainStock, int soldStock) {
+            this.totalStock = totalStock;
+            this.remainStock = remainStock;
+            this.soldStock = soldStock;
+        }
     }
 
     private void validateTime(LocalDateTime startTime, LocalDateTime endTime) {

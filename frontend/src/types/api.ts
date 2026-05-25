@@ -74,6 +74,17 @@ export interface AssetUploadVO {
   sizeBytes: number
 }
 
+export interface PrivateAssetVO {
+  id: number
+  bizType: string
+  bizId?: number | null
+  originalFilename: string | null
+  contentType: string | null
+  fileSize: number
+  status: string
+  createTime?: string | null
+}
+
 export type UserRole = 'user' | 'organizer' | 'admin'
 export type OrganizerApplicationStatus = 0 | 1 | 2
 export type OrganizerStatus = 0 | 1 | 2 | 3
@@ -114,6 +125,7 @@ export interface ActivityArtistVO {
   alias?: string | null
   artistType?: string | null
   countryOrRegion?: string | null
+  agency?: string | null
   categoryTags?: string | null
   avatar?: string | null
   isPrimary?: boolean | null
@@ -130,6 +142,7 @@ export interface ArtistSearchVO {
   alias?: string | null
   artistType?: string | null
   countryOrRegion?: string | null
+  agency?: string | null
   categoryTags?: string | null
   avatar?: string | null
   representativeWorks?: string | null
@@ -139,7 +152,6 @@ export interface ArtistSearchVO {
 }
 
 export interface ArtistSubmissionRequest {
-  userId: number
   name: string
   alias?: string | null
   artistType?: string | null
@@ -151,16 +163,34 @@ export interface ArtistSubmissionRequest {
   sourceNote?: string | null
 }
 
+export interface ArtistUpdateRequest {
+  name: string
+  alias?: string | null
+  artistType?: string | null
+  countryOrRegion?: string | null
+  agency?: string | null
+  representativeWorks?: string | null
+  categoryTags?: string | null
+  description?: string | null
+  avatar?: string | null
+}
+
 export interface ArtistReviewRequest {
-  userId: number
   action: 'approve' | 'reject'
   note?: string | null
 }
 
 export interface ArtistRiskRequest {
-  userId: number
   riskStatus: ArtistRiskStatus
   reason?: string | null
+}
+
+export interface ArtistListParams {
+  page?: number
+  size?: number
+  keyword?: string
+  reviewStatus?: ArtistReviewStatus | ''
+  riskStatus?: ArtistRiskStatus | ''
 }
 
 export interface ActivityRiskResolutionRequest {
@@ -282,6 +312,7 @@ export interface ArtistEntity {
   alias?: string | null
   artistType?: string | null
   countryOrRegion?: string | null
+  agency?: string | null
   categoryTags?: string | null
   representativeWorks?: string | null
   reviewStatus?: ArtistReviewStatus | string | null
@@ -424,6 +455,8 @@ export interface VenueApplicationVO {
   validTo?: string | null
   proofNote?: string | null
   proofFileUrl?: string | null
+  proofAssetId?: number | null
+  proofAsset?: PrivateAssetVO | null
   status: VenueApplicationStatus
   reviewerId: number | null
   reviewNote: string | null
@@ -503,7 +536,14 @@ export interface SessionSeatVO {
 export type SeatCraftTemplateType = 'concert' | 'cinema' | 'custom'
 export type SeatCraftSectionType = 'core' | 'stand' | 'zone'
 export type SeatCraftSectionLayout = 'grid' | 'curved'
-export type SeatCraftBlockType = 'gridBlock' | 'arcBlock' | 'standingBlock'
+export type SeatCraftBlockType = 'gridBlock' | 'arcBlock' | 'standingBlock' | 'polygonBlock'
+
+export interface SeatCraftBindingVO {
+  blockKey: string
+  groupKey: string
+  bindingRole?: string | null
+  sort?: number | null
+}
 
 export interface SeatCraftBlockVO {
   id: string | number
@@ -526,6 +566,7 @@ export interface SeatCraftBlockVO {
   width?: number | null
   height?: number | null
   capacity?: number | null
+  polygonPoints?: Array<{ x: number; y: number }> | null
   color: string
   sort: number
 }
@@ -585,9 +626,11 @@ export interface SeatCraftLayoutVO {
   canvasWidth: number
   canvasHeight: number
   sections: SeatCraftSectionVO[]
+  seats?: SessionSeatVO[]
   blocks?: SeatCraftBlockVO[]
   overrides?: SeatOverrideVO[]
   ticketGroups?: TicketGroupVO[]
+  bindings?: SeatCraftBindingVO[]
   blockLayout?: {
     name?: string | null
     canvasWidth?: number | null
@@ -595,6 +638,7 @@ export interface SeatCraftLayoutVO {
     blocks?: SeatCraftBlockVO[]
     overrides?: SeatOverrideVO[]
     ticketGroups?: TicketGroupVO[]
+    bindings?: SeatCraftBindingVO[]
   } | null
 }
 

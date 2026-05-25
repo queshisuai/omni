@@ -10,16 +10,14 @@ import org.apache.ibatis.type.JdbcType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@TableName(value = "seat_block", autoResultMap = true)
-public class SeatBlock {
+@TableName(value = "seat_layout_version_block", autoResultMap = true)
+public class SeatLayoutVersionBlock {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String ownerType;
-    private Long ownerId;
+    private Long versionId;
     private String blockKey;
     private String name;
     private String blockType;
-    private String ticketGroupKey;
     private BigDecimal x;
     private BigDecimal y;
     private BigDecimal rotation;
@@ -34,9 +32,9 @@ public class SeatBlock {
     private BigDecimal arcEndAngle;
     private BigDecimal width;
     private BigDecimal height;
+    private Integer capacity;
     @TableField(typeHandler = JsonbStringTypeHandler.class, jdbcType = JdbcType.OTHER)
     private String polygonPoints;
-    private Integer capacity;
     private String color;
     private Integer sort;
     private Integer status;
@@ -45,18 +43,14 @@ public class SeatBlock {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
-    public String getOwnerType() { return ownerType; }
-    public void setOwnerType(String ownerType) { this.ownerType = ownerType; }
-    public Long getOwnerId() { return ownerId; }
-    public void setOwnerId(Long ownerId) { this.ownerId = ownerId; }
+    public Long getVersionId() { return versionId; }
+    public void setVersionId(Long versionId) { this.versionId = versionId; }
     public String getBlockKey() { return blockKey; }
     public void setBlockKey(String blockKey) { this.blockKey = blockKey; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getBlockType() { return blockType; }
     public void setBlockType(String blockType) { this.blockType = blockType; }
-    public String getTicketGroupKey() { return ticketGroupKey; }
-    public void setTicketGroupKey(String ticketGroupKey) { this.ticketGroupKey = ticketGroupKey; }
     public BigDecimal getX() { return x; }
     public void setX(BigDecimal x) { this.x = x; }
     public BigDecimal getY() { return y; }
@@ -85,10 +79,10 @@ public class SeatBlock {
     public void setWidth(BigDecimal width) { this.width = width; }
     public BigDecimal getHeight() { return height; }
     public void setHeight(BigDecimal height) { this.height = height; }
-    public String getPolygonPoints() { return polygonPoints; }
-    public void setPolygonPoints(String polygonPoints) { this.polygonPoints = polygonPoints; }
     public Integer getCapacity() { return capacity; }
     public void setCapacity(Integer capacity) { this.capacity = capacity; }
+    public String getPolygonPoints() { return polygonPoints; }
+    public void setPolygonPoints(String polygonPoints) { this.polygonPoints = polygonPoints; }
     public String getColor() { return color; }
     public void setColor(String color) { this.color = color; }
     public Integer getSort() { return sort; }

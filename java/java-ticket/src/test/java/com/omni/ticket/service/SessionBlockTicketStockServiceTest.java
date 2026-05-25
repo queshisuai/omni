@@ -95,6 +95,33 @@ class SessionBlockTicketStockServiceTest {
     }
 
     @Test
+    void generateForSessionSkipsHiddenAndDeletedOverrideSeatsAndAdjustsStock() {
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
+        when(sessionSeatMapper.selectCount(any())).thenReturn(0L);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(gridBlock(10L, "floor", "vip")));
+        when(seatOverrideMapper.selectList(any())).thenReturn(List.of(
+                override(10L, 1, 2, "hidden"),
+                override(10L, 2, 1, "deleted")
+        ));
+        when(ticketGroupMapper.selectList(any())).thenReturn(List.of(group("vip", "VIP", new BigDecimal("880.00"))));
+        doAnswer(invocation -> {
+            TicketType ticketType = invocation.getArgument(0);
+            ticketType.setId(900L);
+            return 1;
+        }).when(ticketTypeMapper).insert(any(TicketType.class));
+
+        int generated = service.generateForSession(99L);
+
+        assertEquals(2, generated);
+        verify(ticketTypeMapper).insert(org.mockito.ArgumentMatchers.argThat(ticketType -> Integer.valueOf(2).equals(ticketType.getTotalStock())
+                && Integer.valueOf(2).equals(ticketType.getRemainStock())));
+        ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
+        verify(sessionSeatMapper, org.mockito.Mockito.times(2)).insert(seatCaptor.capture());
+        assertEquals(List.of(1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).toList());
+        assertEquals(List.of(1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).toList());
+    }
+
+    @Test
     void generateForSessionUsesStandingCapacityWithoutInsertingSeats() {
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
         when(sessionSeatMapper.selectCount(any())).thenReturn(0L);
@@ -185,6 +212,41 @@ class SessionBlockTicketStockServiceTest {
         verify(sessionSeatMapper, org.mockito.Mockito.times(3)).insert(seatCaptor.capture());
         assertEquals(List.of(2, 1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).toList());
         assertEquals(List.of(1, 2, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).toList());
+    }
+
+    @Test
+    void generateForSessionDoesNotBackfillHiddenOrDeletedSeatsWhenSeatsAlreadyExist() {
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 1L));
+        when(sessionSeatMapper.selectCount(any())).thenReturn(1L);
+        when(seatBlockMapper.selectList(any())).thenReturn(List.of(gridBlock(10L, "floor", "vip")));
+        when(seatOverrideMapper.selectList(any())).thenReturn(List.of(
+                override(10L, 1, 2, "hidden"),
+                override(10L, 2, 1, "deleted")
+        ));
+        when(ticketGroupMapper.selectList(any())).thenReturn(List.of(group("vip", "VIP", new BigDecimal("880.00"))));
+        TicketType vip = new TicketType();
+        vip.setId(900L);
+        vip.setSessionId(99L);
+        vip.setName("VIP");
+        vip.setPrice(new BigDecimal("880.00"));
+        vip.setStatus(1);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(vip));
+        SessionSeat existing = new SessionSeat();
+        existing.setSessionId(99L);
+        existing.setSeatBlockId(10L);
+        existing.setGeneratedRowNo(1);
+        existing.setGeneratedSeatNo(1);
+        existing.setStatus(1);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(existing));
+
+        int generated = service.generateForSession(99L);
+
+        assertEquals(1, generated);
+        verify(ticketTypeMapper, never()).insert(any());
+        ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
+        verify(sessionSeatMapper).insert(seatCaptor.capture());
+        assertEquals(2, seatCaptor.getValue().getGeneratedRowNo());
+        assertEquals(2, seatCaptor.getValue().getGeneratedSeatNo());
     }
 
     @Test
@@ -340,6 +402,15 @@ class SessionBlockTicketStockServiceTest {
         seat.setGeneratedSeatNo(seatNo);
         seat.setStatus(1);
         return seat;
+    }
+
+    private SeatOverride override(Long blockId, int rowNo, int seatNo, String status) {
+        SeatOverride override = new SeatOverride();
+        override.setBlockId(blockId);
+        override.setRowNo(rowNo);
+        override.setSeatNo(seatNo);
+        override.setStatus(status);
+        return override;
     }
 
     private SeatBlock gridBlock(Long id, String blockKey, String groupKey) {

@@ -3,11 +3,13 @@ package com.omni.ticket.service;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
+import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.service.SessionSeatLayoutService;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
@@ -49,6 +51,8 @@ class SessionAdminServiceTest {
     @Mock
     private TicketTypeMapper ticketTypeMapper;
     @Mock
+    private SessionSeatMapper sessionSeatMapper;
+    @Mock
     private SessionSeatService sessionSeatService;
     @Mock
     private SessionSeatLayoutService sessionSeatLayoutService;
@@ -57,7 +61,7 @@ class SessionAdminServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, sessionSeatService, sessionSeatLayoutService);
+        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, sessionSeatService, sessionSeatLayoutService, sessionSeatMapper);
     }
 
     @Test
@@ -192,6 +196,69 @@ class SessionAdminServiceTest {
         assertEquals("VIP票", result.getRecords().get(0).getTicketTypes().get(0).getName());
     }
 
+    @Test
+    void listSessionsUsesSeatStatusesForSeatBasedStockSummary() {
+        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        Session session = new Session();
+        session.setId(501L);
+        session.setActivityId(10L);
+        session.setVenueId(101L);
+        session.setStartTime(LocalDateTime.of(2026, 6, 1, 20, 0));
+        session.setEndTime(LocalDateTime.of(2026, 6, 1, 22, 0));
+        session.setStatus(1);
+        Page<Session> page = new Page<>(1, 10, 1);
+        page.setRecords(List.of(session));
+        TicketType seatedTicketType = ticketType(801L, 501L, "普通票", 380, 112, 112);
+        when(sessionMapper.selectPage(any(), any())).thenReturn(page);
+        when(activityMapper.selectBatchIds(any())).thenReturn(List.of(activity(10L, 2003L)));
+        when(venueMapper.selectBatchIds(any())).thenReturn(List.of(venue(101L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(seatedTicketType));
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(
+                sessionSeat(1L, 501L, 801L, 1),
+                sessionSeat(2L, 501L, 801L, 1),
+                sessionSeat(3L, 501L, 801L, 3),
+                sessionSeat(4L, 501L, 801L, 4)
+        ));
+
+        Page<com.omni.ticket.dto.SessionAdminResponse> result = service.listSessions(2002L, 1, 10, null, null, null);
+
+        com.omni.ticket.dto.SessionAdminResponse response = result.getRecords().get(0);
+        assertEquals(3, response.getTotalStock());
+        assertEquals(2, response.getRemainStock());
+        assertEquals(1, response.getSoldStock());
+    }
+
+    @Test
+    void listSessionsFallsBackToTicketStockWhenPaidOrderHasNoSeatState() {
+        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        Session session = new Session();
+        session.setId(501L);
+        session.setActivityId(10L);
+        session.setVenueId(101L);
+        session.setStartTime(LocalDateTime.of(2026, 6, 1, 20, 0));
+        session.setEndTime(LocalDateTime.of(2026, 6, 1, 22, 0));
+        session.setStatus(1);
+        Page<Session> page = new Page<>(1, 10, 1);
+        page.setRecords(List.of(session));
+        TicketType ticketType = ticketType(801L, 501L, "普通票", 380, 10, 8);
+        when(sessionMapper.selectPage(any(), any())).thenReturn(page);
+        when(activityMapper.selectBatchIds(any())).thenReturn(List.of(activity(10L, 2003L)));
+        when(venueMapper.selectBatchIds(any())).thenReturn(List.of(venue(101L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(
+                sessionSeat(1L, 501L, null, 1),
+                sessionSeat(2L, 501L, null, 1),
+                sessionSeat(3L, 501L, null, 1)
+        ));
+
+        Page<com.omni.ticket.dto.SessionAdminResponse> result = service.listSessions(2002L, 1, 10, null, null, null);
+
+        com.omni.ticket.dto.SessionAdminResponse response = result.getRecords().get(0);
+        assertEquals(10, response.getTotalStock());
+        assertEquals(8, response.getRemainStock());
+        assertEquals(2, response.getSoldStock());
+    }
+
     private Map<String, Object> baseBody() {
         Map<String, Object> body = new HashMap<>();
         body.put("userId", 2003L);
@@ -227,5 +294,14 @@ class SessionAdminServiceTest {
         ticketType.setRemainStock(remainStock);
         ticketType.setStatus(1);
         return ticketType;
+    }
+
+    private SessionSeat sessionSeat(Long id, Long sessionId, Long ticketTypeId, int status) {
+        SessionSeat seat = new SessionSeat();
+        seat.setId(id);
+        seat.setSessionId(sessionId);
+        seat.setTicketTypeId(ticketTypeId);
+        seat.setStatus(status);
+        return seat;
     }
 }

@@ -62,7 +62,7 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                  @Param("lockExpireTime") LocalDateTime lockExpireTime);
 
     @Update("UPDATE session_seat SET status = 3, order_id = #{orderId}, update_time = CURRENT_TIMESTAMP " +
-            "WHERE id = #{seatId} AND session_id = #{sessionId} AND status = 2")
+            "WHERE id = #{seatId} AND session_id = #{sessionId} AND (status = 2 OR (status = 1 AND order_id IS NULL))")
     int markSeatSold(@Param("seatId") Long seatId,
                      @Param("sessionId") Long sessionId,
                      @Param("orderId") Long orderId);

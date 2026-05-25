@@ -93,7 +93,6 @@ public class ActivitySeatLayoutService {
 
         LocalDateTime now = LocalDateTime.now();
         disableActiveLayouts(activity.getId(), now);
-
         ActivitySeatLayout layout = new ActivitySeatLayout();
         layout.setActivityId(activity.getId());
         layout.setSourceVenueLayoutId(venueLayout.getId());
@@ -108,7 +107,6 @@ public class ActivitySeatLayoutService {
         layout.setCreateTime(now);
         layout.setUpdateTime(now);
         activityLayoutMapper.insert(layout);
-
         List<ActivitySeatLayoutSection> sections = venueSections.stream()
                 .map(section -> copySection(layout.getId(), section, now))
                 .collect(Collectors.toList());
@@ -154,6 +152,29 @@ public class ActivitySeatLayoutService {
             }
             blockLayoutService.replaceLayout("activity", activity.getId(), blockLayout);
         }
+        return toLayoutResponse(layout, java.util.Collections.emptyList());
+    }
+
+    @Transactional
+    public SeatCraftLayoutDtos.LayoutResponse createBlankLayout(Long userId, Long activityId) {
+        Activity activity = requireManageableActivity(userId, activityId);
+        LocalDateTime now = LocalDateTime.now();
+        disableActiveLayouts(activity.getId(), now);
+
+        ActivitySeatLayout layout = new ActivitySeatLayout();
+        layout.setActivityId(activity.getId());
+        layout.setName(defaultText(activity.getName(), "活动座位图"));
+        layout.setTemplateType("concert");
+        layout.setStageTitle("舞台");
+        layout.setStageX(0);
+        layout.setStageY(0);
+        layout.setCanvasWidth(800);
+        layout.setCanvasHeight(600);
+        layout.setStatus(1);
+        layout.setCreateTime(now);
+        layout.setUpdateTime(now);
+        activityLayoutMapper.insert(layout);
+
         return toLayoutResponse(layout, java.util.Collections.emptyList());
     }
 

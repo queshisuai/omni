@@ -1,18 +1,29 @@
 package com.omni.ticket.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 public class SeatCraftBlockDtos {
     public static class LayoutRequest {
+        private Long versionId;
+        private Integer versionNo;
+        private String versionStatus;
         private String name;
         private Integer canvasWidth;
         private Integer canvasHeight;
         private List<BlockRequest> blocks = new ArrayList<>();
         private List<OverrideRequest> overrides = new ArrayList<>();
         private List<TicketGroupRequest> ticketGroups = new ArrayList<>();
+        private List<BindingRequest> bindings = new ArrayList<>();
 
+        public Long getVersionId() { return versionId; }
+        public void setVersionId(Long versionId) { this.versionId = versionId; }
+        public Integer getVersionNo() { return versionNo; }
+        public void setVersionNo(Integer versionNo) { this.versionNo = versionNo; }
+        public String getVersionStatus() { return versionStatus; }
+        public void setVersionStatus(String versionStatus) { this.versionStatus = versionStatus; }
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
         public Integer getCanvasWidth() { return canvasWidth; }
@@ -25,6 +36,39 @@ public class SeatCraftBlockDtos {
         public void setOverrides(List<OverrideRequest> overrides) { this.overrides = overrides; }
         public List<TicketGroupRequest> getTicketGroups() { return ticketGroups; }
         public void setTicketGroups(List<TicketGroupRequest> ticketGroups) { this.ticketGroups = ticketGroups; }
+        public List<BindingRequest> getBindings() { return bindings; }
+        public void setBindings(List<BindingRequest> bindings) { this.bindings = bindings; }
+    }
+
+    public static class VersionSummary {
+        private Long id;
+        private Integer versionNo;
+        private String versionStatus;
+        private String name;
+        private Long baseVersionId;
+        private LocalDateTime publishedAt;
+        private Long publishedBy;
+        private LocalDateTime createTime;
+        private LocalDateTime updateTime;
+
+        public Long getId() { return id; }
+        public void setId(Long id) { this.id = id; }
+        public Integer getVersionNo() { return versionNo; }
+        public void setVersionNo(Integer versionNo) { this.versionNo = versionNo; }
+        public String getVersionStatus() { return versionStatus; }
+        public void setVersionStatus(String versionStatus) { this.versionStatus = versionStatus; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public Long getBaseVersionId() { return baseVersionId; }
+        public void setBaseVersionId(Long baseVersionId) { this.baseVersionId = baseVersionId; }
+        public LocalDateTime getPublishedAt() { return publishedAt; }
+        public void setPublishedAt(LocalDateTime publishedAt) { this.publishedAt = publishedAt; }
+        public Long getPublishedBy() { return publishedBy; }
+        public void setPublishedBy(Long publishedBy) { this.publishedBy = publishedBy; }
+        public LocalDateTime getCreateTime() { return createTime; }
+        public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
+        public LocalDateTime getUpdateTime() { return updateTime; }
+        public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
     }
 
     public static class BlockRequest {
@@ -47,6 +91,7 @@ public class SeatCraftBlockDtos {
         private BigDecimal width;
         private BigDecimal height;
         private Integer capacity;
+        private String polygonPoints;
         private String color;
         private Integer sort;
 
@@ -88,6 +133,8 @@ public class SeatCraftBlockDtos {
         public void setHeight(BigDecimal height) { this.height = height; }
         public Integer getCapacity() { return capacity; }
         public void setCapacity(Integer capacity) { this.capacity = capacity; }
+        public String getPolygonPoints() { return polygonPoints; }
+        public void setPolygonPoints(String polygonPoints) { this.polygonPoints = polygonPoints; }
         public String getColor() { return color; }
         public void setColor(String color) { this.color = color; }
         public Integer getSort() { return sort; }
@@ -137,6 +184,22 @@ public class SeatCraftBlockDtos {
         public void setActivityPrice(BigDecimal activityPrice) { this.activityPrice = activityPrice; }
         public List<String> getSourceBlockKeys() { return sourceBlockKeys; }
         public void setSourceBlockKeys(List<String> sourceBlockKeys) { this.sourceBlockKeys = sourceBlockKeys; }
+        public Integer getSort() { return sort; }
+        public void setSort(Integer sort) { this.sort = sort; }
+    }
+
+    public static class BindingRequest {
+        private String blockKey;
+        private String groupKey;
+        private String bindingRole;
+        private Integer sort;
+
+        public String getBlockKey() { return blockKey; }
+        public void setBlockKey(String blockKey) { this.blockKey = blockKey; }
+        public String getGroupKey() { return groupKey; }
+        public void setGroupKey(String groupKey) { this.groupKey = groupKey; }
+        public String getBindingRole() { return bindingRole; }
+        public void setBindingRole(String bindingRole) { this.bindingRole = bindingRole; }
         public Integer getSort() { return sort; }
         public void setSort(Integer sort) { this.sort = sort; }
     }

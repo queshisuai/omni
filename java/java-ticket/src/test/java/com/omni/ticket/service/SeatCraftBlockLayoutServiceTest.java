@@ -87,6 +87,96 @@ class SeatCraftBlockLayoutServiceTest {
     }
 
     @Test
+    void replaceLayoutPersistsHiddenAndDeletedOverrideStatuses() {
+        SeatCraftBlockDtos.LayoutRequest layout = layout();
+        SeatCraftBlockDtos.OverrideRequest hidden = new SeatCraftBlockDtos.OverrideRequest();
+        hidden.setBlockKey("block-a");
+        hidden.setRowNo(1);
+        hidden.setSeatNo(1);
+        hidden.setStatus("hidden");
+        SeatCraftBlockDtos.OverrideRequest deleted = new SeatCraftBlockDtos.OverrideRequest();
+        deleted.setBlockKey("block-a");
+        deleted.setRowNo(2);
+        deleted.setSeatNo(2);
+        deleted.setStatus("deleted");
+        layout.setOverrides(List.of(hidden, deleted));
+        when(seatBlockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        doAnswer(invocation -> {
+            SeatBlock block = invocation.getArgument(0);
+            block.setId(101L);
+            return 1;
+        }).when(seatBlockMapper).insert(any(SeatBlock.class));
+
+        service.replaceLayout("venue", 9L, layout);
+
+        ArgumentCaptor<SeatOverride> overrideCaptor = ArgumentCaptor.forClass(SeatOverride.class);
+        verify(seatOverrideMapper, org.mockito.Mockito.times(2)).insert(overrideCaptor.capture());
+        assertEquals(List.of("hidden", "deleted"), overrideCaptor.getAllValues().stream().map(SeatOverride::getStatus).toList());
+        assertEquals(List.of(1, 2), overrideCaptor.getAllValues().stream().map(SeatOverride::getRowNo).toList());
+        assertEquals(List.of(1, 2), overrideCaptor.getAllValues().stream().map(SeatOverride::getSeatNo).toList());
+    }
+
+    @Test
+    void replaceLayoutPersistsSeatOverrideOffsetForFreeMovedSeat() {
+        SeatCraftBlockDtos.LayoutRequest layout = layout();
+        SeatCraftBlockDtos.OverrideRequest moved = new SeatCraftBlockDtos.OverrideRequest();
+        moved.setBlockKey("block-a");
+        moved.setRowNo(1);
+        moved.setSeatNo(2);
+        moved.setStatus("visible");
+        moved.setDx(new BigDecimal("123.5"));
+        moved.setDy(new BigDecimal("-45.25"));
+        moved.setCustomLabel("A02");
+        layout.setOverrides(List.of(moved));
+        when(seatBlockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        doAnswer(invocation -> {
+            SeatBlock block = invocation.getArgument(0);
+            block.setId(101L);
+            return 1;
+        }).when(seatBlockMapper).insert(any(SeatBlock.class));
+
+        service.replaceLayout("venue", 9L, layout);
+
+        ArgumentCaptor<SeatOverride> overrideCaptor = ArgumentCaptor.forClass(SeatOverride.class);
+        verify(seatOverrideMapper).insert(overrideCaptor.capture());
+        SeatOverride override = overrideCaptor.getValue();
+        assertEquals(new BigDecimal("123.5"), override.getDx());
+        assertEquals(new BigDecimal("-45.25"), override.getDy());
+        assertEquals("visible", override.getStatus());
+        assertEquals("A02", override.getCustomLabel());
+    }
+
+    @Test
+    void replaceLayoutPersistsAndReturnsPolygonPoints() {
+        String polygonPoints = "[{\"x\":0,\"y\":0},{\"x\":20,\"y\":0},{\"x\":20,\"y\":20},{\"x\":0,\"y\":20}]";
+        SeatCraftBlockDtos.LayoutRequest layout = layout();
+        SeatCraftBlockDtos.BlockRequest request = layout.getBlocks().get(0);
+        request.setBlockType("polygonBlock");
+        request.setPolygonPoints(polygonPoints);
+        when(seatBlockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        doAnswer(invocation -> {
+            SeatBlock block = invocation.getArgument(0);
+            block.setId(101L);
+            return 1;
+        }).when(seatBlockMapper).insert(any(SeatBlock.class));
+
+        service.replaceLayout("venue", 9L, layout);
+
+        ArgumentCaptor<SeatBlock> blockCaptor = ArgumentCaptor.forClass(SeatBlock.class);
+        verify(seatBlockMapper).insert(blockCaptor.capture());
+        SeatBlock insertedBlock = blockCaptor.getValue();
+        assertEquals(polygonPoints, insertedBlock.getPolygonPoints());
+
+        when(seatBlockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(insertedBlock));
+        when(seatOverrideMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        SeatCraftBlockDtos.LayoutRequest result = service.getLayout("venue", 9L);
+
+        assertNotNull(result);
+        assertEquals(polygonPoints, result.getBlocks().get(0).getPolygonPoints());
+    }
+
+    @Test
     void replaceLayoutRejectsBlockWithUnknownTicketGroup() {
         SeatCraftBlockDtos.LayoutRequest layout = layout();
         layout.setTicketGroups(List.of());
@@ -186,6 +276,92 @@ class SeatCraftBlockLayoutServiceTest {
         assertEquals("block-a", result.getBlocks().get(0).getBlockKey());
         assertEquals("A02", result.getOverrides().get(0).getCustomLabel());
         assertEquals(List.of("block-a"), result.getTicketGroups().get(0).getSourceBlockKeys());
+    }
+
+    @Test
+    void getLayoutReturnsHiddenAndDeletedOverrideStatuses() {
+        SeatBlock block = new SeatBlock();
+        block.setId(101L);
+        block.setBlockKey("block-a");
+        block.setName("A 区");
+        block.setBlockType("gridBlock");
+        block.setTicketGroupKey("vip");
+        block.setX(new BigDecimal("100"));
+        block.setY(new BigDecimal("200"));
+        block.setRows(2);
+        block.setCols(3);
+        block.setColor("#34d399");
+        block.setSort(0);
+        when(seatBlockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(block));
+
+        SeatOverride hidden = new SeatOverride();
+        hidden.setBlockId(101L);
+        hidden.setRowNo(1);
+        hidden.setSeatNo(1);
+        hidden.setStatus("hidden");
+        SeatOverride deleted = new SeatOverride();
+        deleted.setBlockId(101L);
+        deleted.setRowNo(2);
+        deleted.setSeatNo(2);
+        deleted.setStatus("deleted");
+        when(seatOverrideMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(hidden, deleted));
+
+        TicketGroup group = new TicketGroup();
+        group.setGroupKey("vip");
+        group.setName("VIP");
+        group.setDefaultPrice(new BigDecimal("680.00"));
+        group.setSourceBlockIds("block-a");
+        group.setSort(0);
+        when(ticketGroupMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(group));
+
+        SeatCraftBlockDtos.LayoutRequest result = service.getLayout("venue", 9L);
+
+        assertNotNull(result);
+        assertEquals(List.of("hidden", "deleted"), result.getOverrides().stream().map(SeatCraftBlockDtos.OverrideRequest::getStatus).toList());
+        assertEquals(List.of(1, 2), result.getOverrides().stream().map(SeatCraftBlockDtos.OverrideRequest::getRowNo).toList());
+        assertEquals(List.of(1, 2), result.getOverrides().stream().map(SeatCraftBlockDtos.OverrideRequest::getSeatNo).toList());
+    }
+
+    @Test
+    void getLayoutReturnsSeatOverrideOffsetForFreeMovedSeat() {
+        SeatBlock block = new SeatBlock();
+        block.setId(101L);
+        block.setBlockKey("block-a");
+        block.setName("A 区");
+        block.setBlockType("gridBlock");
+        block.setTicketGroupKey("vip");
+        block.setX(new BigDecimal("100"));
+        block.setY(new BigDecimal("200"));
+        block.setRows(2);
+        block.setCols(3);
+        block.setColor("#34d399");
+        block.setSort(0);
+        when(seatBlockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(block));
+
+        SeatOverride moved = new SeatOverride();
+        moved.setBlockId(101L);
+        moved.setRowNo(1);
+        moved.setSeatNo(2);
+        moved.setStatus("visible");
+        moved.setDx(new BigDecimal("123.5"));
+        moved.setDy(new BigDecimal("-45.25"));
+        moved.setCustomLabel("A02");
+        when(seatOverrideMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(moved));
+
+        TicketGroup group = new TicketGroup();
+        group.setGroupKey("vip");
+        group.setName("VIP");
+        group.setDefaultPrice(new BigDecimal("680.00"));
+        group.setSourceBlockIds("block-a");
+        group.setSort(0);
+        when(ticketGroupMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(group));
+
+        SeatCraftBlockDtos.LayoutRequest result = service.getLayout("venue", 9L);
+
+        assertNotNull(result);
+        assertEquals(new BigDecimal("123.5"), result.getOverrides().get(0).getDx());
+        assertEquals(new BigDecimal("-45.25"), result.getOverrides().get(0).getDy());
+        assertEquals("A02", result.getOverrides().get(0).getCustomLabel());
     }
 
     private SeatCraftBlockDtos.LayoutRequest layout() {

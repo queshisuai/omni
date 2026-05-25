@@ -173,6 +173,7 @@ public class SeatCraftBlockLayoutService {
             block.setWidth(request.getWidth());
             block.setHeight(request.getHeight());
             block.setCapacity(request.getCapacity());
+            block.setPolygonPoints(trim(request.getPolygonPoints()));
             block.setColor(defaultText(request.getColor(), "#ff1268"));
             block.setSort(request.getSort() != null ? request.getSort() : i);
             block.setStatus(1);
@@ -224,8 +225,8 @@ public class SeatCraftBlockLayoutService {
             group.setOwnerId(ownerId);
             group.setGroupKey(groupKey);
             group.setName(defaultText(request.getName(), group.getGroupKey()));
-            group.setDefaultPrice(request.getDefaultPrice());
-            group.setActivityPrice(request.getActivityPrice());
+            group.setDefaultPrice(defaultDecimal(request.getDefaultPrice(), BigDecimal.ZERO));
+            group.setActivityPrice(defaultDecimal(request.getActivityPrice(), BigDecimal.ZERO));
             group.setSourceBlockIds(String.join(",", request.getSourceBlockKeys() == null ? Collections.emptyList() : request.getSourceBlockKeys()));
             group.setSort(request.getSort() != null ? request.getSort() : i);
             group.setStatus(1);
@@ -258,6 +259,9 @@ public class SeatCraftBlockLayoutService {
             if (!groupKeys.contains(trim(block.getTicketGroupKey()))) {
                 throw new BusinessException(400, "座位块必须绑定有效票档组");
             }
+            if ("polygonBlock".equals(trim(block.getBlockType())) && trim(block.getPolygonPoints()) == null) {
+                throw new BusinessException(400, "多边形座位块必须包含顶点数据");
+            }
         }
     }
 
@@ -282,6 +286,7 @@ public class SeatCraftBlockLayoutService {
         request.setWidth(block.getWidth());
         request.setHeight(block.getHeight());
         request.setCapacity(block.getCapacity());
+        request.setPolygonPoints(block.getPolygonPoints());
         request.setColor(block.getColor());
         request.setSort(block.getSort());
         return request;

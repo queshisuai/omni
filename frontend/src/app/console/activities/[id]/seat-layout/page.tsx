@@ -4,24 +4,10 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { getActivitySeatLayout, updateActivitySeatLayout } from '@/lib/api'
+import { createBlankActivitySeatLayout, getActivitySeatLayout, updateActivitySeatLayout } from '@/lib/api'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
 import { toSeatCraftLayoutPayload } from '@/components/seatcraft/block-layout'
 import { toSeatCraftLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
-
-function createDefaultLayout(name: string): SeatCraftLayoutDraft {
-  return {
-    name,
-    templateType: 'concert',
-    stage: { title: '舞台', x: 0, y: 0 },
-    canvasWidth: 960,
-    canvasHeight: 720,
-    sections: [],
-    blocks: [],
-    overrides: [],
-    ticketGroups: [],
-  }
-}
 
 export default function ActivitySeatLayoutPage() {
   const params = useParams<{ id: string }>()
@@ -30,6 +16,7 @@ export default function ActivitySeatLayoutPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [creating, setCreating] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -51,7 +38,7 @@ export default function ActivitySeatLayoutPage() {
     getActivitySeatLayout(activityId, user.userId)
       .then(response => {
         if (cancelled) return
-        setLayout(response ? toSeatCraftLayoutDraft(response) : createDefaultLayout(`活动 #${activityId} SeatCraft 座位图`))
+        setLayout(response ? toSeatCraftLayoutDraft(response) : null)
         setError('')
       })
       .catch(err => {
@@ -102,6 +89,23 @@ export default function ActivitySeatLayoutPage() {
     }
   }
 
+  const handleCreateBlank = async () => {
+    const user = getUser()
+    if (!user) return
+    setCreating(true)
+    setError('')
+    setMessage('')
+    try {
+      const response = await createBlankActivitySeatLayout(activityId, user.userId)
+      setLayout(toSeatCraftLayoutDraft(response))
+      setMessage('已创建空白座位图')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '创建空白座位图失败')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -132,7 +136,15 @@ export default function ActivitySeatLayoutPage() {
 
       {!layout ? (
         <div className="rounded-xl border border-[#e5e5e5] bg-white p-8 text-center text-[14px] text-[#666]">
-          当前活动还没有座位图，可直接创建新的 SeatCraft 座位图。
+          <div>当前活动还没有座位图，可创建新的 SeatCraft 空白画布。</div>
+          <button
+            type="button"
+            onClick={handleCreateBlank}
+            disabled={creating}
+            className="mt-4 rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-50"
+          >
+            {creating ? '创建中...' : '创建空白座位图'}
+          </button>
         </div>
       ) : (
         <SeatLayoutDesigner layout={layout} onChange={setLayout} />

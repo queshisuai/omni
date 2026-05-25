@@ -1,6 +1,7 @@
 package com.omni.ticket.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
@@ -21,6 +22,8 @@ import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSearchResponse;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
+import com.omni.ticket.dto.ArtistUpdateRequest;
+import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatTemplateResponse;
@@ -32,6 +35,8 @@ import com.omni.ticket.dto.VenueApplicationResponse;
 import com.omni.ticket.dto.VenueApplicationReviewRequest;
 import com.omni.ticket.dto.VenueSeatRequest;
 import com.omni.ticket.dto.OrderInfoResponse;
+import com.omni.ticket.dto.PrivateAssetDownload;
+import com.omni.ticket.dto.PrivateAssetResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
@@ -55,13 +60,23 @@ import com.omni.ticket.service.TourStationService;
 import com.omni.ticket.service.TicketAssetService;
 import com.omni.ticket.service.VenueApplicationService;
 import com.omni.ticket.service.OrderAdminQueryService;
+import com.omni.ticket.service.PrivateAssetService;
+import com.omni.ticket.service.SeatCraftLayoutVersionService;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -108,6 +123,8 @@ public class AdminController {
     private final ArtistGovernanceService artistGovernanceService;
     private final ActivityRiskResponseService activityRiskResponseService;
     private final TicketAssetService ticketAssetService;
+    private final PrivateAssetService privateAssetService;
+    private final SeatCraftLayoutVersionService seatCraftLayoutVersionService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -122,7 +139,7 @@ public class AdminController {
                                  VenueDefaultLayoutService venueDefaultLayoutService) {
         this(activityMapper, null, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
-                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null, null);
+                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Autowired
@@ -144,10 +161,12 @@ public class AdminController {
                                      SessionSeatProtectionService sessionSeatProtectionService,
                                      TicketTypeStockRecalculationService stockRecalculationService,
                                       ActivityArtistService activityArtistService,
-                                      ArtistAdminService artistAdminService,
-                                      ArtistGovernanceService artistGovernanceService,
-                                      ActivityRiskResponseService activityRiskResponseService,
-                                      TicketAssetService ticketAssetService) {
+                                       ArtistAdminService artistAdminService,
+                                        ArtistGovernanceService artistGovernanceService,
+                                        ActivityRiskResponseService activityRiskResponseService,
+                                        TicketAssetService ticketAssetService,
+                                        PrivateAssetService privateAssetService,
+                                        SeatCraftLayoutVersionService seatCraftLayoutVersionService) {
         this.activityMapper = activityMapper;
         this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
@@ -173,6 +192,58 @@ public class AdminController {
         this.artistGovernanceService = artistGovernanceService;
         this.activityRiskResponseService = activityRiskResponseService;
         this.ticketAssetService = ticketAssetService;
+        this.privateAssetService = privateAssetService;
+        this.seatCraftLayoutVersionService = seatCraftLayoutVersionService;
+    }
+
+    @GetMapping("/seatcraft/{ownerType}/{ownerId}/draft")
+    public Result<SeatCraftBlockDtos.LayoutRequest> getSeatCraftDraft(@PathVariable String ownerType,
+                                                                       @PathVariable Long ownerId) {
+        return Result.success(seatCraftLayoutVersionService.getDraft(ownerType, ownerId));
+    }
+
+    @GetMapping("/seatcraft/{ownerType}/{ownerId}/versions")
+    public Result<List<SeatCraftBlockDtos.VersionSummary>> listSeatCraftVersions(@PathVariable String ownerType,
+                                                                                 @PathVariable Long ownerId) {
+        return Result.success(seatCraftLayoutVersionService.listVersions(ownerType, ownerId));
+    }
+
+    @PutMapping("/seatcraft/{ownerType}/{ownerId}/draft")
+    public Result<SeatCraftBlockDtos.LayoutRequest> saveSeatCraftDraft(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String ownerType,
+            @PathVariable Long ownerId,
+            @RequestBody SeatCraftBlockDtos.LayoutRequest layout) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(seatCraftLayoutVersionService.saveDraft(ownerType, ownerId, layout, operatorId));
+    }
+
+    @PostMapping("/seatcraft/{ownerType}/{ownerId}/publish")
+    public Result<SeatCraftBlockDtos.LayoutRequest> publishSeatCraftDraft(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String ownerType,
+            @PathVariable Long ownerId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(seatCraftLayoutVersionService.publishDraft(ownerType, ownerId, operatorId));
+    }
+
+    @PostMapping("/seatcraft/{ownerType}/{ownerId}/versions/{versionId}/rollback")
+    public Result<SeatCraftBlockDtos.LayoutRequest> rollbackSeatCraftVersion(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String ownerType,
+            @PathVariable Long ownerId,
+            @PathVariable Long versionId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(seatCraftLayoutVersionService.rollbackToDraft(ownerType, ownerId, versionId, operatorId));
     }
 
     @PostMapping("/assets")
@@ -191,36 +262,208 @@ public class AdminController {
         return Result.success(ticketAssetService.upload(userId, bizType, file));
     }
 
+    @PostMapping("/private-assets")
+    public Result<PrivateAssetResponse> uploadPrivateAsset(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Long userId,
+            @RequestParam String bizType,
+            @RequestParam MultipartFile file) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        String role = checkRole(operatorId);
+        if (role == null) {
+            return Result.fail(ResultCode.FORBIDDEN);
+        }
+        // userId 仅兼容旧前端参数，实际操作身份以 token subject 为准。
+        return Result.success(privateAssetService.upload(operatorId, bizType, file));
+    }
+
+    @GetMapping("/private-assets/{id}/download")
+    public ResponseEntity<InputStreamResource> downloadPrivateAsset(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        PrivateAssetDownload download = privateAssetService.prepareDownload(id, operatorId);
+        String contentType = StringUtils.hasText(download.getContentType())
+                ? download.getContentType()
+                : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        ContentDisposition contentDisposition = ContentDisposition.attachment()
+                .filename(download.getOriginalFilename(), java.nio.charset.StandardCharsets.UTF_8)
+                .build();
+        InputStream inputStream = openPrivateAssetStream(download);
+        if (inputStream == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                .contentLength(download.getFileSize())
+                .body(new InputStreamResource(inputStream));
+    }
+
+    private InputStream openPrivateAssetStream(PrivateAssetDownload download) {
+        try {
+            return Files.newInputStream(download.getPath());
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
     @GetMapping("/artists/search")
     public Result<List<ArtistSearchResponse>> searchArtists(@RequestParam(required = false) String keyword) {
         return Result.success(artistAdminService.search(keyword));
     }
 
+    @GetMapping("/artists")
+    public Result<Page<Artist>> listArtists(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                            @RequestParam(defaultValue = "1") long page,
+                                            @RequestParam(defaultValue = "10") long size,
+                                            @RequestParam(required = false) String keyword,
+                                            @RequestParam(required = false) String reviewStatus,
+                                            @RequestParam(required = false) String riskStatus) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        String role = checkRole(operatorId);
+        if (role == null) {
+            return Result.fail(ResultCode.FORBIDDEN);
+        }
+        return Result.success(artistAdminService.listManageable(operatorId, role, page, size, keyword, reviewStatus, riskStatus));
+    }
+
     @GetMapping("/artists/{id}")
-    public Result<Artist> getArtist(@PathVariable Long id) {
+    public Result<Artist> getArtist(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                    @PathVariable Long id) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        String role = checkRole(operatorId);
+        if (role == null) {
+            return Result.fail(ResultCode.FORBIDDEN);
+        }
         Artist artist = artistAdminService.getById(id);
         if (artist == null) return Result.fail(404, "艺人不存在");
+        if ("organizer".equals(role) && !operatorId.equals(artist.getSubmittedBy())) {
+            return Result.fail(ResultCode.FORBIDDEN);
+        }
         return Result.success(artist);
     }
 
     @PostMapping("/artists/submissions")
-    public Result<Artist> submitArtist(@RequestBody ArtistSubmissionRequest request) {
-        return Result.success(artistGovernanceService.submit(request));
+    public Result<Artist> submitArtist(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                       @RequestBody ArtistSubmissionRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        ArtistSubmissionRequest serviceRequest = toServiceArtistSubmissionRequest(operatorId, request);
+        return Result.success(artistGovernanceService.submit(serviceRequest));
+    }
+
+    @PutMapping("/artists/{id}")
+    public Result<Artist> updateArtist(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                       @PathVariable Long id,
+                                       @RequestBody ArtistUpdateRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        ArtistUpdateRequest serviceRequest = toServiceArtistUpdateRequest(operatorId, request);
+        return Result.success(artistGovernanceService.updateProfile(id, serviceRequest));
     }
 
     @GetMapping("/artists/pending")
-    public Result<List<Artist>> listPendingArtists(@RequestParam Long userId) {
-        return Result.success(artistGovernanceService.listPending(userId));
+    public Result<List<Artist>> listPendingArtists(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        String role = checkRole(operatorId);
+        if (!"admin".equals(role)) {
+            return Result.fail(ResultCode.FORBIDDEN);
+        }
+        return Result.success(artistGovernanceService.listPending(operatorId));
     }
 
     @PostMapping("/artists/{id}/review")
-    public Result<Artist> reviewArtist(@PathVariable Long id, @RequestBody ArtistReviewRequest request) {
-        return Result.success(artistGovernanceService.review(id, request));
+    public Result<Artist> reviewArtist(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                       @PathVariable Long id,
+                                       @RequestBody ArtistReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        ArtistReviewRequest serviceRequest = toServiceArtistReviewRequest(operatorId, request);
+        return Result.success(artistGovernanceService.review(id, serviceRequest));
     }
 
     @PostMapping("/artists/{id}/risk")
-    public Result<Artist> updateArtistRisk(@PathVariable Long id, @RequestBody ArtistRiskRequest request) {
-        return Result.success(artistGovernanceService.updateRisk(id, request));
+    public Result<Artist> updateArtistRisk(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                           @PathVariable Long id,
+                                           @RequestBody ArtistRiskRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        ArtistRiskRequest serviceRequest = toServiceArtistRiskRequest(operatorId, request);
+        return Result.success(artistGovernanceService.updateRisk(id, serviceRequest));
+    }
+
+    private ArtistSubmissionRequest toServiceArtistSubmissionRequest(Long operatorId, ArtistSubmissionRequest source) {
+        ArtistSubmissionRequest target = new ArtistSubmissionRequest();
+        target.setUserId(operatorId);
+        if (source == null) return target;
+        target.setName(source.getName());
+        target.setAlias(source.getAlias());
+        target.setArtistType(source.getArtistType());
+        target.setCountryOrRegion(source.getCountryOrRegion());
+        target.setAgency(source.getAgency());
+        target.setRepresentativeWorks(source.getRepresentativeWorks());
+        target.setCategoryTags(source.getCategoryTags());
+        target.setDescription(source.getDescription());
+        target.setSourceNote(source.getSourceNote());
+        return target;
+    }
+
+    private ArtistUpdateRequest toServiceArtistUpdateRequest(Long operatorId, ArtistUpdateRequest source) {
+        ArtistUpdateRequest target = new ArtistUpdateRequest();
+        target.setUserId(operatorId);
+        if (source == null) return target;
+        target.setName(source.getName());
+        target.setAlias(source.getAlias());
+        target.setArtistType(source.getArtistType());
+        target.setCountryOrRegion(source.getCountryOrRegion());
+        target.setAgency(source.getAgency());
+        target.setRepresentativeWorks(source.getRepresentativeWorks());
+        target.setCategoryTags(source.getCategoryTags());
+        target.setDescription(source.getDescription());
+        target.setAvatar(source.getAvatar());
+        return target;
+    }
+
+    private ArtistReviewRequest toServiceArtistReviewRequest(Long operatorId, ArtistReviewRequest source) {
+        ArtistReviewRequest target = new ArtistReviewRequest();
+        target.setUserId(operatorId);
+        if (source == null) return target;
+        target.setAction(source.getAction());
+        target.setNote(source.getNote());
+        return target;
+    }
+
+    private ArtistRiskRequest toServiceArtistRiskRequest(Long operatorId, ArtistRiskRequest source) {
+        ArtistRiskRequest target = new ArtistRiskRequest();
+        target.setUserId(operatorId);
+        if (source == null) return target;
+        target.setRiskStatus(source.getRiskStatus());
+        target.setReason(source.getReason());
+        return target;
     }
 
     @PostMapping("/activities/{id}/risk-resolution")
@@ -511,6 +754,14 @@ public class AdminController {
         return Result.success(activitySeatLayoutService.getLayout(userId, activityId));
     }
 
+    @PostMapping("/activities/{activityId}/seat-layout/blank")
+    public Result<SeatCraftLayoutDtos.LayoutResponse> createBlankActivitySeatLayout(@PathVariable Long activityId,
+                                                                              @RequestBody Map<String, Object> body) {
+        Long userId = parsePositiveLong(body.get("userId"));
+        if (userId == null) return Result.fail(400, "用户ID不正确");
+        return Result.success(activitySeatLayoutService.createBlankLayout(userId, activityId));
+    }
+
     @PutMapping("/activities/{activityId}/seat-layout")
     public Result<SeatCraftLayoutDtos.LayoutResponse> updateActivitySeatLayout(@PathVariable Long activityId,
                                                                                 @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
@@ -676,6 +927,14 @@ public class AdminController {
     public Result<SeatCraftLayoutDtos.LayoutResponse> getSessionSeatLayout(@PathVariable Long sessionId,
                                                                              @RequestParam Long userId) {
         return Result.success(sessionSeatLayoutService.getLayout(userId, sessionId));
+    }
+
+    @PostMapping("/sessions/{sessionId}/seat-layout/blank")
+    public Result<SeatCraftLayoutDtos.LayoutResponse> createBlankSessionSeatLayout(@PathVariable Long sessionId,
+                                                                              @RequestBody Map<String, Object> body) {
+        Long userId = parsePositiveLong(body.get("userId"));
+        if (userId == null) return Result.fail(400, "用户ID不正确");
+        return Result.success(sessionSeatLayoutService.createBlankLayout(userId, sessionId));
     }
 
     @PutMapping("/sessions/{sessionId}/seat-layout")
@@ -873,7 +1132,10 @@ public class AdminController {
     public Result<List<Venue>> listAdminVenues(@RequestParam Long userId) {
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
-        return Result.success(venueMapper.selectList(null));
+        return Result.success(venueMapper.selectList(new QueryWrapper<Venue>()
+                .orderByAsc("city")
+                .orderByAsc("name")
+                .orderByAsc("id")));
     }
 
     @PostMapping("/venues/{id}/areas")
@@ -938,29 +1200,61 @@ public class AdminController {
     }
 
     @PostMapping("/venue-applications")
-    public Result<VenueApplicationResponse> submitVenueApplication(@RequestBody VenueApplicationRequest request) {
+    public Result<VenueApplicationResponse> submitVenueApplication(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody(required = false) VenueApplicationRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        if (request == null) {
+            request = new VenueApplicationRequest();
+        }
+        request.setUserId(operatorId);
         return Result.success(VenueApplicationResponse.from(venueApplicationService.submit(request)));
     }
 
     @GetMapping("/venue-applications/my")
-    public Result<List<VenueApplicationResponse>> listMyVenueApplications(@RequestParam Long userId) {
-        return Result.success(venueApplicationService.listMine(userId));
+    public Result<List<VenueApplicationResponse>> listMyVenueApplications(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Long userId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(venueApplicationService.listMine(operatorId));
     }
 
     @GetMapping("/venue-applications")
-    public Result<List<VenueApplicationResponse>> listVenueApplications(@RequestParam Long userId,
-                                                                         @RequestParam(required = false) Integer status) {
-        return Result.success(venueApplicationService.listAdmin(userId, status));
+    public Result<List<VenueApplicationResponse>> listVenueApplications(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) Integer status) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(venueApplicationService.listAdmin(operatorId, status));
     }
 
     @PostMapping("/venue-applications/{id}/review")
-    public Result<VenueApplicationResponse> reviewVenueApplication(@PathVariable Long id,
-                                                                   @RequestBody VenueApplicationReviewRequest request) {
+    public Result<VenueApplicationResponse> reviewVenueApplication(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) VenueApplicationReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        if (request == null) {
+            request = new VenueApplicationReviewRequest();
+        }
+        request.setUserId(operatorId);
         VenueApplication application;
         if ("reject".equals(request.getAction())) {
-            application = venueApplicationService.reject(id, request.getUserId(), request.getReviewNote());
+            application = venueApplicationService.reject(id, operatorId, request.getReviewNote());
         } else {
-            application = venueApplicationService.approve(id, request.getUserId(), request.getMode(), request.getVenueId(), request.getReviewNote());
+            application = venueApplicationService.approve(id, operatorId, request.getMode(), request.getVenueId(), request.getReviewNote());
         }
         return Result.success(VenueApplicationResponse.from(application));
     }

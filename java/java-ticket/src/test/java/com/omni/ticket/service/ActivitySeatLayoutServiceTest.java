@@ -154,6 +154,25 @@ class ActivitySeatLayoutServiceTest {
     }
 
     @Test
+    void createBlankLayoutDoesNotPersistInvalidEmptyBlockLayout() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(activityLayoutMapper.selectList(any())).thenReturn(List.of());
+        doAnswer(invocation -> {
+            ActivitySeatLayout layout = invocation.getArgument(0);
+            layout.setId(88L);
+            return 1;
+        }).when(activityLayoutMapper).insert(any(ActivitySeatLayout.class));
+
+        SeatCraftLayoutDtos.LayoutResponse response = service.createBlankLayout(2003L, 10L);
+
+        assertEquals(88L, response.getId());
+        assertEquals(10L, response.getActivityId());
+        assertEquals(0, response.getSections().size());
+        verify(blockLayoutService, never()).replaceLayout(eq("activity"), eq(10L), any());
+    }
+
+    @Test
     void organizerCannotCreateFromVenueDefaultForOthersActivity() {
         when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 9999L));

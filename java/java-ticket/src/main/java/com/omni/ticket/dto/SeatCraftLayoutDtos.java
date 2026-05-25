@@ -3,6 +3,7 @@ package com.omni.ticket.dto;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import com.omni.ticket.entity.SessionSeat;
 
 public class SeatCraftLayoutDtos {
     public static class LayoutResponse {
@@ -19,6 +20,7 @@ public class SeatCraftLayoutDtos {
         private Integer canvasHeight;
         private List<SectionResponse> sections = new ArrayList<>();
         private SeatCraftBlockDtos.LayoutRequest blockLayout;
+        private List<SessionSeat> seats = new ArrayList<>();
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
@@ -46,6 +48,8 @@ public class SeatCraftLayoutDtos {
         public void setSections(List<SectionResponse> sections) { this.sections = sections; }
         public SeatCraftBlockDtos.LayoutRequest getBlockLayout() { return blockLayout; }
         public void setBlockLayout(SeatCraftBlockDtos.LayoutRequest blockLayout) { this.blockLayout = blockLayout; }
+        public List<SessionSeat> getSeats() { return seats; }
+        public void setSeats(List<SessionSeat> seats) { this.seats = seats; }
     }
 
     public static class SectionResponse {

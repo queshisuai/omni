@@ -1,15 +1,20 @@
 'use client'
 
 import { Copy, FlipHorizontal2, Grid3X3, LayoutGrid, MousePointer2, RotateCcw, Trash2, Users } from 'lucide-react'
-import type { SeatBlockDraft, SeatBlockType, SeatLayoutControlsProps } from './types'
+import { seatEditDisabledReason } from './seat-selection'
+import type { ActiveSeatDetails, ActiveSeatKey, SeatBlockDraft, SeatBlockType, SeatLayoutControlsProps } from './types'
+import { buildSeatsForBlock, getSeatCraftPrimaryBindingValue } from './block-layout'
+import { useMemo } from 'react'
 
 const COLORS = ['#34d399', '#60a5fa', '#a78bfa', '#fbbf24', '#fb7185']
 
 export function SeatLayoutControls({
   layout,
   activeBlockKey,
+  canEditBlockBinding = true,
   onSelectBlock,
   onUpdateBlock,
+  onUpdateBlockPrimaryBinding,
   onAddBlock,
   onDuplicateBlock,
   onMirrorBlock,
@@ -17,87 +22,139 @@ export function SeatLayoutControls({
   onUpdateTicketGroup,
   onUpdateStage,
   onAutoArrange,
+  activeSeat,
+  onSelectSeat,
+  onUpdateSeatPosition,
 }: SeatLayoutControlsProps) {
   const blocks = layout.blocks ?? []
+  const canEditBinding = canEditBlockBinding && activeBlockKey != null
   const activeBlock = blocks.find(block => block.blockKey === activeBlockKey) ?? null
-  const activeGroup = activeBlock ? layout.ticketGroups?.find(group => group.groupKey === activeBlock.ticketGroupKey) ?? null : null
-
+  const primaryGroupKey = getSeatCraftPrimaryBindingValue(layout, activeBlock?.blockKey, canEditBinding)
+  const activeGroup = primaryGroupKey ? layout.ticketGroups?.find(group => group.groupKey === primaryGroupKey) ?? null : null
   return (
-    <aside className="flex h-full w-full flex-col gap-6 overflow-y-auto p-5 text-zinc-100 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/10 hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
-      <section>
-        <div className="mb-3">
-          <div className="text-lg font-semibold">SeatCraft 设计器</div>
-          <div className="text-xs text-zinc-500">自由画布编辑，不自动排版</div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <ToolButton icon={<LayoutGrid className="h-4 w-4" />} label="方阵" onClick={() => onAddBlock?.('gridBlock')} />
-          <ToolButton icon={<RotateCcw className="h-4 w-4" />} label="剧场扇形" onClick={() => onAddBlock?.('arcBlock')} />
-          <ToolButton icon={<Users className="h-4 w-4" />} label="站区" onClick={() => onAddBlock?.('standingBlock')} />
-          <ToolButton icon={<MousePointer2 className="h-4 w-4" />} label="选择" onClick={() => undefined} />
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-white/5 bg-white/5 p-4 shadow-sm backdrop-blur-md">
-        <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#ff1268]">快捷操作</div>
-        <div className="grid grid-cols-2 gap-2">
-          <ToolButton icon={<Grid3X3 className="h-4 w-4" />} label="一键排版" onClick={onAutoArrange} />
-          <ToolButton icon={<Copy className="h-4 w-4" />} label="复制" disabled={!activeBlock} onClick={() => activeBlock && onDuplicateBlock?.(activeBlock.blockKey)} />
-          <ToolButton icon={<FlipHorizontal2 className="h-4 w-4" />} label="镜像" disabled={!activeBlock} onClick={() => activeBlock && onMirrorBlock?.(activeBlock.blockKey)} />
-          <ToolButton icon={<Trash2 className="h-4 w-4" />} label="删除" disabled={!activeBlock} onClick={() => activeBlock && onDeleteBlock?.(activeBlock.blockKey)} />
-        </div>
-      </section>
-
-      <section>
-        <div className="mb-2 flex items-center justify-between text-xs text-zinc-500">
-          <span>图层</span>
-          <span>{blocks.length} 个</span>
-        </div>
-        <div className="space-y-2">
-          {blocks.map(block => (
-            <button key={block.blockKey} type="button" onClick={() => onSelectBlock?.(block.blockKey)} className={`w-full rounded-xl border px-3 py-3 text-left transition-all ${activeBlockKey === block.blockKey ? 'border-[#ff1268] bg-[#ff1268]/10 shadow-[0_0_15px_rgba(255,18,104,0.1)]' : 'border-white/5 bg-white/5 hover:border-white/20 hover:bg-white/10'}`}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="font-semibold text-sm">{block.name}</div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full ${activeBlockKey === block.blockKey ? 'bg-[#ff1268]/20 text-[#ff1268]' : 'bg-white/10 text-zinc-400'}`}>{labelForType(block.blockType)}</span>
-              </div>
-              <div className={`mt-1.5 text-xs ${activeBlockKey === block.blockKey ? 'text-[#ff1268]/80' : 'text-zinc-500'}`}>{summary(block)}</div>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-white/5 bg-white/5 p-4 shadow-sm backdrop-blur-md">
-        <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#ff1268]">舞台</div>
-        <TextField label="标题" value={layout.stage.title} onChange={value => onUpdateStage({ title: value })} />
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <NumberField label="X" value={layout.stage.x} onChange={value => onUpdateStage({ x: value })} />
-          <NumberField label="Y" value={layout.stage.y} onChange={value => onUpdateStage({ y: value })} />
-        </div>
-      </section>
+    <aside className="flex h-full w-full flex-col gap-4 p-4 text-zinc-100">
+      {!activeBlock && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-white">舞台设置</span>
+          </div>
+          <div className="space-y-3 rounded-lg bg-white/[0.02] p-3 border border-white/5">
+            <TextField label="舞台标题" value={layout.stage.title} onChange={value => onUpdateStage({ title: value })} />
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <NumberField label="X坐标" value={layout.stage.x} onChange={value => onUpdateStage({ x: value })} />
+              <NumberField label="Y坐标" value={layout.stage.y} onChange={value => onUpdateStage({ y: value })} />
+            </div>
+          </div>
+          <div className="text-xs text-zinc-500 mt-4 px-2">请在左侧或画布中选中一个区域以查看其详细属性。</div>
+        </section>
+      )}
 
       {activeBlock && (
-        <section className="rounded-2xl border border-white/5 bg-white/5 p-4 shadow-sm backdrop-blur-md">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#ff1268]">属性</div>
-            <span className="text-[10px] text-zinc-500">{activeBlock.blockKey}</span>
+        <section className="space-y-4">
+          {/* Header */}
+          <div className="border-b border-white/5 pb-4">
+            <TextField label="区域名称" value={activeBlock.name} onChange={value => onUpdateBlock?.(activeBlock.blockKey, { name: value })} />
           </div>
-          <TextField label="名称" value={activeBlock.name} onChange={value => onUpdateBlock?.(activeBlock.blockKey, { name: value })} />
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <NumberField label="X" value={activeBlock.x} onChange={value => onUpdateBlock?.(activeBlock.blockKey, { x: value })} />
-            <NumberField label="Y" value={activeBlock.y} onChange={value => onUpdateBlock?.(activeBlock.blockKey, { y: value })} />
-            <NumberField label="旋转" value={activeBlock.rotation} onChange={value => onUpdateBlock?.(activeBlock.blockKey, { rotation: value })} />
+
+          {/* Info List */}
+          <div className="space-y-2.5 text-[11px] text-zinc-400">
+            <div className="flex justify-between">
+              <span>层级</span>
+              <span className="text-zinc-200">看台 {'>'} {activeBlock.name}</span>
+            </div>
+             <div className="flex justify-between">
+               <span>预估容量</span>
+               <span className="text-zinc-200">{estimatedCapacity(activeBlock)}</span>
+             </div>
+            {activeGroup && (
+              <div className="flex justify-between">
+                <span>票价档位</span>
+                <span className="text-zinc-200">{activeGroup.name} (¥{activeGroup.activityPrice ?? activeGroup.defaultPrice ?? 0})</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span>类型</span>
+              <span className="text-zinc-200">{labelForType(activeBlock.blockType)}</span>
+            </div>
+          </div>
+
+          {activeSeat && activeSeat.key.blockKey === activeBlock.blockKey && (
+            <SeatPositionEditor
+              activeSeat={activeSeat}
+              onClear={() => onSelectSeat?.(null)}
+              onUpdatePosition={onUpdateSeatPosition}
+            />
+          )}
+
+          <div className="h-px w-full bg-white/5" />
+
+          {/* Quick Actions */}
+          <div className="grid grid-cols-4 gap-2">
+            <ToolButton icon={<Copy className="h-3.5 w-3.5" />} onClick={() => onDuplicateBlock?.(activeBlock.blockKey)} />
+            <ToolButton icon={<FlipHorizontal2 className="h-3.5 w-3.5" />} onClick={() => onMirrorBlock?.(activeBlock.blockKey)} />
+            <ToolButton icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => onDeleteBlock?.(activeBlock.blockKey)} />
             <ColorField value={activeBlock.color} onChange={value => onUpdateBlock?.(activeBlock.blockKey, { color: value })} />
           </div>
-          <BlockSpecificFields block={activeBlock} onUpdate={updates => onUpdateBlock?.(activeBlock.blockKey, updates)} />
+
+          {/* Ticket Group Settings */}
+          {canEditBinding && (layout.ticketGroups?.length ?? 0) > 0 && (
+            <div>
+              <div className="mb-3 text-[11px] font-semibold text-zinc-500">票档绑定</div>
+              <select
+                value={primaryGroupKey}
+                onChange={event => onUpdateBlockPrimaryBinding?.(activeBlock.blockKey, event.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none transition-all focus:border-[#ff1268] focus:bg-black/40 focus:ring-1 focus:ring-[#ff1268]/50"
+              >
+                <option value="">未绑定</option>
+                {(layout.ticketGroups ?? []).map(group => (
+                  <option key={group.groupKey} value={group.groupKey}>{group.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {activeGroup && (
-            <div className="mt-4 space-y-3 rounded-lg border border-zinc-700 bg-zinc-900/70 p-3">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">票档绑定</div>
-              <TextField label="票档组名称" value={activeGroup.name} onChange={value => onUpdateTicketGroup?.(activeGroup.groupKey, { name: value })} />
-              <div className="grid grid-cols-2 gap-3">
-                <NumberField label="默认价" value={activeGroup.defaultPrice ?? 0} min={0} onChange={value => onUpdateTicketGroup?.(activeGroup.groupKey, { defaultPrice: value })} />
-                <NumberField label="活动价" value={activeGroup.activityPrice ?? 0} min={0} onChange={value => onUpdateTicketGroup?.(activeGroup.groupKey, { activityPrice: value })} />
+            <div>
+              <div className="mb-3 text-[11px] font-semibold text-zinc-500">票档设置</div>
+              <div className="space-y-3 rounded-lg bg-white/[0.02] p-3 border border-white/5">
+                <TextField label="票档名称" value={activeGroup.name} onChange={value => onUpdateTicketGroup?.(activeGroup.groupKey, { name: value })} />
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <NumberField label="原价(元)" value={activeGroup.defaultPrice ?? 0} onChange={value => onUpdateTicketGroup?.(activeGroup.groupKey, { defaultPrice: value })} />
+                  <NumberField label="活动价(元)" value={activeGroup.activityPrice ?? 0} onChange={value => onUpdateTicketGroup?.(activeGroup.groupKey, { activityPrice: value })} />
+                </div>
               </div>
             </div>
           )}
+
+          <div className="h-px w-full bg-white/5" />
+
+          {/* Advanced Properties */}
+          <div>
+            <div className="mb-3 text-[11px] font-semibold text-zinc-500">高级属性</div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-zinc-400">X / Y</span>
+                <div className="flex gap-1 w-32">
+                  <input type="number" value={activeBlock.x} onChange={e => onUpdateBlock?.(activeBlock.blockKey, { x: Number(e.target.value) || 0 })} className="w-full bg-white/5 rounded px-2 py-1 text-xs text-white outline-none" />
+                  <input type="number" value={activeBlock.y} onChange={e => onUpdateBlock?.(activeBlock.blockKey, { y: Number(e.target.value) || 0 })} className="w-full bg-white/5 rounded px-2 py-1 text-xs text-white outline-none" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-zinc-400">旋转角度</span>
+                <input type="number" value={activeBlock.rotation} onChange={e => onUpdateBlock?.(activeBlock.blockKey, { rotation: Number(e.target.value) || 0 })} className="w-32 bg-white/5 rounded px-2 py-1 text-xs text-white outline-none" />
+              </div>
+              <BlockSpecificFields block={activeBlock} onUpdate={updates => onUpdateBlock?.(activeBlock.blockKey, updates)} />
+            </div>
+          </div>
+
+          {/* Mini map (placeholder for visual match) */}
+          <div className="mt-8 pt-4 border-t border-white/5">
+            <div className="mb-2 text-[10px] text-zinc-500">缩略图</div>
+            <div className="h-32 w-full rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-center overflow-hidden">
+              <MiniMap block={activeBlock} />
+            </div>
+          </div>
+
         </section>
       )}
     </aside>
@@ -105,39 +162,216 @@ export function SeatLayoutControls({
 }
 
 function BlockSpecificFields({ block, onUpdate }: { block: SeatBlockDraft; onUpdate: (updates: Partial<SeatBlockDraft>) => void }) {
+  const row = (label: string, val: number | null | undefined, key: keyof SeatBlockDraft) => (
+    <div className="flex items-center justify-between">
+      <span className="text-[11px] text-zinc-400">{label}</span>
+      <input type="number" value={val ?? 0} onChange={e => onUpdate({ [key]: Number(e.target.value) || 0 })} className="w-32 bg-white/5 rounded px-2 py-1 text-xs text-white outline-none" />
+    </div>
+  )
   if (block.blockType === 'standingBlock') {
-    return <div className="mt-3 grid grid-cols-3 gap-3"><NumberField label="容量" value={block.capacity ?? 1} min={1} onChange={capacity => onUpdate({ capacity })} /><NumberField label="宽" value={block.width ?? 180} min={1} onChange={width => onUpdate({ width })} /><NumberField label="高" value={block.height ?? 90} min={1} onChange={height => onUpdate({ height })} /></div>
+    return <>{row('容量', block.capacity, 'capacity')}{row('宽', block.width, 'width')}{row('高', block.height, 'height')}</>
   }
   if (block.blockType === 'arcBlock') {
-    return <div className="mt-3 grid grid-cols-2 gap-3"><NumberField label="排数" value={block.rows ?? 1} min={1} onChange={rows => onUpdate({ rows })} /><NumberField label="每排座数" value={block.seatsPerRow ?? 1} min={1} onChange={seatsPerRow => onUpdate({ seatsPerRow })} /><NumberField label="内半径" value={block.innerRadius ?? 120} min={1} onChange={innerRadius => onUpdate({ innerRadius })} /><NumberField label="排距" value={block.rowSpacing ?? 24} min={1} onChange={rowSpacing => onUpdate({ rowSpacing })} /><NumberField label="起始角" value={block.arcStartAngle ?? -60} onChange={arcStartAngle => onUpdate({ arcStartAngle })} /><NumberField label="结束角" value={block.arcEndAngle ?? 60} onChange={arcEndAngle => onUpdate({ arcEndAngle })} /></div>
+    return <>{row('排数', block.rows, 'rows')}{row('排距', block.rowSpacing, 'rowSpacing')}{row('座距', block.seatSpacing, 'seatSpacing')}{row('内半径', block.innerRadius, 'innerRadius')}{row('起始角', block.arcStartAngle, 'arcStartAngle')}{row('结束角', block.arcEndAngle, 'arcEndAngle')}</>
   }
-  return <div className="mt-3 grid grid-cols-2 gap-3"><NumberField label="排数" value={block.rows ?? 1} min={1} onChange={rows => onUpdate({ rows })} /><NumberField label="列数" value={block.cols ?? 1} min={1} onChange={cols => onUpdate({ cols })} /><NumberField label="排距" value={block.rowSpacing ?? 24} min={1} onChange={rowSpacing => onUpdate({ rowSpacing })} /><NumberField label="座距" value={block.seatSpacing ?? 24} min={1} onChange={seatSpacing => onUpdate({ seatSpacing })} /></div>
+  if (block.blockType === 'polygonBlock') {
+    return <>{row('排距', block.rowSpacing, 'rowSpacing')}{row('座距', block.seatSpacing, 'seatSpacing')}<ReadonlyRow label="顶点数" value={`${block.polygonPoints?.length ?? 0}`} /></>
+  }
+  return <>{row('排数', block.rows, 'rows')}{row('列数', block.cols, 'cols')}{row('排距', block.rowSpacing, 'rowSpacing')}{row('座距', block.seatSpacing, 'seatSpacing')}</>
 }
 
-function ToolButton({ icon, label, onClick, disabled }: { icon: React.ReactNode; label: string; onClick?: () => void; disabled?: boolean }) {
-  return <button type="button" disabled={disabled} onClick={onClick} className="group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl border border-white/5 bg-white/5 px-3 py-2.5 text-xs font-medium text-zinc-200 transition-all hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40">{icon}<span>{label}</span><div className="absolute inset-0 -z-10 bg-gradient-to-br from-white/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" /></button>
+function ReadonlyRow({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center justify-between"><span className="text-[11px] text-zinc-400">{label}</span><span className="w-32 rounded bg-white/5 px-2 py-1 text-xs text-zinc-300">{value}</span></div>
+}
+
+function SeatPositionEditor({
+  activeSeat,
+  onClear,
+  onUpdatePosition,
+}: {
+  activeSeat: ActiveSeatDetails
+  onClear: () => void
+  onUpdatePosition?: (seatKey: ActiveSeatKey, x: number, y: number) => void
+}) {
+  const { key, blockName, seat } = activeSeat
+  const reason = seatEditDisabledReason(seat)
+  const editable = reason == null
+  const dx = seat.baseX == null ? 0 : seat.x - seat.baseX
+  const dy = seat.baseY == null ? 0 : seat.y - seat.baseY
+
+  const updateX = (value: number) => {
+    if (!editable) return
+    onUpdatePosition?.(key, value, seat.y)
+  }
+  const updateY = (value: number) => {
+    if (!editable) return
+    onUpdatePosition?.(key, seat.x, value)
+  }
+
+  return (
+    <div className="rounded-lg border border-[#ff1268]/25 bg-[#ff1268]/5 p-3">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <div className="text-[11px] font-semibold text-white">座位属性</div>
+          <div className="mt-0.5 text-[10px] text-zinc-500">{blockName} · 第 {key.rowNo} 排 · 第 {key.seatNo} 座</div>
+        </div>
+        <button type="button" onClick={onClear} className="text-[10px] text-zinc-500 hover:text-white">取消</button>
+      </div>
+      <div className="space-y-2 text-[11px] text-zinc-400">
+        <div className="flex justify-between"><span>状态</span><span className="text-zinc-200">{seat.status}</span></div>
+        <div className="grid grid-cols-2 gap-2">
+          <NumberField label="X坐标" value={Math.round(seat.x)} disabled={!editable} onChange={updateX} />
+          <NumberField label="Y坐标" value={Math.round(seat.y)} disabled={!editable} onChange={updateY} />
+        </div>
+        {!editable && <div className="rounded-md bg-black/20 px-2 py-1 text-[10px] text-amber-300">{reason}</div>}
+        <div className="grid grid-cols-2 gap-2">
+          <ReadonlyRow label="基准X" value={`${Math.round(seat.baseX ?? 0)}`} />
+          <ReadonlyRow label="基准Y" value={`${Math.round(seat.baseY ?? 0)}`} />
+          <ReadonlyRow label="偏移X" value={`${Math.round(dx)}`} />
+          <ReadonlyRow label="偏移Y" value={`${Math.round(dy)}`} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ToolButton({ icon, onClick, disabled }: { icon: React.ReactNode; onClick?: () => void; disabled?: boolean }) {
+  return <button type="button" disabled={disabled} onClick={onClick} className="flex h-8 w-full items-center justify-center rounded-md border border-white/5 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40">{icon}</button>
 }
 
 function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <label className="block space-y-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">{label}<input value={value} onChange={event => onChange(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none transition-all focus:border-[#ff1268] focus:bg-black/40 focus:ring-1 focus:ring-[#ff1268]/50" /></label>
 }
 
-function NumberField({ label, value, min, onChange }: { label: string; value: number; min?: number; onChange: (value: number) => void }) {
-  return <label className="block space-y-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">{label}<input type="number" min={min} value={value} onChange={event => onChange(min != null ? Math.max(min, Number(event.target.value) || min) : Number(event.target.value) || 0)} className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none transition-all focus:border-[#ff1268] focus:bg-black/40 focus:ring-1 focus:ring-[#ff1268]/50" /></label>
+function NumberField({ label, value, min, disabled, onChange }: { label: string; value: number; min?: number; disabled?: boolean; onChange: (value: number) => void }) {
+  return <label className="block space-y-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">{label}<input type="number" min={min} disabled={disabled} value={value} onChange={event => onChange(min != null ? Math.max(min, Number(event.target.value) || min) : Number(event.target.value) || 0)} className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none transition-all focus:border-[#ff1268] focus:bg-black/40 focus:ring-1 focus:ring-[#ff1268]/50 disabled:cursor-not-allowed disabled:opacity-50" /></label>
 }
 
 function ColorField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return <label className="block space-y-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-400">颜色<div className="flex gap-2 pt-2">{COLORS.map(color => <button key={color} type="button" onClick={() => onChange(color)} style={{ backgroundColor: color }} className={`h-6 w-6 rounded-full transition-all ${value === color ? 'ring-2 ring-white ring-offset-2 ring-offset-black scale-110' : 'opacity-60 hover:opacity-100 hover:scale-110'}`} />)}</div></label>
+  return <div className="flex items-center justify-center gap-1 rounded-md border border-white/5 bg-white/5">{COLORS.map(color => <button key={color} type="button" onClick={() => onChange(color)} style={{ backgroundColor: color }} className={`h-3 w-3 rounded-full transition-all ${value === color ? 'ring-1 ring-white ring-offset-1 ring-offset-[#1a1a1a] scale-110' : 'opacity-60 hover:opacity-100'}`} />)}</div>
 }
 
 function labelForType(type: SeatBlockType) {
   if (type === 'arcBlock') return '剧场扇形'
   if (type === 'standingBlock') return '站区'
+  if (type === 'polygonBlock') return '多边形区'
   return '方阵'
+}
+
+function estimatedCapacity(block: SeatBlockDraft) {
+  if (block.blockType === 'polygonBlock') return buildSeatsForBlock(block, [], true).length
+  return block.capacity ?? ((block.rows ?? 0) * (block.cols ?? block.seatsPerRow ?? 0))
 }
 
 function summary(block: SeatBlockDraft) {
   if (block.blockType === 'standingBlock') return `容量 ${block.capacity ?? 0} · ${block.width ?? 0}x${block.height ?? 0}`
-  if (block.blockType === 'arcBlock') return `${block.rows ?? 0} 排 · 每排 ${block.seatsPerRow ?? 0} 座`
+  if (block.blockType === 'arcBlock') return `${block.rows ?? 0} 排`
+  if (block.blockType === 'polygonBlock') return `${buildSeatsForBlock(block, [], true).length} 座 · ${block.polygonPoints?.length ?? 0} 顶点`
   return `${block.rows ?? 0} 排 · ${block.cols ?? 0} 列`
+}
+
+function MiniMap({ block }: { block: SeatBlockDraft }) {
+  const seats = useMemo(() => buildSeatsForBlock(block, [], true), [block])
+
+  const viewBox = useMemo(() => {
+    if (block.blockType === 'polygonBlock') {
+      const points = block.polygonPoints ?? []
+      if (points.length >= 3) {
+        const worldPoints = points.map(point => polygonLocalToWorld(block, point.x, point.y))
+        const minX = Math.min(...worldPoints.map(point => point.x))
+        const maxX = Math.max(...worldPoints.map(point => point.x))
+        const minY = Math.min(...worldPoints.map(point => point.y))
+        const maxY = Math.max(...worldPoints.map(point => point.y))
+        return `${minX - 20} ${minY - 20} ${maxX - minX + 40} ${maxY - minY + 40}`
+      }
+    }
+    if (block.blockType === 'standingBlock') {
+      const w = (block.width ?? 180) + 40
+      const h = (block.height ?? 90) + 40
+      return `${block.x - 20} ${block.y - 20} ${w} ${h}`
+    }
+    if (seats.length === 0) return `${block.x - 50} ${block.y - 50} 100 100`
+
+    let minX = seats[0].x, maxX = seats[0].x, minY = seats[0].y, maxY = seats[0].y
+    seats.forEach(s => {
+      minX = Math.min(minX, s.x)
+      maxX = Math.max(maxX, s.x)
+      minY = Math.min(minY, s.y)
+      maxY = Math.max(maxY, s.y)
+    })
+
+    const corners = [
+      { x: minX, y: minY },
+      { x: maxX, y: minY },
+      { x: minX, y: maxY },
+      { x: maxX, y: maxY },
+    ]
+
+    const angleRad = (block.rotation || 0) * Math.PI / 180
+    const cos = Math.cos(angleRad)
+    const sin = Math.sin(angleRad)
+
+    let rMinX = Infinity, rMaxX = -Infinity, rMinY = Infinity, rMaxY = -Infinity
+    corners.forEach(c => {
+      const dx = c.x - block.x
+      const dy = c.y - block.y
+      const rx = block.x + dx * cos - dy * sin
+      const ry = block.y + dx * sin + dy * cos
+      rMinX = Math.min(rMinX, rx)
+      rMaxX = Math.max(rMaxX, rx)
+      rMinY = Math.min(rMinY, ry)
+      rMaxY = Math.max(rMaxY, ry)
+    })
+
+    const w = rMaxX - rMinX + 40
+    const h = rMaxY - rMinY + 40
+    return `${rMinX - 20} ${rMinY - 20} ${w} ${h}`
+  }, [block, seats])
+
+  return (
+    <svg viewBox={viewBox} className="w-full h-full p-2">
+      <g transform={block.blockType === 'polygonBlock' ? undefined : `rotate(${block.rotation || 0} ${block.x} ${block.y})`}>
+        {block.blockType === 'polygonBlock' && (block.polygonPoints?.length ?? 0) >= 3 ? (
+          <>
+            <polygon points={(block.polygonPoints ?? []).map(point => polygonLocalToWorld(block, point.x, point.y)).map(point => `${point.x},${point.y}`).join(' ')} fill={block.color} fillOpacity={0.15} stroke={block.color} strokeWidth={4} />
+            {seats.map(seat => <circle key={seat.id} cx={seat.x} cy={seat.y} r={(block.seatSpacing ?? 24) * 0.25} fill={seat.status === 'deleted' ? 'transparent' : block.color} stroke={seat.status === 'deleted' ? '#555' : 'none'} strokeWidth={1.5} />)}
+          </>
+        ) : block.blockType === 'standingBlock' ? (
+          <rect x={block.x} y={block.y} width={block.width ?? 180} height={block.height ?? 90} fill={block.color} fillOpacity={0.2} stroke={block.color} strokeWidth={4} rx={8} />
+        ) : (
+          seats.map(seat => (
+            <circle
+              key={seat.id}
+              cx={seat.x}
+              cy={seat.y}
+              r={(block.seatSpacing ?? 24) * 0.35}
+              fill={seat.status === 'deleted' ? 'transparent' : block.color}
+              stroke={seat.status === 'deleted' ? '#555' : 'none'}
+              strokeWidth={1.5}
+            />
+          ))
+        )}
+      </g>
+    </svg>
+  )
+}
+
+function polygonLocalToWorld(block: SeatBlockDraft, x: number, y: number) {
+  const points = block.polygonPoints ?? []
+  if ((block.rotation || 0) === 0 || points.length < 3) {
+    return { x: block.x + x, y: block.y + y }
+  }
+  const minX = Math.min(...points.map(point => point.x))
+  const maxX = Math.max(...points.map(point => point.x))
+  const minY = Math.min(...points.map(point => point.y))
+  const maxY = Math.max(...points.map(point => point.y))
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
+  const radians = (block.rotation || 0) * Math.PI / 180
+  const dx = x - cx
+  const dy = y - cy
+  return {
+    x: block.x + cx + dx * Math.cos(radians) - dy * Math.sin(radians),
+    y: block.y + cy + dx * Math.sin(radians) + dy * Math.cos(radians),
+  }
 }
