@@ -1,4 +1,4 @@
-import type { SeatCraftLayoutVO } from '@/types/api'
+import type { SeatCraftLayoutVO, SeatCraftVersionedLayoutVO } from '@/types/api'
 import type { SessionSeatVO } from '@/types/api'
 
 export type SeatStatus = 'available' | 'reserved' | 'selected' | 'occupied' | 'deleted'
@@ -134,6 +134,9 @@ export interface SeatCraftStage {
 
 export interface SeatCraftLayoutDraft {
   id?: number | null
+  versionId?: number | null
+  versionNo?: number | null
+  versionStatus?: string | null
   venueId?: number | null
   activityId?: number | null
   sessionId?: number | null
@@ -256,6 +259,9 @@ export function toSeatCraftLayoutDraft(layout: SeatCraftLayoutVO): SeatCraftLayo
 
   return {
     id: layout.id,
+    versionId: layout.blockLayout?.versionId ?? layout.versionId ?? null,
+    versionNo: layout.blockLayout?.versionNo ?? layout.versionNo ?? null,
+    versionStatus: layout.blockLayout?.versionStatus ?? layout.versionStatus ?? null,
     venueId: layout.venueId ?? null,
     activityId: layout.activityId ?? null,
     sessionId: layout.sessionId ?? null,
@@ -308,7 +314,7 @@ export function toSeatCraftLayoutDraft(layout: SeatCraftLayoutVO): SeatCraftLayo
       arcEndAngle: block.arcEndAngle,
       width: block.width,
       height: block.height,
-      polygonPoints: block.polygonPoints,
+      polygonPoints: normalizePolygonPoints(block.polygonPoints),
       capacity: block.capacity,
       color: block.color,
       sort: block.sort,
@@ -317,5 +323,40 @@ export function toSeatCraftLayoutDraft(layout: SeatCraftLayoutVO): SeatCraftLayo
     overrides: layout.blockLayout?.overrides ?? layout.overrides ?? [],
     ticketGroups: layout.blockLayout?.ticketGroups ?? layout.ticketGroups ?? [],
     bindings: normalizedBindings,
+  }
+}
+
+export function toSeatCraftVersionedLayoutDraft(layout: SeatCraftVersionedLayoutVO): SeatCraftLayoutDraft {
+  return toSeatCraftLayoutDraft({
+    id: layout.id ?? layout.versionId ?? 0,
+    versionId: layout.versionId ?? null,
+    versionNo: layout.versionNo ?? null,
+    versionStatus: layout.versionStatus ?? null,
+    venueId: layout.venueId ?? null,
+    activityId: layout.activityId ?? null,
+    sessionId: layout.sessionId ?? null,
+    name: layout.name,
+    templateType: layout.templateType ?? 'concert',
+    stageTitle: layout.stageTitle ?? '舞台',
+    stageX: layout.stageX ?? 0,
+    stageY: layout.stageY ?? 0,
+    canvasWidth: layout.canvasWidth,
+    canvasHeight: layout.canvasHeight,
+    sections: layout.sections ?? [],
+    blocks: layout.blocks ?? [],
+    overrides: layout.overrides ?? [],
+    ticketGroups: layout.ticketGroups ?? [],
+    bindings: layout.bindings ?? [],
+  })
+}
+
+function normalizePolygonPoints(value: unknown): SeatCraftPoint[] | null | undefined {
+  if (value == null || Array.isArray(value)) return value as SeatCraftPoint[] | null | undefined
+  if (typeof value !== 'string') return undefined
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : undefined
+  } catch {
+    return undefined
   }
 }

@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { createBlankSessionSeatLayout, getSessionSeatLayout, updateSessionSeatLayout } from '@/lib/api'
+import { getSeatCraftDraft, publishSeatCraftDraft, saveSeatCraftDraft } from '@/lib/api'
 import { getUser } from '@/lib/auth'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
-import { toSeatCraftLayoutPayload } from '@/components/seatcraft/block-layout'
-import { toSeatCraftLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
+import { toSeatCraftVersionedLayoutPayload } from '@/components/seatcraft/block-layout'
+import { toSeatCraftVersionedLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
 import type { SessionSeatVO } from '@/types/api'
 
 export default function SessionSeatLayoutPage() {
@@ -16,10 +16,12 @@ export default function SessionSeatLayoutPage() {
   const [layout, setLayout] = useState<SeatCraftLayoutDraft | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [publishing, setPublishing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [sessionSeats, setSessionSeats] = useState<SessionSeatVO[]>([])
+  const canPersistLayout = canPersistSeatCraftLayout(layout)
 
   useEffect(() => {
     if (!Number.isInteger(sessionId) || sessionId <= 0) {
@@ -37,11 +39,11 @@ export default function SessionSeatLayoutPage() {
 
     let cancelled = false
     setLoading(true)
-    getSessionSeatLayout(sessionId, user.userId)
+    getSeatCraftDraft('session', sessionId)
       .then(response => {
         if (cancelled) return
-        setLayout(response ? toSeatCraftLayoutDraft(response) : null)
-        setSessionSeats(response?.seats ?? [])
+        setLayout(response ? toSeatCraftVersionedLayoutDraft(response) : null)
+        setSessionSeats([])
         setError('')
       })
       .catch(err => {
@@ -61,17 +63,14 @@ export default function SessionSeatLayoutPage() {
 
   const handleSave = async () => {
     const user = getUser()
-    if (!user || !layout) return
+    if (!user || !layout || !canPersistLayout || saving || publishing || creating) return
     setSaving(true)
     setError('')
     setMessage('')
     try {
-      const response = await updateSessionSeatLayout(sessionId, {
-        userId: user.userId,
-        layout: toSeatCraftLayoutPayload({ ...layout, id: layout.id ?? 0 }),
-      })
-      setLayout(toSeatCraftLayoutDraft(response))
-      setSessionSeats(response.seats ?? [])
+      const response = await saveSeatCraftDraft('session', sessionId, toSeatCraftVersionedLayoutPayload(layout))
+      setLayout(toSeatCraftVersionedLayoutDraft(response))
+      setSessionSeats([])
       setMessage('场次 SeatCraft 座位图已保存')
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存场次 SeatCraft 座位图失败')
@@ -80,17 +79,50 @@ export default function SessionSeatLayoutPage() {
     }
   }
 
+  const handlePublish = async () => {
+    if (!layout || !canPersistLayout || saving || publishing || creating) return
+    setPublishing(true)
+    setError('')
+    setMessage('')
+    try {
+      await saveSeatCraftDraft('session', sessionId, toSeatCraftVersionedLayoutPayload(layout))
+      const response = await publishSeatCraftDraft('session', sessionId)
+      setLayout(toSeatCraftVersionedLayoutDraft(response))
+      setSessionSeats([])
+      setMessage('场次 SeatCraft 座位图已发布')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '发布场次 SeatCraft 座位图失败')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   const handleCreateBlank = async () => {
     const user = getUser()
-    if (!user) return
+    if (!user || saving || publishing || creating) return
     setCreating(true)
     setError('')
     setMessage('')
     try {
-      const response = await createBlankSessionSeatLayout(sessionId, user.userId)
-      setLayout(toSeatCraftLayoutDraft(response))
-      setSessionSeats(response.seats ?? [])
-      setMessage('已创建空白场次座位图')
+      setLayout({
+        id: sessionId || 0,
+        sessionId,
+        versionId: null,
+        versionNo: null,
+        versionStatus: 'draft',
+        name: '场次 SeatCraft 座位图',
+        templateType: 'concert',
+        stage: { title: '舞台', x: 0, y: 0 },
+        canvasWidth: 800,
+        canvasHeight: 600,
+        sections: [],
+        blocks: [],
+        overrides: [],
+        ticketGroups: [],
+        bindings: [],
+      })
+      setSessionSeats([])
+      setMessage('已创建空白座位图，请添加座位块和票档绑定后保存草稿')
     } catch (err) {
       setError(err instanceof Error ? err.message : '创建空白场次座位图失败')
     } finally {
@@ -125,7 +157,7 @@ export default function SessionSeatLayoutPage() {
           <button
             type="button"
             onClick={handleCreateBlank}
-            disabled={creating}
+            disabled={saving || publishing || creating}
             className="mt-4 rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-50"
           >
             {creating ? '创建中...' : '创建空白座位图'}
@@ -134,18 +166,43 @@ export default function SessionSeatLayoutPage() {
       ) : (
         <>
           <div className="mb-4 flex flex-wrap items-center gap-3">
+            <span className="rounded-full bg-[#f5f5f5] px-3 py-1 text-[12px] text-[#666]">
+              {layout.versionStatus === 'published' ? '已发布' : '草稿'}{layout.versionNo ? ` · v${layout.versionNo}` : ''}
+            </span>
             <button
               onClick={handleSave}
-              disabled={saving || (layout.sections.length === 0 && (layout.blocks?.length ?? 0) === 0)}
+              disabled={!canPersistLayout || saving || publishing || creating}
               className="rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-50"
             >
-              {saving ? '保存中...' : '保存 SeatCraft 座位图'}
+              {saving ? '保存中...' : '保存草稿'}
             </button>
-            <span className="text-[13px] text-[#999]">至少绘制一个座位区域或座位块后才能保存。</span>
+            <button
+              onClick={handlePublish}
+              disabled={!canPersistLayout || saving || publishing || creating}
+              className="rounded-lg border border-[#ff1268] px-4 py-2 text-[14px] font-medium text-[#ff1268] disabled:opacity-50"
+            >
+              {publishing ? '发布中...' : '保存并发布'}
+            </button>
+            <span className="text-[13px] text-[#999]">至少添加一个座位块、票档组和票档绑定后才能保存草稿。</span>
           </div>
           <SeatLayoutDesigner layout={layout} onChange={setLayout} sessionSeats={sessionSeats} />
         </>
       )}
     </div>
+  )
+}
+
+function canPersistSeatCraftLayout(layout: SeatCraftLayoutDraft | null) {
+  const hasBindingSource = Boolean(
+    (layout?.bindings?.length ?? 0) > 0
+    || layout?.blocks?.some(block => Boolean(block.ticketGroupKey))
+    || layout?.ticketGroups?.some(group => (group.sourceBlockKeys?.length ?? 0) > 0),
+  )
+
+  return Boolean(
+    layout
+    && (layout.blocks?.length ?? 0) > 0
+    && (layout.ticketGroups?.length ?? 0) > 0
+    && hasBindingSource,
   )
 }

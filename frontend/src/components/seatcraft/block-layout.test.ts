@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { autoArrangeSeatLayout, buildSeatCraftBindings, buildSeatsForBlock, cloneBlock, getSeatCraftPrimaryBindingValue, mirrorBlockHorizontally, snapBlockPosition, toSeatCraftLayoutPayload, updateSeatCraftPrimaryBinding } from './block-layout.ts'
-import { toSeatCraftLayoutDraft } from './types.ts'
+import { autoArrangeSeatLayout, buildSeatCraftBindings, buildSeatsForBlock, cloneBlock, getSeatCraftPrimaryBindingValue, mirrorBlockHorizontally, snapBlockPosition, toSeatCraftLayoutPayload, toSeatCraftVersionedLayoutPayload, updateSeatCraftPrimaryBinding } from './block-layout.ts'
+import { toSeatCraftLayoutDraft, toSeatCraftVersionedLayoutDraft } from './types.ts'
 import type { SeatBlockDraft, SeatCraftLayoutDraft, SeatOverrideDraft } from './types'
 
 function gridBlock(overrides: SeatOverrideDraft[] = []): SeatBlockDraft {
@@ -394,6 +394,144 @@ test('layout draft keeps explicit block ticketGroupKey over primary bindings', (
   assert.equal(draft.blocks?.[0]?.ticketGroupKey, 'standard')
 })
 
+test('layout draft preserves version metadata from versioned SeatCraft API', () => {
+  const draft = toSeatCraftLayoutDraft(seatCraftLayoutVo({
+    versionId: 88,
+    versionNo: 5,
+    versionStatus: 'draft',
+  }))
+
+  assert.equal(draft.versionId, 88)
+  assert.equal(draft.versionNo, 5)
+  assert.equal(draft.versionStatus, 'draft')
+})
+
+test('layout draft preserves version metadata from nested block layout', () => {
+  const draft = toSeatCraftLayoutDraft(seatCraftLayoutVo({
+    versionId: 88,
+    versionNo: 5,
+    versionStatus: 'published',
+    blockLayout: {
+      versionId: 99,
+      versionNo: 6,
+      versionStatus: 'draft',
+      name: '默认座位图',
+      canvasWidth: 1000,
+      canvasHeight: 800,
+      blocks: [],
+      overrides: [],
+      ticketGroups: [],
+      bindings: [],
+    },
+  }))
+
+  assert.equal(draft.versionId, 99)
+  assert.equal(draft.versionNo, 6)
+  assert.equal(draft.versionStatus, 'draft')
+})
+
+test('versioned layout without sections or stage converts to draft and preserves version metadata', () => {
+  const draft = toSeatCraftVersionedLayoutDraft({
+    versionId: 88,
+    versionNo: 5,
+    versionStatus: 'draft',
+    name: '版本草稿',
+    canvasWidth: 1200,
+    canvasHeight: 900,
+    blocks: [apiBlock()],
+    ticketGroups: [{ groupKey: 'vip', name: 'VIP', sourceBlockKeys: [], sort: 0 }],
+    bindings: [{ blockKey: 'block-a', groupKey: 'vip', bindingRole: 'primary' }],
+  })
+
+  assert.deepEqual(pick(draft, ['id', 'versionId', 'versionNo', 'versionStatus', 'name', 'templateType', 'canvasWidth', 'canvasHeight']), {
+    id: 88,
+    versionId: 88,
+    versionNo: 5,
+    versionStatus: 'draft',
+    name: '版本草稿',
+    templateType: 'concert',
+    canvasWidth: 1200,
+    canvasHeight: 900,
+  })
+  assert.deepEqual(draft.stage, { title: '舞台', x: 0, y: 0 })
+  assert.deepEqual(draft.sections, [])
+  assert.equal(draft.blocks?.[0]?.blockKey, 'block-a')
+  assert.deepEqual(draft.bindings, [{ blockKey: 'block-a', groupKey: 'vip', bindingRole: 'primary', sort: 0 }])
+})
+
+test('legacy blank layout response converts through versioned adapter', () => {
+  const draft = toSeatCraftVersionedLayoutDraft(seatCraftLayoutVo({
+    id: 123,
+    activityId: 456,
+    name: '空白座位图',
+    stageTitle: '主舞台',
+    stageX: 500,
+    stageY: 80,
+    sections: [],
+  }))
+
+  assert.deepEqual(pick(draft, ['id', 'activityId', 'versionId', 'versionNo', 'versionStatus', 'name']), {
+    id: 123,
+    activityId: 456,
+    versionId: null,
+    versionNo: null,
+    versionStatus: null,
+    name: '空白座位图',
+  })
+  assert.deepEqual(draft.stage, { title: '主舞台', x: 500, y: 80 })
+  assert.deepEqual(draft.sections, [])
+  assert.deepEqual(draft.blocks, [])
+  assert.deepEqual(draft.ticketGroups, [])
+  assert.deepEqual(draft.bindings, [])
+})
+
+test('versioned save payload exposes block layout fields at top level without blockLayout', () => {
+  const payload = toSeatCraftVersionedLayoutPayload(layoutWithBlocks({
+    versionId: 88,
+    versionNo: 5,
+    versionStatus: 'draft',
+    name: '版本草稿',
+    blocks: [gridBlock()],
+    ticketGroups: [{ groupKey: 'vip', name: 'VIP', sourceBlockKeys: [], sort: 0 }],
+    bindings: [{ blockKey: 'block-a', groupKey: 'vip', bindingRole: 'primary' }],
+  }))
+
+  assert.equal('blockLayout' in payload, false)
+  assert.equal(payload.versionId, 88)
+  assert.equal(payload.versionNo, 5)
+  assert.equal(payload.versionStatus, 'draft')
+  assert.equal(payload.blocks?.[0]?.blockKey, 'block-a')
+  assert.equal(payload.blocks?.[0]?.ticketGroupKey, 'vip')
+  assert.deepEqual(payload.bindings, [{ blockKey: 'block-a', groupKey: 'vip', bindingRole: 'primary', sort: 0 }])
+  assert.deepEqual(payload.ticketGroups?.[0]?.sourceBlockKeys, ['block-a'])
+})
+
+test('versioned save payload serializes polygonPoints as string for polygon blocks', () => {
+  const payload = toSeatCraftVersionedLayoutPayload(layoutWithBlocks({
+    blocks: [polygonBlock()],
+  }))
+
+  assert.equal(typeof payload.blocks?.[0]?.polygonPoints, 'string')
+  assert.equal(payload.blocks?.[0]?.polygonPoints, JSON.stringify(polygonBlock().polygonPoints))
+})
+
+test('versioned layout draft parses string polygonPoints from versioned API', () => {
+  const polygonPoints = [
+    { x: 0, y: 0 },
+    { x: 20, y: 0 },
+    { x: 20, y: 20 },
+  ]
+  const draft = toSeatCraftVersionedLayoutDraft({
+    versionId: 88,
+    name: '版本草稿',
+    canvasWidth: 1200,
+    canvasHeight: 900,
+    blocks: [apiBlock({ blockType: 'polygonBlock', polygonPoints: JSON.stringify(polygonPoints) })],
+  })
+
+  assert.deepEqual(draft.blocks?.[0]?.polygonPoints, polygonPoints)
+})
+
 test('update primary binding adds binding and does not mutate input', () => {
   const layout = layoutWithBlocks({
     blocks: [{ ...gridBlock(), blockKey: 'block-a', ticketGroupKey: '' }],
@@ -527,7 +665,7 @@ function apiBlock(updates: Record<string, unknown> = {}) {
     id: 1,
     blockKey: 'block-a',
     name: 'A 区',
-    blockType: 'gridBlock',
+    blockType: 'gridBlock' as const,
     ticketGroupKey: 'vip',
     x: 100,
     y: 200,

@@ -566,7 +566,7 @@ export interface SeatCraftBlockVO {
   width?: number | null
   height?: number | null
   capacity?: number | null
-  polygonPoints?: Array<{ x: number; y: number }> | null
+  polygonPoints?: Array<{ x: number; y: number }> | string | null
   color: string
   sort: number
 }
@@ -615,6 +615,9 @@ export interface SeatCraftSectionVO {
 
 export interface SeatCraftLayoutVO {
   id: number
+  versionId?: number | null
+  versionNo?: number | null
+  versionStatus?: string | null
   venueId?: number | null
   activityId?: number | null
   sessionId?: number | null
@@ -632,6 +635,9 @@ export interface SeatCraftLayoutVO {
   ticketGroups?: TicketGroupVO[]
   bindings?: SeatCraftBindingVO[]
   blockLayout?: {
+    versionId?: number | null
+    versionNo?: number | null
+    versionStatus?: string | null
     name?: string | null
     canvasWidth?: number | null
     canvasHeight?: number | null
@@ -640,6 +646,57 @@ export interface SeatCraftLayoutVO {
     ticketGroups?: TicketGroupVO[]
     bindings?: SeatCraftBindingVO[]
   } | null
+}
+
+export interface SeatCraftVersionedLayoutVO {
+  versionId?: number | null
+  versionNo?: number | null
+  versionStatus?: string | null
+  name: string
+  canvasWidth: number
+  canvasHeight: number
+  blocks?: SeatCraftBlockVO[]
+  overrides?: SeatOverrideVO[]
+  ticketGroups?: TicketGroupVO[]
+  bindings?: SeatCraftBindingVO[]
+  id?: number | null
+  venueId?: number | null
+  activityId?: number | null
+  sessionId?: number | null
+  templateType?: SeatCraftTemplateType | null
+  stageTitle?: string | null
+  stageX?: number | null
+  stageY?: number | null
+  sections?: SeatCraftSectionVO[] | null
+}
+
+export interface SeatCraftVersionedLayoutRequest {
+  versionId?: number | null
+  versionNo?: number | null
+  versionStatus?: string | null
+  name: string
+  canvasWidth: number
+  canvasHeight: number
+  blocks: SeatCraftVersionedBlockRequest[]
+  overrides: SeatOverrideVO[]
+  ticketGroups: TicketGroupVO[]
+  bindings: SeatCraftBindingVO[]
+}
+
+export type SeatCraftVersionedBlockRequest = Omit<SeatCraftBlockVO, 'polygonPoints'> & {
+  polygonPoints?: string | null
+}
+
+export interface SeatCraftVersionSummaryVO {
+  id: number
+  versionNo?: number | null
+  versionStatus?: string | null
+  name?: string | null
+  baseVersionId?: number | null
+  publishedAt?: string | null
+  publishedBy?: number | null
+  createTime?: string | null
+  updateTime?: string | null
 }
 
 export interface SeatLayoutTemplateCandidateVO {

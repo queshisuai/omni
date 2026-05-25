@@ -1,5 +1,5 @@
 import type { SeatBlockDraft, SeatCraftBinding, SeatCraftLayoutDraft, SeatCraftPoint, SeatCraftSeat, SeatOverrideDraft, SeatStatus, TicketGroupDraft } from './types'
-import type { SeatCraftLayoutVO, SeatCraftSectionVO } from '@/types/api'
+import type { SeatCraftLayoutVO, SeatCraftSectionVO, SeatCraftVersionedBlockRequest, SeatCraftVersionedLayoutRequest } from '@/types/api'
 
 const DEFAULT_ROW_SPACING = 24
 const DEFAULT_SEAT_SPACING = 24
@@ -222,6 +222,22 @@ export function toSeatCraftLayoutPayload(layout: SeatCraftLayoutDraft): SeatCraf
   }
 }
 
+export function toSeatCraftVersionedLayoutPayload(layout: SeatCraftLayoutDraft): SeatCraftVersionedLayoutRequest {
+  const blockLayout = toSeatCraftLayoutPayload(layout).blockLayout
+  return {
+    versionId: layout.versionId ?? null,
+    versionNo: layout.versionNo ?? null,
+    versionStatus: layout.versionStatus ?? null,
+    name: layout.name,
+    canvasWidth: layout.canvasWidth,
+    canvasHeight: layout.canvasHeight,
+    blocks: buildVersionedPayloadBlocks(blockLayout?.blocks ?? []),
+    overrides: blockLayout?.overrides ?? layout.overrides ?? [],
+    ticketGroups: blockLayout?.ticketGroups ?? [],
+    bindings: blockLayout?.bindings ?? buildSeatCraftBindings(layout),
+  }
+}
+
 function buildPayloadBlocks(blocks: SeatBlockDraft[], bindings: SeatCraftBinding[]): Array<Omit<SeatBlockDraft, 'overrides'>> {
   const primaryGroupByBlock = new Map(bindings
     .filter(binding => (binding.bindingRole ?? 'primary') === 'primary')
@@ -229,6 +245,13 @@ function buildPayloadBlocks(blocks: SeatBlockDraft[], bindings: SeatCraftBinding
   return blocks.map(({ overrides: _overrides, ...block }) => ({
     ...block,
     ticketGroupKey: primaryGroupByBlock.get(block.blockKey) ?? block.ticketGroupKey,
+  }))
+}
+
+function buildVersionedPayloadBlocks(blocks: Array<Omit<SeatBlockDraft, 'overrides'>>): SeatCraftVersionedBlockRequest[] {
+  return blocks.map(block => ({
+    ...block,
+    polygonPoints: Array.isArray(block.polygonPoints) ? JSON.stringify(block.polygonPoints) : block.polygonPoints ?? null,
   }))
 }
 

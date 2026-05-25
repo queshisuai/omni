@@ -674,6 +674,48 @@ export async function updateActivitySeatLayout(activityId: number, body: { userI
   return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/activities/${activityId}/seat-layout`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
+export type SeatCraftOwnerType = 'activity' | 'session'
+
+function assertSeatCraftOwner(ownerType: SeatCraftOwnerType, ownerId: number) {
+  if (ownerType !== 'activity' && ownerType !== 'session') {
+    throw new ApiError(400, 'SeatCraft 归属类型无效')
+  }
+  assertPositiveInteger(ownerId, 'SeatCraft 归属ID')
+}
+
+export async function getSeatCraftDraft(ownerType: SeatCraftOwnerType, ownerId: number) {
+  assertSeatCraftOwner(ownerType, ownerId)
+  return request<import('@/types/api').SeatCraftVersionedLayoutVO | null>(`/api/ticket/admin/seatcraft/${ownerType}/${ownerId}/draft`)
+}
+
+export async function saveSeatCraftDraft(ownerType: SeatCraftOwnerType, ownerId: number, layout: import('@/types/api').SeatCraftVersionedLayoutRequest) {
+  assertSeatCraftOwner(ownerType, ownerId)
+  return request<import('@/types/api').SeatCraftVersionedLayoutVO>(`/api/ticket/admin/seatcraft/${ownerType}/${ownerId}/draft`, {
+    method: 'PUT',
+    body: JSON.stringify(layout),
+  })
+}
+
+export async function publishSeatCraftDraft(ownerType: SeatCraftOwnerType, ownerId: number) {
+  assertSeatCraftOwner(ownerType, ownerId)
+  return request<import('@/types/api').SeatCraftVersionedLayoutVO>(`/api/ticket/admin/seatcraft/${ownerType}/${ownerId}/publish`, {
+    method: 'POST',
+  })
+}
+
+export async function listSeatCraftVersions(ownerType: SeatCraftOwnerType, ownerId: number) {
+  assertSeatCraftOwner(ownerType, ownerId)
+  return request<import('@/types/api').SeatCraftVersionSummaryVO[]>(`/api/ticket/admin/seatcraft/${ownerType}/${ownerId}/versions`)
+}
+
+export async function rollbackSeatCraftVersion(ownerType: SeatCraftOwnerType, ownerId: number, versionId: number) {
+  assertSeatCraftOwner(ownerType, ownerId)
+  assertPositiveInteger(versionId, 'SeatCraft 版本ID')
+  return request<import('@/types/api').SeatCraftVersionedLayoutVO>(`/api/ticket/admin/seatcraft/${ownerType}/${ownerId}/versions/${versionId}/rollback`, {
+    method: 'POST',
+  })
+}
+
 export async function getVenueDefaultLayout(venueId: number) {
   return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/venues/${venueId}/default-layout`)
 }
