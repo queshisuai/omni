@@ -181,6 +181,24 @@ public class SeatCraftLayoutVersionService {
         return cloneVersionToDraft(ownerType, ownerId, target);
     }
 
+    @Transactional
+    public void deleteVersion(String ownerType, Long ownerId, Long versionId) {
+        validateOwner(ownerType, ownerId);
+        SeatLayoutVersion target = versionMapper.selectOne(new LambdaQueryWrapper<SeatLayoutVersion>()
+                .eq(SeatLayoutVersion::getOwnerType, trim(ownerType))
+                .eq(SeatLayoutVersion::getOwnerId, ownerId)
+                .eq(SeatLayoutVersion::getId, versionId)
+                .last("limit 1"));
+        if (target == null) {
+            throw new BusinessException(404, "目标版本不存在");
+        }
+        if (STATUS_PUBLISHED.equals(trim(target.getVersionStatus()))) {
+            throw new BusinessException(400, "已发布版本不能删除");
+        }
+        deleteVersionDetails(target.getId());
+        versionMapper.deleteById(target.getId());
+    }
+
     private SeatCraftBlockDtos.LayoutRequest clonePublishedToDraft(String ownerType, Long ownerId, SeatLayoutVersion published) {
         return cloneVersionToDraft(ownerType, ownerId, published);
     }
@@ -445,6 +463,10 @@ public class SeatCraftLayoutVersionService {
 
     private void copyVersionMetadata(SeatLayoutVersion version, SeatCraftBlockDtos.LayoutRequest layout, LocalDateTime now) {
         version.setName(defaultText(layout.getName(), "座位图草稿"));
+        version.setTemplateType(defaultText(layout.getTemplateType(), "concert"));
+        version.setStageTitle(defaultText(layout.getStageTitle(), "舞台"));
+        version.setStageX(layout.getStageX() == null ? 0 : layout.getStageX());
+        version.setStageY(layout.getStageY() == null ? 0 : layout.getStageY());
         version.setCanvasWidth(layout.getCanvasWidth());
         version.setCanvasHeight(layout.getCanvasHeight());
         version.setUpdateTime(now);
@@ -589,6 +611,10 @@ public class SeatCraftLayoutVersionService {
         layout.setVersionNo(version.getVersionNo());
         layout.setVersionStatus(version.getVersionStatus());
         layout.setName(version.getName());
+        layout.setTemplateType(defaultText(version.getTemplateType(), "concert"));
+        layout.setStageTitle(defaultText(version.getStageTitle(), "舞台"));
+        layout.setStageX(version.getStageX() == null ? 0 : version.getStageX());
+        layout.setStageY(version.getStageY() == null ? 0 : version.getStageY());
         layout.setCanvasWidth(version.getCanvasWidth());
         layout.setCanvasHeight(version.getCanvasHeight());
         layout.setBlocks(blocks == null ? Collections.emptyList() : blocks.stream().map(this::toBlockRequest).collect(Collectors.toList()));

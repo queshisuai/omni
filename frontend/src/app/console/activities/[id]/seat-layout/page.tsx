@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { getSeatCraftDraft, publishSeatCraftDraft, saveSeatCraftDraft } from '@/lib/api'
+import { deleteSeatCraftVersion, getSeatCraftDraft, listSeatCraftVersions, publishSeatCraftDraft, rollbackSeatCraftVersion, saveSeatCraftDraft } from '@/lib/api'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
-import { toSeatCraftVersionedLayoutPayload } from '@/components/seatcraft/block-layout'
+import { mergePersistedSeatCraftLayout, toSeatCraftVersionedLayoutPayload } from '@/components/seatcraft/block-layout'
 import { toSeatCraftVersionedLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
+import type { SeatCraftVersionSummaryVO } from '@/types/api'
 
 export default function ActivitySeatLayoutPage() {
   const params = useParams<{ id: string }>()
@@ -19,7 +20,10 @@ export default function ActivitySeatLayoutPage() {
   const [publishing, setPublishing] = useState(false)
   const [creating, setCreating] = useState(false)
   const [message, setMessage] = useState('')
+  const [versions, setVersions] = useState<SeatCraftVersionSummaryVO[]>([])
   const canPersistLayout = canPersistSeatCraftLayout(layout)
+
+  const refreshVersions = () => listSeatCraftVersions('activity', activityId).then(setVersions).catch(() => undefined)
 
   useEffect(() => {
     if (!Number.isInteger(activityId) || activityId <= 0) {
@@ -42,9 +46,17 @@ export default function ActivitySeatLayoutPage() {
         if (cancelled) return
         setLayout(response ? toSeatCraftVersionedLayoutDraft(response) : null)
         setError('')
+        listSeatCraftVersions('activity', activityId)
+          .then(versionList => {
+            if (!cancelled) setVersions(versionList)
+          })
+          .catch(() => {
+            if (!cancelled) setVersions([])
+          })
       })
       .catch(err => {
         if (cancelled) return
+        setVersions([])
         setError(err instanceof Error ? err.message : '加载座位图失败')
       })
       .finally(() => {
@@ -78,8 +90,11 @@ export default function ActivitySeatLayoutPage() {
     setError('')
     setMessage('')
     try {
-      const response = await saveSeatCraftDraft('activity', activityId, toSeatCraftVersionedLayoutPayload(layout))
-      setLayout(toSeatCraftVersionedLayoutDraft(response))
+      const savedSnapshot = layout
+      const response = await saveSeatCraftDraft('activity', activityId, toSeatCraftVersionedLayoutPayload(savedSnapshot))
+      const persistedLayout = toSeatCraftVersionedLayoutDraft(response)
+      setLayout(current => current ? mergePersistedSeatCraftLayout(current, savedSnapshot, persistedLayout) : persistedLayout)
+      refreshVersions()
       setMessage('草稿已保存')
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存座位图失败')
@@ -94,9 +109,12 @@ export default function ActivitySeatLayoutPage() {
     setError('')
     setMessage('')
     try {
-      await saveSeatCraftDraft('activity', activityId, toSeatCraftVersionedLayoutPayload(layout))
+      const savedSnapshot = layout
+      await saveSeatCraftDraft('activity', activityId, toSeatCraftVersionedLayoutPayload(savedSnapshot))
       const response = await publishSeatCraftDraft('activity', activityId)
-      setLayout(toSeatCraftVersionedLayoutDraft(response))
+      const persistedLayout = toSeatCraftVersionedLayoutDraft(response)
+      setLayout(current => current ? mergePersistedSeatCraftLayout(current, savedSnapshot, persistedLayout) : persistedLayout)
+      refreshVersions()
       setMessage('座位图已发布')
     } catch (err) {
       setError(err instanceof Error ? err.message : '发布座位图失败')
@@ -129,11 +147,40 @@ export default function ActivitySeatLayoutPage() {
         ticketGroups: [],
         bindings: [],
       })
+      setVersions([])
       setMessage('已创建空白座位图，请添加座位块和票档绑定后保存草稿')
     } catch (err) {
       setError(err instanceof Error ? err.message : '创建空白座位图失败')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleRollbackVersion = async (version: SeatCraftVersionSummaryVO) => {
+    if (!version.id || saving || publishing || creating) return
+    setError('')
+    setMessage('')
+    try {
+      const response = await rollbackSeatCraftVersion('activity', activityId, version.id)
+      setLayout(toSeatCraftVersionedLayoutDraft(response))
+      await refreshVersions()
+      setMessage(`已回到 v${version.versionNo ?? '-'}，可继续编辑或发布`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '回到历史版本失败')
+    }
+  }
+
+  const handleDeleteVersion = async (version: SeatCraftVersionSummaryVO) => {
+    if (!version.id || version.versionStatus === 'published' || saving || publishing || creating) return
+    if (!window.confirm(`确认删除 v${version.versionNo ?? '-'}？删除后不可恢复。`)) return
+    setError('')
+    setMessage('')
+    try {
+      await deleteSeatCraftVersion('activity', activityId, version.id)
+      await refreshVersions()
+      setMessage(`已删除 v${version.versionNo ?? '-'}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除历史版本失败')
     }
   }
 
@@ -190,10 +237,55 @@ export default function ActivitySeatLayoutPage() {
           </button>
         </div>
       ) : (
-        <SeatLayoutDesigner layout={layout} onChange={setLayout} />
+        <>
+          {versions.length > 0 && <SeatCraftVersionList versions={versions} onRollback={handleRollbackVersion} onDelete={handleDeleteVersion} disabled={saving || publishing || creating} />}
+          <SeatLayoutDesigner layout={layout} onChange={setLayout} />
+        </>
       )}
     </div>
   )
+}
+
+function SeatCraftVersionList({ versions, onRollback, onDelete, disabled }: {
+  versions: SeatCraftVersionSummaryVO[]
+  onRollback: (version: SeatCraftVersionSummaryVO) => void
+  onDelete: (version: SeatCraftVersionSummaryVO) => void
+  disabled: boolean
+}) {
+  return (
+    <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-white p-3">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-[12px] font-semibold text-[#666]">历史版本</div>
+        <div className="text-[12px] text-[#999]">共 {versions.length} 个版本</div>
+      </div>
+      <div className="space-y-2">
+        {versions.map(version => (
+          <div key={`${version.id}-${version.versionNo}-${version.versionStatus}`} className="flex flex-col gap-2 rounded-lg bg-[#f7f7f8] px-3 py-2 text-[12px] text-[#666] sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <span className="font-semibold text-[#1a1a2e]">v{version.versionNo ?? '-'}</span>
+              <span className="ml-2 rounded-full bg-white px-2 py-0.5">{formatVersionStatus(version.versionStatus)}</span>
+              <span className="ml-2">{version.name ?? '未命名'}</span>
+              <span className="ml-2 text-[#999]">{formatVersionTime(version.updateTime)}</span>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button type="button" onClick={() => onRollback(version)} disabled={disabled || !version.id} className="rounded-md border border-[#ff1268] px-2 py-1 text-[#ff1268] disabled:opacity-50">回到此版本</button>
+              <button type="button" onClick={() => onDelete(version)} disabled={disabled || !version.id || version.versionStatus === 'published'} className="rounded-md border border-[#e5e5e5] px-2 py-1 text-[#666] disabled:opacity-50">删除</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function formatVersionTime(value?: string | null) {
+  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
+}
+
+function formatVersionStatus(value?: string | null) {
+  if (value === 'published') return '已发布'
+  if (value === 'archived') return '归档'
+  return '草稿'
 }
 
 function canPersistSeatCraftLayout(layout: SeatCraftLayoutDraft | null) {

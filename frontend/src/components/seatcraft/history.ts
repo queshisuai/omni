@@ -65,6 +65,10 @@ export function redoHistory(history: SeatCraftHistoryState, currentLayout: SeatC
   }
 }
 
+export function applyHistoryAction(history: SeatCraftHistoryState, currentLayout: SeatCraftLayoutDraft, action: 'undo' | 'redo') {
+  return action === 'undo' ? undoHistory(history, currentLayout) : redoHistory(history, currentLayout)
+}
+
 export function resetHistoryForOwner(history: SeatCraftHistoryState, layout: SeatCraftLayoutDraft) {
   const ownerKey = ownerKeyForLayout(layout)
   return history.ownerKey === ownerKey ? history : createSeatCraftHistory(layout)

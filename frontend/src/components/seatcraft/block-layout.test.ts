@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { autoArrangeSeatLayout, buildSeatCraftBindings, buildSeatsForBlock, cloneBlock, getSeatCraftPrimaryBindingValue, mirrorBlockHorizontally, snapBlockPosition, toSeatCraftLayoutPayload, toSeatCraftVersionedLayoutPayload, updateSeatCraftPrimaryBinding } from './block-layout.ts'
+import { autoArrangeSeatLayout, buildSeatCraftBindings, buildSeatsForBlock, cloneBlock, getSeatCraftPrimaryBindingValue, mergePersistedSeatCraftLayout, mirrorBlockHorizontally, snapBlockPosition, toSeatCraftLayoutPayload, toSeatCraftVersionedLayoutPayload, updateSeatCraftPrimaryBinding } from './block-layout.ts'
 import { toSeatCraftLayoutDraft, toSeatCraftVersionedLayoutDraft } from './types.ts'
 import type { SeatBlockDraft, SeatCraftLayoutDraft, SeatOverrideDraft } from './types'
 
@@ -485,12 +485,14 @@ test('legacy blank layout response converts through versioned adapter', () => {
   assert.deepEqual(draft.bindings, [])
 })
 
-test('versioned save payload exposes block layout fields at top level without blockLayout', () => {
+test('versioned save payload exposes block layout fields and stage metadata at top level without blockLayout', () => {
   const payload = toSeatCraftVersionedLayoutPayload(layoutWithBlocks({
     versionId: 88,
     versionNo: 5,
     versionStatus: 'draft',
     name: '版本草稿',
+    templateType: 'custom',
+    stage: { title: '主舞台', x: 360, y: 96 },
     blocks: [gridBlock()],
     ticketGroups: [{ groupKey: 'vip', name: 'VIP', sourceBlockKeys: [], sort: 0 }],
     bindings: [{ blockKey: 'block-a', groupKey: 'vip', bindingRole: 'primary' }],
@@ -500,10 +502,64 @@ test('versioned save payload exposes block layout fields at top level without bl
   assert.equal(payload.versionId, 88)
   assert.equal(payload.versionNo, 5)
   assert.equal(payload.versionStatus, 'draft')
+  assert.equal(payload.templateType, 'custom')
+  assert.equal(payload.stageTitle, '主舞台')
+  assert.equal(payload.stageX, 360)
+  assert.equal(payload.stageY, 96)
   assert.equal(payload.blocks?.[0]?.blockKey, 'block-a')
   assert.equal(payload.blocks?.[0]?.ticketGroupKey, 'vip')
   assert.deepEqual(payload.bindings, [{ blockKey: 'block-a', groupKey: 'vip', bindingRole: 'primary', sort: 0 }])
   assert.deepEqual(payload.ticketGroups?.[0]?.sourceBlockKeys, ['block-a'])
+})
+
+test('versioned layout draft round trips stage metadata through payload', () => {
+  const draft = toSeatCraftVersionedLayoutDraft({
+    versionId: 88,
+    name: '版本草稿',
+    templateType: 'cinema',
+    stageTitle: '副舞台',
+    stageX: 240,
+    stageY: 72,
+    canvasWidth: 1200,
+    canvasHeight: 900,
+    blocks: [apiBlock()],
+    ticketGroups: [{ groupKey: 'vip', name: 'VIP', sourceBlockKeys: [], sort: 0 }],
+    bindings: [{ blockKey: 'block-a', groupKey: 'vip', bindingRole: 'primary' }],
+  })
+
+  const payload = toSeatCraftVersionedLayoutPayload(draft)
+
+  assert.equal(payload.templateType, 'cinema')
+  assert.equal(payload.stageTitle, '副舞台')
+  assert.equal(payload.stageX, 240)
+  assert.equal(payload.stageY, 72)
+})
+
+test('persisted version metadata does not overwrite edits made while saving', () => {
+  const requestLayout = layoutWithBlocks({
+    versionId: 88,
+    versionNo: 5,
+    versionStatus: 'draft',
+    stage: { title: '舞台', x: 10, y: 20 },
+    blocks: [gridBlock()],
+  })
+  const localEditedLayout = {
+    ...requestLayout,
+    stage: { title: '舞台', x: 360, y: 96 },
+  }
+  const persistedLayout = {
+    ...requestLayout,
+    versionId: 99,
+    versionNo: 6,
+    versionStatus: 'draft' as const,
+    stage: { title: '舞台', x: 10, y: 20 },
+  }
+
+  const merged = mergePersistedSeatCraftLayout(localEditedLayout, requestLayout, persistedLayout)
+
+  assert.equal(merged.versionId, 99)
+  assert.equal(merged.versionNo, 6)
+  assert.deepEqual(merged.stage, { title: '舞台', x: 360, y: 96 })
 })
 
 test('versioned save payload serializes polygonPoints as string for polygon blocks', () => {

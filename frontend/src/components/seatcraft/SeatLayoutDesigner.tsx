@@ -5,7 +5,7 @@ import { Grid3X3, LayoutGrid, MousePointer2, Move, RotateCcw, Users, EyeOff, Und
 import { SeatCanvas } from './SeatCanvas'
 import { SeatLayoutControls } from './SeatLayoutControls'
 import { autoArrangeSeatLayout, buildSeatsForBlock, cloneBlock, mirrorBlockHorizontally, updateSeatCraftPrimaryBinding } from './block-layout'
-import { commitHistory, createSeatCraftHistory, redoHistory, resetHistoryForOwner, undoHistory, type CommitOptions } from './history'
+import { applyHistoryAction, commitHistory, createSeatCraftHistory, resetHistoryForOwner, type CommitOptions, type SeatCraftHistoryState } from './history'
 import { canEditSeatPosition } from './seat-selection'
 import { makeBlockKey, makeDefaultStage, type ActiveSeatDetails, type ActiveSeatKey, type SeatBlockType, type SeatCanvasToolMode, type SeatCraftLayoutDraft, type SeatLayoutDesignerProps } from './types'
 
@@ -51,6 +51,7 @@ export function SeatLayoutDesigner({ layout, onChange, activeBlockKeys: controll
   const [activeSeatKey, setActiveSeatKey] = useState<ActiveSeatKey | null>(null)
   const [history, setHistory] = useState(() => createSeatCraftHistory(layout))
   const layoutRef = useRef(layout)
+  const historyRef = useRef(history)
   const blocks = layout.blocks ?? []
 
   const activeBlockKeys = controlledActiveBlockKeys ?? internalActiveBlockKeys
@@ -101,7 +102,9 @@ export function SeatLayoutDesigner({ layout, onChange, activeBlockKeys: controll
 
   useEffect(() => {
     layoutRef.current = layout
-    setHistory(current => resetHistoryForOwner(current, layout))
+    const nextHistory = resetHistoryForOwner(historyRef.current, layout)
+    historyRef.current = nextHistory
+    setHistory(nextHistory)
   }, [layout])
 
   useEffect(() => {
@@ -129,30 +132,26 @@ export function SeatLayoutDesigner({ layout, onChange, activeBlockKeys: controll
 
   const commit = (next: SeatCraftLayoutDraft, options: CommitOptions = {}) => {
     const currentLayout = layoutRef.current
-    setHistory(current => commitHistory(current, currentLayout, options))
+    const nextHistory = commitHistory(historyRef.current, currentLayout, options)
+    historyRef.current = nextHistory
+    setHistory(nextHistory)
     layoutRef.current = next
     onChange(next)
   }
 
-  const undo = () => {
-    setHistory(current => {
-      const result = undoHistory(current, layoutRef.current)
-      if (result.history === current) return current
-      layoutRef.current = result.layout
-      onChange(result.layout)
-      return result.history
-    })
+  const applyHistory = (action: 'undo' | 'redo') => {
+    const currentHistory = historyRef.current
+    const result = applyHistoryAction(currentHistory, layoutRef.current, action)
+    if (result.history === currentHistory) return
+    historyRef.current = result.history
+    setHistory(result.history)
+    layoutRef.current = result.layout
+    onChange(result.layout)
   }
 
-  const redo = () => {
-    setHistory(current => {
-      const result = redoHistory(current, layoutRef.current)
-      if (result.history === current) return current
-      layoutRef.current = result.layout
-      onChange(result.layout)
-      return result.history
-    })
-  }
+  const undo = () => applyHistory('undo')
+
+  const redo = () => applyHistory('redo')
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

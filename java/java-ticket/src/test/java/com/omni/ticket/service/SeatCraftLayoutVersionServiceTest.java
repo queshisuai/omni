@@ -81,6 +81,10 @@ class SeatCraftLayoutVersionServiceTest {
     @Test
     void saveDraftPersistsVersionBlocksGroupsOverridesAndBindingsWithoutMaterializedTables() {
         SeatCraftBlockDtos.LayoutRequest layout = sampleLayout();
+        layout.setTemplateType("cinema");
+        layout.setStageTitle("主舞台");
+        layout.setStageX(320);
+        layout.setStageY(90);
         List<SeatLayoutVersionBlock> insertedBlocks = new ArrayList<>();
         List<SeatLayoutVersionTicketGroup> insertedGroups = new ArrayList<>();
         List<SeatLayoutVersionGroupBinding> insertedBindings = new ArrayList<>();
@@ -100,6 +104,10 @@ class SeatCraftLayoutVersionServiceTest {
         doAnswer(invocation -> {
             SeatLayoutVersion version = invocation.getArgument(0);
             version.setId(100L);
+            persistedVersion.setTemplateType(version.getTemplateType());
+            persistedVersion.setStageTitle(version.getStageTitle());
+            persistedVersion.setStageX(version.getStageX());
+            persistedVersion.setStageY(version.getStageY());
             persistedVersion.setCreateTime(version.getCreateTime());
             persistedVersion.setUpdateTime(version.getUpdateTime());
             return 1;
@@ -131,6 +139,10 @@ class SeatCraftLayoutVersionServiceTest {
 
         assertEquals(100L, result.getVersionId());
         assertEquals("draft", result.getVersionStatus());
+        assertEquals("cinema", result.getTemplateType());
+        assertEquals("主舞台", result.getStageTitle());
+        assertEquals(320, result.getStageX());
+        assertEquals(90, result.getStageY());
         verify(versionMapper).insert(any(SeatLayoutVersion.class));
         verify(blockMapper).insert(any(SeatLayoutVersionBlock.class));
         verify(groupMapper).insert(any(SeatLayoutVersionTicketGroup.class));
@@ -139,6 +151,48 @@ class SeatCraftLayoutVersionServiceTest {
         assertEquals(200L, insertedOverrides.get(0).getVersionBlockId());
         assertEquals("primary", insertedBindings.get(0).getBindingRole());
         verifyNoInteractions(seatBlockMapper, seatOverrideMapper, ticketGroupMapper);
+    }
+
+    @Test
+    void saveDraftDefaultsStageMetadataWhenRequestOmitsIt() {
+        SeatCraftBlockDtos.LayoutRequest layout = sampleLayout();
+        SeatLayoutVersion persistedVersion = new SeatLayoutVersion();
+        persistedVersion.setId(100L);
+        persistedVersion.setOwnerType("session");
+        persistedVersion.setOwnerId(3001L);
+        persistedVersion.setVersionNo(1);
+        persistedVersion.setVersionStatus("draft");
+        persistedVersion.setName(layout.getName());
+        persistedVersion.setCanvasWidth(layout.getCanvasWidth());
+        persistedVersion.setCanvasHeight(layout.getCanvasHeight());
+
+        when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null, persistedVersion);
+        when(versionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        doAnswer(invocation -> {
+            SeatLayoutVersion version = invocation.getArgument(0);
+            version.setId(100L);
+            persistedVersion.setTemplateType(version.getTemplateType());
+            persistedVersion.setStageTitle(version.getStageTitle());
+            persistedVersion.setStageX(version.getStageX());
+            persistedVersion.setStageY(version.getStageY());
+            return 1;
+        }).when(versionMapper).insert(any(SeatLayoutVersion.class));
+        doAnswer(invocation -> {
+            SeatLayoutVersionBlock block = invocation.getArgument(0);
+            block.setId(200L);
+            return 1;
+        }).when(blockMapper).insert(any(SeatLayoutVersionBlock.class));
+        when(blockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(publishedBlocks());
+        when(groupMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(publishedGroups());
+        when(bindingMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(publishedBindings());
+        when(overrideMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(publishedOverrides());
+
+        SeatCraftBlockDtos.LayoutRequest result = service.saveDraft("session", 3001L, layout, 2003L);
+
+        assertEquals("concert", result.getTemplateType());
+        assertEquals("舞台", result.getStageTitle());
+        assertEquals(0, result.getStageX());
+        assertEquals(0, result.getStageY());
     }
 
     @Test
@@ -455,6 +509,34 @@ class SeatCraftLayoutVersionServiceTest {
         verify(versionMapper).deleteById(100L);
         verify(versionMapper, never()).deleteById(80L);
         verify(overrideMapper).delete(any(LambdaQueryWrapper.class));
+    }
+
+    @Test
+    void deleteVersionRemovesArchivedVersionAndDetails() {
+        SeatLayoutVersion archived = version(80L, 2, "archived");
+
+        when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(archived);
+        when(blockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(versionBlock(101L, 80L, "block-a", 1, "gridBlock")));
+
+        service.deleteVersion("session", 3001L, 80L);
+
+        verify(overrideMapper).delete(any(LambdaQueryWrapper.class));
+        verify(bindingMapper).delete(any(LambdaQueryWrapper.class));
+        verify(groupMapper).delete(any(LambdaQueryWrapper.class));
+        verify(blockMapper).delete(any(LambdaQueryWrapper.class));
+        verify(versionMapper).deleteById(80L);
+    }
+
+    @Test
+    void deleteVersionRejectsPublishedVersion() {
+        SeatLayoutVersion published = version(80L, 2, "published");
+        when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(published);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.deleteVersion("session", 3001L, 80L));
+
+        assertEquals(400, error.getCode());
+        verify(versionMapper, never()).deleteById(80L);
     }
 
     @Test

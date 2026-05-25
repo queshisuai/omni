@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { commitHistory, createSeatCraftHistory, redoHistory, undoHistory } from './history.ts'
+import { applyHistoryAction, commitHistory, createSeatCraftHistory, redoHistory, undoHistory } from './history.ts'
 import type { SeatCraftLayoutDraft } from './types'
 
 function layout(name: string, x = 0): SeatCraftLayoutDraft {
@@ -60,4 +60,20 @@ test('new commit after undo clears redo history', () => {
   const afterNewCommit = commitHistory(undone.history, another)
 
   assert.equal(afterNewCommit.future.length, 0)
+})
+
+test('history action uses the latest history state for repeated undo', () => {
+  const initial = layout('初始')
+  const first = layout('第一次')
+  const second = layout('第二次')
+  let state = {
+    history: commitHistory(commitHistory(createSeatCraftHistory(initial), initial), first),
+    layout: second,
+  }
+
+  state = applyHistoryAction(state.history, state.layout, 'undo')
+  state = applyHistoryAction(state.history, state.layout, 'undo')
+
+  assert.equal(state.layout.name, '初始')
+  assert.equal(state.history.future.map(item => item.name).join(','), '第一次,第二次')
 })

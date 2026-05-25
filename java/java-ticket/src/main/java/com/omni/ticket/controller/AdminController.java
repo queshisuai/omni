@@ -246,6 +246,20 @@ public class AdminController {
         return Result.success(seatCraftLayoutVersionService.rollbackToDraft(ownerType, ownerId, versionId, operatorId));
     }
 
+    @DeleteMapping("/seatcraft/{ownerType}/{ownerId}/versions/{versionId}")
+    public Result<Void> deleteSeatCraftVersion(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String ownerType,
+            @PathVariable Long ownerId,
+            @PathVariable Long versionId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        seatCraftLayoutVersionService.deleteVersion(ownerType, ownerId, versionId);
+        return Result.success(null);
+    }
+
     @PostMapping("/assets")
     public Result<AssetUploadResponse> uploadAsset(@RequestHeader(value = "Authorization", required = false) String authorization,
                                                    @RequestParam Long userId,

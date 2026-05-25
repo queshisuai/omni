@@ -716,6 +716,14 @@ export async function rollbackSeatCraftVersion(ownerType: SeatCraftOwnerType, ow
   })
 }
 
+export async function deleteSeatCraftVersion(ownerType: SeatCraftOwnerType, ownerId: number, versionId: number) {
+  assertSeatCraftOwner(ownerType, ownerId)
+  assertPositiveInteger(versionId, 'SeatCraft 版本ID')
+  return request<void>(`/api/ticket/admin/seatcraft/${ownerType}/${ownerId}/versions/${versionId}`, {
+    method: 'DELETE',
+  })
+}
+
 export async function getVenueDefaultLayout(venueId: number) {
   return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/venues/${venueId}/default-layout`)
 }

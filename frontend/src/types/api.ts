@@ -675,6 +675,10 @@ export interface SeatCraftVersionedLayoutRequest {
   versionNo?: number | null
   versionStatus?: string | null
   name: string
+  templateType: SeatCraftTemplateType
+  stageTitle: string
+  stageX: number
+  stageY: number
   canvasWidth: number
   canvasHeight: number
   blocks: SeatCraftVersionedBlockRequest[]

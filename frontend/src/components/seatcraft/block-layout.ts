@@ -229,12 +229,25 @@ export function toSeatCraftVersionedLayoutPayload(layout: SeatCraftLayoutDraft):
     versionNo: layout.versionNo ?? null,
     versionStatus: layout.versionStatus ?? null,
     name: layout.name,
+    templateType: layout.templateType,
+    stageTitle: layout.stage.title,
+    stageX: layout.stage.x,
+    stageY: layout.stage.y,
     canvasWidth: layout.canvasWidth,
     canvasHeight: layout.canvasHeight,
     blocks: buildVersionedPayloadBlocks(blockLayout?.blocks ?? []),
     overrides: blockLayout?.overrides ?? layout.overrides ?? [],
     ticketGroups: blockLayout?.ticketGroups ?? [],
     bindings: blockLayout?.bindings ?? buildSeatCraftBindings(layout),
+  }
+}
+
+export function mergePersistedSeatCraftLayout(currentLayout: SeatCraftLayoutDraft, savedSnapshot: SeatCraftLayoutDraft, persistedLayout: SeatCraftLayoutDraft): SeatCraftLayoutDraft {
+  return {
+    ...currentLayout,
+    versionId: persistedLayout.versionId ?? currentLayout.versionId ?? savedSnapshot.versionId ?? null,
+    versionNo: persistedLayout.versionNo ?? currentLayout.versionNo ?? savedSnapshot.versionNo ?? null,
+    versionStatus: persistedLayout.versionStatus ?? currentLayout.versionStatus ?? savedSnapshot.versionStatus ?? null,
   }
 }
 

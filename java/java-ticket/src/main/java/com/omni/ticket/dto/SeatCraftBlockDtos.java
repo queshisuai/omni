@@ -11,6 +11,10 @@ public class SeatCraftBlockDtos {
         private Integer versionNo;
         private String versionStatus;
         private String name;
+        private String templateType;
+        private String stageTitle;
+        private Integer stageX;
+        private Integer stageY;
         private Integer canvasWidth;
         private Integer canvasHeight;
         private List<BlockRequest> blocks = new ArrayList<>();
@@ -26,6 +30,14 @@ public class SeatCraftBlockDtos {
         public void setVersionStatus(String versionStatus) { this.versionStatus = versionStatus; }
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
+        public String getTemplateType() { return templateType; }
+        public void setTemplateType(String templateType) { this.templateType = templateType; }
+        public String getStageTitle() { return stageTitle; }
+        public void setStageTitle(String stageTitle) { this.stageTitle = stageTitle; }
+        public Integer getStageX() { return stageX; }
+        public void setStageX(Integer stageX) { this.stageX = stageX; }
+        public Integer getStageY() { return stageY; }
+        public void setStageY(Integer stageY) { this.stageY = stageY; }
         public Integer getCanvasWidth() { return canvasWidth; }
         public void setCanvasWidth(Integer canvasWidth) { this.canvasWidth = canvasWidth; }
         public Integer getCanvasHeight() { return canvasHeight; }
