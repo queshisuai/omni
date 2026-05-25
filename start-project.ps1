@@ -8,7 +8,10 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
-$projectRoot = "C:\Users\Administrator\Desktop\omni"
+$projectRoot = $PSScriptRoot
+if (-not $projectRoot) { $projectRoot = Get-Location }
+
+$nacosHome = if (Test-Path "C:\nacos") { "C:\nacos" } elseif (Test-Path "D:\nacos") { "D:\nacos" } else { $null }
 
 function Write-Step {
     param([string]$Message)
@@ -78,9 +81,13 @@ try {
     Write-Host "[Nacos] Already Running" -ForegroundColor Green
 } catch {
     Write-Host "[Nacos] Starting..." -ForegroundColor Yellow
-    Start-Process cmd -ArgumentList "/c", "C:\nacos\bin\startup.cmd -m standalone" -WorkingDirectory "C:\nacos\bin" -PassThru | Out-Null
-    Start-Sleep -Seconds 15
-    Write-Host "[Nacos] Started" -ForegroundColor Green
+    if (-not $nacosHome) {
+        Write-Host "[Nacos] NOT FOUND! Please install Nacos to C:\nacos or D:\nacos, or start it manually." -ForegroundColor Red
+    } else {
+        Start-Process cmd -ArgumentList "/c", "$nacosHome\bin\startup.cmd -m standalone" -WorkingDirectory "$nacosHome\bin" -PassThru | Out-Null
+        Start-Sleep -Seconds 15
+        Write-Host "[Nacos] Started" -ForegroundColor Green
+    }
 }
 
 # 4. Install Java Dependencies
