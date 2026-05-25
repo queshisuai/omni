@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
-import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, PlusCircle, AlertTriangle } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, PlusCircle, AlertTriangle, Users } from 'lucide-react'
 
 const menuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
@@ -13,6 +13,8 @@ const menuItems = [
   { href: '/console/sessions', label: '场次管理', icon: Clock },
   { href: '/console/orders', label: '订单查看', icon: ShoppingCart },
   { href: '/console/refunds', label: '退款审核', icon: RotateCcw },
+  { href: '/console/artists', label: '艺人管理', icon: Users, roles: ['admin'] },
+  { href: '/console/artists/pending', label: '艺人档案审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/risk-resolutions', label: '恢复售票审核', icon: AlertTriangle, roles: ['admin'] },
   { href: '/console/risk-cases', label: '风险案例管理', icon: AlertTriangle, roles: ['admin'] },
   { href: '/console/venue', label: '场馆管理', icon: MapPin, roles: ['admin'] },
@@ -27,6 +29,7 @@ const organizerMenuItems = [
   { href: '/console/tours/new', label: '创建我的演出', icon: PlusCircle },
   { href: '/console/activities', label: '我的活动管理', icon: CalendarDays },
   { href: '/console/sessions', label: '我的场次管理', icon: Clock },
+  { href: '/console/artists', label: '我的艺人', icon: Users },
   { href: '/console/risk-events', label: '风险事件待办', icon: AlertTriangle },
   { href: '/console/refunds', label: '主办方退款处理', icon: RotateCcw },
   { href: '/console/venue/apply', label: '场地申请记录', icon: MapPin },
@@ -38,6 +41,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const router = useRouter()
   const pathname = usePathname()
   const [nickname, setNickname] = useState('')
+  const [avatar, setAvatar] = useState('')
   const [role, setRole] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [checking, setChecking] = useState(true)
@@ -77,6 +81,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         }
         updateStoredUser({ nickname: latest.nickname, role: latest.role })
         setNickname(latest.nickname || latest.phone || '')
+        setAvatar(latest.avatar || '')
         setRole(latest.role)
       } catch {
         if (!active) return
@@ -101,16 +106,16 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const roleLabel = roleReady ? role === 'admin' ? '平台管理员' : '主办方' : '校验中'
 
   return (
-    <div className="min-h-screen bg-[#f5f6f7] flex">
+    <div className="min-h-screen bg-gray-50 flex font-sans">
       {/* 侧边栏 */}
-      <aside className={`w-[240px] bg-[#1a1a2e] text-white flex-shrink-0 flex flex-col ${sidebarOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden'} lg:flex lg:relative`}>
-        <div className="p-5 border-b border-[#2a2a4e] flex items-center justify-between">
-          <Link href="/console" className="text-[18px] font-bold text-[#ff1268]">{brandLabel}</Link>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-white">
+      <aside className={`w-[240px] bg-white border-r border-gray-200 flex-shrink-0 flex flex-col ${sidebarOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden'} lg:flex lg:relative transition-all duration-300`}>
+        <div className="h-[64px] px-6 flex items-center justify-between">
+          <Link href="/console" className="text-[18px] font-bold text-[#ff1268] tracking-tight">{brandLabel}</Link>
+          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-500 hover:text-gray-900 transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <nav className="flex-1 p-3">
+        <nav className="flex-1 px-3 py-4 overflow-y-auto custom-scrollbar">
           {visibleMenuItems.map(item => {
             const Icon = item.icon
             const active = item.href === activeMenuHref
@@ -119,8 +124,10 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
                 key={item.href}
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-4 py-2.5 rounded-lg mb-1 text-[14px] transition-colors ${
-                  active ? 'bg-[#ff1268] text-white' : 'text-[#a0a0b8] hover:bg-[#2a2a4e] hover:text-white'
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 text-[14px] transition-all duration-200 ${
+                  active
+                    ? 'bg-[#fff0f5] text-[#ff1268] font-semibold'
+                    : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
                 }`}
               >
                 <Icon className="w-5 h-5" />
@@ -129,23 +136,32 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             )
           })}
         </nav>
-        <div className="p-4 border-t border-[#2a2a4e]">
-          <div className="text-[12px] text-[#666] mb-1">
-            {roleLabel}
+        <div className="p-4 border-t border-gray-200 bg-gray-50/50">
+          <div className="flex flex-col mb-4 px-2">
+            <span className="text-[12px] text-gray-500 font-medium mb-2">{roleLabel}</span>
+            <div className="flex items-center gap-2.5">
+              {avatar ? (
+                <img src={avatar} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 flex-shrink-0">
+                  <UserCircle2 className="w-5 h-5" />
+                </div>
+              )}
+              <span className="text-[14px] text-gray-900 font-semibold truncate">{nickname}</span>
+            </div>
           </div>
-          <div className="text-[14px] text-white mb-3">{nickname}</div>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             <Link
               href="/console/profile"
               onClick={() => setSidebarOpen(false)}
-              className="flex items-center gap-2 text-[13px] text-[#a0a0b8] hover:text-white transition-colors"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-all"
             >
               <UserCircle2 className="w-4 h-4" />
               个人中心
             </Link>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 text-[13px] text-[#a0a0b8] hover:text-white transition-colors bg-transparent border-none cursor-pointer"
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-all outline-none w-full text-left"
             >
               <LogOut className="w-4 h-4" />
               退出登录
@@ -160,19 +176,24 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       )}
 
       {/* 主内容 */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
         {/* 顶部栏 */}
-        <header className="bg-white h-[56px] border-b border-[#e5e5e5] flex items-center px-5 flex-shrink-0">
-          <button onClick={() => setSidebarOpen(true)} className="lg:hidden mr-3 text-[#333] bg-transparent border-none cursor-pointer">
+        <header className="bg-white h-[64px] border-b border-gray-200 flex items-center px-6 flex-shrink-0 sticky top-0 z-30">
+          <button onClick={() => setSidebarOpen(true)} className="lg:hidden mr-4 p-2 -ml-2 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors outline-none">
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1" />
-          <Link href="/" className="text-[13px] text-[#666] hover:text-[#ff1268]">
+          <Link
+            href="/"
+            className="flex items-center justify-center px-4 py-1.5 rounded-md border border-gray-200 text-[13px] font-medium text-gray-600 hover:text-[#ff1268] hover:border-[#ff1268]/30 hover:bg-[#fff0f5] transition-all bg-white"
+          >
             返回前台
           </Link>
         </header>
-        <main className="flex-1 p-6 overflow-auto">
-          {checking ? <div className="text-[14px] text-[#666]">正在校验后台权限...</div> : children}
+        <main className="flex-1 p-6 sm:p-8 overflow-y-auto">
+          <div className="max-w-[1200px] mx-auto">
+            {checking ? <div className="text-[14px] text-[#666] flex items-center justify-center py-20">正在校验后台权限...</div> : children}
+          </div>
         </main>
       </div>
     </div>

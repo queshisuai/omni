@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, Loader2, Search, ShieldOff, XCircle } from 'lucide-react'
 import { approveOrganizerApplication, deactivateOrganizer, getUserInfo, listOrganizerApplications, rejectOrganizerApplication } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
+import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import type { OrganizerApplicationStatus, OrganizerApplicationVO, UserInfo } from '@/types/api'
 
 const STATUS_OPTIONS: Array<{ value: OrganizerApplicationStatus | 'all'; label: string }> = [
@@ -130,7 +131,7 @@ export default function OrganizerApplicationsPage() {
 
   const handleDeactivate = async (item: OrganizerApplicationVO) => {
     if (!user) return
-    const confirmed = confirm(`取消主办方资格后，${item.organizerName} 将降级为普通用户并无法继续访问后台；其旗下全部活动、场次、票档将下架，并直接为关联已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这批已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意取消资格并同意退款。`)
+    const confirmed = await globalConfirm(`取消主办方资格后，${item.organizerName} 将降级为普通用户并无法继续访问后台；其旗下全部活动、场次、票档将下架，并直接为关联已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这批已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意取消资格并同意退款。`)
     if (!confirmed) return
     setSavingId(item.id)
     setError('')
@@ -143,7 +144,7 @@ export default function OrganizerApplicationsPage() {
       })
       const abnormalCount = result.refundFailedCount + result.refundUnknownCount + result.refundCompensationRequiredCount
       const summary = `已下架活动 ${result.deactivatedActivityCount} 个，已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
-      alert(abnormalCount > 0 ? `主办方资格已取消，但部分退款异常。${summary}` : `主办方资格已取消。${summary}`)
+      await globalAlert(abnormalCount > 0 ? `主办方资格已取消，但部分退款异常。${summary}` : `主办方资格已取消。${summary}`)
       await loadData(statusFilter)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '取消主办方资格失败')

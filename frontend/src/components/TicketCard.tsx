@@ -9,10 +9,10 @@ export function TicketCard({ activity }: TicketCardProps) {
   return (
     <a
       href={`/activity/${activity.id}`}
-      className="group block bg-white rounded-lg overflow-hidden hover:shadow-lg transition-shadow duration-300"
+      className="group block bg-white rounded-2xl overflow-hidden hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 border border-gray-100"
     >
       {/* Poster */}
-      <div className="relative aspect-[3/4] overflow-hidden bg-[#f5f5f5]">
+      <div className="relative aspect-[3/4] overflow-hidden bg-gray-100">
         <img
           src={activity.poster}
           alt={activity.title}
@@ -27,23 +27,23 @@ export function TicketCard({ activity }: TicketCardProps) {
       </div>
 
       {/* Info */}
-      <div className="p-3">
-        <h3 className="text-[14px] text-[#111] leading-[1.4] line-clamp-2 mb-2 group-hover:text-[#ff1268] transition-colors">
+      <div className="p-4">
+        <h3 className="text-[15px] font-bold text-gray-900 leading-snug line-clamp-2 mb-3 group-hover:text-[#ff1268] transition-colors">
           {activity.title}
         </h3>
 
-        <div className="flex items-center gap-1 text-[12px] text-[#999] mb-1">
-          <MapPin className="w-3 h-3 flex-shrink-0" />
+        <div className="flex items-center gap-1.5 text-[13px] text-gray-500 mb-1.5">
+          <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="truncate">{activity.venue}</span>
         </div>
 
-        <div className="flex items-center gap-1 text-[12px] text-[#999] mb-2">
-          <Calendar className="w-3 h-3 flex-shrink-0" />
+        <div className="flex items-center gap-1.5 text-[13px] text-gray-500 mb-3">
+          <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="truncate">{activity.showTime}</span>
         </div>
 
-        <div className="text-[16px] text-[#ff1268] font-medium">
-          {activity.priceRange}
+        <div className="flex items-baseline gap-1 text-[#ff1268] font-bold tracking-tight mt-1">
+          <span className="text-[18px]">{activity.priceRange}</span>
         </div>
       </div>
     </a>

@@ -99,10 +99,10 @@ export default function ProfilePage() {
               </button>
             </div>
           ) : user ? (
-            <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-              <section className="rounded-3xl border border-[#ececec] bg-white p-6 shadow-sm sm:p-8">
+            <div className="flex flex-col gap-6">
+              <section className="rounded-3xl border border-[#ececec] bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-8">
                 <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:gap-8">
-                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-3xl bg-[#fff0f5] ring-4 ring-[#fff0f5]">
+                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-3xl bg-[#fff0f5] ring-4 ring-[#fff0f5] shadow-inner">
                     {user.avatar ? (
                       <img src={user.avatar} alt={user.nickname || user.phone} className="h-full w-full object-cover" />
                     ) : (
@@ -111,59 +111,36 @@ export default function ProfilePage() {
                   </div>
                   <div className="flex-1">
                     <div className="flex flex-wrap items-center gap-3">
-                      <h2 className="text-[22px] font-semibold text-[#111]">{user.nickname || '未设置昵称'}</h2>
+                      <h2 className="text-[24px] font-bold text-[#111]">{user.nickname || '未设置昵称'}</h2>
                       <span
-                        className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
+                        className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium shadow-sm"
                         style={{ color: authState?.color, backgroundColor: authState?.bg }}
                       >
                         {authState?.text}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm text-[#666]">手机号 {user.phone}</p>
-                    <div className="mt-4 flex flex-wrap gap-3 text-sm text-[#666]">
-                      <span className="rounded-full bg-[#fafafa] px-3 py-1">账号状态：{user.status}</span>
-                    </div>
+                    <p className="mt-3 text-sm text-[#666] font-medium tracking-wide">绑定的手机号：{user.phone}</p>
                   </div>
                 </div>
 
-                <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                  <InfoItem icon={<Phone className="h-4 w-4" />} label="手机号" value={user.phone} />
-                  <InfoItem icon={<User className="h-4 w-4" />} label="昵称" value={user.nickname || '未设置'} />
-                  <InfoItem icon={<Mail className="h-4 w-4" />} label="邮箱" value={user.email || '未设置'} />
-                  <InfoItem icon={<ImageIcon className="h-4 w-4" />} label="头像" value={user.avatar || '未设置'} />
-                  <InfoItem icon={<CalendarDays className="h-4 w-4" />} label="注册时间" value={formatTime(user.createTime)} />
-                  <InfoItem icon={<ShieldCheck className="h-4 w-4" />} label="账号状态" value={authState?.text || '未知'} />
+                <div className="mt-10 grid gap-5 sm:grid-cols-3">
+                  <InfoItem icon={<Mail className="h-5 w-5" />} label="电子邮箱" value={user.email || '未设置'} />
+                  <InfoItem icon={<ShieldCheck className="h-5 w-5" />} label="角色身份" value={user.role === 'admin' ? '平台管理员' : user.role === 'organizer' ? '活动主办方' : '普通用户'} />
+                  <InfoItem icon={<CalendarDays className="h-5 w-5" />} label="注册时间" value={formatTime(user.createTime)} />
                 </div>
               </section>
 
-              <aside className="space-y-6">
-                <section className="rounded-3xl border border-[#ececec] bg-white p-6 shadow-sm">
-                  <h3 className="text-[18px] font-semibold text-[#111]">快捷入口</h3>
-                  <div className="mt-5 grid gap-3">
-                    <button
-                      onClick={() => router.push('/orders')}
-                      className="rounded-2xl border border-[#f0f0f0] bg-[#fafafa] px-4 py-4 text-left transition-colors hover:border-[#ff1268]/30 hover:bg-[#fff0f5]"
-                    >
-                      <div className="text-sm font-medium text-[#111]">订单管理</div>
-                      <div className="mt-1 text-xs text-[#666]">查看历史订单和支付状态</div>
-                    </button>
-                    <button
-                      onClick={() => router.push('/profile/account')}
-                      className="rounded-2xl border border-[#f0f0f0] bg-[#fafafa] px-4 py-4 text-left transition-colors hover:border-[#ff1268]/30 hover:bg-[#fff0f5]"
-                    >
-                      <div className="text-sm font-medium text-[#111]">账号设置</div>
-                      <div className="mt-1 text-xs text-[#666]">修改昵称、邮箱、头像和密码</div>
-                    </button>
-                  </div>
-                </section>
-
-                <section className="rounded-3xl border border-[#ffe3ee] bg-gradient-to-br from-white to-[#fff7fa] p-6 shadow-sm">
-                  <h3 className="text-[18px] font-semibold text-[#111]">账户提示</h3>
-                  <p className="mt-3 text-sm leading-6 text-[#666]">
-                    当前页面仅展示 C 端个人信息与订单入口，不提供主办方申请和后台入口。
+              <section className="rounded-3xl border border-[#ffe3ee] bg-gradient-to-br from-white to-[#fff7fa] p-6 shadow-sm flex items-start gap-4">
+                <div className="p-2 bg-[#ff1268]/10 rounded-full shrink-0">
+                  <ShieldCheck className="w-5 h-5 text-[#ff1268]" />
+                </div>
+                <div>
+                  <h3 className="text-[16px] font-bold text-[#111]">账户提示</h3>
+                  <p className="mt-2 text-[14px] leading-relaxed text-[#666]">
+                    为了您的账户安全，请不要随意将账号密码透露给他人。后台管理入口仅对“平台管理员”与“活动主办方”开放。如需申请成为主办方，请联系客服获取权限。
                   </p>
-                </section>
-              </aside>
+                </div>
+              </section>
             </div>
           ) : null}
         </div>
@@ -175,12 +152,12 @@ export default function ProfilePage() {
 
 function InfoItem({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-[#fafafa] p-4">
-      <div className="flex items-center gap-2 text-xs font-medium text-[#999]">
-        <span className="text-[#ff1268]">{icon}</span>
+    <div className="rounded-2xl bg-[#fafafa] p-5 border border-gray-100/50 hover:bg-white hover:shadow-md transition-all duration-300 group">
+      <div className="flex items-center gap-2 text-[13px] font-medium text-gray-500 group-hover:text-[#ff1268] transition-colors">
+        <span className="text-gray-400 group-hover:text-[#ff1268] transition-colors">{icon}</span>
         {label}
       </div>
-      <div className="mt-2 break-words text-sm text-[#111]">{value}</div>
+      <div className="mt-3 break-words text-[15px] font-semibold text-gray-900">{value}</div>
     </div>
   )
 }

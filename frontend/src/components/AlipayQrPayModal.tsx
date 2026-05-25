@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import { CheckCircle2, RefreshCw } from 'lucide-react'
 import { syncAlipayPayment } from '@/lib/api'
 import type { PaymentStatusResponse, QrPayResponse } from '@/types/api'
 
@@ -78,7 +79,7 @@ export function AlipayQrPayModal({ pay, productName, onClose, onPaid }: AlipayQr
   }, [onClose])
 
   const statusText = state === 'success' ? '支付成功' : state === 'checking' ? '确认中' : state === 'error' ? '确认失败' : '待支付'
-  const statusColor = state === 'success' ? '#52c41a' : state === 'error' ? '#ff4d4f' : '#ff1268'
+  const statusColor = state === 'success' ? '#52c41a' : state === 'error' ? '#ff4d4f' : '#1677ff'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={onClose}>
@@ -89,39 +90,55 @@ export function AlipayQrPayModal({ pay, productName, onClose, onPaid }: AlipayQr
         className="w-full max-w-[460px] rounded-2xl bg-white p-6 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div>
-            <h3 id="alipay-qr-pay-title" className="text-[20px] font-medium text-[#111]">支付宝扫码支付</h3>
-            <p className="mt-1 text-[13px] text-[#999]">请使用支付宝扫码完成付款</p>
-          </div>
-          <button onClick={onClose} aria-label="关闭支付弹窗" className="border-none bg-transparent text-[24px] leading-none text-[#999] cursor-pointer">×</button>
-        </div>
-
-        <div className="mb-5 rounded-xl bg-[#fafafa] p-4 text-[14px] text-[#666] space-y-2">
-          <div className="flex justify-between gap-4"><span>产品</span><span className="text-right text-[#111]">{productName}</span></div>
-          <div className="flex justify-between gap-4"><span>金额</span><span className="text-[#ff1268] text-[18px] font-medium">¥{Number(pay.amount).toFixed(2)}</span></div>
-          <div className="flex justify-between gap-4"><span>状态</span><span style={{ color: statusColor }}>{statusText}</span></div>
-          <div className="flex justify-between gap-4"><span>订单号</span><span className="text-right text-[#111]">{pay.orderNo}</span></div>
-        </div>
-
-        <div className="mb-5 flex flex-col items-center rounded-xl border border-[#f0f0f0] p-5">
-          {state === 'success' ? (
-            <div className="flex h-[220px] flex-col items-center justify-center text-center">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#52c41a] bg-[#f6ffed] text-[34px] text-[#52c41a]">✓</div>
-              <div className="text-[18px] font-medium text-[#111]">支付成功</div>
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[#1677ff] flex items-center justify-center text-white font-bold text-[18px] shadow-sm">支</div>
+            <div>
+              <h3 id="alipay-qr-pay-title" className="text-[18px] font-medium text-[#111]">支付宝扫码支付</h3>
+              <p className="text-[12px] text-[#999] mt-0.5">请打开支付宝 APP 扫一扫</p>
             </div>
-          ) : (
-            <QRCodeSVG value={pay.qrCode} size={220} includeMargin />
-          )}
-          <p className="mt-3 text-center text-[13px] text-[#999]">{message}</p>
+          </div>
+          <button onClick={onClose} aria-label="关闭支付弹窗" className="border-none bg-transparent text-[24px] leading-none text-[#999] hover:text-[#333] transition-colors cursor-pointer">×</button>
+        </div>
+
+        <div className="mb-6 rounded-xl bg-[#f8f9fa] p-4 text-[14px] text-[#555] space-y-3 border border-[#f0f0f0]">
+          <div className="flex justify-between gap-4">
+            <span className="text-[#888]">商品名称</span>
+            <span className="text-right font-medium text-[#333] truncate max-w-[260px]" title={productName}>{productName}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-[#888]">交易单号</span>
+            <span className="text-right font-mono text-[13px] text-[#333]">{pay.orderNo}</span>
+          </div>
+          <div className="flex justify-between gap-4 items-center">
+            <span className="text-[#888]">支付金额</span>
+            <span className="text-[#ff5000] text-[20px] font-semibold">¥{Number(pay.amount).toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div className="mb-6 flex flex-col items-center">
+          <div className="relative rounded-2xl bg-white p-4 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border border-[#f0f0f0]">
+            {state === 'success' ? (
+              <div className="flex h-[200px] w-[200px] flex-col items-center justify-center text-center">
+                <CheckCircle2 className="mb-4 h-14 w-14 text-[#52c41a]" />
+                <div className="text-[16px] font-medium text-[#333]">支付成功</div>
+              </div>
+            ) : (
+              <QRCodeSVG value={pay.qrCode} size={200} includeMargin={false} />
+            )}
+          </div>
+          <div className="mt-4 flex items-center gap-2">
+            {state === 'pending' || state === 'checking' ? (
+              <div className="w-2 h-2 rounded-full bg-[#1677ff] animate-pulse"></div>
+            ) : null}
+            <p className="text-center text-[14px] font-medium" style={{ color: statusColor }}>{message}</p>
+          </div>
         </div>
 
         <div className="flex gap-3">
-          <button onClick={refreshStatus} disabled={checking || state === 'success'} className="flex-1 rounded-lg border border-[#ff1268] bg-white py-2.5 text-[14px] text-[#ff1268] disabled:opacity-50 cursor-pointer">
-            {checking ? '刷新中...' : '刷新状态'}
-          </button>
-          <button onClick={onClose} className="flex-1 rounded-lg border-none bg-[#ff1268] py-2.5 text-[14px] text-white cursor-pointer">
-            {state === 'success' ? '完成' : '关闭'}
+          <button onClick={refreshStatus} disabled={checking || state === 'success'} className="flex-1 rounded-xl border border-[#1677ff] bg-[#f0f6ff] py-3 text-[14px] font-medium text-[#1677ff] disabled:opacity-50 disabled:bg-[#f5f5f5] disabled:border-[#ddd] disabled:text-[#999] hover:bg-[#e6f0ff] transition-colors cursor-pointer flex items-center justify-center gap-1.5">
+            <RefreshCw className={`w-4 h-4 ${checking ? 'animate-spin' : ''}`} />
+            {checking ? '正在确认...' : '我已完成付款'}
           </button>
         </div>
       </div>

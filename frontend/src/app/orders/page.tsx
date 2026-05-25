@@ -7,6 +7,8 @@ import { Footer } from '@/components/Footer'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund, getRefundOptions } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
+import { ArrowLeft, Check, Ticket as TicketIcon, Search, PackageOpen, Trash2, RotateCcw, AlertCircle, RefreshCw, EyeOff, Loader2 } from 'lucide-react'
+import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import type { OrderEntity, QrPayResponse, RefundOptionsVO, RefundRequestVO, RefundStatus } from '@/types/api'
 
 type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled' | 'trash'
@@ -167,13 +169,13 @@ export default function OrdersPage() {
   }, [])
 
   const handleCancel = async (orderId: number) => {
-    if (!confirm('确定取消该订单吗？')) return
+    if (!(await globalConfirm('确定取消该订单吗？'))) return
     setCancelling(orderId)
     try {
       await cancelOrder(orderId)
       setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: 3 } : o)))
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '取消失败')
+      await globalAlert(err instanceof Error ? err.message : '取消失败')
     } finally {
       setCancelling(null)
     }
@@ -185,14 +187,14 @@ export default function OrdersPage() {
       const pay = await createAlipayQrPay(orderId)
       setQrPay(pay)
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '支付失败')
+      await globalAlert(err instanceof Error ? err.message : '支付失败')
     } finally {
       setPaying(null)
     }
   }
 
   const handleHide = async (orderId: number) => {
-    if (!currentUserId || !confirm('确定删除该订单吗？删除后 7 天内可在回收站恢复。')) return
+    if (!currentUserId || !(await globalConfirm('确定删除该订单吗？删除后 7 天内可在回收站恢复。'))) return
     setHiding(orderId)
     try {
       await hideOrder(orderId, currentUserId)
@@ -207,7 +209,7 @@ export default function OrdersPage() {
         ])
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '删除失败')
+      await globalAlert(err instanceof Error ? err.message : '删除失败')
     } finally {
       setHiding(null)
     }
@@ -224,7 +226,7 @@ export default function OrdersPage() {
         setOrders((prev) => [{ ...target, userHidden: false, userDeletedAt: null, userDeleteExpiresAt: null }, ...prev])
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '恢复失败')
+      await globalAlert(err instanceof Error ? err.message : '恢复失败')
     } finally {
       setRestoring(null)
     }
@@ -238,10 +240,10 @@ export default function OrdersPage() {
         setOrders((prev) => prev.map((order) => (order.id === orderId ? { ...order, status: 2 } : order)))
         setQrPay((current) => (current?.orderId === orderId ? null : current))
       } else {
-        alert(result.message || '支付结果确认中')
+        await globalAlert(result.message || '支付结果确认中')
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '刷新支付状态失败')
+      await globalAlert(err instanceof Error ? err.message : '刷新支付状态失败')
     } finally {
       setRefreshing(null)
     }
@@ -250,17 +252,17 @@ export default function OrdersPage() {
   const handleApplyRefund = async () => {
     if (!refundTarget) return
     if (!refundOptions) {
-      alert('退款明细加载中，请稍后再试')
+      await globalAlert('退款明细加载中，请稍后再试')
       return
     }
     const hasSeats = refundOptions.seats.length > 0
     const quantity = hasSeats ? selectedOrderSeatIds.length : refundQuantity
     if (quantity < 1) {
-      alert(hasSeats ? '请至少选择一个座位' : '请选择退款张数')
+      await globalAlert(hasSeats ? '请至少选择一个座位' : '请选择退款张数')
       return
     }
     if (quantity > refundOptions.refundableQuantity) {
-      alert('退款张数超过可退张数')
+      await globalAlert('退款张数超过可退张数')
       return
     }
     setRefundSubmitting(true)
@@ -285,7 +287,7 @@ export default function OrdersPage() {
       setRefundReason('')
       setRefundReasonType('general')
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '申请退款失败')
+      await globalAlert(err instanceof Error ? err.message : '申请退款失败')
     } finally {
       setRefundSubmitting(false)
     }
@@ -294,7 +296,7 @@ export default function OrdersPage() {
   const openRefundDialog = async (order: EnrichedOrder) => {
     const user = getUser()
     if (!user?.userId) {
-      alert('请先登录后再申请退款')
+      await globalAlert('请先登录后再申请退款')
       return
     }
     const requestId = refundOptionsRequestIdRef.current + 1
@@ -314,7 +316,7 @@ export default function OrdersPage() {
       setRefundQuantity(Math.min(1, options.refundableQuantity))
     } catch (err: unknown) {
       if (refundOptionsRequestIdRef.current !== requestId || refundTargetIdRef.current !== order.id) return
-      alert(err instanceof Error ? err.message : '加载退款明细失败')
+      await globalAlert(err instanceof Error ? err.message : '加载退款明细失败')
       setRefundTarget(null)
       refundTargetIdRef.current = null
     } finally {
@@ -362,11 +364,11 @@ export default function OrdersPage() {
   return (
     <>
       <Header />
-      <main className="max-w-[1200px] mx-auto px-5 py-8" style={{ minHeight: 'calc(100vh - 200px)' }}>
+      <main className="w-full max-w-[1200px] mx-auto px-5 py-8" style={{ minHeight: 'calc(100vh - 200px)' }}>
         <h1 className="text-[24px] text-[#111] font-medium mb-6">我的订单</h1>
         {activeTab === 'trash' && (
           <div className="mb-4 rounded bg-[#fff7e6] px-4 py-3 text-[13px] text-[#8a5a00]">
-            回收站订单保留 7 天，超过后用户侧不再展示；后台仍保留完整订单记录。
+            提示：回收站内的订单最多保留 7 天，超过 7 天后将自动清理。
           </div>
         )}
 
@@ -404,7 +406,7 @@ export default function OrdersPage() {
             </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-6">
             {filteredOrders.map((order) => {
               const refundInfo = refundMap[order.id]
               const activeRefund = refundInfo?.active
@@ -413,16 +415,17 @@ export default function OrdersPage() {
               return (
                 <div
                   key={order.id}
-                  className="bg-white border border-[#e9e9e9] rounded-lg overflow-hidden"
+                  className="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-300"
                 >
                   {/* 订单头部 */}
-                  <div className="flex items-center justify-between px-5 py-3 bg-[#fafafa] border-b border-[#f0f0f0]">
-                    <div className="flex items-center gap-4 text-[12px] text-[#999]">
+                  <div className="flex items-center justify-between px-6 py-4 bg-gray-50/80 border-b border-gray-100">
+                    <div className="flex items-center gap-4 text-[13px] text-gray-500 font-medium">
                       <span>订单号：{order.orderNo}</span>
-                      <span>{order.createTime?.slice(0, 16).replace('T', ' ') || ''}</span>
+                      <span className="w-1 h-1 rounded-full bg-gray-300 hidden sm:block"></span>
+                      <span className="hidden sm:inline">{order.createTime?.slice(0, 16).replace('T', ' ') || ''}</span>
                     </div>
                     <span
-                      className="inline-block px-2.5 py-0.5 rounded text-[12px]"
+                      className="inline-flex items-center px-3 py-1 rounded-full text-[12px] font-medium"
                       style={{ color: (STATUS_MAP[order.status] || STATUS_MAP[3]).color, backgroundColor: (STATUS_MAP[order.status] || STATUS_MAP[3]).bg }}
                     >
                       {(STATUS_MAP[order.status] || STATUS_MAP[3]).label}
@@ -430,70 +433,67 @@ export default function OrdersPage() {
                   </div>
 
                   {/* 订单内容 */}
-                  <div className="flex items-center p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-start p-6 gap-6">
                     {/* 活动海报 */}
                     <a
                       href={order.activityId ? `/activity/${order.activityId}` : '#'}
-                      className="flex-shrink-0 mr-4"
+                      className="flex-shrink-0 relative group rounded-2xl overflow-hidden shadow-sm"
                     >
                       <img
                         src={order.activityPoster || '/background.png'}
                         alt={order.activityName}
-                        className="w-[100px] h-[133px] object-cover rounded"
+                        className="w-[110px] h-[146px] object-cover transition-transform duration-300 group-hover:scale-105"
                       />
+                      <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                     </a>
 
                     {/* 订单信息 */}
-                    <div className="flex-1 flex flex-col gap-1.5">
+                    <div className="flex-1 flex flex-col gap-2">
                       <a
                         href={order.activityId ? `/activity/${order.activityId}` : '#'}
-                        className="text-[16px] text-[#111] font-medium no-underline hover:text-[#ff1268] transition-colors"
+                        className="text-[18px] text-[#111] font-bold no-underline hover:text-[#ff1268] transition-colors line-clamp-2"
                       >
                         {order.activityName}
                       </a>
-                      <div className="text-[13px] text-[#666]">
-                        <span>场次：{order.sessionTime || '待定'}</span>
-                        <span className="mx-2">|</span>
+                      <div className="text-[14px] text-gray-500 mt-1 flex flex-wrap items-center gap-2">
+                        <span className="bg-gray-100 px-2 py-1 rounded-md text-[12px]">{order.sessionTime || '待定'}</span>
+                        <span className="text-gray-400">|</span>
                         <span>{order.venueName || '待定场馆'}</span>
                       </div>
-                      <div className="text-[13px] text-[#666]">
-                        <span>{order.ticketName || '未知票档'}</span>
-                        <span className="mx-2">|</span>
+                      <div className="text-[14px] text-gray-500 mt-1 flex items-center gap-3">
+                        <span className="font-medium text-gray-700">{order.ticketName || '未知票档'}</span>
                         <span>×{order.quantity}张</span>
-                        <span className="mx-2">|</span>
-                        <span>单价 ¥{(order.unitPrice || 0).toFixed(2)}</span>
                       </div>
-                      <div className="text-[13px] text-[#666]">座位：{order.seatLabels}</div>
-                      <div className="text-[20px] text-[#ff1268] font-medium mt-1">
-                        ¥{order.amount.toFixed(2)}
+                      <div className="text-[13px] text-gray-400 mt-2 bg-gray-50 rounded-lg p-2.5 border border-gray-100">
+                        座位信息：<span className="text-gray-700">{order.seatLabels}</span>
+                      </div>
+                      <div className="text-[22px] text-[#ff1268] font-bold mt-2">
+                        <span className="text-[14px] font-medium mr-1">¥</span>{order.amount.toFixed(2)}
                       </div>
                     </div>
 
                     {/* 操作按钮 */}
-                    <div className="flex-shrink-0 flex flex-col gap-2 ml-6">
+                    <div className="flex-shrink-0 flex sm:flex-col items-stretch justify-end sm:justify-start gap-3 mt-4 sm:mt-0 sm:w-[140px]">
                       {activeTab !== 'trash' && order.status === 1 && (
                         <>
                           <button
                             onClick={() => handlePay(order.id)}
                             disabled={paying === order.id || refreshing === order.id || cancelling === order.id}
-                            className="cursor-pointer border-none outline-none text-white text-[14px] px-6 py-2 rounded"
-                            style={{ backgroundColor: '#ff1268', opacity: paying === order.id || refreshing === order.id || cancelling === order.id ? 0.7 : 1 }}
+                            className="cursor-pointer border-none outline-none text-white text-[14px] font-medium px-5 py-2.5 rounded-full transition-colors bg-[#ff1268] hover:bg-[#e60f5f] shadow-sm shadow-[#ff1268]/20 disabled:opacity-70 disabled:cursor-not-allowed"
                           >
-                            {paying === order.id ? '支付中...' : '去支付'}
+                            {paying === order.id ? '支付中...' : '立即支付'}
                           </button>
                           <button
                             onClick={() => handleRefreshPayment(order.id)}
                             disabled={refreshing === order.id || paying === order.id || cancelling === order.id}
-                            className="cursor-pointer border border-[#ff1268] bg-white text-[#ff1268] text-[14px] px-6 py-2 rounded outline-none"
-                            style={{ opacity: refreshing === order.id || paying === order.id || cancelling === order.id ? 0.7 : 1 }}
+                            className="cursor-pointer border border-[#ff1268] bg-white text-[#ff1268] text-[14px] font-medium px-5 py-2.5 rounded-full outline-none transition-colors hover:bg-[#fff0f5] disabled:opacity-70 disabled:cursor-not-allowed"
                           >
                             {refreshing === order.id ? '刷新中...' : '刷新状态'}
                           </button>
                           <button
                             onClick={() => handleCancel(order.id)}
                             disabled={cancelling === order.id || paying === order.id || refreshing === order.id}
-                            className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
-                            style={{ opacity: cancelling === order.id || paying === order.id || refreshing === order.id ? 0.7 : 1 }}
+                            className="cursor-pointer border border-gray-200 bg-white text-gray-600 text-[14px] font-medium px-5 py-2.5 rounded-full outline-none transition-colors hover:bg-gray-50 disabled:opacity-70 disabled:cursor-not-allowed"
                           >
                             {cancelling === order.id ? '取消中...' : '取消订单'}
                           </button>
@@ -503,8 +503,7 @@ export default function OrdersPage() {
                         <button
                           onClick={() => handleRestore(order.id)}
                           disabled={restoring === order.id}
-                          className="cursor-pointer border border-[#ff1268] bg-white text-[#ff1268] text-[14px] px-6 py-2 rounded outline-none"
-                          style={{ opacity: restoring === order.id ? 0.7 : 1 }}
+                          className="cursor-pointer border border-[#ff1268] bg-white text-[#ff1268] text-[14px] font-medium px-5 py-2.5 rounded-full outline-none transition-colors hover:bg-[#fff0f5] disabled:opacity-70 disabled:cursor-not-allowed"
                         >
                           {restoring === order.id ? '恢复中...' : '恢复订单'}
                         </button>
@@ -512,7 +511,7 @@ export default function OrdersPage() {
                         <>
                           {activeRefund ? (
                             <span
-                              className="text-[13px] text-center"
+                              className="text-[13px] text-center font-medium bg-gray-50 py-2 rounded-full border border-gray-100"
                               style={{ color: REFUND_STATUS_MAP[activeRefund.status].color }}
                             >
                               {REFUND_STATUS_MAP[activeRefund.status].label}
@@ -520,26 +519,24 @@ export default function OrdersPage() {
                           ) : (
                             <button
                               onClick={() => openRefundDialog(order)}
-                              className="cursor-pointer border border-[#ff1268] bg-white text-[#ff1268] text-[14px] px-6 py-2 rounded outline-none"
+                              className="cursor-pointer border border-[#ff1268] bg-white text-[#ff1268] text-[14px] font-medium px-5 py-2.5 rounded-full outline-none transition-colors hover:bg-[#fff0f5]"
                             >
                               申请退款
                             </button>
                           )}
                           {latestRefund && !activeRefund && (latestRefund.status === 2 || latestRefund.status === 3) && (
-                            <span className="max-w-[180px] text-[12px] text-[#999] leading-[18px] text-center">
-                              上次{REFUND_STATUS_MAP[latestRefund.status].label.replace('退款', '')}：{lastRefundNote || '暂无备注'}
+                            <span className="text-[12px] text-gray-400 leading-relaxed text-center mt-2 px-2">
+                              上次{REFUND_STATUS_MAP[latestRefund.status].label.replace('退款', '')}：<br/>{lastRefundNote || '暂无备注'}
                             </span>
                           )}
                         </>
                       )}
                       {activeTab !== 'trash' && (order.status === 3 || order.status === 4) && (
                         <>
-                          <span className="text-[13px] text-[#999]">{STATUS_MAP[order.status]?.label || '已取消'}</span>
                           <button
                             onClick={() => handleHide(order.id)}
                             disabled={hiding === order.id}
-                            className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
-                            style={{ opacity: hiding === order.id ? 0.7 : 1 }}
+                            className="cursor-pointer border border-gray-200 bg-white text-gray-600 text-[14px] font-medium px-5 py-2.5 rounded-full outline-none transition-colors hover:bg-gray-50 disabled:opacity-70 disabled:cursor-not-allowed"
                           >
                             {hiding === order.id ? '删除中...' : '删除订单'}
                           </button>
@@ -549,8 +546,7 @@ export default function OrdersPage() {
                         <button
                           onClick={() => handleHide(order.id)}
                           disabled={hiding === order.id || cancelling === order.id || paying === order.id || refreshing === order.id}
-                          className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
-                          style={{ opacity: hiding === order.id || cancelling === order.id || paying === order.id || refreshing === order.id ? 0.7 : 1 }}
+                          className="cursor-pointer border border-gray-200 bg-white text-gray-600 text-[14px] font-medium px-5 py-2.5 rounded-full outline-none transition-colors hover:bg-gray-50 disabled:opacity-70 disabled:cursor-not-allowed"
                         >
                           {hiding === order.id ? '删除中...' : '删除订单'}
                         </button>

@@ -7,6 +7,7 @@ import { getUser } from '@/lib/auth'
 import { SeatCraftTicketEditor } from '@/components/seatcraft-unified/SeatCraftTicketEditor'
 import { createAdminSession, createAdminTicketType, deleteAdminSession, deleteAdminTicketType, getActivitySeatLayout, getSessionTicketDrafts, listAdminActivities, listAdminSessions, listAdminVenues, updateAdminSession, updateAdminTicketType } from '@/lib/api'
 import { Edit, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { globalConfirm } from '@/components/GlobalDialog'
 import type { ActivityEntity, SeatCraftLayoutVO, SeatCraftSectionVO, SessionAdminVO, VenueEntity } from '@/types/api'
 
 const PAGE_SIZE = 10
@@ -236,9 +237,9 @@ function SessionsPageContent() {
 
   const handleDeleteSession = async (session: SessionAdminVO) => {
     if (session.ticketTypeCount > 0) {
-      const confirmed = confirm('该场次已有票档。删除场次会同时删除票档、座位快照和场次座位图。确认删除？')
+      const confirmed = await globalConfirm('该场次已有票档。删除场次会同时删除票档、座位快照和场次座位图。确认删除？')
       if (!confirmed) return
-    } else if (!confirm('确认删除该场次？')) {
+    } else if (!(await globalConfirm('确认删除该场次？'))) {
       return
     }
     try {
@@ -394,7 +395,7 @@ function SessionsPageContent() {
 
   const handleDeleteTicketType = async (ticket: NonNullable<SessionAdminVO['ticketTypes']>[number]) => {
     if (!ticketFormSession) return
-    if (!confirm(`确认删除票档“${ticket.name}”？`)) return
+    if (!(await globalConfirm(`确认删除票档“${ticket.name}”？`))) return
     try {
       await deleteAdminTicketType(ticket.id, userId)
       if (editingTicketId === ticket.id) {

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { GlobalDialog } from "@/components/GlobalDialog";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-[#f5f5f5]">{children}</body>
+      <body className="min-h-full flex flex-col bg-[#f5f5f5]">
+        {children}
+        <GlobalDialog />
+      </body>
     </html>
   );
 }

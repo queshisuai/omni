@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { listAdminActivities, listActivityRiskResolutions, submitActivityRiskResolution } from '@/lib/api'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { globalAlert } from '@/components/GlobalDialog'
 import type { ActivityEntity, ActivityRiskResolutionVO } from '@/types/api'
 
 const RESOLUTION_TYPES = [
@@ -91,18 +92,18 @@ export default function OrganizerRiskEventsPage() {
 
   const submit = async () => {
     if (!target) return
-    if (!resolutionNote.trim()) { alert('处理说明不能为空'); return }
+    if (!resolutionNote.trim()) { await globalAlert('处理说明不能为空'); return }
     setSubmitting(true)
     try {
       await submitActivityRiskResolution(target.id, {
         userId,
         resolutionNote: `${TYPE_PREFIX[resolutionType]} ${resolutionNote.trim()}`,
       })
-      alert('已提交恢复售票申请，等待平台审核。')
+      await globalAlert('已提交恢复售票申请，等待平台审核。')
       setTarget(null); setResolutionNote(''); setResolutionType('explain')
       await loadData(userId)
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '提交失败')
+      await globalAlert(err instanceof Error ? err.message : '提交失败')
     } finally {
       setSubmitting(false)
     }

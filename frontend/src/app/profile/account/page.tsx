@@ -138,10 +138,10 @@ export default function ProfileAccountPage() {
     <>
       <Header />
       <main className="bg-[#f7f8fa] px-4 py-8 sm:px-6 sm:py-10">
-        <div className="mx-auto max-w-[960px]">
+        <div className="mx-auto max-w-[1080px]">
           <div className="mb-6">
-            <h1 className="text-[28px] font-semibold text-[#111]">账号设置</h1>
-            <p className="mt-2 text-sm text-[#666]">编辑个人资料并修改密码，修改后不会强制退出登录。</p>
+            <h1 className="text-[28px] font-bold text-[#111]">账号设置</h1>
+            <p className="mt-2 text-[14px] text-[#666]">编辑个人资料并修改密码，修改后不会强制退出登录。</p>
           </div>
 
           {loading ? (
@@ -162,8 +162,8 @@ export default function ProfileAccountPage() {
               </button>
             </div>
           ) : (
-            <div className="space-y-6">
-              <section className="rounded-3xl border border-[#ececec] bg-white p-6 shadow-sm sm:p-8">
+            <div className="grid gap-6 lg:grid-cols-2 items-start">
+              <section className="rounded-3xl border border-[#ececec] bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-8">
                 <div className="mb-6 flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#fff0f5] text-[#ff1268]">
                     <User className="h-5 w-5" />
@@ -199,14 +199,15 @@ export default function ProfileAccountPage() {
                       onUpload={handleAvatarUpload}
                       onChange={(value) => setForm((prev) => ({ ...prev, avatar: value }))}
                       hint="支持 JPG、PNG、WebP、GIF，上传后会自动写入头像地址。"
+                      cropImage={true}
                     />
                   </div>
-                  <div className="sm:col-span-2 flex flex-col gap-3 border-t border-[#f0f0f0] pt-4 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-[#666]">{profileMessage || `当前账号：${user?.phone || ''}`}</p>
+                  <div className="sm:col-span-2 flex flex-col gap-3 border-t border-[#f0f0f0] pt-6 mt-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[13px] text-[#666]">{profileMessage || `当前账号：${user?.phone || ''}`}</p>
                     <button
                       type="submit"
                       disabled={savingProfile || uploadingAvatar}
-                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#ff1268] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#e60f5f] disabled:cursor-not-allowed disabled:opacity-70"
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#ff1268] px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#e60f5f] disabled:cursor-not-allowed disabled:opacity-70 shadow-sm shadow-[#ff1268]/20"
                     >
                       {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                       保存资料
@@ -215,7 +216,7 @@ export default function ProfileAccountPage() {
                 </form>
               </section>
 
-              <section className="rounded-3xl border border-[#ececec] bg-white p-6 shadow-sm sm:p-8">
+              <section className="rounded-3xl border border-[#ececec] bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sm:p-8">
                 <div className="mb-6 flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#fff0f5] text-[#ff1268]">
                     <LockKeyhole className="h-5 w-5" />
@@ -249,15 +250,15 @@ export default function ProfileAccountPage() {
                     onChange={(value) => setPasswordForm((prev) => ({ ...prev, confirmPassword: value }))}
                   />
 
-                  <div className="sm:col-span-2 flex flex-col gap-3 border-t border-[#f0f0f0] pt-4 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-[#666]">{passwordMessage || '密码长度建议不少于 6 位；验证码使用演示环境固定值 666666。'}</p>
+                  <div className="sm:col-span-2 flex flex-col gap-3 border-t border-[#f0f0f0] pt-6 mt-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[13px] text-[#666] max-w-[280px]">{passwordMessage || '密码长度建议不少于 6 位；验证码使用演示环境固定值 666666。'}</p>
                     <button
                       type="submit"
                       disabled={savingPassword}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-[#ff1268] px-5 py-2.5 text-sm font-medium text-[#ff1268] transition-colors hover:bg-[#fff0f5] disabled:cursor-not-allowed disabled:opacity-70"
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-[#ff1268] px-6 py-2.5 text-sm font-medium text-[#ff1268] transition-colors hover:bg-[#fff0f5] disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {savingPassword ? <Loader2 className="h-4 w-4 animate-spin" /> : <LockKeyhole className="h-4 w-4" />}
-                      修改密码
+                      确认修改
                     </button>
                   </div>
                 </form>

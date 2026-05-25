@@ -45,37 +45,26 @@ function toActivity(vo: ActivityVO): Activity {
 // ========== 筛选栏组件 ==========
 function FactorTitle({ children }: { children: React.ReactNode }) {
   return (
-    <span style={{
-      width: 80, textAlign: 'right', fontSize: 14, color: '#968788',
-      lineHeight: '26px', flexShrink: 0, paddingRight: 20,
-    }}>
+    <span className="w-16 text-right text-[13px] text-gray-400 font-medium tracking-wider leading-8 shrink-0 mr-6">
       {children}
     </span>
   )
 }
 
-function FilterItem({ active, onClick, children, style }: {
-  active: boolean; onClick?: () => void; children: React.ReactNode; style?: React.CSSProperties
+function FilterItem({ active, onClick, children, className }: {
+  active: boolean; onClick?: () => void; children: React.ReactNode; className?: string
 }) {
   return (
-    <span
+    <button
       onClick={onClick}
-      style={{
-        display: 'inline-block',
-        padding: '0 8px',
-        height: 26,
-        lineHeight: '26px',
-        fontSize: 14,
-        marginRight: 6,
-        cursor: 'pointer',
-        backgroundColor: active ? '#ED0B75' : 'transparent',
-        color: active ? '#fff' : '#333',
-        whiteSpace: 'nowrap',
-        ...style,
-      }}
+      className={`px-4 py-1.5 text-[13px] rounded-full transition-all duration-200 whitespace-nowrap ${
+        active 
+          ? 'bg-[#ff1268] text-white shadow-sm shadow-[#ff1268]/20 font-medium' 
+          : 'text-gray-600 hover:bg-[#fff4f8] hover:text-[#ff1268]'
+      } ${className || ''}`}
     >
       {children}
-    </span>
+    </button>
   )
 }
 
@@ -98,31 +87,26 @@ function Pagination({ page, totalPages, onPageChange }: {
   }
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 4, marginTop: 24, marginBottom: 16 }}>
+    <div className="flex justify-center items-center gap-2 mt-12 mb-8">
       <button
         disabled={page <= 1}
         onClick={() => onPageChange(page - 1)}
-        style={{
-          padding: '6px 12px', fontSize: 13, cursor: page <= 1 ? 'default' : 'pointer',
-          border: '1px solid #e5e5e5', backgroundColor: '#fff', color: page <= 1 ? '#ccc' : '#333',
-          borderRadius: 2, outline: 'none',
-        }}
+        className="px-4 py-2 text-[13px] rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
       >
         上一页
       </button>
       {pages.map((p, i) =>
         p === '...' ? (
-          <span key={`dots-${i}`} style={{ padding: '0 4px', color: '#999', fontSize: 13 }}>...</span>
+          <span key={`dots-${i}`} className="px-2 text-gray-400">...</span>
         ) : (
           <button
             key={p}
-            onClick={() => onPageChange(p)}
-            style={{
-              minWidth: 32, height: 32, fontSize: 13, cursor: 'pointer',
-              border: '1px solid #e5e5e5', borderRadius: 2, outline: 'none',
-              backgroundColor: p === page ? '#ED0B75' : '#fff',
-              color: p === page ? '#fff' : '#333',
-            }}
+            onClick={() => onPageChange(p as number)}
+            className={`w-9 h-9 flex items-center justify-center text-[13px] rounded-lg transition-all font-medium ${
+              p === page 
+                ? 'bg-[#ff1268] text-white shadow-sm shadow-[#ff1268]/20' 
+                : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
           >
             {p}
           </button>
@@ -131,17 +115,10 @@ function Pagination({ page, totalPages, onPageChange }: {
       <button
         disabled={page >= totalPages}
         onClick={() => onPageChange(page + 1)}
-        style={{
-          padding: '6px 12px', fontSize: 13, cursor: page >= totalPages ? 'default' : 'pointer',
-          border: '1px solid #e5e5e5', backgroundColor: '#fff', color: page >= totalPages ? '#ccc' : '#333',
-          borderRadius: 2, outline: 'none',
-        }}
+        className="px-4 py-2 text-[13px] rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
       >
         下一页
       </button>
-      <span style={{ marginLeft: 8, fontSize: 13, color: '#666' }}>
-        共{totalPages}页
-      </span>
     </div>
   )
 }
@@ -154,31 +131,22 @@ function SortBar({ sort, onSortChange, page, totalPages }: {
   totalPages: number
 }) {
   return (
-    <div style={{
-      width: 928, height: 40, backgroundColor: '#f5f5f5',
-      border: '1px solid #eaeaea', display: 'flex',
-      alignItems: 'center', justifyContent: 'space-between',
-      marginBottom: 16,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+    <div className="flex items-center justify-between bg-white rounded-2xl p-2 shadow-[0_2px_10px_rgb(0,0,0,0.02)] mb-6 border border-gray-100">
+      <div className="flex items-center gap-1">
         {(Object.entries(SORT_LABELS) as [SortType, string][]).map(([key, label]) => (
-          <span
+          <button
             key={key}
             onClick={() => onSortChange(key)}
-            style={{
-              display: 'flex', alignItems: 'center', height: '100%',
-              padding: '0 24px', fontSize: 14, cursor: 'pointer',
-              color: sort === key ? '#ED0B75' : '#666',
-            }}
+            className={`px-5 py-2 text-[14px] rounded-xl transition-all duration-200 ${
+              sort === key ? 'bg-[#fff4f8] text-[#ff1268] font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 font-medium'
+            }`}
           >
             {label}
-          </span>
+          </button>
         ))}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', paddingRight: 16 }}>
-        <span style={{ fontSize: 14, color: '#666' }}>
-          {page}/{totalPages || 1}
-        </span>
+      <div className="pr-4 text-[13px] text-gray-400 font-medium">
+        <span className="text-[#ff1268]">{page}</span> / {totalPages || 1}
       </div>
     </div>
   )
@@ -361,45 +329,39 @@ function SearchContent() {
   }
 
   return (
-    <div style={{ width: 1200, margin: '0 auto', padding: '20px 0' }}>
+    <div className="max-w-[1200px] mx-auto w-full px-5 py-8 flex-1">
       {/* 结果计数 */}
-      <div style={{ fontSize: 14, color: '#333', marginBottom: 12 }}>
+      <div className="text-[13px] text-gray-500 mb-6 font-medium tracking-wide">
         {keyword ? (
-          <>搜索&quot;<span style={{ color: '#ED0B75' }}>{keyword}</span>&quot; 共<span style={{ color: '#ED0B75', margin: '0 4px' }}>{displayTotal}</span>个商品</>
+          <>搜索 "<span className="text-[#ff1268]">{keyword}</span>" 共 <span className="text-[#ff1268] mx-1">{displayTotal}</span> 个商品</>
         ) : (
-          <>共<span style={{ color: '#ED0B75', margin: '0 4px' }}>{displayTotal}</span>个商品</>
+          <>共 <span className="text-[#ff1268] mx-1">{displayTotal}</span> 个商品</>
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 24 }}>
+      <div className="flex gap-8 items-start">
         {/* 左侧主体 */}
-        <div style={{ width: 928 }}>
+        <div className="flex-1 min-w-0">
           {/* 筛选面板 */}
-          <div style={{
-            border: '1px solid #e9e9e9', padding: '0 24px',
-            marginBottom: 12, backgroundColor: '#fff',
-          }}>
+          <div className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] mb-6 border border-gray-100">
             {/* 城市筛选 */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', padding: '12px 0', borderBottom: '1px dotted #e9e9e9' }}>
+            <div className="flex items-start py-4 border-b border-gray-100 border-dashed">
               <FactorTitle>城 市：</FactorTitle>
-              <div style={{ flex: 1 }}>
-                <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <div style={{ fontSize: 14, color: '#333' }}>
+              <div className="flex-1 min-w-0">
+                <div className="mb-4 flex items-center gap-4">
+                  <div className="text-[13px] text-gray-500 font-medium">
                     当前选中城市
-                    <span style={{ color: '#ED0B75', marginLeft: 8 }}>{activeCity === '全部' ? '全国' : activeCity}</span>
+                    <span className="text-[#ff1268] ml-2 font-bold">{activeCity === '全部' ? '全国' : activeCity}</span>
                   </div>
                   <input 
                     type="text"
                     placeholder="输入城市名快速搜索"
                     value={citySearchKeyword}
                     onChange={(e) => setCitySearchKeyword(e.target.value)}
-                    style={{
-                      padding: '4px 12px', fontSize: 12, border: '1px solid #e5e5e5',
-                      borderRadius: 12, outline: 'none', width: 140, color: '#333'
-                    }}
+                    className="px-4 py-1.5 text-[13px] border border-gray-200 rounded-full outline-none w-48 text-gray-700 focus:border-[#ff1268]/40 focus:ring-2 focus:ring-[#ff1268]/10 transition-all placeholder:text-gray-400 bg-gray-50 focus:bg-white"
                   />
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 0', maxHeight: (showAllCities || citySearchKeyword) ? 300 : 'auto', overflowY: (showAllCities || citySearchKeyword) ? 'auto' : 'visible' }} className="custom-scrollbar">
+                <div className={`flex flex-wrap gap-y-3 gap-x-2 custom-scrollbar transition-all ${showAllCities || citySearchKeyword ? 'max-h-[300px] overflow-y-auto pr-2' : ''}`}>
                   <FilterItem 
                     active={activeCity === '全部'}
                     onClick={() => { setActiveCity('全部'); setPage(1); }}
@@ -419,26 +381,21 @@ function SearchContent() {
                   ))}
                   <button
                     onClick={() => setShowAllCities(!showAllCities)}
-                    style={{
-                      background: 'none', border: 'none', color: '#ED0B75',
-                      fontSize: 14, cursor: 'pointer', padding: '0 8px',
-                      height: 26, lineHeight: '26px'
-                    }}
+                    className="text-[#ff1268] text-[13px] font-medium px-2 py-1.5 hover:bg-[#fff4f8] rounded-full transition-colors ml-1"
                   >
-                    {showAllCities ? '收起 ^' : '更多...'}
+                    {showAllCities ? '收起 ∧' : '更多...'}
                   </button>
                 </div>
               </div>
             </div>
 
             {/* 分类筛选 */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', padding: '12px 0', borderBottom: '1px dotted #e9e9e9' }}>
+            <div className="flex items-start py-4 border-b border-gray-100 border-dashed">
               <FactorTitle>分 类：</FactorTitle>
-              <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 0 }}>
+              <div className="flex-1 flex flex-wrap gap-y-3 gap-x-2">
                 <FilterItem
                   active={!activeCategory}
                   onClick={() => handleCategoryChange('')}
-                  style={{ marginRight: 24 }}
                 >
                   全部
                 </FilterItem>
@@ -447,7 +404,6 @@ function SearchContent() {
                     key={cat.id}
                     active={activeCategory === cat.name}
                     onClick={() => handleCategoryChange(cat.name)}
-                    style={{ marginRight: 24 }}
                   >
                     {cat.name}
                   </FilterItem>
@@ -456,31 +412,29 @@ function SearchContent() {
             </div>
 
             {/* 时间筛选 */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', padding: '12px 0' }}>
+            <div className="flex items-start pt-4">
               <FactorTitle>时 间：</FactorTitle>
-              <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div className="flex-1 flex flex-wrap items-center gap-y-3 gap-x-2">
                 {(Object.entries(TIME_LABELS) as [TimeFilter, string][]).map(([key, label]) => (
                   <FilterItem
                     key={key}
                     active={activeTime === key}
                     onClick={() => handleTimeChange(key)}
-                    style={{ marginRight: 24 }}
                   >
                     {label}
                   </FilterItem>
                 ))}
-                <div style={{ position: 'relative', display: 'inline-block', marginLeft: 16 }}>
-                  <span
+                <div className="relative inline-block ml-2">
+                  <button
                     onClick={() => dateInputRef.current?.showPicker()}
-                    style={{
-                      fontSize: 14, color: activeTime === 'custom' ? '#fff' : '#ED0B75',
-                      backgroundColor: activeTime === 'custom' ? '#ED0B75' : 'transparent',
-                      padding: '0 8px', height: 26, lineHeight: '26px',
-                      cursor: 'pointer', display: 'inline-block',
-                    }}
+                    className={`px-4 py-1.5 text-[13px] rounded-full transition-all duration-200 whitespace-nowrap border ${
+                      activeTime === 'custom'
+                        ? 'bg-[#ff1268] border-[#ff1268] text-white shadow-sm shadow-[#ff1268]/20 font-medium'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]'
+                    }`}
                   >
                     按日历{customDate ? ` (${customDate})` : ''}
-                  </span>
+                  </button>
                   <input
                     ref={dateInputRef}
                     type="date"
@@ -496,10 +450,7 @@ function SearchContent() {
                         setPage(1);
                       }
                     }}
-                    style={{
-                      position: 'absolute', left: 0, bottom: 0,
-                      width: '1px', height: '1px', opacity: 0, pointerEvents: 'none'
-                    }}
+                    className="absolute left-0 bottom-0 w-px h-px opacity-0 pointer-events-none"
                   />
                 </div>
               </div>
@@ -511,16 +462,17 @@ function SearchContent() {
 
           {/* 结果网格 */}
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '60px 0', color: '#999', fontSize: 14 }}>
-              努力加载中...
+            <div className="flex flex-col items-center justify-center gap-4 py-32 text-gray-400">
+              <div className="w-8 h-8 border-4 border-[#ff1268]/20 border-t-[#ff1268] rounded-full animate-spin" />
+              <div className="text-[14px] font-medium tracking-wider">努力搜索中...</div>
             </div>
           ) : pageData.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 0', color: '#999', fontSize: 14 }}>
+            <div className="text-center py-32 text-gray-400 text-[14px] font-medium tracking-wider">
               暂无符合条件的商品
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5">
                 {pageData.map((activity) => (
                   <TicketCard key={activity.id} activity={activity} />
                 ))}
@@ -531,32 +483,31 @@ function SearchContent() {
         </div>
 
         {/* 右侧推荐 */}
-        <div style={{ width: 248 }}>
-          <div style={{
-            backgroundColor: '#fff', border: '1px solid #e9e9e9',
-            padding: 16, marginBottom: 12,
-          }}>
-            <h3 style={{ fontSize: 16, color: '#333', margin: '0 0 12px', fontWeight: 500 }}>
+        <div className="w-[280px] shrink-0 hidden lg:block">
+          <div className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sticky top-[96px] border border-gray-100">
+            <h3 className="text-[18px] font-extrabold text-gray-900 mb-6 tracking-tight flex items-center">
+              <span className="w-1 h-4 bg-[#ff1268] rounded-full mr-2"></span>
               您可能还喜欢
             </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="flex flex-col gap-6">
               {allFiltered.slice(0, 4).map((a) => (
                 <a
                   key={a.id}
                   href={`/activity/${a.id}`}
-                  style={{ display: 'flex', gap: 8, textDecoration: 'none' }}
+                  className="flex gap-4 group"
                 >
-                  <img
-                    src={a.poster}
-                    alt={a.title}
-                    style={{ width: 80, height: 106, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
-                  />
-                  <div>
-                    <div style={{ fontSize: 13, color: '#333', lineHeight: 1.4, marginBottom: 4 }}
-                      className="line-clamp-2">
+                  <div className="w-[84px] h-[112px] shrink-0 bg-gray-100 rounded-xl overflow-hidden relative shadow-sm">
+                    <img
+                      src={a.poster}
+                      alt={a.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0 py-1 flex flex-col justify-between">
+                    <div className="text-[14px] text-gray-800 font-bold leading-snug line-clamp-2 group-hover:text-[#ff1268] transition-colors">
                       {a.title}
                     </div>
-                    <div style={{ fontSize: 16, color: '#ED0B75', fontWeight: 500 }}>
+                    <div className="text-[16px] font-extrabold text-[#ff1268] tracking-tight">
                       {a.priceRange}
                     </div>
                   </div>
@@ -573,16 +524,17 @@ function SearchContent() {
 // ========== 页面入口 ==========
 export default function SearchPage() {
   return (
-    <>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header />
       <Suspense fallback={
-        <div style={{ width: 1200, margin: '0 auto', padding: '60px 0', textAlign: 'center', color: '#999', fontSize: 14 }}>
-          加载中...
+        <div className="flex flex-col items-center justify-center gap-4 py-32 text-gray-400 flex-1">
+          <div className="w-8 h-8 border-4 border-[#ff1268]/20 border-t-[#ff1268] rounded-full animate-spin" />
+          <div className="text-[14px] font-medium tracking-wider">加载中...</div>
         </div>
       }>
         <SearchContent />
       </Suspense>
       <Footer />
-    </>
+    </div>
   )
 }

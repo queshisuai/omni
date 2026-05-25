@@ -65,7 +65,7 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-50 bg-white border-b border-[#e5e5e5]">
+    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)]">
       <div className="max-w-[1200px] mx-auto flex items-center h-[72px] px-5 gap-6">
         {/* Logo */}
         <a href="/" className="flex-shrink-0 flex items-center gap-2">
@@ -225,20 +225,19 @@ export function Header() {
 
           {showUserDropdown && (
             <div
-              className="absolute right-0 top-[72px] bg-white border border-[#e5e5e5] rounded-b shadow-lg py-2 z-50 text-center"
-              style={{ minWidth: 120 }}
+              className="absolute right-0 top-[60px] z-50 min-w-[140px] rounded-2xl border border-gray-100 bg-white/95 backdrop-blur-xl shadow-[0_12px_40px_-10px_rgba(0,0,0,0.1)] py-2 text-center overflow-hidden"
             >
               {!loggedIn && (
                 <>
                   <button
                     onClick={() => { setShowUserDropdown(false); router.push("/login?ru=/") }}
-                    className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                   >
                     登录
                   </button>
                   <button
                     onClick={() => { setShowUserDropdown(false); router.push("/register") }}
-                    className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                   >
                     注册
                   </button>
@@ -248,33 +247,33 @@ export function Header() {
                 <>
                   <button
                     onClick={() => { setShowUserDropdown(false); router.push("/profile") }}
-                    className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                   >
                     个人信息
                   </button>
                   <button
                     onClick={() => { setShowUserDropdown(false); router.push("/profile/account") }}
-                    className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                   >
                     账号设置
                   </button>
                   <button
                     onClick={() => { setShowUserDropdown(false); router.push("/orders") }}
-                    className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                   >
                     订单管理
                   </button>
                   {(role === 'admin' || role === 'organizer') && (
                     <button
                       onClick={() => { setShowUserDropdown(false); router.push("/console") }}
-                      className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none transition-colors"
+                      className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                     >
                       进入后台
                     </button>
                   )}
                   <button
                     onClick={handleLogout}
-                    className="block w-full px-4 py-3 text-sm text-[#333] hover:bg-[#f5f5f5] hover:text-[#ff1268] cursor-pointer border-none bg-transparent outline-none border-t border-[#f5f5f5] mt-1 pt-3 transition-colors"
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-gray-50 hover:text-red-500 border-none bg-transparent outline-none border-t border-gray-50 transition-colors mt-1 pt-3"
                   >
                     退出登录
                   </button>

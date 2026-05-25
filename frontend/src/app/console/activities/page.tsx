@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity, submitActivityRiskResolution, suspendActivityForRisk } from '@/lib/api'
 import { Plus, Edit, Trash2, Eye, EyeOff, RefreshCw, Search } from 'lucide-react'
+import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
 import type { ActivityEntity, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
@@ -81,7 +82,7 @@ export default function ActivitiesPage() {
   const handleToggleStatus = async (activity: ActivityEntity) => {
     const newStatus = activity.status === 1 ? 0 : 1
     if (newStatus === 0) {
-      const confirmed = confirm('下架并退款后，活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意下架并同意退款。')
+      const confirmed = await globalConfirm('下架并退款后，活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意下架并同意退款。')
       if (!confirmed) return
       const result = await deactivateActivity(activity.id, {
         userId,
@@ -91,9 +92,9 @@ export default function ActivitiesPage() {
       const abnormalCount = result.refundFailedCount + result.refundUnknownCount + result.refundCompensationRequiredCount
       const summary = `已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
       if (abnormalCount > 0) {
-        alert(`活动已下架并发起退款，但部分退款失败/结果未知/需人工处理。${summary}`)
+        await globalAlert(`活动已下架并发起退款，但部分退款失败/结果未知/需人工处理。${summary}`)
       } else {
-        alert(`活动已下架并发起退款。${summary}`)
+        await globalAlert(`活动已下架并发起退款。${summary}`)
       }
     } else {
       await updateActivityStatus(activity.id, { userId, status: newStatus })
@@ -102,14 +103,14 @@ export default function ActivitiesPage() {
   }
 
   const handleDelete = async (activity: ActivityEntity) => {
-    const reason = window.prompt('删除活动前请填写原因。已发布且有订单的活动需先完成下架退款。')
+    const reason = await globalPrompt('删除活动前请填写原因。已发布且有订单的活动需先完成下架退款。', '删除活动', '请输入删除原因（必填）')
     if (reason === null) return
     if (!reason.trim()) {
-      alert('删除原因不能为空')
+      await globalAlert('删除原因不能为空')
       return
     }
     const result = await deleteAdminActivity(activity.id, { userId, reason: reason.trim() })
-    alert(result.message || '活动已删除')
+    await globalAlert(result.message || '活动已删除')
     loadData(page)
   }
 
@@ -134,7 +135,7 @@ export default function ActivitiesPage() {
   const submitRiskResolution = async () => {
     if (!riskTarget) return
     if (!riskNote.trim()) {
-      alert('处理说明不能为空')
+      await globalAlert('处理说明不能为空')
       return
     }
     const TYPE_PREFIX: Record<typeof riskType, string> = {
@@ -149,31 +150,31 @@ export default function ActivitiesPage() {
         userId,
         resolutionNote: `${TYPE_PREFIX[riskType]} ${riskNote.trim()}`,
       })
-      alert('已提交恢复售票申请，等待平台审核。')
+      await globalAlert('已提交恢复售票申请，等待平台审核。')
       setRiskTarget(null)
       setRiskNote('')
       setRiskType('explain')
       loadData(page)
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '提交失败')
+      await globalAlert(err instanceof Error ? err.message : '提交失败')
     } finally {
       setRiskSubmitting(false)
     }
   }
 
   const handleAdminSuspend = async (activity: ActivityEntity) => {
-    const reason = window.prompt('请输入停售原因（将记录到风险案例并通知主办方）：')
+    const reason = await globalPrompt('请输入停售原因（将记录到风险案例并通知主办方）：', '风险停售', '请输入停售原因（必填）')
     if (reason === null) return
     if (!reason.trim()) {
-      alert('停售原因不能为空')
+      await globalAlert('停售原因不能为空')
       return
     }
     try {
       await suspendActivityForRisk(activity.id, { userId, reason: reason.trim() })
-      alert('活动已被主动停售，已通知主办方处理。')
+      await globalAlert('活动已被主动停售，已通知主办方处理。')
       loadData(page)
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '停售失败')
+      await globalAlert(err instanceof Error ? err.message : '停售失败')
     }
   }
 

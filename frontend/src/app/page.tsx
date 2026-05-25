@@ -99,30 +99,40 @@ export default function HomePage() {
   const navCategories = categories.map((c) => ({ id: String(c.id), name: c.name }))
 
   return (
-    <>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header />
-      <CategoryNav categories={navCategories} />
-      <Banner slides={banners} />
-      <main>
+      
+      {/* Hero Section with Banner and Nav */}
+      <div className="relative bg-white pb-6 rounded-b-[40px] shadow-[0_10px_40px_-20px_rgba(0,0,0,0.05)] z-10">
+        <CategoryNav categories={navCategories} />
+        <Banner slides={banners} />
+      </div>
+
+      <main className="flex-1 pb-20 -mt-6 pt-10">
         {loading ? (
-          <section className="py-10">
+          <section className="py-20">
             <div className="max-w-[1200px] mx-auto px-5">
-              <div className="text-center text-[#999] py-20 text-sm">加载中...</div>
+              <div className="flex flex-col items-center justify-center gap-4 text-gray-400">
+                <div className="w-8 h-8 border-4 border-[#ff1268]/20 border-t-[#ff1268] rounded-full animate-spin" />
+                <div className="text-sm font-medium tracking-wider">正在加载精彩演出...</div>
+              </div>
             </div>
           </section>
         ) : sections.length === 0 ? (
-          <section className="py-10">
+          <section className="py-20">
             <div className="max-w-[1200px] mx-auto px-5">
-              <div className="text-center text-[#999] py-20 text-sm">暂无活动</div>
+              <div className="text-center text-gray-400 py-20 text-sm font-medium tracking-wider">暂无演出活动</div>
             </div>
           </section>
         ) : (
-          sections.map((section) => (
-            <SectionRow key={section.id} section={section} />
-          ))
+          <div className="space-y-2">
+            {sections.map((section) => (
+              <SectionRow key={section.id} section={section} />
+            ))}
+          </div>
         )}
       </main>
       <Footer />
-    </>
+    </div>
   )
 }

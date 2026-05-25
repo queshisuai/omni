@@ -504,117 +504,137 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       </main>
       <Footer />
 
-      {/* 订单确认弹窗 */}
-      {showConfirm && selectedSession && selectedTicket && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-          onClick={() => setShowConfirm(false)}
-        >
-          <div
-            className="bg-white rounded-lg p-6"
-            style={{ width: 420 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-[18px] text-[#111] font-medium mb-4">确认订单</h3>
+      {(() => {
+        const modals = (
+          <>
+            {/* 订单确认弹窗 */}
+            {showConfirm && selectedSession && selectedTicket && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+                onClick={() => setShowConfirm(false)}
+              >
+                <div
+                  className="bg-white rounded-lg p-6"
+                  style={{ width: 420 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 className="text-[18px] text-[#111] font-medium mb-4">确认订单</h3>
 
-            <div className="text-[14px] text-[#333] space-y-2 mb-4">
-              <div className="flex justify-between">
-                <span className="text-[#999]">活动</span>
-                <span className="text-right flex-1 ml-4">{activity.name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#999]">场次</span>
-                <span>{selectedSession.session.startTime?.slice(0, 16).replace('T', ' ')}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#999]">场馆</span>
-                <span>{selectedSession.venue?.name}{selectedSession.venue?.city ? ` - ${selectedSession.venue.city}` : ''}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#999]">票档</span>
-                <span>{selectedTicket.name} × {quantity}张</span>
-              </div>
-              <div className="flex justify-between text-[16px] font-medium pt-3 border-t border-[#f0f0f0]">
-                <span>合计</span>
-                <span className="text-[#ff1268]">¥{(selectedTicket.price * quantity).toFixed(2)}</span>
-              </div>
-            </div>
+                  <div className="text-[14px] text-[#333] space-y-2 mb-4">
+                    <div className="flex justify-between">
+                      <span className="text-[#999]">活动</span>
+                      <span className="text-right flex-1 ml-4">{activity.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#999]">场次</span>
+                      <span>{selectedSession.session.startTime?.slice(0, 16).replace('T', ' ')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#999]">场馆</span>
+                      <span>{selectedSession.venue?.name}{selectedSession.venue?.city ? ` - ${selectedSession.venue.city}` : ''}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#999]">票档</span>
+                      <span>{selectedTicket.name} × {quantity}张</span>
+                    </div>
+                    {showsSeatCraftSelection && validSelectedSeatIds.length > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-[#999]">座位</span>
+                        <div className="text-right flex-1 ml-4 text-[13px] leading-relaxed">
+                          {validSelectedSeatIds.map(id => {
+                            const seat = seatMap?.seats.find(s => s.id === id)
+                            if (!seat) return ''
+                            const sectionName = seatMap?.layout?.sections.find(s => s.id === seat.layoutSectionId)?.name || seat.areaId || ''
+                            return `${sectionName ? sectionName + ' ' : ''}${seat.rowNo}排${seat.seatNo}座`
+                          }).join('，')}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-[16px] font-medium pt-3 border-t border-[#f0f0f0]">
+                      <span>合计</span>
+                      <span className="text-[#ff1268]">¥{(selectedTicket.price * quantity).toFixed(2)}</span>
+                    </div>
+                  </div>
 
-            {orderError && (
-              <div className="mb-4 p-2.5 bg-[#fff0f0] border border-[#ffcccc] rounded text-[#e74c3c] text-[13px]">
-                {orderError}
+                  {orderError && (
+                    <div className="mb-4 p-2.5 bg-[#fff0f0] border border-[#ffcccc] rounded text-[#e74c3c] text-[13px]">
+                      {orderError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 justify-end">
+                    <button
+                      onClick={() => setShowConfirm(false)}
+                      disabled={ordering}
+                      className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={handleConfirmOrder}
+                      disabled={ordering}
+                      className="cursor-pointer border-none outline-none text-white text-[14px] px-6 py-2 rounded"
+                      style={{ backgroundColor: '#ff1268', opacity: ordering ? 0.7 : 1 }}
+                    >
+                      {ordering ? '提交中...' : '确认支付'}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowConfirm(false)}
-                disabled={ordering}
-                className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
+            {/* 支付成功弹窗 */}
+            {showSuccess && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
               >
-                取消
-              </button>
-              <button
-                onClick={handleConfirmOrder}
-                disabled={ordering}
-                className="cursor-pointer border-none outline-none text-white text-[14px] px-6 py-2 rounded"
-                style={{ backgroundColor: '#ff1268', opacity: ordering ? 0.7 : 1 }}
-              >
-                {ordering ? '提交中...' : '确认支付'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                <div className="bg-white rounded-2xl p-8 flex flex-col items-center" style={{ width: 360 }}>
+                  {/* 成功图标 */}
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: '#f6ffed', border: '2px solid #52c41a' }}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                      <path d="M5 13l4 4L19 7" stroke="#52c41a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <h3 className="text-[20px] font-medium text-[#111] mb-2">支付成功</h3>
+                  <p className="text-[13px] text-[#999] mb-1">订单号</p>
+                  <p className="text-[14px] text-[#333] font-medium mb-6">{successOrderNo}</p>
+                  <div className="flex gap-3 w-full">
+                    <button
+                      onClick={() => setShowSuccess(false)}
+                      className="flex-1 cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] py-2.5 rounded-lg outline-none"
+                    >
+                      继续浏览
+                    </button>
+                    <button
+                      onClick={() => router.push('/orders')}
+                      className="flex-1 cursor-pointer border-none outline-none text-white text-[14px] py-2.5 rounded-lg"
+                      style={{ backgroundColor: '#ff1268' }}
+                    >
+                      查看订单
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
-      {/* 支付成功弹窗 */}
-      {showSuccess && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-        >
-          <div className="bg-white rounded-2xl p-8 flex flex-col items-center" style={{ width: 360 }}>
-            {/* 成功图标 */}
-            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: '#f6ffed', border: '2px solid #52c41a' }}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-                <path d="M5 13l4 4L19 7" stroke="#52c41a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <h3 className="text-[20px] font-medium text-[#111] mb-2">支付成功</h3>
-            <p className="text-[13px] text-[#999] mb-1">订单号</p>
-            <p className="text-[14px] text-[#333] font-medium mb-6">{successOrderNo}</p>
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() => setShowSuccess(false)}
-                className="flex-1 cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] py-2.5 rounded-lg outline-none"
-              >
-                继续浏览
-              </button>
-              <button
-                onClick={() => router.push('/orders')}
-                className="flex-1 cursor-pointer border-none outline-none text-white text-[14px] py-2.5 rounded-lg"
-                style={{ backgroundColor: '#ff1268' }}
-              >
-                查看订单
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {qrPay && (
-        <AlipayQrPayModal
-          pay={qrPay}
-          productName={activity.name}
-          onClose={() => setQrPay(null)}
-          onPaid={(result) => {
-            setSuccessOrderNo(result.orderNo || qrPay.orderNo)
-            setQrPay(null)
-            setShowSuccess(true)
-          }}
-        />
-      )}
+            {qrPay && (
+              <AlipayQrPayModal
+                pay={qrPay}
+                productName={activity.name}
+                onClose={() => setQrPay(null)}
+                onPaid={(result) => {
+                  setSuccessOrderNo(result.orderNo || qrPay.orderNo)
+                  setQrPay(null)
+                  setShowSuccess(true)
+                }}
+              />
+            )}
+          </>
+        )
+        return modals
+      })()}
     </>
   )
 }

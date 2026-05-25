@@ -11,13 +11,13 @@ export function SectionRow({ section }: SectionRowProps) {
     <section className="py-10">
       <div className="max-w-[1200px] mx-auto px-5">
         {/* Section Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-[24px] text-[#111] font-normal">
+        <div className="flex items-end justify-between mb-8">
+          <h2 className="text-[28px] font-extrabold text-gray-900 tracking-tight">
             {section.title}
           </h2>
           <a
             href={section.viewAllUrl}
-            className="flex items-center gap-1 text-[14px] text-[#999] hover:text-[#ff1268] transition-colors"
+            className="flex items-center gap-1 text-[14px] font-medium text-gray-500 hover:text-[#ff1268] transition-colors pb-1"
           >
             查看全部
             <ChevronRight className="w-4 h-4" />
@@ -25,8 +25,8 @@ export function SectionRow({ section }: SectionRowProps) {
         </div>
 
         {/* Cards Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-5">
-          {section.items.slice(0, 7).map((item) => (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
+          {section.items.slice(0, 6).map((item) => (
             <TicketCard key={item.id} activity={item} />
           ))}
         </div>

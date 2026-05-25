@@ -24,13 +24,6 @@ function applicationStatusText(status: OrganizerApplicationVO['status']) {
   return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
 }
 
-function organizerStatusText(status: OrganizerStatus | null | undefined) {
-  if (status === 0) return { text: '待审核', color: '#ff7a00', bg: '#fff7ed' }
-  if (status === 1) return { text: '已认证', color: '#16a34a', bg: '#f0fdf4' }
-  if (status === 2) return { text: '已拒绝', color: '#ef4444', bg: '#fef2f2' }
-  if (status === 3) return { text: '已取消资格', color: '#7c3aed', bg: '#f5f3ff' }
-  return { text: '未申请', color: '#666', bg: '#f5f5f5' }
-}
 
 export default function ConsoleProfilePage() {
   const router = useRouter()
@@ -109,8 +102,14 @@ export default function ConsoleProfilePage() {
         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="rounded-xl border border-[#e5e5e5] bg-white p-6 shadow-sm">
             <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff0f5] text-[#ff1268]">
-                {role === 'admin' ? <ShieldCheck className="h-6 w-6" /> : <Building2 className="h-6 w-6" />}
+              <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[#fff0f5] text-[#ff1268]">
+                {user.avatar ? (
+                  <img src={user.avatar} alt="Avatar" className="h-full w-full object-cover" />
+                ) : role === 'admin' ? (
+                  <ShieldCheck className="h-6 w-6" />
+                ) : (
+                  <Building2 className="h-6 w-6" />
+                )}
               </div>
               <div>
                 <h2 className="text-[20px] font-semibold text-[#111]">
@@ -131,7 +130,6 @@ export default function ConsoleProfilePage() {
               <InfoCard icon={<CalendarDays className="h-4 w-4" />} title="注册时间" value={formatTime(user.createTime)} />
               <InfoCard icon={<ShieldCheck className="h-4 w-4" />} title="账号状态" value={statusText(user.status).text} />
               <InfoCard icon={<ClipboardList className="h-4 w-4" />} title="当前角色" value={role === 'admin' ? '平台管理员' : '主办方'} />
-              <InfoCard icon={<Building2 className="h-4 w-4" />} title="主办方状态" value={organizerStatusText(user.organizerStatus).text} />
             </div>
 
             {role === 'organizer' && application ? (

@@ -2,7 +2,7 @@
  * API 客户端 - fetch 封装
  */
 import { getToken } from './auth'
-import type { ApiResult, AssetUploadVO, ChangePasswordRequest, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, ResetPasswordRequest, SeatMapResponse, SubjectType, UserInfo } from '@/types/api'
+import type { ApiResult, AssetUploadVO, ChangePasswordRequest, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, PrivateAssetVO, ResetPasswordRequest, SeatMapResponse, SubjectType, UserInfo } from '@/types/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -225,9 +225,27 @@ export async function searchAdminArtists(keyword: string) {
   return request<import('@/types/api').ArtistSearchVO[]>(`/api/ticket/admin/artists/search${qs ? `?${qs}` : ''}`)
 }
 
+export async function listAdminArtists(params: import('@/types/api').ArtistListParams = {}) {
+  const search = new URLSearchParams()
+  search.set('page', String(params.page ?? 1))
+  search.set('size', String(params.size ?? 10))
+  if (params.keyword?.trim()) search.set('keyword', params.keyword.trim())
+  if (params.reviewStatus) search.set('reviewStatus', params.reviewStatus)
+  if (params.riskStatus) search.set('riskStatus', params.riskStatus)
+  return request<import('@/types/api').PageResult<import('@/types/api').ArtistEntity>>(`/api/ticket/admin/artists?${search.toString()}`)
+}
+
 export async function getAdminArtist(id: number) {
   assertPositiveInteger(id, 'artistId')
   return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}`)
+}
+
+export async function updateAdminArtist(id: number, params: import('@/types/api').ArtistUpdateRequest) {
+  assertPositiveInteger(id, 'artistId')
+  return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(params),
+  })
 }
 
 export async function submitAdminArtist(params: import('@/types/api').ArtistSubmissionRequest) {
@@ -237,9 +255,8 @@ export async function submitAdminArtist(params: import('@/types/api').ArtistSubm
   })
 }
 
-export async function listPendingAdminArtists(userId: number) {
-  assertPositiveInteger(userId, 'userId')
-  return request<import('@/types/api').ArtistEntity[]>(`/api/ticket/admin/artists/pending?userId=${userId}`)
+export async function listPendingAdminArtists() {
+  return request<import('@/types/api').ArtistEntity[]>('/api/ticket/admin/artists/pending')
 }
 
 export async function reviewAdminArtist(id: number, params: import('@/types/api').ArtistReviewRequest) {
@@ -305,6 +322,19 @@ export async function uploadTicketAsset(params: { userId: number; bizType: strin
   formData.append('bizType', params.bizType)
   formData.append('file', params.file)
   return multipartRequest<AssetUploadVO>('/api/ticket/admin/assets', formData)
+}
+
+export async function uploadPrivateAsset(params: { userId: number; bizType: string; file: File }) {
+  const formData = new FormData()
+  formData.append('userId', String(params.userId))
+  formData.append('bizType', params.bizType)
+  formData.append('file', params.file)
+  return multipartRequest<PrivateAssetVO>('/api/ticket/admin/private-assets', formData)
+}
+
+export function privateAssetDownloadUrl(id: number) {
+  assertPositiveInteger(id, '附件ID')
+  return `${BASE_URL}/api/ticket/admin/private-assets/${id}/download`
 }
 
 export async function createReservation(userId: number, sessionId: number) {
@@ -631,6 +661,15 @@ export async function getActivitySeatLayout(activityId: number, userId: number) 
   return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/activities/${activityId}/seat-layout?userId=${userId}`)
 }
 
+export async function createBlankActivitySeatLayout(activityId: number, userId: number) {
+  assertPositiveInteger(activityId, '活动ID')
+  assertPositiveInteger(userId, '用户ID')
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/activities/${activityId}/seat-layout/blank`, {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  })
+}
+
 export async function updateActivitySeatLayout(activityId: number, body: { userId: number; layout: import('@/types/api').SeatCraftLayoutVO }) {
   return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/activities/${activityId}/seat-layout`, { method: 'PUT', body: JSON.stringify(body) })
 }
@@ -655,6 +694,15 @@ export async function getSessionSeatLayout(sessionId: number, userId: number) {
   return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/sessions/${sessionId}/seat-layout?userId=${userId}`)
 }
 
+export async function createBlankSessionSeatLayout(sessionId: number, userId: number) {
+  assertPositiveInteger(sessionId, '场次ID')
+  assertPositiveInteger(userId, '用户ID')
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/sessions/${sessionId}/seat-layout/blank`, {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  })
+}
+
 export async function updateSessionSeatLayout(sessionId: number, body: { userId: number; layout: import('@/types/api').SeatCraftLayoutVO }) {
   return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/sessions/${sessionId}/seat-layout`, { method: 'PUT', body: JSON.stringify(body) })
 }
@@ -673,23 +721,26 @@ export async function getSessionTicketDrafts(sessionId: number, userId: number) 
 }
 
 export async function submitVenueApplication(body: Record<string, unknown>) {
+  const { userId: _userId, ...safeBody } = body
   return request<import('@/types/api').VenueApplicationVO>('/api/ticket/admin/venue-applications', {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify(safeBody),
   })
 }
 
-export async function listMyVenueApplications(userId: number) {
-  return request<import('@/types/api').VenueApplicationVO[]>(`/api/ticket/admin/venue-applications/my?userId=${userId}`)
+export async function listMyVenueApplications(_userId?: number) {
+  return request<import('@/types/api').VenueApplicationVO[]>('/api/ticket/admin/venue-applications/my')
 }
 
-export async function listVenueApplications(userId: number, status?: number) {
-  const searchParams = new URLSearchParams({ userId: String(userId) })
-  if (status !== undefined) searchParams.set('status', String(status))
-  return request<import('@/types/api').VenueApplicationVO[]>(`/api/ticket/admin/venue-applications?${searchParams.toString()}`)
+export async function listVenueApplications(params: { status?: number } = {}) {
+  const searchParams = new URLSearchParams()
+  if (params.status !== undefined) searchParams.set('status', String(params.status))
+  const qs = searchParams.toString()
+  return request<import('@/types/api').VenueApplicationVO[]>(`/api/ticket/admin/venue-applications${qs ? `?${qs}` : ''}`)
 }
 
 export async function reviewVenueApplication(id: number, body: Record<string, unknown>) {
+  const { userId: _userId, ...safeBody } = body
   return request<import('@/types/api').VenueApplicationVO>(`/api/ticket/admin/venue-applications/${id}/review`, {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify(safeBody),
   })
 }

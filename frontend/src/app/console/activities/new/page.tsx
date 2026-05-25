@@ -7,6 +7,7 @@ import { listCategories, listAdminVenues, createAdminActivity, createAdminSessio
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
 import { LocalFileUpload } from '@/components/LocalFileUpload'
+import { globalAlert } from '@/components/GlobalDialog'
 import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatLayoutTemplateCandidateVO, UserRole, ActivityArtistVO } from '@/types/api'
 
 type SessionDraft = {
@@ -131,7 +132,7 @@ export default function NewActivityPage() {
     if (!u || !categoryId || !name.trim() || artists.length === 0) return
     const limitText = perUserLimit.trim()
     if (limitText && (!/^\d+$/.test(limitText) || Number(limitText) <= 0)) {
-      alert('个人限购张数必须为正整数')
+      await globalAlert('个人限购张数必须为正整数')
       return
     }
     setSubmitting(true)
@@ -200,7 +201,7 @@ export default function NewActivityPage() {
 
       router.push('/console/activities')
     } catch (err) {
-      alert('创建失败: ' + (err instanceof Error ? err.message : '未知错误'))
+      await globalAlert('创建失败: ' + (err instanceof Error ? err.message : '未知错误'))
     } finally {
       setSubmitting(false)
     }

@@ -3,7 +3,9 @@
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { register } from '@/lib/api'
-import { Phone, Lock, ShieldCheck, ArrowRight } from 'lucide-react'
+import { Phone, Lock, ShieldCheck } from 'lucide-react'
+import { GraphicCaptcha } from '@/components/GraphicCaptcha'
+import { globalAlert } from '@/components/GlobalDialog'
 
 export function RegisterForm() {
   const router = useRouter()
@@ -11,6 +13,7 @@ export function RegisterForm() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [agreed, setAgreed] = useState(false)
+  const [verified, setVerified] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
@@ -21,13 +24,14 @@ export function RegisterForm() {
     if (!phone.trim()) { setErrorMsg('请输入手机号'); return }
     if (!password) { setErrorMsg('请输入密码'); return }
     if (password !== confirmPassword) { setErrorMsg('两次输入的密码不一致'); return }
+    if (!verified) { setErrorMsg('请先完成图形验证码校验'); return }
     if (!agreed) { setErrorMsg('请先阅读并同意相关协议'); return }
 
     setLoading(true)
     setErrorMsg('')
     try {
       await register({ phone: phone.trim(), password, confirmPassword })
-      alert('注册成功，请登录')
+      await globalAlert('注册成功，请登录')
       router.push('/login')
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : '注册失败')
@@ -88,13 +92,11 @@ export function RegisterForm() {
           />
         </div>
 
-        {/* Slider Mock */}
-        <div className="relative group h-12 bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center border border-gray-200">
-           <span className="text-sm text-gray-400 select-none">向右滑动验证（模拟）</span>
-           <div className="absolute left-1 top-1 bottom-1 w-12 bg-white rounded-lg shadow-sm border border-gray-100 flex items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors z-10">
-              <ArrowRight className="w-5 h-5 text-gray-400" />
-           </div>
-        </div>
+        {/* Captcha */}
+        <GraphicCaptcha 
+          onSuccess={() => { setVerified(true); clearError() }} 
+          onFail={() => { setVerified(false) }} 
+        />
 
         {/* Checkbox */}
         <div className="flex items-start mt-4">
