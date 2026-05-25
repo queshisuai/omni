@@ -311,7 +311,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                   <h3 className="text-[16px] text-[#111] font-medium mb-4">选择票档</h3>
                   <div className="flex flex-wrap gap-3 mb-6">
                     {selectedSession.ticketTypes.length === 0 ? (
-                      <p className="text-[#999] text-sm">暂无可售票档</p>
+                      <p className="text-[#999] text-sm">票档待公布</p>
                     ) : (
                       selectedSession.ticketTypes.map((tt) => (
                         <button

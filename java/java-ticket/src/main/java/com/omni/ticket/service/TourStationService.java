@@ -42,6 +42,7 @@ public class TourStationService {
     private static final String PUBLISH_STATUS_PUBLISHED = "published";
     private static final String SALE_STATUS_UNANNOUNCED = "unannounced";
     private static final String SALE_STATUS_COMING_SOON = "coming_soon";
+    private static final String SALE_STATUS_TICKET_TBA = "ticket_tba";
     private static final String SALE_STATUS_TO_BE_SCHEDULED = "to_be_scheduled";
     private static final String SALE_STATUS_SUSPENDED = "suspended";
     private static final String SALE_STATUS_SOLD_OUT = "sold_out";
@@ -49,7 +50,7 @@ public class TourStationService {
     private static final String SALE_STATUS_TEXT_UNANNOUNCED = "未公布";
     private static final String SALE_STATUS_TEXT_COMING_ANNOUNCE = "即将公布";
     private static final String SALE_STATUS_TEXT_TO_BE_SCHEDULED = "待定";
-    private static final String SALE_STATUS_TEXT_COMING_SALE = "即将开抢";
+    private static final String SALE_STATUS_TEXT_TICKET_TBA = "票档待公布";
     private static final String SALE_STATUS_TEXT_SUSPENDED = "暂时停止售票";
     private static final String SALE_STATUS_TEXT_SOLD_OUT = "已售罄";
     private static final String SALE_STATUS_TEXT_ON_SALE = "售票中";
@@ -299,7 +300,7 @@ public class TourStationService {
                 .flatMap(session -> ticketTypesBySession.getOrDefault(session.getId(), Collections.emptyList()).stream())
                 .collect(Collectors.toList());
         if (ticketTypes.isEmpty()) {
-            putSaleState(item, SALE_STATUS_COMING_SOON, SALE_STATUS_TEXT_COMING_SALE, PRIMARY_ACTION_NONE);
+            putSaleState(item, SALE_STATUS_TICKET_TBA, SALE_STATUS_TEXT_TICKET_TBA, PRIMARY_ACTION_NONE);
             return;
         }
         List<BigDecimal> prices = ticketTypes.stream()
@@ -343,9 +344,10 @@ public class TourStationService {
         if ("organizer".equals(user.getRole()) && !userId.equals(tour.getOrganizerId())) {
             throw new BusinessException(403, "只能发布自己的演出项目");
         }
-        LocalDateTime startTime = parseTime(body == null ? null : body.get("startTime"), "开始时间不能为空");
-        LocalDateTime endTime = parseTime(body == null ? null : body.get("endTime"), "结束时间不能为空");
-        if (!endTime.isAfter(startTime)) {
+        boolean scheduleTba = isTrue(body == null ? null : body.get("scheduleTba"));
+        LocalDateTime startTime = scheduleTba ? null : parseTime(body == null ? null : body.get("startTime"), "开始时间不能为空");
+        LocalDateTime endTime = scheduleTba ? null : parseTime(body == null ? null : body.get("endTime"), "结束时间不能为空");
+        if (!scheduleTba && !endTime.isAfter(startTime)) {
             throw new BusinessException(400, "结束时间必须晚于开始时间");
         }
         VenueApplication application = requireVenueApplication(station.getVenueApplicationId());
@@ -355,8 +357,10 @@ public class TourStationService {
         if (!Integer.valueOf(1).equals(application.getStatus()) || application.getVenueId() == null) {
             throw new BusinessException(400, "场地申请未审核通过");
         }
-        validateApplicationValidity(application, startTime, endTime);
-        ensureNoVenueConflict(application.getVenueId(), startTime, endTime);
+        if (!scheduleTba) {
+            validateApplicationValidity(application, startTime, endTime);
+            ensureNoVenueConflict(application.getVenueId(), startTime, endTime);
+        }
 
         LocalDateTime now = LocalDateTime.now();
         Activity activity = activityMapper.selectOne(new LambdaQueryWrapper<Activity>()
@@ -386,18 +390,21 @@ public class TourStationService {
 
         activitySeatLayoutService.copyFromVenueApplication(userId, activity.getId(), application.getId());
 
-        Session session = new Session();
-        session.setActivityId(activity.getId());
-        session.setVenueId(application.getVenueId());
-        session.setStartTime(startTime);
-        session.setEndTime(endTime);
-        session.setStatus(1);
-        session.setCreateTime(now);
-        session.setUpdateTime(now);
-        sessionMapper.insert(session);
+        Session session = null;
+        if (!scheduleTba) {
+            session = new Session();
+            session.setActivityId(activity.getId());
+            session.setVenueId(application.getVenueId());
+            session.setStartTime(startTime);
+            session.setEndTime(endTime);
+            session.setStatus(1);
+            session.setCreateTime(now);
+            session.setUpdateTime(now);
+            sessionMapper.insert(session);
 
-        sessionSeatLayoutService.copyFromActivity(userId, session.getId(), activity.getId());
-        sessionSeatLayoutService.generateSessionSeats(session.getId());
+            sessionSeatLayoutService.copyFromActivity(userId, session.getId(), activity.getId());
+            sessionSeatLayoutService.generateSessionSeats(session.getId());
+        }
 
         activity.setPublishStatus(PUBLISH_STATUS_PUBLISHED);
         activityMapper.updateById(activity);

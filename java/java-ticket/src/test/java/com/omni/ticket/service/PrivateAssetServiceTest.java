@@ -162,7 +162,7 @@ class PrivateAssetServiceTest {
     }
 
     @Test
-    void prepareDownloadAllowsPendingUploaderOnly() throws Exception {
+    void prepareDownloadAllowsPendingUploader() throws Exception {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
         PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, privateRoot);
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
@@ -175,6 +175,19 @@ class PrivateAssetServiceTest {
         assertEquals("proof.pdf", download.getOriginalFilename());
         assertEquals("application/pdf", download.getContentType());
         assertEquals(asset.getFileSize().longValue(), download.getFileSize());
+    }
+
+    @Test
+    void prepareDownloadAllowsPendingAdminForReview() throws Exception {
+        Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
+        PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, privateRoot);
+        when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
+        when(userAccessService.requireAdminOrOrganizer(ADMIN_ID)).thenReturn(user(ADMIN_ID, "admin"));
+        PrivateAssetService service = service(privateRoot);
+
+        PrivateAssetDownload download = service.prepareDownload(9101L, ADMIN_ID);
+
+        assertEquals(privateRoot.resolve(asset.getRelativePath()), download.getPath());
     }
 
     @Test

@@ -1,8 +1,12 @@
 package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
+import com.omni.ticket.dto.InternalUserRefResponse;
+import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SeatBlock;
 import com.omni.ticket.entity.SeatLayoutVersion;
 import com.omni.ticket.entity.SeatLayoutVersionBlock;
@@ -19,6 +23,8 @@ import com.omni.ticket.mapper.SeatLayoutVersionOverrideMapper;
 import com.omni.ticket.mapper.SeatLayoutVersionTicketGroupMapper;
 import com.omni.ticket.mapper.SeatOverrideMapper;
 import com.omni.ticket.mapper.TicketGroupMapper;
+import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.SessionMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,6 +68,12 @@ class SeatCraftLayoutVersionServiceTest {
     private SeatOverrideMapper seatOverrideMapper;
     @Mock
     private TicketGroupMapper ticketGroupMapper;
+    @Mock
+    private ActivityMapper activityMapper;
+    @Mock
+    private SessionMapper sessionMapper;
+    @Mock
+    private UserAccessService userAccessService;
 
     private SeatCraftLayoutVersionService service;
 
@@ -75,7 +87,12 @@ class SeatCraftLayoutVersionServiceTest {
                 bindingMapper,
                 seatBlockMapper,
                 seatOverrideMapper,
-                ticketGroupMapper);
+                ticketGroupMapper,
+                activityMapper,
+                sessionMapper,
+                userAccessService,
+                null,
+                null);
     }
 
     @Test
@@ -518,7 +535,9 @@ class SeatCraftLayoutVersionServiceTest {
         when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(archived);
         when(blockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(versionBlock(101L, 80L, "block-a", 1, "gridBlock")));
 
-        service.deleteVersion("session", 3001L, 80L);
+        allowSessionOwnerAccess();
+
+        service.deleteVersion("session", 3001L, 80L, 2003L);
 
         verify(overrideMapper).delete(any(LambdaQueryWrapper.class));
         verify(bindingMapper).delete(any(LambdaQueryWrapper.class));
@@ -528,12 +547,27 @@ class SeatCraftLayoutVersionServiceTest {
     }
 
     @Test
+    void deleteVersionClearsDependentBaseVersionReferencesBeforeDelete() {
+        SeatLayoutVersion archived = version(80L, 2, "archived");
+        when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(archived);
+        when(blockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        allowSessionOwnerAccess();
+
+        service.deleteVersion("session", 3001L, 80L, 2003L);
+
+        verify(versionMapper).update(org.mockito.ArgumentMatchers.argThat(version -> version.getBaseVersionId() == null), any(UpdateWrapper.class));
+        verify(versionMapper).deleteById(80L);
+    }
+
+    @Test
     void deleteVersionRejectsPublishedVersion() {
         SeatLayoutVersion published = version(80L, 2, "published");
         when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(published);
+        allowSessionOwnerAccess();
 
         BusinessException error = assertThrows(BusinessException.class,
-                () -> service.deleteVersion("session", 3001L, 80L));
+                () -> service.deleteVersion("session", 3001L, 80L, 2003L));
 
         assertEquals(400, error.getCode());
         verify(versionMapper, never()).deleteById(80L);
@@ -822,5 +856,34 @@ class SeatCraftLayoutVersionServiceTest {
         override.setDy(new BigDecimal("-2.5"));
         override.setCustomLabel("A02");
         return List.of(override);
+    }
+
+    private void allowSessionOwnerAccess() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectById(3001L)).thenReturn(session(3001L, 10L));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+    }
+
+    private InternalUserRefResponse user(Long id, String role) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
+        user.setId(id);
+        user.setRole(role);
+        return user;
+    }
+
+    private Session session(Long id, Long activityId) {
+        Session session = new Session();
+        session.setId(id);
+        session.setActivityId(activityId);
+        session.setStatus(1);
+        return session;
+    }
+
+    private Activity activity(Long id, Long organizerId) {
+        Activity activity = new Activity();
+        activity.setId(id);
+        activity.setOrganizerId(organizerId);
+        activity.setStatus(1);
+        return activity;
     }
 }

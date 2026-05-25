@@ -1,6 +1,7 @@
 package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.entity.SeatBlock;
@@ -10,7 +11,11 @@ import com.omni.ticket.entity.SeatLayoutVersionGroupBinding;
 import com.omni.ticket.entity.SeatLayoutVersionOverride;
 import com.omni.ticket.entity.SeatLayoutVersionTicketGroup;
 import com.omni.ticket.entity.SeatOverride;
+import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.Session;
+import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.entity.TicketGroup;
+import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SeatBlockMapper;
 import com.omni.ticket.mapper.SeatLayoutVersionBlockMapper;
 import com.omni.ticket.mapper.SeatLayoutVersionGroupBindingMapper;
@@ -19,6 +24,8 @@ import com.omni.ticket.mapper.SeatLayoutVersionOverrideMapper;
 import com.omni.ticket.mapper.SeatLayoutVersionTicketGroupMapper;
 import com.omni.ticket.mapper.SeatOverrideMapper;
 import com.omni.ticket.mapper.TicketGroupMapper;
+import com.omni.ticket.dto.InternalUserRefResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,15 +58,36 @@ public class SeatCraftLayoutVersionService {
     private final SeatOverrideMapper seatOverrideMapper;
     @SuppressWarnings("unused")
     private final TicketGroupMapper ticketGroupMapper;
+    private final ActivityMapper activityMapper;
+    private final SessionMapper sessionMapper;
+    private final UserAccessService userAccessService;
 
     public SeatCraftLayoutVersionService(SeatLayoutVersionMapper versionMapper,
-                                         SeatLayoutVersionBlockMapper blockMapper,
-                                         SeatLayoutVersionOverrideMapper overrideMapper,
-                                         SeatLayoutVersionTicketGroupMapper groupMapper,
-                                         SeatLayoutVersionGroupBindingMapper bindingMapper,
-                                         SeatBlockMapper seatBlockMapper,
-                                         SeatOverrideMapper seatOverrideMapper,
-                                         TicketGroupMapper ticketGroupMapper) {
+                                          SeatLayoutVersionBlockMapper blockMapper,
+                                          SeatLayoutVersionOverrideMapper overrideMapper,
+                                          SeatLayoutVersionTicketGroupMapper groupMapper,
+                                          SeatLayoutVersionGroupBindingMapper bindingMapper,
+                                          SeatBlockMapper seatBlockMapper,
+                                          SeatOverrideMapper seatOverrideMapper,
+                                          TicketGroupMapper ticketGroupMapper) {
+        this(versionMapper, blockMapper, overrideMapper, groupMapper, bindingMapper, seatBlockMapper, seatOverrideMapper,
+                ticketGroupMapper, null, null, null, null, null);
+    }
+
+    @Autowired
+    public SeatCraftLayoutVersionService(SeatLayoutVersionMapper versionMapper,
+                                          SeatLayoutVersionBlockMapper blockMapper,
+                                          SeatLayoutVersionOverrideMapper overrideMapper,
+                                          SeatLayoutVersionTicketGroupMapper groupMapper,
+                                          SeatLayoutVersionGroupBindingMapper bindingMapper,
+                                          SeatBlockMapper seatBlockMapper,
+                                          SeatOverrideMapper seatOverrideMapper,
+                                          TicketGroupMapper ticketGroupMapper,
+                                          ActivityMapper activityMapper,
+                                          SessionMapper sessionMapper,
+                                          UserAccessService userAccessService,
+                                          ActivitySeatLayoutService activitySeatLayoutService,
+                                          SessionSeatLayoutService sessionSeatLayoutService) {
         this.versionMapper = versionMapper;
         this.blockMapper = blockMapper;
         this.overrideMapper = overrideMapper;
@@ -68,6 +96,9 @@ public class SeatCraftLayoutVersionService {
         this.seatBlockMapper = seatBlockMapper;
         this.seatOverrideMapper = seatOverrideMapper;
         this.ticketGroupMapper = ticketGroupMapper;
+        this.activityMapper = activityMapper;
+        this.sessionMapper = sessionMapper;
+        this.userAccessService = userAccessService;
     }
 
     @Transactional
@@ -182,8 +213,9 @@ public class SeatCraftLayoutVersionService {
     }
 
     @Transactional
-    public void deleteVersion(String ownerType, Long ownerId, Long versionId) {
+    public void deleteVersion(String ownerType, Long ownerId, Long versionId, Long operatorId) {
         validateOwner(ownerType, ownerId);
+        requireOwnerAccess(ownerType, ownerId, operatorId);
         SeatLayoutVersion target = versionMapper.selectOne(new LambdaQueryWrapper<SeatLayoutVersion>()
                 .eq(SeatLayoutVersion::getOwnerType, trim(ownerType))
                 .eq(SeatLayoutVersion::getOwnerId, ownerId)
@@ -195,8 +227,13 @@ public class SeatCraftLayoutVersionService {
         if (STATUS_PUBLISHED.equals(trim(target.getVersionStatus()))) {
             throw new BusinessException(400, "已发布版本不能删除");
         }
+        clearBaseVersionReferences(target.getId());
         deleteVersionDetails(target.getId());
         versionMapper.deleteById(target.getId());
+    }
+
+    public void deleteVersion(String ownerType, Long ownerId, Long versionId) {
+        deleteVersion(ownerType, ownerId, versionId, null);
     }
 
     private SeatCraftBlockDtos.LayoutRequest clonePublishedToDraft(String ownerType, Long ownerId, SeatLayoutVersion published) {
@@ -494,6 +531,17 @@ public class SeatCraftLayoutVersionService {
                 .eq(SeatLayoutVersionBlock::getVersionId, versionId));
     }
 
+    private void clearBaseVersionReferences(Long versionId) {
+        if (versionId == null) {
+            return;
+        }
+        SeatLayoutVersion update = new SeatLayoutVersion();
+        update.setBaseVersionId(null);
+        versionMapper.update(update, new UpdateWrapper<SeatLayoutVersion>()
+                .eq("base_version_id", versionId)
+                .set("base_version_id", null));
+    }
+
     private Map<String, Long> insertBlocks(Long versionId, List<SeatCraftBlockDtos.BlockRequest> blocks, LocalDateTime now) {
         Map<String, Long> blockIds = new HashMap<>();
         for (int i = 0; i < blocks.size(); i++) {
@@ -702,6 +750,46 @@ public class SeatCraftLayoutVersionService {
         if (trim(ownerType) == null || ownerId == null || ownerId <= 0) {
             throw new BusinessException(400, "布局归属无效");
         }
+    }
+
+    private void requireOwnerAccess(String ownerType, Long ownerId, Long operatorId) {
+        if (operatorId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+        String normalizedOwnerType = trim(ownerType);
+        if ("activity".equals(normalizedOwnerType)) {
+            if (activityMapper == null || userAccessService == null) {
+                throw new BusinessException(500, "活动权限服务未初始化");
+            }
+            InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(operatorId);
+            Activity activity = activityMapper.selectById(ownerId);
+            if (activity == null || !Integer.valueOf(1).equals(activity.getStatus())) {
+                throw new BusinessException(404, "活动不存在");
+            }
+            if ("organizer".equals(user.getRole()) && !operatorId.equals(activity.getOrganizerId())) {
+                throw new BusinessException(403, "只能管理自己的活动");
+            }
+            return;
+        }
+        if ("session".equals(normalizedOwnerType)) {
+            if (sessionMapper == null || activityMapper == null || userAccessService == null) {
+                throw new BusinessException(500, "场次权限服务未初始化");
+            }
+            InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(operatorId);
+            Session session = sessionMapper.selectById(ownerId);
+            if (session == null || !Integer.valueOf(1).equals(session.getStatus())) {
+                throw new BusinessException(404, "场次不存在");
+            }
+            Activity activity = activityMapper.selectById(session.getActivityId());
+            if (activity == null || !Integer.valueOf(1).equals(activity.getStatus())) {
+                throw new BusinessException(404, "活动不存在");
+            }
+            if ("organizer".equals(user.getRole()) && !operatorId.equals(activity.getOrganizerId())) {
+                throw new BusinessException(403, "只能管理自己的场次");
+            }
+            return;
+        }
+        throw new BusinessException(400, "布局归属无效");
     }
 
     private void validateLayout(SeatCraftBlockDtos.LayoutRequest layout) {

@@ -169,6 +169,9 @@ public class PrivateAssetService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权下载该私有资产");
         }
         if (STATUS_PENDING.equals(asset.getStatus())) {
+            if ("admin".equals(user.getRole())) {
+                return;
+            }
             if (asset.getUploaderId().equals(user.getId())) {
                 return;
             }

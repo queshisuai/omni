@@ -2,13 +2,19 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { getUser } from '@/lib/auth'
-import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity, submitActivityRiskResolution, suspendActivityForRisk } from '@/lib/api'
-import { Plus, Edit, Trash2, Eye, EyeOff, RefreshCw, Search } from 'lucide-react'
+import { getToken, getUser } from '@/lib/auth'
+import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
+import { Plus, Edit, Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
 import type { ActivityEntity, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
+
+function parsePrivateAssetRef(value?: string | null) {
+  if (!value?.startsWith('private-asset:')) return null
+  const id = Number(value.slice('private-asset:'.length))
+  return Number.isInteger(id) && id > 0 ? id : null
+}
 
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState<ActivityEntity[]>([])
@@ -184,6 +190,38 @@ export default function ActivitiesPage() {
     loadData(1)
   }
 
+  const downloadVenueApprovalAsset = async (activity: ActivityEntity) => {
+    const assetId = parsePrivateAssetRef(activity.venueApprovalFileUrl)
+    if (!assetId) return
+    const token = getToken()
+    if (!token) {
+      await globalAlert('登录已失效，请重新登录后下载')
+      return
+    }
+
+    let objectUrl: string | null = null
+    try {
+      const response = await fetch(privateAssetDownloadUrl(assetId), {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) throw new Error('download failed')
+      const blob = await response.blob()
+      objectUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const disposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition')
+      const filename = disposition?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)?.[1]
+      link.href = objectUrl
+      link.download = filename ? decodeURIComponent(filename) : `activity-${activity.id}-venue-proof`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch {
+      await globalAlert('场地审批凭证下载失败，请稍后重试')
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }
+
   if (checkingRole || !role) {
     return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
   }
@@ -302,6 +340,15 @@ export default function ActivitiesPage() {
                           title="提交恢复售票申请"
                         >
                           申请恢复
+                        </button>
+                      )}
+                      {parsePrivateAssetRef(a.venueApprovalFileUrl) && (
+                        <button
+                          onClick={() => downloadVenueApprovalAsset(a)}
+                          className="p-1.5 rounded hover:bg-[#f0f0f0] text-[#666] transition-colors bg-transparent border-none cursor-pointer"
+                          title="下载场地审批凭证"
+                        >
+                          <FileDown className="w-4 h-4" />
                         </button>
                       )}
                       {isAdmin && a.publishStatus === 'published' && a.status === 1 && (

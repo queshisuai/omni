@@ -256,7 +256,7 @@ public class AdminController {
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
-        seatCraftLayoutVersionService.deleteVersion(ownerType, ownerId, versionId);
+        seatCraftLayoutVersionService.deleteVersion(ownerType, ownerId, versionId, operatorId);
         return Result.success(null);
     }
 
@@ -291,7 +291,7 @@ public class AdminController {
             return Result.fail(ResultCode.FORBIDDEN);
         }
         // userId 仅兼容旧前端参数，实际操作身份以 token subject 为准。
-        return Result.success(privateAssetService.upload(operatorId, bizType, file));
+        return Result.success(privateAssetService.upload(operatorId, normalizePrivateAssetBizType(bizType), file));
     }
 
     @GetMapping("/private-assets/{id}/download")
@@ -583,6 +583,7 @@ public class AdminController {
 
     // ========== 活动管理 ==========
 
+    @Transactional
     @PostMapping("/activities")
     public Result<Activity> createActivity(@RequestBody Map<String, Object> body) {
         Long userId = parsePositiveLong(body.get("userId"));
@@ -610,7 +611,8 @@ public class AdminController {
         activity.setStationId(parsePositiveLong(body.get("stationId")));
         activity.setVenueApplicationId(parsePositiveLong(body.get("venueApplicationId")));
         activity.setVenueApprovalNo(parseNonBlankString(body.get("venueApprovalNo")));
-        activity.setVenueApprovalFileUrl(parseNonBlankString(body.get("venueApprovalFileUrl")));
+        String venueApprovalFileUrl = parseNonBlankString(body.get("venueApprovalFileUrl"));
+        activity.setVenueApprovalFileUrl(venueApprovalFileUrl);
         activity.setVenueApprovalNote(parseNonBlankString(body.get("venueApprovalNote")));
         activity.setPublishStatus(body.get("publishStatus") != null ? body.get("publishStatus").toString() : "draft");
         String seatMapVisibility = parseSeatMapVisibility(body.get("seatMapVisibility"), SEAT_MAP_VISIBILITY_HIDDEN);
@@ -826,6 +828,11 @@ public class AdminController {
         if (value == null) return null;
         String text = value.toString().trim();
         return StringUtils.hasText(text) ? text : null;
+    }
+
+    private String normalizePrivateAssetBizType(String bizType) {
+        if ("activity-venue-proof".equals(bizType)) return "venue-proof";
+        return bizType;
     }
 
     private String parseSeatMapVisibility(Object value, String defaultValue) {

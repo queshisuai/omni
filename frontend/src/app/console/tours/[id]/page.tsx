@@ -11,12 +11,18 @@ type PublishForm = {
   startTime: string
   endTime: string
   perUserLimit: string
+  scheduleTba: boolean
 }
 
 function formatPrice(min?: number | null, max?: number | null) {
   if (min == null && max == null) return '未公布'
   if (min != null && max != null && min !== max) return `￥${min} - ￥${max}`
   return `￥${min ?? max}`
+}
+
+function formatStationPrice(item: StationPurchaseDetail) {
+  if (item.saleStatus === 'ticket_tba') return '票档待公布'
+  return formatPrice(item.priceMin, item.priceMax)
 }
 
 function formatRemainStock(item: StationPurchaseDetail) {
@@ -72,7 +78,7 @@ export default function TourDetailPage() {
       .finally(() => setLoading(false))
   }, [tourId])
 
-  const updatePublishForm = (stationId: number, field: keyof PublishForm, value: string) => {
+  const updatePublishForm = (stationId: number, field: keyof PublishForm, value: string | boolean) => {
     setPublishForms(prev => ({
       ...prev,
       [stationId]: {
@@ -80,6 +86,7 @@ export default function TourDetailPage() {
         startTime: prev[stationId]?.startTime || '',
         endTime: prev[stationId]?.endTime || '',
         perUserLimit: prev[stationId]?.perUserLimit || '',
+        scheduleTba: prev[stationId]?.scheduleTba || false,
         [field]: value,
       },
     }))
@@ -92,7 +99,7 @@ export default function TourDetailPage() {
       return
     }
     const form = publishForms[stationId]
-    if (!form?.startTime || !form.endTime) {
+    if (!form?.scheduleTba && (!form?.startTime || !form.endTime)) {
       setPublishErrors(prev => ({ ...prev, [stationId]: '请填写城市站发布场次时间' }))
       return
     }
@@ -110,8 +117,9 @@ export default function TourDetailPage() {
     try {
       await publishStation(stationId, {
         userId: user.userId,
-        startTime: form.startTime,
-        endTime: form.endTime,
+        scheduleTba: form.scheduleTba,
+        startTime: form.scheduleTba ? null : form.startTime,
+        endTime: form.scheduleTba ? null : form.endTime,
         perUserLimit: limitText ? Number(limitText) : null,
       })
       const nextDetail = await getAdminTourDetail(user.userId, tourId)
@@ -194,7 +202,7 @@ export default function TourDetailPage() {
           <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">暂无城市站点，先新增一个站点草稿。</div>
         ) : stationDetails.map(item => {
           const posterUrl = item.station.poster || detail.tour.poster || '/background.png'
-          const publishForm = publishForms[item.station.id] || { startTime: '', endTime: '', perUserLimit: '' }
+          const publishForm = publishForms[item.station.id] || { startTime: '', endTime: '', perUserLimit: '', scheduleTba: false }
           const publishError = publishErrors[item.station.id]
           const canPublish = item.station.publishStatus !== 'published' && item.station.venueApplicationId != null
           return <div key={item.station.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5">
@@ -207,7 +215,7 @@ export default function TourDetailPage() {
                     <div>销售状态：{formatStationStatus(item)}</div>
                     <div>发布状态：{formatPublishStatus(item.station.publishStatus)}</div>
                     <div>场馆：{item.venueName || '未公布'}</div>
-                    <div>票价：{formatPrice(item.priceMin, item.priceMax)}</div>
+                    <div>票价：{formatStationPrice(item)}</div>
                     <div>场次数：{item.sessions.length}</div>
                     <div>剩余库存：{formatRemainStock(item)}</div>
                   </div>
@@ -219,13 +227,17 @@ export default function TourDetailPage() {
               <div className="mt-4 rounded-xl border border-[#f0f0f0] bg-[#fafafa] p-4">
                 <div className="mb-3 text-[14px] font-semibold text-[#1a1a2e]">发布城市站</div>
                 <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="flex items-start gap-2 rounded-lg bg-white p-3 text-[13px] text-[#333] sm:col-span-3">
+                    <input type="checkbox" checked={publishForm.scheduleTba} onChange={event => updatePublishForm(item.station.id, 'scheduleTba', event.target.checked)} className="mt-0.5" />
+                    <span><span className="font-medium">场次时间待公布</span>：先发布城市站和场馆，暂不展示具体时间、票价和购买入口。</span>
+                  </label>
                   <label className="block text-[13px] text-[#666]">
                     开始时间 *
-                    <input type="datetime-local" value={publishForm.startTime} onChange={event => updatePublishForm(item.station.id, 'startTime', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" />
+                    <input type="datetime-local" value={publishForm.startTime} disabled={publishForm.scheduleTba} onChange={event => updatePublishForm(item.station.id, 'startTime', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]" />
                   </label>
                   <label className="block text-[13px] text-[#666]">
                     结束时间 *
-                    <input type="datetime-local" value={publishForm.endTime} onChange={event => updatePublishForm(item.station.id, 'endTime', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" />
+                    <input type="datetime-local" value={publishForm.endTime} disabled={publishForm.scheduleTba} onChange={event => updatePublishForm(item.station.id, 'endTime', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]" />
                   </label>
                   <label className="block text-[13px] text-[#666]">
                     个人限购

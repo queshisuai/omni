@@ -382,6 +382,7 @@ export type StationPublishStatus =
 export type StationSaleStatus =
   | 'unannounced'
   | 'coming_soon'
+  | 'ticket_tba'
   | 'to_be_scheduled'
   | 'on_sale'
   | 'sold_out'

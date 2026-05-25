@@ -172,14 +172,14 @@ class AdminControllerTest {
         PrivateAssetResponse response = new PrivateAssetResponse();
         response.setId(1L);
         when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
-        when(privateAssetService.upload(eq(2003L), eq("venue_proof"), eq(file))).thenReturn(response);
+        when(privateAssetService.upload(eq(2003L), eq("venue-proof"), eq(file))).thenReturn(response);
 
         Result<PrivateAssetResponse> result = controller.uploadPrivateAsset(
-                "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer"), 9999L, "venue_proof", file);
+                "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer"), 9999L, "activity-venue-proof", file);
 
         assertEquals(200, result.getCode());
         assertEquals(1L, result.getData().getId());
-        verify(privateAssetService).upload(2003L, "venue_proof", file);
+        verify(privateAssetService).upload(2003L, "venue-proof", file);
         verify(privateAssetService, never()).upload(eq(9999L), any(), any());
     }
 
@@ -628,6 +628,21 @@ class AdminControllerTest {
     }
 
     @Test
+    void deleteSeatCraftVersionUsesTokenSubjectAndService() {
+        AdminController controller = controller();
+
+        Result<Void> result = controller.deleteSeatCraftVersion(
+                "Bearer " + JwtUtil.generateToken(2002L, "13800000001", "admin"),
+                "activity",
+                10L,
+                77L);
+
+        assertEquals(200, result.getCode());
+        verify(seatCraftLayoutVersionService).deleteVersion("activity", 10L, 77L, 2002L);
+        verify(seatCraftLayoutVersionService, never()).deleteVersion(eq("activity"), eq(10L), eq(77L), eq(9999L));
+    }
+
+    @Test
     void createActivityStoresExternalVenueApprovalProof() {
         AdminController controller = controller();
         when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
@@ -648,6 +663,29 @@ class AdminControllerTest {
         assertEquals("BJ-WH-2026-001", captor.getValue().getVenueApprovalNo());
         assertEquals("https://example.com/approval.pdf", captor.getValue().getVenueApprovalFileUrl());
         assertEquals("已取得城市主管部门审批", captor.getValue().getVenueApprovalNote());
+    }
+
+    @Test
+    void createActivityStoresPrivateVenueApprovalProofReferenceWithoutBindingAsApplicationProof() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(activityMapper.insert(any(Activity.class))).thenAnswer(invocation -> {
+            Activity activity = invocation.getArgument(0);
+            activity.setId(100L);
+            return 1;
+        });
+
+        Result<Activity> result = controller.createActivity(Map.of(
+                "userId", 2003L,
+                "categoryId", 1L,
+                "artistId", 1L,
+                "name", "私有凭证演出",
+                "venueApprovalFileUrl", "private-asset:9"
+        ));
+
+        assertEquals(200, result.getCode());
+        assertEquals("private-asset:9", result.getData().getVenueApprovalFileUrl());
+        verify(privateAssetService, never()).bindVenueProof(anyLong(), anyLong(), anyLong());
     }
 
     @Test

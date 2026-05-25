@@ -3,16 +3,18 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, listVenueSeatLayoutTemplates, updateActivitySeatLayout, uploadTicketAsset } from '@/lib/api'
+import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, listVenueSeatLayoutTemplates, updateActivitySeatLayout, uploadTicketAsset, uploadPrivateAsset, listMyVenueApplications } from '@/lib/api'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
 import { LocalFileUpload } from '@/components/LocalFileUpload'
+import { PrivateFileUpload } from '@/components/PrivateFileUpload'
 import { globalAlert } from '@/components/GlobalDialog'
-import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatLayoutTemplateCandidateVO, UserRole, ActivityArtistVO } from '@/types/api'
+import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatLayoutTemplateCandidateVO, UserRole, ActivityArtistVO, PrivateAssetVO, VenueApplicationVO } from '@/types/api'
 
 type SessionDraft = {
   key: string
   venueId: number | null
+  venueApplicationId: number | null
   startTime: string
   endTime: string
 }
@@ -21,11 +23,27 @@ type TicketTypeDraft = {
   key: string
   sessionKey: string
   name: string
-  price: number
-  totalStock: number
+  price: string
+  totalStock: string
 }
 
 type SeatMapVisibility = 'published' | 'hidden'
+
+function sessionVenueValue(session: SessionDraft) {
+  return session.venueApplicationId ? `application:${session.venueApplicationId}` : session.venueId ? `venue:${session.venueId}` : ''
+}
+
+function resolveVenueSelection(value: string, applications: VenueApplicationVO[]) {
+  if (!value) return { venueId: null, venueApplicationId: null }
+  const [type, rawId] = value.split(':')
+  const id = Number(rawId)
+  if (!Number.isInteger(id) || id <= 0) return { venueId: null, venueApplicationId: null }
+  if (type === 'application') {
+    const application = applications.find(item => item.id === id)
+    return { venueId: application?.venueId ?? null, venueApplicationId: application?.id ?? null }
+  }
+  return { venueId: id, venueApplicationId: null }
+}
 
 export default function NewActivityPage() {
   const router = useRouter()
@@ -37,6 +55,7 @@ export default function NewActivityPage() {
   // 分类和场馆
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [venues, setVenues] = useState<VenueEntity[]>([])
+  const [venueApplications, setVenueApplications] = useState<VenueApplicationVO[]>([])
 
   // 步骤1：基本信息
   const [name, setName] = useState('')
@@ -46,19 +65,21 @@ export default function NewActivityPage() {
   const [poster, setPoster] = useState('')
   const [venueApprovalNo, setVenueApprovalNo] = useState('')
   const [venueApprovalFileUrl, setVenueApprovalFileUrl] = useState('')
+  const [venueApprovalAsset, setVenueApprovalAsset] = useState<PrivateAssetVO | null>(null)
   const [venueApprovalNote, setVenueApprovalNote] = useState('')
   const [seatMapVisibility, setSeatMapVisibility] = useState<SeatMapVisibility>('hidden')
   const [perUserLimit, setPerUserLimit] = useState('')
+  const [uploadingVenueApproval, setUploadingVenueApproval] = useState(false)
 
   // 步骤2：场次
-  const [sessions, setSessions] = useState<SessionDraft[]>([{ key: 's1', venueId: null, startTime: '', endTime: '' }])
+  const [sessions, setSessions] = useState<SessionDraft[]>([{ key: 's1', venueId: null, venueApplicationId: null, startTime: '', endTime: '' }])
   const [templateCandidates, setTemplateCandidates] = useState<SeatLayoutTemplateCandidateVO[]>([])
   const [selectedTemplateSource, setSelectedTemplateSource] = useState('')
   const [loadingTemplates, setLoadingTemplates] = useState(false)
 
   // 步骤3：票档
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDraft[]>([
-    { key: 't1', sessionKey: 's1', name: '', price: 0, totalStock: 0 },
+    { key: 't1', sessionKey: 's1', name: '', price: '', totalStock: '' },
   ])
 
   useEffect(() => {
@@ -68,6 +89,9 @@ export default function NewActivityPage() {
     setCheckingRole(false)
     listCategories().then(setCategories).catch(() => {})
     listAdminVenues(u.userId).then(setVenues).catch(() => {})
+    listMyVenueApplications()
+      .then(items => setVenueApplications(items.filter(item => item.status === 1 && item.venueId != null)))
+      .catch(() => setVenueApplications([]))
   }, [])
 
   const primaryVenueId = sessions.find(s => s.venueId)?.venueId ?? null
@@ -101,8 +125,8 @@ export default function NewActivityPage() {
 
   const addSession = () => {
     const key = 's' + Date.now()
-    setSessions([...sessions, { key, venueId: null, startTime: '', endTime: '' }])
-    setTicketTypes([...ticketTypes, { key: 't' + Date.now(), sessionKey: key, name: '', price: 0, totalStock: 0 }])
+    setSessions([...sessions, { key, venueId: null, venueApplicationId: null, startTime: '', endTime: '' }])
+    setTicketTypes([...ticketTypes, { key: 't' + Date.now(), sessionKey: key, name: '', price: '', totalStock: '' }])
   }
 
   const removeSession = (key: string) => {
@@ -112,7 +136,7 @@ export default function NewActivityPage() {
   }
 
   const addTicketType = (sessionKey: string) => {
-    setTicketTypes([...ticketTypes, { key: 't' + Date.now(), sessionKey, name: '', price: 0, totalStock: 0 }])
+    setTicketTypes([...ticketTypes, { key: 't' + Date.now(), sessionKey, name: '', price: '', totalStock: '' }])
   }
 
   const removeTicketType = (key: string) => {
@@ -123,8 +147,24 @@ export default function NewActivityPage() {
     setSessions(sessions.map(s => s.key === key ? { ...s, [field]: value } : s))
   }
 
-  const updateTicketType = (key: string, field: string, value: string | number) => {
+  const updateSessionVenueSource = (key: string, value: string) => {
+    const selection = resolveVenueSelection(value, venueApplications)
+    setSessions(sessions.map(s => s.key === key ? { ...s, ...selection } : s))
+  }
+
+  const updateTicketType = (key: string, field: string, value: string) => {
     setTicketTypes(ticketTypes.map(t => t.key === key ? { ...t, [field]: value } : t))
+  }
+
+  const handleVenueApprovalUpload = async (file: File) => {
+    const u = getUser()
+    if (!u?.userId) throw new Error('请先登录')
+    setUploadingVenueApproval(true)
+    try {
+      return await uploadPrivateAsset({ userId: u.userId, bizType: 'activity-venue-proof', file })
+    } finally {
+      setUploadingVenueApproval(false)
+    }
   }
 
   const handleSubmit = async () => {
@@ -133,6 +173,26 @@ export default function NewActivityPage() {
     const limitText = perUserLimit.trim()
     if (limitText && (!/^\d+$/.test(limitText) || Number(limitText) <= 0)) {
       await globalAlert('个人限购张数必须为正整数')
+      return
+    }
+    const validSessions = sessions.filter(s => s.venueId && s.startTime)
+    if (validSessions.length === 0) {
+      await globalAlert('请至少填写一个有效场次的场馆和开始时间')
+      return
+    }
+    if (validSessions.length !== sessions.length) {
+      await globalAlert('场次信息需填写完整，或删除未填写完整的场次')
+      return
+    }
+    const hasIncompleteTicketType = ticketTypes.some(t => {
+      const price = Number(t.price)
+      const totalStock = Number(t.totalStock)
+      const hasAnyValue = Boolean(t.name.trim()) || Boolean(t.price.trim()) || Boolean(t.totalStock.trim())
+      const isComplete = Boolean(t.name.trim()) && Number.isFinite(price) && price > 0 && Number.isInteger(totalStock) && totalStock > 0
+      return hasAnyValue && !isComplete
+    })
+    if (hasIncompleteTicketType) {
+      await globalAlert('票档信息需填写完整，或整行留空表示票档待公布')
       return
     }
     setSubmitting(true)
@@ -153,8 +213,9 @@ export default function NewActivityPage() {
         description,
         poster,
         venueApprovalNo: venueApprovalNo.trim() || null,
-        venueApprovalFileUrl: venueApprovalFileUrl.trim() || null,
+        venueApprovalFileUrl: venueApprovalAsset ? `private-asset:${venueApprovalAsset.id}` : venueApprovalFileUrl.trim() || null,
         venueApprovalNote: venueApprovalNote.trim() || null,
+        venueApplicationId: sessions.find(s => s.venueApplicationId)?.venueApplicationId ?? null,
         seatMapVisibility,
         perUserLimit: limitText ? Number(limitText) : null,
       })
@@ -189,13 +250,15 @@ export default function NewActivityPage() {
       // 3. 创建票档
       for (const t of ticketTypes) {
         const session = createdSessions.get(t.sessionKey)
-        if (!session || !t.name || t.price <= 0 || t.totalStock <= 0) continue
+        const price = Number(t.price)
+        const totalStock = Number(t.totalStock)
+        if (!session || !t.name.trim() || !Number.isFinite(price) || price <= 0 || !Number.isInteger(totalStock) || totalStock <= 0) continue
         await createAdminTicketType({
           userId: u.userId,
           sessionId: session.id,
-          name: t.name,
-          price: t.price,
-          totalStock: t.totalStock,
+          name: t.name.trim(),
+          price,
+          totalStock,
         })
       }
 
@@ -289,7 +352,16 @@ export default function NewActivityPage() {
               <div className="mb-3 text-[14px] font-semibold text-[#1a1a2e]">场地审批凭证</div>
               <div className="grid gap-3">
                 <input value={venueApprovalNo} onChange={e => setVenueApprovalNo(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="凭证编号" />
-                <input value={venueApprovalFileUrl} onChange={e => setVenueApprovalFileUrl(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="凭证附件链接" />
+                <PrivateFileUpload
+                  label="场地审批凭证附件"
+                  value={venueApprovalAsset}
+                  accept="application/pdf,image/jpeg,image/png,image/webp"
+                  uploading={submitting || uploadingVenueApproval}
+                  onUpload={handleVenueApprovalUpload}
+                  onChange={setVenueApprovalAsset}
+                  hint="支持 PDF、JPEG、PNG、WEBP；附件以私有文件保存，仅供平台审核。"
+                />
+                <input value={venueApprovalFileUrl} onChange={e => setVenueApprovalFileUrl(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="外部凭证链接（可选）" />
                 <textarea value={venueApprovalNote} onChange={e => setVenueApprovalNote(e.target.value)} rows={2} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268] resize-none" placeholder="凭证说明" />
               </div>
             </div>
@@ -341,10 +413,20 @@ export default function NewActivityPage() {
                 </div>
                 <div className="mb-3">
                   <label className="block text-[12px] text-[#666] mb-1">场馆 *</label>
-                  <select value={s.venueId ?? ''} onChange={e => updateSession(s.key, 'venueId', e.target.value ? Number(e.target.value) : null)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]">
+                  <select value={sessionVenueValue(s)} onChange={e => updateSessionVenueSource(s.key, e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]">
                     <option value="">选择场馆</option>
-                    {venues.map(v => <option key={v.id} value={v.id}>{v.name} ({v.city})</option>)}
+                    {venues.length > 0 && (
+                      <optgroup label="平台场馆">
+                        {venues.map(v => <option key={`venue:${v.id}`} value={`venue:${v.id}`}>{v.name} ({v.city})</option>)}
+                      </optgroup>
+                    )}
+                    {venueApplications.length > 0 && (
+                      <optgroup label="我的已通过场地申请">
+                        {venueApplications.map(item => <option key={`application:${item.id}`} value={`application:${item.id}`}>{item.venueName} ({item.city})</option>)}
+                      </optgroup>
+                    )}
                   </select>
+                  {venues.length === 0 && venueApplications.length === 0 && <div className="mt-2 text-[12px] text-[#999]">暂无可用场馆，请先提交并通过场地凭证审核。</div>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -367,6 +449,9 @@ export default function NewActivityPage() {
         {/* 步骤3：票档 */}
         {step === 3 && (
           <div>
+            <div className="mb-4 rounded-lg bg-[#fff7fb] px-4 py-3 text-[13px] text-[#666]">
+              票档可以暂不公布：整行留空即可先创建活动和场次，后续在场次管理中补充票档。
+            </div>
             {sessions.map((s, si) => {
               const sessionTT = ticketTypes.filter(t => t.sessionKey === s.key)
               return (
@@ -380,11 +465,11 @@ export default function NewActivityPage() {
                       </div>
                       <div className="w-[120px]">
                         <label className="block text-[12px] text-[#666] mb-1">价格</label>
-                        <input type="number" value={tt.price || ''} onChange={e => updateTicketType(tt.key, 'price', Number(e.target.value))} className="w-full px-3 py-1.5 border border-[#ddd] rounded text-[13px] outline-none focus:border-[#ff1268]" placeholder="0" />
+                        <input type="number" min="0" value={tt.price} onChange={e => updateTicketType(tt.key, 'price', e.target.value)} className="w-full px-3 py-1.5 border border-[#ddd] rounded text-[13px] outline-none focus:border-[#ff1268]" placeholder="0" />
                       </div>
                       <div className="w-[120px]">
                         <label className="block text-[12px] text-[#666] mb-1">库存</label>
-                        <input type="number" value={tt.totalStock || ''} onChange={e => updateTicketType(tt.key, 'totalStock', Number(e.target.value))} className="w-full px-3 py-1.5 border border-[#ddd] rounded text-[13px] outline-none focus:border-[#ff1268]" placeholder="0" />
+                        <input type="number" min="0" step="1" value={tt.totalStock} onChange={e => updateTicketType(tt.key, 'totalStock', e.target.value)} className="w-full px-3 py-1.5 border border-[#ddd] rounded text-[13px] outline-none focus:border-[#ff1268]" placeholder="0" />
                       </div>
                       <button onClick={() => removeTicketType(tt.key)} className="text-[12px] text-[#ef4444] bg-transparent border-none cursor-pointer pb-1.5 whitespace-nowrap">删除</button>
                     </div>

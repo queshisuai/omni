@@ -29,6 +29,7 @@ function formatStationStatus(item: StationPurchaseDetail) {
   const saleStatusText: Record<string, string> = {
     unannounced: '未公布',
     coming_soon: '即将开售',
+    ticket_tba: '票档待公布',
     to_be_scheduled: '时间未公布',
     on_sale: '售票中',
     sold_out: '已售罄',
@@ -64,6 +65,12 @@ function formatPrice(min?: number | null, max?: number | null) {
   if (min == null && max == null) return '未公布'
   if (min != null && max != null && min !== max) return `￥${min} - ￥${max}`
   return `￥${min ?? max}`
+}
+
+function formatStationPrice(item: StationPurchaseDetail, hideStationDetail: boolean) {
+  if (hideStationDetail) return '未公布'
+  if (item.saleStatus === 'ticket_tba') return '票档待公布'
+  return formatPrice(item.priceMin, item.priceMax)
 }
 
 export default function TourDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -205,7 +212,7 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
                         </div>
                         <div className="rounded-lg bg-white p-4">
                           <div className="text-[12px] text-[#999]">票价</div>
-                          <div className="mt-1 font-medium text-[#333]">{hideStationDetail ? '未公布' : formatPrice(selectedStation.priceMin, selectedStation.priceMax)}</div>
+                          <div className="mt-1 font-medium text-[#333]">{formatStationPrice(selectedStation, hideStationDetail)}</div>
                         </div>
                       </div>
                     </div>

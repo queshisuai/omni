@@ -262,7 +262,7 @@ function SeatCraftVersionList({ versions, onRollback, onDelete, disabled }: {
         <div className="text-[12px] font-semibold text-[#666]">历史版本</div>
         <div className="text-[12px] text-[#999]">共 {versions.length} 个版本</div>
       </div>
-      <div className="space-y-2">
+      <div className="max-h-[136px] space-y-2 overflow-y-auto pr-1">
         {versions.map(version => (
           <div key={`${version.id}-${version.versionNo}-${version.versionStatus}`} className="flex flex-col gap-2 rounded-lg bg-[#f7f7f8] px-3 py-2 text-[12px] text-[#666] sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">

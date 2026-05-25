@@ -369,7 +369,7 @@ class TourStationServiceTest {
     }
 
     @Test
-    void getTourDetailHandlesNullTicketTypeMapperResults() {
+    void getTourDetailMarksPublishedSessionWithoutTicketTypesAsTicketTba() {
         Tour tour = tour(10L, 2003L);
         Station station = station(20L, 10L, null);
         station.setPublishStatus("published");
@@ -384,8 +384,8 @@ class TourStationServiceTest {
         Map<String, Object> detail = service.getTourDetail(10L);
 
         Map<String, Object> item = firstStationDetail(detail);
-        assertEquals("coming_soon", item.get("saleStatus"));
-        assertEquals("即将开抢", item.get("saleStatusText"));
+        assertEquals("ticket_tba", item.get("saleStatus"));
+        assertEquals("票档待公布", item.get("saleStatusText"));
     }
 
     @Test
@@ -430,8 +430,8 @@ class TourStationServiceTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> stationDetails = (List<Map<String, Object>>) detail.get("stationDetails");
         assertEquals(1, stationDetails.size());
-        assertEquals("coming_soon", stationDetails.get(0).get("saleStatus"));
-        assertEquals("即将开抢", stationDetails.get(0).get("saleStatusText"));
+        assertEquals("ticket_tba", stationDetails.get(0).get("saleStatus"));
+        assertEquals("票档待公布", stationDetails.get(0).get("saleStatusText"));
         assertEquals(null, stationDetails.get(0).get("venueName"));
     }
 
@@ -479,6 +479,36 @@ class TourStationServiceTest {
         verify(sessionSeatLayoutService).generateSessionSeats(401L);
         verify(activityMapper).updateById(activity);
         verify(stationMapper).updateById(station);
+    }
+
+    @Test
+    void publishStationCanMarkScheduleTbaWithoutCreatingSession() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Tour tour = tour(10L, 2003L);
+        tour.setTitle("万象巡演");
+        tour.setCategoryId(2L);
+        tour.setArtistId(3L);
+        Station station = station(20L, 10L, 88L);
+        VenueApplication application = approvedApplication(88L, 2003L, 101L,
+                LocalDateTime.of(2026, 6, 1, 0, 0), LocalDateTime.of(2026, 6, 30, 23, 59));
+        when(tourMapper.selectById(10L)).thenReturn(tour);
+        when(stationMapper.selectById(20L)).thenReturn(station);
+        when(venueApplicationMapper.selectById(88L)).thenReturn(application);
+        doAnswer(invocation -> {
+            Activity activity = invocation.getArgument(0);
+            activity.setId(301L);
+            return 1;
+        }).when(activityMapper).insert(any(Activity.class));
+
+        Map<String, Object> result = service.publishStation(2003L, 20L, Map.of("scheduleTba", true));
+
+        Activity activity = (Activity) result.get("activity");
+        assertEquals("published", activity.getPublishStatus());
+        assertEquals("published", station.getPublishStatus());
+        assertEquals(null, result.get("session"));
+        verify(sessionMapper, never()).insert(any(Session.class));
+        verify(sessionSeatLayoutService, never()).copyFromActivity(any(), any(), any());
+        verify(sessionSeatLayoutService, never()).generateSessionSeats(any());
     }
 
     @Test
