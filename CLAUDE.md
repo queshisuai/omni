@@ -9,6 +9,8 @@
 - 评价系统和动态系统已经移除；不要恢复 `ReviewSection`、`MomentSection`、`SocialController`、review/moment API 或相关持久化代码。
 - 本机当前默认运行方式是 `prod-split`：五个业务服务分别连接五个 PostgreSQL database。
 - `omni_ticket` 现在只作为历史共享库、迁移源或 local-schema disposable 实验库，不再作为当前业务运行库。
+- **近期重要更新 (SeatCraft Designer)**：
+  - 重构了前端布局设计器的交互逻辑，实现视口锁定防穿透（ViewBox Lock）、独立区块拖拽等工业级 IDE 体验，修复了保存由于空票档价格引发的 500 错误。
 
 ## 技术栈
 
