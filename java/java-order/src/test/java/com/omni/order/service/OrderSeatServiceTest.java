@@ -326,6 +326,24 @@ class OrderSeatServiceTest {
     }
 
     @Test
+    void markPaidReconfirmsLockedSeatsWhenOrderAlreadyPaid() {
+        Order order = paidOrder(1006L, 106L, 2006L);
+        OrderSeat lockedSeat = lockedOrderSeat(9006L, order.getId(), 3006L, 106L, 2006L);
+        when(orderMapper.selectById(1006L)).thenReturn(order);
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of(lockedSeat));
+        when(ticketSalesInternalClient.confirmSold(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
+
+        Order result = service.markPaid(1006L);
+
+        assertEquals(OrderService.STATUS_PAID, result.getStatus());
+        assertEquals(2, lockedSeat.getStatus());
+        ArgumentCaptor<TicketSalesOrderRequest> captor = ArgumentCaptor.forClass(TicketSalesOrderRequest.class);
+        verify(ticketSalesInternalClient).confirmSold(captor.capture(), eq("test-internal-token"));
+        assertEquals(List.of(3006L), captor.getValue().getSeatIds());
+    }
+
+    @Test
     void releaseExpiredSeatLocksMakesExpiredLockedSeatsAvailable() {
         Order order = pendingOrder(1002L, 102L, 2002L);
         OrderSeat expiredSeat = lockedOrderSeat(9002L, order.getId(), 3002L, 102L, 2002L);

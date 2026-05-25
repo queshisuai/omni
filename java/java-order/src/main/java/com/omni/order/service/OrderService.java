@@ -150,6 +150,7 @@ public class OrderService {
             throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
         }
         if (order.getStatus() == STATUS_PAID) {
+            confirmTicketsSold(order);
             return order;
         }
         if (order.getStatus() != STATUS_PENDING) {
@@ -650,7 +651,7 @@ public class OrderService {
         }
         List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
                 .eq(OrderSeat::getOrderId, order.getId())
-                .eq(OrderSeat::getStatus, ORDER_SEAT_LOCKED));
+                .in(OrderSeat::getStatus, ORDER_SEAT_LOCKED, ORDER_SEAT_SOLD));
         TicketSalesOrderRequest request = new TicketSalesOrderRequest();
         request.setOrderId(order.getId());
         request.setSessionId(order.getSessionId());
@@ -660,9 +661,11 @@ public class OrderService {
             LocalDateTime now = LocalDateTime.now();
             List<Long> seatIds = new ArrayList<>();
             for (OrderSeat orderSeat : orderSeats) {
-                orderSeat.setStatus(ORDER_SEAT_SOLD);
-                orderSeat.setUpdateTime(now);
-                orderSeatMapper.updateById(orderSeat);
+                if (orderSeat.getStatus() == null || orderSeat.getStatus() == ORDER_SEAT_LOCKED) {
+                    orderSeat.setStatus(ORDER_SEAT_SOLD);
+                    orderSeat.setUpdateTime(now);
+                    orderSeatMapper.updateById(orderSeat);
+                }
                 seatIds.add(orderSeat.getSessionSeatId());
             }
             request.setSeatIds(seatIds);
