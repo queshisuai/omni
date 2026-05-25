@@ -1,1 +1,9 @@
 .claude/
+# build artifacts
+target/
+*.log
+logs/
+artifacts/
+derby.log
+.idea/
+.vscode/
