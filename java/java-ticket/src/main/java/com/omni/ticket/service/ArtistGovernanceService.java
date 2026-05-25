@@ -6,6 +6,8 @@ import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
+import com.omni.ticket.dto.ArtistUpdateRequest;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Artist;
 import com.omni.ticket.mapper.ArtistMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,6 +67,37 @@ public class ArtistGovernanceService {
         artist.setCreateTime(now);
         artist.setUpdateTime(now);
         artistMapper.insert(artist);
+        return artist;
+    }
+
+    public Artist updateProfile(Long artistId, ArtistUpdateRequest request) {
+        if (request == null || request.getUserId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "艺人更新参数不能为空");
+        }
+        if (!StringUtils.hasText(request.getName())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "艺人/团队名称不能为空");
+        }
+        Artist artist = requireArtist(artistId);
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
+        String role = user == null ? null : user.getRole();
+        boolean admin = "admin".equals(role);
+        boolean ownPending = request.getUserId().equals(artist.getSubmittedBy())
+                && REVIEW_PENDING.equals(artist.getReviewStatus());
+        if (!admin && !ownPending) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "只能编辑自己提交且待审核的艺人档案");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        artist.setName(request.getName().trim());
+        artist.setAlias(trimToNull(request.getAlias()));
+        artist.setArtistType(trimToNull(request.getArtistType()));
+        artist.setCountryOrRegion(trimToNull(request.getCountryOrRegion()));
+        artist.setAgency(trimToNull(request.getAgency()));
+        artist.setRepresentativeWorks(trimToNull(request.getRepresentativeWorks()));
+        artist.setCategoryTags(trimToNull(request.getCategoryTags()));
+        artist.setDescription(trimToNull(request.getDescription()));
+        artist.setAvatar(trimToNull(request.getAvatar()));
+        artist.setUpdateTime(now);
+        artistMapper.updateById(artist);
         return artist;
     }
 

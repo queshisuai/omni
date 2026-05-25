@@ -11,6 +11,8 @@ UPDATE artist SET status = 1 WHERE status IS NULL;
 UPDATE artist SET update_time = COALESCE(update_time, create_time, CURRENT_TIMESTAMP) WHERE update_time IS NULL;
 
 ALTER TABLE artist ALTER COLUMN review_status SET DEFAULT 'approved';
+ALTER TABLE artist DROP CONSTRAINT IF EXISTS chk_artist_risk_status;
+ALTER TABLE artist ADD CONSTRAINT chk_artist_risk_status CHECK (risk_status IN ('normal', 'risky'));
 
 CREATE INDEX IF NOT EXISTS idx_artist_review_status ON artist(review_status);
 CREATE INDEX IF NOT EXISTS idx_artist_risk_status ON artist(risk_status);

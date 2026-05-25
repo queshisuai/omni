@@ -91,7 +91,7 @@ export function ActivityArtistSelector({ value, onChange }: Props) {
     setSubmitting(true)
     setSubmitMessage(null)
     try {
-      await submitAdminArtist({ userId: user.userId, name, sourceNote: '活动表单搜索不到时提交' })
+      await submitAdminArtist({ name, sourceNote: '活动表单搜索不到时提交' })
       setSubmitMessage('已提交艺人档案审核，通过后可加入活动阵容。')
       setKeyword('')
       setResults([])

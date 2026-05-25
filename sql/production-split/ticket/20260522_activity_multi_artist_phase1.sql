@@ -18,17 +18,6 @@ ALTER TABLE artist ADD COLUMN IF NOT EXISTS risk_marked_at TIMESTAMP;
 ALTER TABLE artist ADD COLUMN IF NOT EXISTS risk_cleared_by BIGINT;
 ALTER TABLE artist ADD COLUMN IF NOT EXISTS risk_cleared_at TIMESTAMP;
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'chk_artist_risk_status'
-          AND conrelid = 'artist'::regclass
-    ) THEN
-        ALTER TABLE artist ADD CONSTRAINT chk_artist_risk_status CHECK (risk_status IN ('normal', 'risk', 'blocked', 'disabled'));
-    END IF;
-END $$;
-
 CREATE INDEX IF NOT EXISTS idx_artist_name ON artist(name);
 CREATE INDEX IF NOT EXISTS idx_artist_alias ON artist(alias);
 CREATE INDEX IF NOT EXISTS idx_artist_tags ON artist(category_tags);

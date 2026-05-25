@@ -5,6 +5,7 @@ import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
+import com.omni.ticket.dto.ArtistUpdateRequest;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Artist;
 import com.omni.ticket.mapper.ArtistMapper;
@@ -179,8 +180,115 @@ class ArtistGovernanceServiceTest {
         verify(artistMapper).selectList(captor.capture());
     }
 
+    @Test
+    void adminCanUpdateAnyArtistProfile() {
+        ArtistGovernanceService service = service();
+        Artist artist = artist(99L);
+        artist.setSubmittedBy(2003L);
+        artist.setReviewStatus("approved");
+        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        when(artistMapper.selectById(99L)).thenReturn(artist);
+        ArtistUpdateRequest request = updateRequest(2002L);
+        request.setName("更新艺人");
+        request.setAvatar("/uploads/ticket/artist-avatar/2026/05/a.png");
+
+        Artist updated = service.updateProfile(99L, request);
+
+        assertEquals("更新艺人", updated.getName());
+        assertEquals("/uploads/ticket/artist-avatar/2026/05/a.png", updated.getAvatar());
+        assertEquals("歌手", updated.getArtistType());
+        assertNotNull(updated.getUpdateTime());
+        verify(artistMapper).updateById(artist);
+    }
+
+    @Test
+    void organizerCanUpdateOwnPendingArtistProfile() {
+        ArtistGovernanceService service = service();
+        Artist artist = artist(99L);
+        artist.setSubmittedBy(2003L);
+        artist.setReviewStatus("pending");
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(artistMapper.selectById(99L)).thenReturn(artist);
+        ArtistUpdateRequest request = updateRequest(2003L);
+        request.setName("主办方补充艺人");
+
+        Artist updated = service.updateProfile(99L, request);
+
+        assertEquals("主办方补充艺人", updated.getName());
+        assertEquals(2003L, updated.getSubmittedBy());
+        verify(artistMapper).updateById(artist);
+    }
+
+    @Test
+    void organizerCannotUpdateApprovedArtistProfile() {
+        ArtistGovernanceService service = service();
+        Artist artist = artist(99L);
+        artist.setSubmittedBy(2003L);
+        artist.setReviewStatus("approved");
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(artistMapper.selectById(99L)).thenReturn(artist);
+        ArtistUpdateRequest request = updateRequest(2003L);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.updateProfile(99L, request));
+
+        assertEquals("只能编辑自己提交且待审核的艺人档案", exception.getMessage());
+    }
+
+    @Test
+    void organizerCannotUpdateOtherUsersPendingArtistProfile() {
+        ArtistGovernanceService service = service();
+        Artist artist = artist(99L);
+        artist.setSubmittedBy(2004L);
+        artist.setReviewStatus("pending");
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(artistMapper.selectById(99L)).thenReturn(artist);
+        ArtistUpdateRequest request = updateRequest(2003L);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.updateProfile(99L, request));
+
+        assertEquals("只能编辑自己提交且待审核的艺人档案", exception.getMessage());
+    }
+
+    @Test
+    void updateArtistProfileRequiresName() {
+        ArtistGovernanceService service = service();
+        ArtistUpdateRequest request = updateRequest(2002L);
+        request.setName(" ");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.updateProfile(99L, request));
+
+        assertEquals("艺人/团队名称不能为空", exception.getMessage());
+    }
+
+    @Test
+    void updateArtistProfileRequiresRequestAndUserId() {
+        ArtistGovernanceService service = service();
+        ArtistUpdateRequest request = updateRequest(null);
+
+        BusinessException nullRequestException = assertThrows(BusinessException.class, () -> service.updateProfile(99L, null));
+        BusinessException nullUserException = assertThrows(BusinessException.class, () -> service.updateProfile(99L, request));
+
+        assertEquals("艺人更新参数不能为空", nullRequestException.getMessage());
+        assertEquals("艺人更新参数不能为空", nullUserException.getMessage());
+    }
+
     private ArtistGovernanceService service() {
         return new ArtistGovernanceService(artistMapper, userAccessService);
+    }
+
+    private ArtistUpdateRequest updateRequest(Long userId) {
+        ArtistUpdateRequest request = new ArtistUpdateRequest();
+        request.setUserId(userId);
+        request.setName("测试艺人");
+        request.setAlias("别名");
+        request.setArtistType("歌手");
+        request.setCountryOrRegion("中国");
+        request.setAgency("经纪公司");
+        request.setRepresentativeWorks("代表作");
+        request.setCategoryTags("流行");
+        request.setDescription("简介");
+        request.setAvatar("/uploads/ticket/artist-avatar/2026/05/default.png");
+        return request;
     }
 
     private InternalUserRefResponse user(Long id, String role) {

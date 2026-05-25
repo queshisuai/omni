@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getUserInfo, listPendingAdminArtists, reviewAdminArtist, updateAdminArtistRisk } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
@@ -15,11 +16,11 @@ export default function PendingArtistsPage() {
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
 
-  const loadData = async (userId: number) => {
+  const loadData = async () => {
     setLoading(true)
     setError('')
     try {
-      setItems(await listPendingAdminArtists(userId))
+      setItems(await listPendingAdminArtists())
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载待审核艺人失败')
     } finally {
@@ -42,7 +43,7 @@ export default function PendingArtistsPage() {
           return
         }
         setUser(info)
-        await loadData(info.id)
+        await loadData()
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : '校验后台权限失败')
       }
@@ -55,8 +56,8 @@ export default function PendingArtistsPage() {
     setSavingId(artistId)
     setError('')
     try {
-      await reviewAdminArtist(artistId, { userId: user.id, action, note: note.trim() || null })
-      await loadData(user.id)
+      await reviewAdminArtist(artistId, { action, note: note.trim() || null })
+      await loadData()
       setNote('')
     } catch (err) {
       setError(err instanceof Error ? err.message : '审核失败')
@@ -75,8 +76,8 @@ export default function PendingArtistsPage() {
     setSavingId(artistId)
     setError('')
     try {
-      await updateAdminArtistRisk(artistId, { userId: user.id, riskStatus: 'risky', reason })
-      await loadData(user.id)
+      await updateAdminArtistRisk(artistId, { riskStatus: 'risky', reason })
+      await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : '标记风险失败')
     } finally {
@@ -99,13 +100,21 @@ export default function PendingArtistsPage() {
           {items.map(item => (
             <div key={item.id} className="rounded-xl border border-[#eee] bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-[16px] font-semibold text-[#1a1a2e]">{item.name}{item.alias ? ` / ${item.alias}` : ''}</div>
-                  <div className="mt-1 text-[13px] text-[#666]">{[item.countryOrRegion, item.artistType, item.categoryTags].filter(Boolean).join(' · ') || '暂无身份信息'}</div>
-                  {item.representativeWorks && <div className="mt-1 text-[13px] text-[#999]">代表作品：{item.representativeWorks}</div>}
-                  {item.description && <div className="mt-2 text-[13px] text-[#555]">{item.description}</div>}
+                <div className="flex min-w-0 gap-3">
+                  {item.avatar ? (
+                    <img src={item.avatar} alt={item.name} className="h-14 w-14 shrink-0 rounded-xl object-cover" />
+                  ) : (
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#f5f5f5] text-[13px] font-semibold text-[#999]">艺人</div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="text-[16px] font-semibold text-[#1a1a2e]">{item.name}{item.alias ? ` / ${item.alias}` : ''}</div>
+                    <div className="mt-1 text-[13px] text-[#666]">{[item.countryOrRegion, item.artistType, item.categoryTags].filter(Boolean).join(' · ') || '暂无身份信息'}</div>
+                    {item.representativeWorks && <div className="mt-1 text-[13px] text-[#999]">代表作品：{item.representativeWorks}</div>}
+                    {item.description && <div className="mt-2 text-[13px] text-[#555]">{item.description}</div>}
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <Link href={`/console/artists/${item.id}/edit`} className="rounded-full border border-[#ddd] px-4 py-2 text-[13px] text-[#333] hover:border-[#ff1268] hover:text-[#ff1268]">编辑资料</Link>
                   <button disabled={savingId === item.id} onClick={() => review(item.id, 'approve')} className="rounded-full bg-[#16a34a] px-4 py-2 text-[13px] text-white disabled:bg-[#86efac]">通过</button>
                   <button disabled={savingId === item.id} onClick={() => review(item.id, 'reject')} className="rounded-full bg-[#ef4444] px-4 py-2 text-[13px] text-white disabled:bg-[#fca5a5]">拒绝</button>
                   <button disabled={savingId === item.id} onClick={() => markRisk(item.id)} className="rounded-full border border-[#ef4444] px-4 py-2 text-[13px] text-[#ef4444] disabled:text-[#fca5a5]">标记风险</button>
