@@ -193,20 +193,24 @@ export default function TourDetailPage() {
         {stationDetails.length === 0 ? (
           <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">暂无城市站点，先新增一个站点草稿。</div>
         ) : stationDetails.map(item => {
+          const posterUrl = item.station.poster || detail.tour.poster || '/background.png'
           const publishForm = publishForms[item.station.id] || { startTime: '', endTime: '', perUserLimit: '' }
           const publishError = publishErrors[item.station.id]
           const canPublish = item.station.publishStatus !== 'published' && item.station.venueApplicationId != null
           return <div key={item.station.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="text-[16px] font-bold text-[#333]">{item.station.city} · {item.station.stationName}</div>
-                <div className="mt-2 grid gap-1 text-[13px] text-[#666] sm:grid-cols-2">
-                  <div>销售状态：{formatStationStatus(item)}</div>
-                  <div>发布状态：{formatStationStatus(item)}</div>
-                  <div>场馆：{item.venueName || '未公布'}</div>
-                  <div>票价：{formatPrice(item.priceMin, item.priceMax)}</div>
-                  <div>场次数：{item.sessions.length}</div>
-                  <div>剩余库存：{formatRemainStock(item)}</div>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex min-w-0 flex-col gap-4 sm:flex-row">
+                <img src={posterUrl} alt={item.station.stationName} className="h-32 w-full rounded-xl object-cover sm:w-48" />
+                <div>
+                  <div className="text-[16px] font-bold text-[#333]">{item.station.city} · {item.station.stationName}</div>
+                  <div className="mt-2 grid gap-1 text-[13px] text-[#666] sm:grid-cols-2">
+                    <div>销售状态：{formatStationStatus(item)}</div>
+                    <div>发布状态：{formatPublishStatus(item.station.publishStatus)}</div>
+                    <div>场馆：{item.venueName || '未公布'}</div>
+                    <div>票价：{formatPrice(item.priceMin, item.priceMax)}</div>
+                    <div>场次数：{item.sessions.length}</div>
+                    <div>剩余库存：{formatRemainStock(item)}</div>
+                  </div>
                 </div>
               </div>
               <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{item.saleStatusText || '未公布'}</span>

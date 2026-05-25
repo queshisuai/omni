@@ -101,6 +101,7 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
   const primarySession = selectedStation?.sessions[0]
   const canBuy = selectedStation?.primaryAction === 'buy' && !!selectedStation.activity
   const actionText = hideStationDetail ? '时间未公布' : canBuy ? '立即购票' : selectedStatusText
+  const selectedStationPoster = selectedStation?.station.poster || detail?.tour.poster || '/background.png'
 
   return (
     <>
@@ -134,20 +135,24 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
                     <div className="rounded-full bg-[#f7f7f7] px-5 py-3 text-[14px] text-[#999]">暂无站点</div>
                   ) : stationDetails.map(item => {
                     const active = selectedStation?.station.id === item.station.id
+                    const stationPoster = item.station.poster || detail.tour.poster || '/background.png'
                     return (
                       <button
                         key={item.station.id}
                         aria-pressed={active}
                         onClick={() => setSelectedStation(item)}
-                        className="rounded-full border px-5 py-3 text-left text-[14px] transition"
+                        className="flex min-w-[190px] items-center gap-3 rounded-2xl border p-2 pr-4 text-left text-[14px] transition"
                         style={{
                           borderColor: active ? '#ff1268' : '#e5e5e5',
                           color: active ? '#ff1268' : '#333',
                           background: active ? '#fff0f5' : '#fff',
                         }}
                       >
-                        <span className="font-medium">{item.station.city}</span>
-                        <span className="ml-2 text-[12px] opacity-80">{formatStationStatus(item)}</span>
+                        <img src={stationPoster} alt={item.station.stationName} className="h-10 w-10 rounded-xl object-cover" />
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{item.station.city}</span>
+                          <span className="mt-0.5 block truncate text-[12px] opacity-80">{formatStationStatus(item)}</span>
+                        </span>
                       </button>
                     )
                   })}
@@ -156,46 +161,53 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
 
               {selectedStation && (
                 <div className="mt-5 rounded-xl bg-[#fafafa] p-5 text-[14px] text-[#555]">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
+                    <div className="overflow-hidden rounded-xl bg-[#f0f0f0]">
+                      <img src={selectedStationPoster} alt={`${selectedStation.station.city} ${selectedStation.station.stationName}`} className="h-44 w-full object-cover lg:h-full" />
+                    </div>
                     <div>
-                      <div className="text-[18px] font-semibold text-[#111]">{selectedStation.station.city}</div>
-                      <div className="mt-1 text-[13px] text-[#999]">{selectedStatusText}</div>
-                    </div>
-                    <button
-                      disabled={!canBuy || hideStationDetail}
-                      onClick={() => {
-                        if (canBuy && selectedStation.activity) router.push(`/activity/${selectedStation.activity.id}`)
-                      }}
-                      className="rounded-lg px-5 py-2.5 text-[14px] font-medium disabled:cursor-not-allowed disabled:bg-[#e5e5e5] disabled:text-[#999]"
-                      style={canBuy && !hideStationDetail ? { background: '#ff1268', color: '#fff' } : undefined}
-                    >
-                      {actionText}
-                    </button>
-                  </div>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <div className="rounded-lg bg-white p-4">
-                      <div className="text-[12px] text-[#999]">时间</div>
-                      <div className="mt-1 font-medium text-[#333]">{hideStationDetail ? '时间未公布' : formatDateTime(primarySession?.startTime)}</div>
-                    </div>
-                    <div className="rounded-lg bg-white p-4">
-                      <div className="text-[12px] text-[#999]">场馆</div>
-                      <div className="mt-1 font-medium text-[#333]">{hideStationDetail ? '未公布' : selectedStation.venueName || '未公布'}</div>
-                    </div>
-                    <div className="rounded-lg bg-white p-4">
-                      <div className="text-[12px] text-[#999]">地址</div>
-                      <div className="mt-1 font-medium text-[#333]">{hideStationDetail ? '未公布' : selectedStation.venueAddress || '未公布'}</div>
-                    </div>
-                    <div className="rounded-lg bg-white p-4">
-                      <div className="text-[12px] text-[#999]">城市</div>
-                      <div className="mt-1 font-medium text-[#333]">{selectedStation.station.city}</div>
-                    </div>
-                    <div className="rounded-lg bg-white p-4">
-                      <div className="text-[12px] text-[#999]">状态</div>
-                      <div className="mt-1 font-medium text-[#333]">{selectedStatusText}</div>
-                    </div>
-                    <div className="rounded-lg bg-white p-4">
-                      <div className="text-[12px] text-[#999]">票价</div>
-                      <div className="mt-1 font-medium text-[#333]">{hideStationDetail ? '未公布' : formatPrice(selectedStation.priceMin, selectedStation.priceMax)}</div>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="text-[18px] font-semibold text-[#111]">{selectedStation.station.city}</div>
+                          <div className="mt-1 text-[13px] text-[#999]">{selectedStation.station.stationName} · {selectedStatusText}</div>
+                        </div>
+                        <button
+                          disabled={!canBuy || hideStationDetail}
+                          onClick={() => {
+                            if (canBuy && selectedStation.activity) router.push(`/activity/${selectedStation.activity.id}`)
+                          }}
+                          className="rounded-lg px-5 py-2.5 text-[14px] font-medium disabled:cursor-not-allowed disabled:bg-[#e5e5e5] disabled:text-[#999]"
+                          style={canBuy && !hideStationDetail ? { background: '#ff1268', color: '#fff' } : undefined}
+                        >
+                          {actionText}
+                        </button>
+                      </div>
+                      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="rounded-lg bg-white p-4">
+                          <div className="text-[12px] text-[#999]">时间</div>
+                          <div className="mt-1 font-medium text-[#333]">{hideStationDetail ? '时间未公布' : formatDateTime(primarySession?.startTime)}</div>
+                        </div>
+                        <div className="rounded-lg bg-white p-4">
+                          <div className="text-[12px] text-[#999]">场馆</div>
+                          <div className="mt-1 font-medium text-[#333]">{hideStationDetail ? '未公布' : selectedStation.venueName || '未公布'}</div>
+                        </div>
+                        <div className="rounded-lg bg-white p-4">
+                          <div className="text-[12px] text-[#999]">地址</div>
+                          <div className="mt-1 font-medium text-[#333]">{hideStationDetail ? '未公布' : selectedStation.venueAddress || '未公布'}</div>
+                        </div>
+                        <div className="rounded-lg bg-white p-4">
+                          <div className="text-[12px] text-[#999]">城市</div>
+                          <div className="mt-1 font-medium text-[#333]">{selectedStation.station.city}</div>
+                        </div>
+                        <div className="rounded-lg bg-white p-4">
+                          <div className="text-[12px] text-[#999]">状态</div>
+                          <div className="mt-1 font-medium text-[#333]">{selectedStatusText}</div>
+                        </div>
+                        <div className="rounded-lg bg-white p-4">
+                          <div className="text-[12px] text-[#999]">票价</div>
+                          <div className="mt-1 font-medium text-[#333]">{hideStationDetail ? '未公布' : formatPrice(selectedStation.priceMin, selectedStation.priceMax)}</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

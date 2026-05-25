@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { createStationDraft, listMyVenueApplications } from '@/lib/api'
+import { createStationDraft, listMyVenueApplications, uploadTicketAsset } from '@/lib/api'
+import { LocalFileUpload } from '@/components/LocalFileUpload'
 import type { VenueApplicationVO } from '@/types/api'
 
 export default function NewStationPage() {
@@ -14,6 +15,8 @@ export default function NewStationPage() {
   const [userId, setUserId] = useState(0)
   const [city, setCity] = useState('')
   const [stationName, setStationName] = useState('')
+  const [poster, setPoster] = useState('')
+  const [uploadingPoster, setUploadingPoster] = useState(false)
   const [announceOnly, setAnnounceOnly] = useState(true)
   const [applications, setApplications] = useState<VenueApplicationVO[]>([])
   const [selectedVenueApplicationId, setSelectedVenueApplicationId] = useState('')
@@ -33,6 +36,18 @@ export default function NewStationPage() {
       .catch(() => setApplications([]))
       .finally(() => setCheckingLogin(false))
   }, [])
+
+  const handlePosterUpload = async (file: File) => {
+    if (!userId) throw new Error('请先登录')
+    setUploadingPoster(true)
+    try {
+      const asset = await uploadTicketAsset({ userId, bizType: 'station-poster', file })
+      setPoster(asset.publicUrl)
+      return asset.publicUrl
+    } finally {
+      setUploadingPoster(false)
+    }
+  }
 
   const handleSubmit = async () => {
     if (!userId) {
@@ -62,6 +77,7 @@ export default function NewStationPage() {
         userId,
         city: city.trim(),
         stationName: stationName.trim(),
+        poster: poster.trim() || null,
         announceOnly,
         venueApplicationId: announceOnly ? null : Number(selectedVenueApplicationId),
       })
@@ -105,6 +121,17 @@ export default function NewStationPage() {
             <span className="mb-1 block text-[13px] text-[#666]">城市站点名 *</span>
             <input value={stationName} onChange={e => setStationName(e.target.value)} className="w-full rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" placeholder="例：上海站" />
           </label>
+          <div className="mb-3">
+            <LocalFileUpload
+              label="城市站海报"
+              value={poster}
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              uploading={uploadingPoster}
+              onUpload={handlePosterUpload}
+              onChange={setPoster}
+              hint="支持 JPG、PNG、WEBP、GIF；不上传时会使用巡演主海报。"
+            />
+          </div>
           <label className="mb-3 flex items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[14px] text-[#333]">
             <input type="checkbox" checked={announceOnly} onChange={e => setAnnounceOnly(e.target.checked)} className="mt-1" />
             <span>
@@ -124,8 +151,8 @@ export default function NewStationPage() {
           )}
         </div>
         {error && <div className="mb-4 rounded-lg bg-[#fff0f3] px-3 py-2 text-[13px] text-[#ff1268]">{error}</div>}
-        <button onClick={handleSubmit} disabled={submitting} className="rounded-lg bg-[#ff1268] px-5 py-2.5 text-[14px] font-medium text-white disabled:opacity-60">
-          {submitting ? '保存中...' : '保存站点草稿'}
+        <button onClick={handleSubmit} disabled={submitting || uploadingPoster} className="rounded-lg bg-[#ff1268] px-5 py-2.5 text-[14px] font-medium text-white disabled:opacity-60">
+          {submitting ? '保存中...' : uploadingPoster ? '海报上传中...' : '保存站点草稿'}
         </button>
       </div>
     </div>
