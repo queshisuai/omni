@@ -171,7 +171,7 @@ export default function ConsoleProfilePage() {
                 {role === 'admin' ? (
                   <>
                     <ActionLink href="/console/organizer-applications" title="入驻审核" desc="审核主办方入驻申请" />
-                    <ActionLink href="/console/venue" title="场馆管理" desc="创建和维护场馆信息" />
+                    <ActionLink href="/console/venue" title="场馆记录" desc="创建和维护场馆记录" />
                   </>
                 ) : (
                   <>

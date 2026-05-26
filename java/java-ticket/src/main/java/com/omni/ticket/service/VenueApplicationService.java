@@ -68,14 +68,23 @@ public class VenueApplicationService {
 
     @Transactional
     public VenueApplication submit(VenueApplicationRequest request) {
-        userAccessService.requireAdminOrOrganizer(request.getUserId());
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
         validateUsageProof(request);
         if (request.getProofAssetId() != null && privateAssetService == null) {
             throw new BusinessException(500, "私有附件服务不可用");
         }
+        if (request.getVenueId() != null) {
+            Venue venue = venueMapper.selectById(request.getVenueId());
+            if (venue == null || !Integer.valueOf(1).equals(venue.getStatus())) {
+                throw new BusinessException(400, "关联场馆不存在或已停用");
+            }
+        }
         LocalDateTime now = LocalDateTime.now();
+        boolean adminSubmission = userAccessService.isAdmin(user);
+        Long approvedVenueId = adminSubmission ? ensureVenueRecordForAdmin(request) : request.getVenueId();
         VenueApplication application = new VenueApplication();
         application.setApplicantId(request.getUserId());
+        application.setVenueId(approvedVenueId);
         application.setVenueName(trim(request.getVenueName()));
         application.setCity(trim(request.getCity()));
         application.setAddress(trim(request.getAddress()));
@@ -92,7 +101,12 @@ public class VenueApplicationService {
         application.setProofAssetId(request.getProofAssetId());
         application.setLayoutSnapshot(resolveLayoutSnapshot(request));
         application.setSetAsRecommendedLayout(Boolean.TRUE.equals(request.getSetAsRecommendedLayout()));
-        application.setStatus(0);
+        application.setStatus(adminSubmission ? 1 : 0);
+        if (adminSubmission) {
+            application.setReviewerId(request.getUserId());
+            application.setReviewNote("管理员直接添加场馆");
+            application.setReviewTime(now);
+        }
         application.setCreateTime(now);
         application.setUpdateTime(now);
         venueApplicationMapper.insert(application);
@@ -105,6 +119,20 @@ public class VenueApplicationService {
         return application;
     }
 
+    private Long ensureVenueRecordForAdmin(VenueApplicationRequest request) {
+        if (request.getVenueId() != null) {
+            return request.getVenueId();
+        }
+        Venue venue = new Venue();
+        venue.setName(trim(request.getVenueName()));
+        venue.setCity(trim(request.getCity()));
+        venue.setAddress(trim(request.getAddress()));
+        venue.setCapacity(request.getCapacity());
+        venue.setStatus(1);
+        venueMapper.insert(venue);
+        return venue.getId();
+    }
+
     private void validateUsageProof(VenueApplicationRequest request) {
         if (request.getValidFrom() == null) {
             throw new BusinessException(400, "场地使用开始时间不能为空");
@@ -113,7 +141,7 @@ public class VenueApplicationService {
             throw new BusinessException(400, "场地使用结束时间必须晚于开始时间");
         }
         if (trim(request.getProofNote()) == null && trim(request.getProofFileUrl()) == null && request.getProofAssetId() == null) {
-            throw new BusinessException(400, "请填写场地审批凭证说明或上传附件");
+            throw new BusinessException(400, "请填写场馆审批文件说明或上传附件");
         }
         validateLayout(request);
     }
@@ -194,7 +222,7 @@ public class VenueApplicationService {
         userAccessService.requireAdminOrOrganizer(userId);
         Venue venue = venueMapper.selectById(venueId);
         if (venue == null || !Integer.valueOf(1).equals(venue.getStatus())) {
-            throw new BusinessException(404, "地点档案不存在");
+            throw new BusinessException(404, "场馆记录不存在");
         }
         List<SeatLayoutTemplateCandidateResponse> candidates = new ArrayList<>();
         List<VenueApplication> applications = venueApplicationMapper.selectList(new LambdaQueryWrapper<VenueApplication>()
@@ -284,7 +312,7 @@ public class VenueApplicationService {
     private VenueApplication requirePendingApplication(Long id) {
         VenueApplication application = venueApplicationMapper.selectById(id);
         if (application == null) {
-            throw new BusinessException(404, "地点凭证不存在");
+            throw new BusinessException(404, "场馆审核资料不存在");
         }
         if (!Integer.valueOf(0).equals(application.getStatus())) {
             throw new BusinessException(400, "只能审核待审核申请");

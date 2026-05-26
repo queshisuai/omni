@@ -132,9 +132,9 @@ if (-not $SkipJava) {
     foreach ($svc in $javaServices) {
         $fullPath = Join-Path $projectRoot $svc.Path
         Write-Host "Starting $($svc.Name) on port $($svc.Port)..." -ForegroundColor Cyan
-        $command = "cd $fullPath; mvn spring-boot:run"
+        $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.arguments=`"--spring.cloud.nacos.discovery.ip=127.0.0.1`""
         if (-not $UseSharedDatabase -and $svc.Database) {
-            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=omni-local-internal-token`""
+            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=omni-local-internal-token --spring.cloud.nacos.discovery.ip=127.0.0.1`""
         }
         Start-Service-InBackground -Name $svc.Name -Command $command -WorkDir $fullPath
         Start-Sleep -Seconds 5

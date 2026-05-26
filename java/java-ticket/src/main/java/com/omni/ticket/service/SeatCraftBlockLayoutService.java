@@ -84,6 +84,19 @@ public class SeatCraftBlockLayoutService {
         return layout;
     }
 
+    @Transactional
+    public void deleteLayout(String ownerType, Long ownerId) {
+        validateOwner(ownerType, ownerId);
+        List<SeatBlock> blocks = findBlocks(ownerType, ownerId, null);
+        deleteOverrides(blocks);
+        seatBlockMapper.delete(new LambdaQueryWrapper<SeatBlock>()
+                .eq(SeatBlock::getOwnerType, ownerType)
+                .eq(SeatBlock::getOwnerId, ownerId));
+        ticketGroupMapper.delete(new LambdaQueryWrapper<TicketGroup>()
+                .eq(TicketGroup::getOwnerType, ownerType)
+                .eq(TicketGroup::getOwnerId, ownerId));
+    }
+
     private List<SeatBlock> findBlocks(String ownerType, Long ownerId, Integer status) {
         LambdaQueryWrapper<SeatBlock> wrapper = new LambdaQueryWrapper<SeatBlock>()
                 .eq(SeatBlock::getOwnerType, ownerType)

@@ -11,8 +11,10 @@ import com.omni.ticket.dto.PaidOrderCountResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
+import com.omni.ticket.entity.Tour;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
@@ -32,19 +34,22 @@ public class AdminSummaryService {
     private final TicketTypeMapper ticketTypeMapper;
     private final UserAccessService userAccessService;
     private final OrderInternalClient orderInternalClient;
+    private final TourMapper tourMapper;
     private final String internalApiToken;
 
     public AdminSummaryService(ActivityMapper activityMapper,
                                 SessionMapper sessionMapper,
-                                TicketTypeMapper ticketTypeMapper,
-                                UserAccessService userAccessService,
-                                OrderInternalClient orderInternalClient,
-                                @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+                                 TicketTypeMapper ticketTypeMapper,
+                                 UserAccessService userAccessService,
+                                 OrderInternalClient orderInternalClient,
+                                 TourMapper tourMapper,
+                                 @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
         this.userAccessService = userAccessService;
         this.orderInternalClient = orderInternalClient;
+        this.tourMapper = tourMapper;
         this.internalApiToken = internalApiToken;
     }
 
@@ -78,7 +83,19 @@ public class AdminSummaryService {
                 : ticketTypeMapper.selectCount(new LambdaQueryWrapper<TicketType>().in(TicketType::getSessionId, sessionIds));
         Long paidOrderCount = sessionIds.isEmpty() ? 0L : countPaidOrders(sessionIds);
 
-        return new AdminSummaryResponse((long) activities.size(), ticketTypeCount != null ? ticketTypeCount : 0L, paidOrderCount);
+        Long announcedTourCount = countAnnouncedTours(role, userId);
+        return new AdminSummaryResponse(activities.size() + announcedTourCount, ticketTypeCount != null ? ticketTypeCount : 0L, paidOrderCount);
+    }
+
+    private Long countAnnouncedTours(String role, Long userId) {
+        LambdaQueryWrapper<Tour> wrapper = new LambdaQueryWrapper<Tour>()
+                .eq(Tour::getStatus, 1)
+                .eq(Tour::getReviewStatus, "announced");
+        if ("organizer".equals(role)) {
+            wrapper.eq(Tour::getOrganizerId, userId);
+        }
+        Long count = tourMapper.selectCount(wrapper);
+        return count == null ? 0L : count;
     }
 
     private Long countPaidOrders(List<Long> sessionIds) {

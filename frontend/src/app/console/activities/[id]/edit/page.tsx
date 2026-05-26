@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { getAdminActivity, listCategories, updateAdminActivity, uploadTicketAsset } from '@/lib/api'
+import { createStationConfigVersion, getActivityStation, getAdminActivity, listAdminSessions, listAdminVenues, listCategories, submitStationConfigVersion, submitVenueApplication, updateAdminActivity, uploadPrivateAsset, uploadTicketAsset } from '@/lib/api'
 import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
 import { LocalFileUpload } from '@/components/LocalFileUpload'
-import type { ActivityArtistVO, CategoryVO, UserRole } from '@/types/api'
+import { StationVenueApprovalForm, createEmptyStationVenueApprovalValue, validateStationVenueApproval, type StationVenueApprovalValue } from '@/components/station-config/StationVenueApprovalForm'
+import type { ActivityArtistVO, CategoryVO, PrivateAssetVO, SessionAdminVO, StationConfigVersionDetailVO, UserRole, VenueEntity } from '@/types/api'
 
 type ActivityForm = {
   name: string
@@ -36,7 +37,14 @@ export default function EditActivityPage() {
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [form, setForm] = useState<ActivityForm>(emptyForm)
   const [loading, setLoading] = useState(true)
+  const [sessions, setSessions] = useState<SessionAdminVO[]>([])
+  const [stationDetail, setStationDetail] = useState<StationConfigVersionDetailVO | null>(null)
+  const [venues, setVenues] = useState<VenueEntity[]>([])
+  const [showVenueChangeForm, setShowVenueChangeForm] = useState(false)
+  const [venueChangeValue, setVenueChangeValue] = useState<StationVenueApprovalValue>(createEmptyStationVenueApprovalValue())
   const [saving, setSaving] = useState(false)
+  const [submittingVenueChange, setSubmittingVenueChange] = useState(false)
+  const [uploadingProof, setUploadingProof] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -61,7 +69,10 @@ export default function EditActivityPage() {
     Promise.all([
       getAdminActivity(activityId, u.userId),
       listCategories().catch(() => [] as CategoryVO[]),
-    ]).then(([activity, categoryList]) => {
+      listAdminSessions(u.userId, { activityId, size: 50 }).catch(() => ({ records: [] as SessionAdminVO[] })),
+      getActivityStation(activityId).catch(() => null),
+      listAdminVenues(u.userId).catch(() => [] as VenueEntity[]),
+    ]).then(([activity, categoryList, sessionPage, stationConfigDetail, venueList]) => {
       setForm({
         name: activity.name || '',
         categoryId: String(activity.categoryId || ''),
@@ -71,6 +82,12 @@ export default function EditActivityPage() {
         perUserLimit: activity.perUserLimit == null ? '' : String(activity.perUserLimit),
       })
       setCategories(categoryList)
+      setSessions(sessionPage.records || [])
+      setStationDetail(stationConfigDetail)
+      setVenues(venueList)
+      if (stationConfigDetail?.station?.city) {
+        setVenueChangeValue(createEmptyStationVenueApprovalValue(stationConfigDetail.station.city))
+      }
       setLoading(false)
     }).catch(err => {
       setError(err instanceof Error ? err.message : '加载活动失败')
@@ -134,6 +151,81 @@ export default function EditActivityPage() {
     }
   }
 
+  const handleVenueProofUpload = async (file: File): Promise<PrivateAssetVO> => {
+    if (!userId) throw new Error('请先登录')
+    setUploadingProof(true)
+    try {
+      return await uploadPrivateAsset({ userId, bizType: 'venue-change-proof', file })
+    } finally {
+      setUploadingProof(false)
+    }
+  }
+
+  const handleSubmitVenueChange = async () => {
+    if (!userId || !stationDetail?.station?.id) {
+      setError('活动站点不存在，无法提交场地变更')
+      return
+    }
+    const lockedCity = stationDetail.station.city || ''
+    if (!lockedCity.trim()) {
+      setError('当前活动站点城市为空，无法提交场地变更')
+      return
+    }
+    if (venueChangeValue.mode === 'tba') {
+      setError('场地变更必须选择已有场馆或填写新场馆')
+      return
+    }
+    const validationError = validateStationVenueApproval({ ...venueChangeValue, city: lockedCity })
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+    setSubmittingVenueChange(true)
+    setError('')
+    setMessage('')
+    try {
+      const application = await submitVenueApplication({
+        venueId: venueChangeValue.mode === 'existing' ? venueChangeValue.venueId : null,
+        venueName: venueChangeValue.venueName.trim(),
+        city: lockedCity.trim(),
+        address: venueChangeValue.venueAddress.trim(),
+        capacity: venueChangeValue.capacity ? Number(venueChangeValue.capacity) : null,
+        contactName: venueChangeValue.contactName.trim(),
+        contactPhone: venueChangeValue.contactPhone.trim(),
+        qualificationNo: venueChangeValue.qualificationNo.trim() || null,
+        businessScope: venueChangeValue.businessScope.trim() || null,
+        description: venueChangeValue.description.trim() || null,
+        validFrom: venueChangeValue.validFrom,
+        validTo: venueChangeValue.validTo,
+        proofNote: venueChangeValue.proofNote.trim() || null,
+        proofAssetId: venueChangeValue.proofAsset?.id ?? null,
+        layoutSnapshot: '{}',
+      })
+      const version = await createStationConfigVersion(stationDetail.station.id, {
+        userId,
+        changeType: 'change_venue',
+        city: lockedCity.trim(),
+        stationName: stationDetail.station.stationName || `${lockedCity.trim()}站`,
+        venueId: venueChangeValue.mode === 'existing' ? venueChangeValue.venueId : null,
+        venueApplicationId: application.id,
+        venueName: venueChangeValue.venueName.trim(),
+        venueAddress: venueChangeValue.venueAddress.trim(),
+        startTime: venueChangeValue.startTime || null,
+        endTime: venueChangeValue.endTime || null,
+        scheduleTba: !venueChangeValue.startTime,
+        reason: '场地临时变动申请',
+      })
+      await submitStationConfigVersion(version.id)
+      setMessage('场地变更申请已提交审核。审核通过前不会影响当前场次；通过后请重新检查/配置 SeatCraft 座位票档。')
+      setShowVenueChangeForm(false)
+      setVenueChangeValue(createEmptyStationVenueApprovalValue(lockedCity))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '提交场地变更申请失败')
+    } finally {
+      setSubmittingVenueChange(false)
+    }
+  }
+
   if (loading) {
     return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
   }
@@ -152,6 +244,7 @@ export default function EditActivityPage() {
   }
 
   const isAdmin = role === 'admin'
+  const primarySession = sessions[0]
 
   return (
     <div>
@@ -168,6 +261,47 @@ export default function EditActivityPage() {
             {isAdmin ? '管理场次/票档' : '管理我的场次/票档'}
           </Link>
         </div>
+      </div>
+
+      <div className="mb-5 grid gap-3 md:grid-cols-2">
+        <Link href={primarySession ? `/console/sessions/${primarySession.id}/seat-layout` : `/console/activities/${activityId}/seat-layout`} className="rounded-xl border border-[#ffd0df] bg-white p-4 text-[14px] font-medium text-[#ff1268] hover:bg-[#fff7fb]">
+          进入 SeatCraft 座位/票档编辑器
+          <span className="mt-1 block text-[12px] font-normal text-[#999]">{primarySession ? '已有活动使用场次级座位图，种子活动座位图和票档在这里。' : '新草稿活动可先配置活动级座位图，后续场次可复制调整。'}</span>
+        </Link>
+      </div>
+
+      <div className="mb-5 rounded-xl border border-[#e5e5e5] bg-white p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-[15px] font-semibold text-[#1a1a2e]">场地临时变更申请</div>
+            <p className="mt-1 text-[13px] text-[#999]">普通活动可申请更换场馆，城市锁定为当前活动城市；若整个活动已有已支付订单，后端会拒绝提交。</p>
+          </div>
+          <button type="button" disabled={!stationDetail?.station?.id} onClick={() => setShowVenueChangeForm(value => !value)} className="rounded-lg border border-[#ff1268] px-4 py-2 text-[13px] font-medium text-[#ff1268] disabled:border-[#ddd] disabled:text-[#aaa]">
+            {showVenueChangeForm ? '收起申请表' : '申请场地变更'}
+          </button>
+        </div>
+        {stationDetail?.station?.city && (
+          <div className="mt-3 rounded-lg bg-[#fafafa] px-3 py-2 text-[12px] text-[#666]">当前城市：{stationDetail.station.city}，城市不可变更。</div>
+        )}
+        {showVenueChangeForm && stationDetail?.station?.city && (
+          <div className="mt-4 space-y-3">
+            <StationVenueApprovalForm
+              value={{ ...venueChangeValue, city: stationDetail.station.city }}
+              venues={venues}
+              submitting={submittingVenueChange}
+              uploading={uploadingProof}
+              cityLocked
+              onUploadProof={handleVenueProofUpload}
+              onChange={value => setVenueChangeValue({ ...value, city: stationDetail.station.city || '' })}
+            />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setShowVenueChangeForm(false)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666]">取消</button>
+              <button type="button" disabled={submittingVenueChange || uploadingProof} onClick={handleSubmitVenueChange} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-50">
+                {submittingVenueChange ? '提交中...' : '提交场地变更申请'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="max-w-[720px] rounded-xl border border-[#e5e5e5] bg-white p-6">

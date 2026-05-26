@@ -127,7 +127,7 @@ public class ActivitySeatLayoutService {
         if (venueApplicationMapper != null) {
             VenueApplication application = venueApplicationMapper.selectById(venueApplicationId);
             if (application == null || !Integer.valueOf(1).equals(application.getStatus())) {
-                throw new BusinessException(404, "场地申请未审核通过");
+                throw new BusinessException(404, "场馆审核资料未通过");
             }
         }
         LocalDateTime now = LocalDateTime.now();
@@ -148,10 +148,44 @@ public class ActivitySeatLayoutService {
         if (blockLayoutService != null) {
             SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayoutService.getLayout("venue_application", venueApplicationId);
             if (blockLayout == null) {
-                throw new BusinessException(400, "场地申请缺少SeatCraft座位图");
+                throw new BusinessException(400, "场馆审核资料缺少SeatCraft座位图");
             }
             blockLayoutService.replaceLayout("activity", activity.getId(), blockLayout);
         }
+        return toLayoutResponse(layout, java.util.Collections.emptyList());
+    }
+
+    public boolean hasBlockLayout(String ownerType, Long ownerId) {
+        return blockLayoutService != null && blockLayoutService.getLayout(ownerType, ownerId) != null;
+    }
+
+    @Transactional
+    public SeatCraftLayoutDtos.LayoutResponse copyFromSeatCraftOwner(Long userId, Long activityId,
+                                                                      String sourceOwnerType, Long sourceOwnerId) {
+        Activity activity = requireManageableActivity(userId, activityId);
+        if (blockLayoutService == null) {
+            throw new BusinessException(500, "SeatCraft service unavailable");
+        }
+        SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayoutService.getLayout(sourceOwnerType, sourceOwnerId);
+        if (blockLayout == null) {
+            throw new BusinessException(400, "SeatCraft layout not found");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        disableActiveLayouts(activity.getId(), now);
+        ActivitySeatLayout layout = new ActivitySeatLayout();
+        layout.setActivityId(activity.getId());
+        layout.setName(defaultText(blockLayout.getName(), defaultText(activity.getName(), "Activity SeatCraft layout")));
+        layout.setTemplateType(defaultText(blockLayout.getTemplateType(), "concert"));
+        layout.setStageTitle(defaultText(blockLayout.getStageTitle(), "Stage"));
+        layout.setStageX(blockLayout.getStageX() == null ? 0 : blockLayout.getStageX());
+        layout.setStageY(blockLayout.getStageY() == null ? 0 : blockLayout.getStageY());
+        layout.setCanvasWidth(blockLayout.getCanvasWidth() == null ? 800 : blockLayout.getCanvasWidth());
+        layout.setCanvasHeight(blockLayout.getCanvasHeight() == null ? 600 : blockLayout.getCanvasHeight());
+        layout.setStatus(1);
+        layout.setCreateTime(now);
+        layout.setUpdateTime(now);
+        activityLayoutMapper.insert(layout);
+        blockLayoutService.replaceLayout("activity", activity.getId(), blockLayout);
         return toLayoutResponse(layout, java.util.Collections.emptyList());
     }
 

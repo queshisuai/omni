@@ -44,6 +44,8 @@ public class Activity {
     @TableField(exist = false)
     private String artistName;
     @TableField(exist = false)
+    private String itemType;
+    @TableField(exist = false)
     private List<ActivityArtistDto> artists;
 
     public Long getId() { return id; }
@@ -98,6 +100,8 @@ public class Activity {
     public void setRiskRestoredAt(LocalDateTime riskRestoredAt) { this.riskRestoredAt = riskRestoredAt; }
     public String getArtistName() { return artistName; }
     public void setArtistName(String artistName) { this.artistName = artistName; }
+    public String getItemType() { return itemType; }
+    public void setItemType(String itemType) { this.itemType = itemType; }
     public List<ActivityArtistDto> getArtists() { return artists; }
     public void setArtists(List<ActivityArtistDto> artists) { this.artists = artists; }
 }

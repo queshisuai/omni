@@ -47,7 +47,8 @@ INSERT INTO "user" (id, phone, password, nickname, role, organizer_status, organ
 (2006, '13800000004', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '运动赛事运营', 'organizer', 1, '华夏体育赛事运营', 1),
 (2007, '13800000005', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '亲子展览主办方', 'organizer', 1, '童梦展演文化', 1),
 (2008, '13900000002', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '观演用户小夏', 'user', 0, NULL, 1),
-(2009, '13900000003', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '曾被取消主办方', 'user', 3, '旧日演出工作室', 1);
+(2009, '13900000003', '$2a$10$h7kXQJ5yFmmf69sBnqawduYVZGdal5BXEv0o.XeFBVUZt5Gwq8fQ2', '曾被取消主办方', 'user', 3, '旧日演出工作室', 1),
+(2010, '18664150921', '$2a$10$X..p7JQovfi846Y.hSnyoul/qDoO4zT6kXhf2Gr3aZ56zIIcBHJ/2', 'ykx', 'admin', 0, NULL, 1);
 
 INSERT INTO organizer_application (id, user_id, organizer_name, subject_type, contact_name, contact_phone, contact_email, license_no, business_scope, description, status, reviewer_id, review_note, review_time) VALUES
 (1, 2003, '星河演艺集团', 'enterprise', '林星', '13800000002', 'contact@xinghe.example', '91110000XINGHE', '演唱会、音乐节、音乐会', '全国巡演主办方', 1, 2002, '资质完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '40 days'),
@@ -56,7 +57,7 @@ INSERT INTO organizer_application (id, user_id, organizer_name, subject_type, co
 (4, 2007, '童梦展演文化', 'enterprise', '赵童', '13800000005', 'kids@example.com', '91510000KIDS', '儿童剧、亲子展、展览', '亲子和展览活动主办方', 1, 2002, '审核通过', CURRENT_TIMESTAMP - INTERVAL '25 days'),
 (5, 2009, '旧日演出工作室', 'enterprise', '吴旧', '13900000003', 'old@example.com', '91610000OLD', '小型演出', '历史资质已取消', 1, 2002, '曾通过，后续被取消资格', CURRENT_TIMESTAMP - INTERVAL '120 days');
 
-SELECT setval('user_id_seq', 2009, true);
+SELECT setval('user_id_seq', 2010, true);
 SELECT setval('organizer_application_id_seq', 5, true);
 
 -- ========== 分类 ==========

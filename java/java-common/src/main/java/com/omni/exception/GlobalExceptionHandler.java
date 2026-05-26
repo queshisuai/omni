@@ -5,6 +5,7 @@ import com.omni.common.result.ResultCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -29,6 +30,13 @@ public class GlobalExceptionHandler {
     public Result<Void> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException e) {
         log.warn("参数格式不正确: name={}, value={}", e.getName(), e.getValue());
         return Result.fail(ResultCode.BAD_REQUEST.getCode(), "参数格式不正确");
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    @ResponseStatus(HttpStatus.METHOD_NOT_ALLOWED)
+    public Result<Void> handleHttpRequestMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+        log.warn("请求方法不支持: method={}, supported={}", e.getMethod(), e.getSupportedHttpMethods());
+        return Result.fail(HttpStatus.METHOD_NOT_ALLOWED.value(), "请求方法不支持");
     }
 
     @ExceptionHandler(Exception.class)

@@ -46,6 +46,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -442,14 +443,14 @@ public class OrderService {
             return new SessionSeatUsageResponse(Collections.emptyList());
         }
 
-        Map<Long, OrderSeat> usedSeats = new LinkedHashMap<>();
         List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
                 .in(OrderSeat::getSessionSeatId, ids));
+        Map<Long, Order> ordersById = loadOrdersById(orderSeats);
+        Map<Long, OrderSeat> usedSeats = new LinkedHashMap<>();
         if (orderSeats != null) {
+            LocalDateTime now = LocalDateTime.now();
             for (OrderSeat orderSeat : orderSeats) {
-                Integer status = orderSeat.getStatus();
-                if (orderSeat.getSessionSeatId() != null && status != null
-                        && (status == ORDER_SEAT_LOCKED || status == ORDER_SEAT_SOLD)) {
+                if (orderSeat.getSessionSeatId() != null && isOccupyingSeat(orderSeat, ordersById.get(orderSeat.getOrderId()), now)) {
                     usedSeats.putIfAbsent(orderSeat.getSessionSeatId(), orderSeat);
                 }
             }
@@ -467,8 +468,48 @@ public class OrderService {
         return new SessionSeatUsageResponse(seats);
     }
 
+    private Map<Long, Order> loadOrdersById(List<OrderSeat> orderSeats) {
+        if (orderSeats == null || orderSeats.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> orderIds = orderSeats.stream()
+                .map(OrderSeat::getOrderId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (orderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Order> orders = orderMapper.selectBatchIds(orderIds);
+        if (orders == null || orders.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return orders.stream()
+                .filter(order -> order.getId() != null)
+                .collect(Collectors.toMap(Order::getId, order -> order, (first, second) -> first));
+    }
+
+    private boolean isOccupyingSeat(OrderSeat orderSeat, Order order, LocalDateTime now) {
+        if (orderSeat == null || order == null || orderSeat.getStatus() == null) {
+            return false;
+        }
+        if (orderSeat.getStatus() == ORDER_SEAT_LOCKED) {
+            return order.getStatus() == STATUS_PENDING
+                    && (orderSeat.getLockExpireTime() == null || orderSeat.getLockExpireTime().isAfter(now));
+        }
+        return orderSeat.getStatus() == ORDER_SEAT_SOLD && order.getStatus() == STATUS_PAID;
+    }
+
     public Order getOrderDetail(Long id) {
         Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
+        }
+        return order;
+    }
+
+    public OrderListItemResponse getOrderItemDetail(Long id) {
+        OrderListItemResponse order = orderMapper.selectOrderListItemById(id);
         if (order == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
         }

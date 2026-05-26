@@ -1,7 +1,11 @@
 package com.omni.ticket.controller;
 
 import com.omni.common.result.Result;
+import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.dto.SeatMapResponse;
+import com.omni.ticket.dto.SessionSeatUsageItemResponse;
+import com.omni.ticket.dto.SessionSeatUsageRequest;
+import com.omni.ticket.dto.SessionSeatUsageResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.SeatBlock;
 import com.omni.ticket.entity.Session;
@@ -32,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,6 +62,8 @@ class SeatControllerTest {
     private SessionSeatLayoutSectionMapper sessionSeatLayoutSectionMapper;
     @Mock
     private SeatCraftBlockLayoutService seatCraftBlockLayoutService;
+    @Mock
+    private OrderInternalClient orderInternalClient;
 
     @Test
     void getSeatMapUsesLegacyAreaMappingWhenNoSeatCraftLayout() {
@@ -243,9 +250,113 @@ class SeatControllerTest {
         assertEquals(List.of(seat), result.getData().getSeats());
     }
 
+    @Test
+    void getSeatMapReturnsWholeSeatCraftMapAndReleasesNonOccupyingOrderResidue() {
+        SeatController controller = controllerWithOrderUsage();
+        TicketType ticketType = ticketType(7L, 99L);
+        Session session = session(99L, 5L);
+        Activity activity = activity(5L, "published");
+        SessionSeatLayout layout = layout(11L, 99L);
+        com.omni.ticket.dto.SeatCraftBlockDtos.LayoutRequest blockLayout = new com.omni.ticket.dto.SeatCraftBlockDtos.LayoutRequest();
+        com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest vipBlock = new com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest();
+        vipBlock.setBlockKey("vip");
+        vipBlock.setName("VIP区");
+        vipBlock.setBlockType("gridBlock");
+        com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest normalBlock = new com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest();
+        normalBlock.setBlockKey("normal");
+        normalBlock.setName("普通区");
+        normalBlock.setBlockType("gridBlock");
+        blockLayout.setBlocks(List.of(vipBlock, normalBlock));
+        SessionSeat currentTicketRefundedSeat = seat(401L, 501L, 7L, 3, 9001L);
+        SessionSeat otherTicketRefundedSeat = seat(402L, 502L, 8L, 3, 9002L);
+
+        when(ticketTypeMapper.selectById(7L)).thenReturn(ticketType);
+        when(sessionMapper.selectById(99L)).thenReturn(session);
+        when(activityMapper.selectById(5L)).thenReturn(activity);
+        when(sessionSeatLayoutMapper.selectOne(any())).thenReturn(layout);
+        when(sessionSeatLayoutSectionMapper.selectList(any())).thenReturn(List.of());
+        when(seatCraftBlockLayoutService.getLayout("session", 99L)).thenReturn(blockLayout);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(currentTicketRefundedSeat, otherTicketRefundedSeat));
+        when(orderInternalClient.inspectSessionSeatUsage(any(SessionSeatUsageRequest.class), eq("test-token")))
+                .thenReturn(Result.success(new SessionSeatUsageResponse(List.of(
+                        new SessionSeatUsageItemResponse(401L, false, true, null, null),
+                        new SessionSeatUsageItemResponse(402L, false, true, null, null)
+                ))));
+
+        Result<SeatMapResponse> result = controller.getSeatMap(99L, 7L);
+
+        assertEquals(200, result.getCode());
+        assertEquals(2, result.getData().getSeats().size());
+        assertEquals(Integer.valueOf(1), result.getData().getSeats().get(0).getStatus());
+        assertNull(result.getData().getSeats().get(0).getOrderId());
+        assertEquals(7L, result.getData().getSeats().get(0).getTicketTypeId());
+        assertEquals(Integer.valueOf(3), result.getData().getSeats().get(1).getStatus());
+        assertNull(result.getData().getSeats().get(1).getOrderId());
+        assertEquals(8L, result.getData().getSeats().get(1).getTicketTypeId());
+    }
+
+    @Test
+    void getSeatMapKeepsClearedOrderResidueOutsideSelectedTicketUnavailable() {
+        SeatController controller = controllerWithOrderUsage();
+        TicketType ticketType = ticketType(13L, 5L);
+        Session session = session(5L, 5L);
+        Activity activity = activity(5L, "published");
+        SessionSeatLayout layout = layout(11L, 5L);
+        com.omni.ticket.dto.SeatCraftBlockDtos.LayoutRequest blockLayout = new com.omni.ticket.dto.SeatCraftBlockDtos.LayoutRequest();
+        com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest vipBlock = new com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest();
+        vipBlock.setBlockKey("area-10");
+        vipBlock.setName("VIP区");
+        vipBlock.setBlockType("gridBlock");
+        com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest normalBlock = new com.omni.ticket.dto.SeatCraftBlockDtos.BlockRequest();
+        normalBlock.setBlockKey("area-11");
+        normalBlock.setName("A区");
+        normalBlock.setBlockType("gridBlock");
+        blockLayout.setBlocks(List.of(vipBlock, normalBlock));
+        SessionSeat vipSeat = seat(1401L, 49L, 13L, 1, null);
+        SessionSeat clearedOtherTicketSeat = seat(1444L, 50L, null, 1, null);
+        clearedOtherTicketSeat.setTicketGroupKey("area-11");
+
+        when(ticketTypeMapper.selectById(13L)).thenReturn(ticketType);
+        when(sessionMapper.selectById(5L)).thenReturn(session);
+        when(activityMapper.selectById(5L)).thenReturn(activity);
+        when(sessionSeatLayoutMapper.selectOne(any())).thenReturn(layout);
+        when(sessionSeatLayoutSectionMapper.selectList(any())).thenReturn(List.of());
+        when(seatCraftBlockLayoutService.getLayout("session", 5L)).thenReturn(blockLayout);
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(vipSeat, clearedOtherTicketSeat));
+        when(orderInternalClient.inspectSessionSeatUsage(any(SessionSeatUsageRequest.class), eq("test-token")))
+                .thenReturn(Result.success(new SessionSeatUsageResponse(List.of(
+                        new SessionSeatUsageItemResponse(1401L, false, true, null, null),
+                        new SessionSeatUsageItemResponse(1444L, false, true, null, null)
+                ))));
+
+        Result<SeatMapResponse> result = controller.getSeatMap(5L, 13L);
+
+        assertEquals(200, result.getCode());
+        assertEquals(Integer.valueOf(1), result.getData().getSeats().get(0).getStatus());
+        assertEquals(13L, result.getData().getSeats().get(0).getTicketTypeId());
+        assertEquals(Integer.valueOf(3), result.getData().getSeats().get(1).getStatus());
+        assertNull(result.getData().getSeats().get(1).getTicketTypeId());
+    }
+
     private SeatController controller() {
         return new SeatController(activityMapper, sessionMapper, ticketTypeMapper, ticketTypeAreaMapper, venueAreaMapper, sessionSeatMapper,
                 sessionSeatLayoutMapper, sessionSeatLayoutSectionMapper, seatCraftBlockLayoutService);
+    }
+
+    private SeatController controllerWithOrderUsage() {
+        return new SeatController(activityMapper, sessionMapper, ticketTypeMapper, ticketTypeAreaMapper, venueAreaMapper, sessionSeatMapper,
+                sessionSeatLayoutMapper, sessionSeatLayoutSectionMapper, seatCraftBlockLayoutService, orderInternalClient, "test-token");
+    }
+
+    private SessionSeat seat(Long id, Long seatBlockId, Long ticketTypeId, Integer status, Long orderId) {
+        SessionSeat seat = new SessionSeat();
+        seat.setId(id);
+        seat.setSessionId(99L);
+        seat.setSeatBlockId(seatBlockId);
+        seat.setTicketTypeId(ticketTypeId);
+        seat.setStatus(status);
+        seat.setOrderId(orderId);
+        return seat;
     }
 
     private Activity activity(Long id, String seatMapVisibility) {

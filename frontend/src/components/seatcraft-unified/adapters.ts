@@ -101,7 +101,7 @@ function buildUnifiedSeat(
   ticketTypeId: number,
 ): UnifiedSeatCraftSeat {
   const sessionSeatId = source?.id ?? seat.sessionSeatId
-  const isAvailable = source?.status === 1 && (source.ticketTypeId == null || source.ticketTypeId === ticketTypeId)
+  const isAvailable = source?.status === 1 && source.ticketTypeId === ticketTypeId
   return {
     ...seat,
     id: sessionSeatId != null ? String(sessionSeatId) : seat.id,

@@ -2,6 +2,7 @@ package com.omni.order.service;
 
 import com.omni.order.dto.SessionSeatUsageItemResponse;
 import com.omni.order.dto.SessionSeatUsageResponse;
+import com.omni.order.entity.Order;
 import com.omni.order.entity.OrderSeat;
 import com.omni.order.mapper.OrderMapper;
 import com.omni.order.mapper.OrderSeatMapper;
@@ -12,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Arrays;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -51,7 +53,11 @@ class OrderServiceSeatUsageTest {
     void inspectSessionSeatUsageDeduplicatesInputAndMarksUsedSeatsNotEditable() {
         OrderSeat usedSeat = orderSeat(1L, 101L, 11L, 2);
         OrderSeat duplicateUsedSeat = orderSeat(2L, 102L, 11L, 1);
+        duplicateUsedSeat.setLockExpireTime(LocalDateTime.now().plusMinutes(5));
+        Order paidOrder = order(101L, OrderService.STATUS_PAID);
+        Order pendingOrder = order(102L, OrderService.STATUS_PENDING);
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(usedSeat, duplicateUsedSeat));
+        when(orderMapper.selectBatchIds(List.of(101L, 102L))).thenReturn(List.of(paidOrder, pendingOrder));
 
         SessionSeatUsageResponse response = service.inspectSessionSeatUsage(Arrays.asList(11L, null, 12L, 11L));
 
@@ -77,7 +83,10 @@ class OrderServiceSeatUsageTest {
     void inspectSessionSeatUsageTreatsRefundedAndReleasedSeatsAsEditable() {
         OrderSeat refundedSeat = orderSeat(1L, 101L, 11L, 3);
         OrderSeat releasedSeat = orderSeat(2L, 102L, 12L, 4);
+        Order refundedOrder = order(101L, OrderService.STATUS_REFUNDED);
+        Order cancelledOrder = order(102L, OrderService.STATUS_CANCELLED);
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(refundedSeat, releasedSeat));
+        when(orderMapper.selectBatchIds(List.of(101L, 102L))).thenReturn(List.of(refundedOrder, cancelledOrder));
 
         SessionSeatUsageResponse response = service.inspectSessionSeatUsage(List.of(11L, 12L));
 
@@ -101,7 +110,11 @@ class OrderServiceSeatUsageTest {
     void inspectSessionSeatUsagePrefersCurrentOccupancyOverRefundedHistory() {
         OrderSeat refundedSeat = orderSeat(1L, 101L, 11L, 3);
         OrderSeat lockedSeat = orderSeat(2L, 102L, 11L, 1);
+        lockedSeat.setLockExpireTime(LocalDateTime.now().plusMinutes(5));
+        Order refundedOrder = order(101L, OrderService.STATUS_REFUNDED);
+        Order pendingOrder = order(102L, OrderService.STATUS_PENDING);
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(refundedSeat, lockedSeat));
+        when(orderMapper.selectBatchIds(List.of(101L, 102L))).thenReturn(List.of(refundedOrder, pendingOrder));
 
         SessionSeatUsageResponse response = service.inspectSessionSeatUsage(List.of(11L));
 
@@ -112,6 +125,24 @@ class OrderServiceSeatUsageTest {
         assertFalse(seat.getEditable());
         assertEquals(102L, seat.getOrderId());
         assertEquals(1, seat.getOrderSeatStatus());
+    }
+
+    @Test
+    void inspectSessionSeatUsageIgnoresSeatsFromCancelledOrders() {
+        OrderSeat cancelledOrderSeat = orderSeat(1L, 101L, 11L, 2);
+        Order cancelledOrder = order(101L, OrderService.STATUS_CANCELLED);
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of(cancelledOrderSeat));
+        when(orderMapper.selectBatchIds(List.of(101L))).thenReturn(List.of(cancelledOrder));
+
+        SessionSeatUsageResponse response = service.inspectSessionSeatUsage(List.of(11L));
+
+        assertEquals(1, response.getSeats().size());
+        SessionSeatUsageItemResponse seat = response.getSeats().get(0);
+        assertEquals(11L, seat.getSessionSeatId());
+        assertFalse(seat.getUsedByOrder());
+        assertTrue(seat.getEditable());
+        assertNull(seat.getOrderId());
+        assertNull(seat.getOrderSeatStatus());
     }
 
     @Test
@@ -129,5 +160,12 @@ class OrderServiceSeatUsageTest {
         seat.setSessionSeatId(sessionSeatId);
         seat.setStatus(status);
         return seat;
+    }
+
+    private Order order(Long id, Integer status) {
+        Order order = new Order();
+        order.setId(id);
+        order.setStatus(status);
+        return order;
     }
 }

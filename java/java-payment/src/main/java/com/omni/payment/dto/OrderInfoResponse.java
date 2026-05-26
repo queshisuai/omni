@@ -13,6 +13,8 @@ public class OrderInfoResponse {
     private Integer quantity;
     private BigDecimal amount;
     private Integer status;
+    private Long activityId;
+    private String activityName;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -79,6 +81,14 @@ public class OrderInfoResponse {
     public void setStatus(Integer status) {
         this.status = status;
     }
+
+    public String getActivityName() { return activityName; }
+
+    public void setActivityName(String activityName) { this.activityName = activityName; }
+
+    public Long getActivityId() { return activityId; }
+
+    public void setActivityId(Long activityId) { this.activityId = activityId; }
 
     public LocalDateTime getCreateTime() {
         return createTime;

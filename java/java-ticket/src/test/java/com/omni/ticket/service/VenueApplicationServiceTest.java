@@ -32,7 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
@@ -87,6 +89,62 @@ class VenueApplicationServiceTest {
         assertEquals(0, saved.getStatus());
         assertNull(saved.getVenueId());
         assertEquals(saved, result);
+    }
+
+    @Test
+    void adminSubmitCreatesApprovedApplicationWithoutReviewQueue() {
+        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.isAdmin(any())).thenReturn(true);
+        doAnswer(invocation -> {
+            Venue venue = invocation.getArgument(0);
+            venue.setId(77L);
+            return 1;
+        }).when(venueMapper).insert(any(Venue.class));
+        VenueApplicationRequest request = request();
+        request.setUserId(2002L);
+
+        VenueApplication result = service.submit(request);
+
+        ArgumentCaptor<VenueApplication> captor = ArgumentCaptor.forClass(VenueApplication.class);
+        verify(venueApplicationMapper).insert(captor.capture());
+        VenueApplication saved = captor.getValue();
+        assertEquals(77L, saved.getVenueId());
+        assertEquals(1, saved.getStatus());
+        assertEquals(2002L, saved.getReviewerId());
+        assertEquals("管理员直接添加场馆", saved.getReviewNote());
+        assertNotNull(saved.getReviewTime());
+        assertEquals(saved, result);
+    }
+
+    @Test
+    void submitCanAttachApprovalMaterialToExistingVenue() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Venue venue = new Venue();
+        venue.setId(66L);
+        venue.setName("国家体育馆");
+        venue.setCity("北京");
+        venue.setAddress("天辰东路9号");
+        venue.setStatus(1);
+        when(venueMapper.selectById(66L)).thenReturn(venue);
+        doAnswer(invocation -> {
+            VenueApplication application = invocation.getArgument(0);
+            application.setId(88L);
+            return 1;
+        }).when(venueApplicationMapper).insert(any(VenueApplication.class));
+
+        VenueApplicationRequest request = request();
+        request.setVenueId(66L);
+        request.setVenueName("国家体育馆");
+        request.setCity("北京");
+        request.setAddress("天辰东路9号");
+
+        VenueApplication result = service.submit(request);
+
+        assertEquals(88L, result.getId());
+        verify(venueApplicationMapper).insert(argThat(application ->
+                Long.valueOf(66L).equals(application.getVenueId())
+                        && Integer.valueOf(0).equals(application.getStatus())
+                        && Long.valueOf(2003L).equals(application.getApplicantId())));
     }
 
     @Test

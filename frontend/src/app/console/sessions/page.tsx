@@ -4,33 +4,20 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
-import { SeatCraftTicketEditor } from '@/components/seatcraft-unified/SeatCraftTicketEditor'
-import { createAdminSession, createAdminTicketType, deleteAdminSession, deleteAdminTicketType, getActivitySeatLayout, getSessionTicketDrafts, listAdminActivities, listAdminSessions, listAdminVenues, updateAdminSession, updateAdminTicketType } from '@/lib/api'
-import { Edit, Plus, RefreshCw, Trash2, X } from 'lucide-react'
+import { deleteAdminSession, listAdminActivities, listAdminSessions, listAdminVenues, updateAdminSession } from '@/lib/api'
+import { Edit, RefreshCw, Trash2, X } from 'lucide-react'
 import { globalConfirm } from '@/components/GlobalDialog'
-import type { ActivityEntity, SeatCraftLayoutVO, SeatCraftSectionVO, SessionAdminVO, VenueEntity } from '@/types/api'
+import type { ActivityEntity, SessionAdminVO, VenueEntity } from '@/types/api'
 
 const PAGE_SIZE = 10
 
 type SessionForm = {
-  id?: number
+  id: number
   activityId: string
   venueId: string
   startTime: string
   endTime: string
   status: string
-  activityLayoutId: string
-}
-
-type TicketFormMode = 'loading' | 'seatcraft'
-
-const emptyForm: SessionForm = {
-  activityId: '',
-  venueId: '',
-  startTime: '',
-  endTime: '',
-  status: '1',
-  activityLayoutId: '',
 }
 
 export default function SessionsPage() {
@@ -56,24 +43,9 @@ function SessionsPageContent() {
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
   const [formOpen, setFormOpen] = useState(false)
-  const [form, setForm] = useState<SessionForm>(emptyForm)
-  const [activitySeatLayout, setActivitySeatLayout] = useState<SeatCraftLayoutVO | null>(null)
-
-  const [layoutLoading, setLayoutLoading] = useState(false)
-  const layoutRequestRef = useRef(0)
+  const [form, setForm] = useState<SessionForm | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
-  const [ticketFormSession, setTicketFormSession] = useState<SessionAdminVO | null>(null)
-  const [ticketName, setTicketName] = useState('')
-  const [ticketPrice, setTicketPrice] = useState('')
-  const [editingTicketId, setEditingTicketId] = useState<number | null>(null)
-  const [ticketDrafts, setTicketDrafts] = useState<SeatCraftSectionVO[]>([])
-  const [ticketLayout, setTicketLayout] = useState<SeatCraftLayoutVO | null>(null)
-  const [ticketFormMode, setTicketFormMode] = useState<TicketFormMode>('seatcraft')
-  const [selectedLayoutSectionIds, setSelectedLayoutSectionIds] = useState<number[]>([])
-  const [ticketMessage, setTicketMessage] = useState('')
-  const ticketDraftRequestRef = useRef(0)
-  const ticketFormSessionIdRef = useRef<number | null>(null)
   const loadSessionsRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
   const rawActivityId = searchParams.get('activityId') || ''
@@ -145,13 +117,6 @@ function SessionsPageContent() {
     loadSessions(1)
   }
 
-  const openCreate = () => {
-    setForm(emptyForm)
-    setActivitySeatLayout(null)
-    setFormError('')
-    setFormOpen(true)
-  }
-
   const openEdit = (session: SessionAdminVO) => {
     setForm({
       id: session.id,
@@ -160,39 +125,13 @@ function SessionsPageContent() {
       startTime: toInputTime(session.startTime),
       endTime: session.endTime ? toInputTime(session.endTime) : '',
       status: String(session.status),
-      activityLayoutId: '',
     })
     setFormError('')
     setFormOpen(true)
   }
 
-  const loadSeatLayoutOptions = async (nextForm: SessionForm) => {
-    const requestId = layoutRequestRef.current + 1
-    layoutRequestRef.current = requestId
-    if (nextForm.id || !isPositiveInteger(nextForm.activityId) || !isPositiveInteger(nextForm.venueId)) {
-      setActivitySeatLayout(null)
-      setLayoutLoading(false)
-      return
-    }
-    setLayoutLoading(true)
-    try {
-      const activityLayout = await getActivitySeatLayout(Number(nextForm.activityId), userId).catch(() => null)
-      if (layoutRequestRef.current !== requestId) return
-      setActivitySeatLayout(activityLayout)
-      if (activityLayout) {
-        setForm(current => {
-          if (current.id || current.activityId !== nextForm.activityId || current.venueId !== nextForm.venueId) return current
-          return { ...current, activityLayoutId: String(activityLayout.id) }
-        })
-      }
-    } finally {
-      if (layoutRequestRef.current === requestId) setLayoutLoading(false)
-    }
-  }
-
   const validateForm = () => {
-    if (!form.activityId) return '请选择活动'
-    if (!isPositiveInteger(form.activityId)) return '活动ID不正确'
+    if (!form) return '请选择要编辑的场次'
     if (!form.venueId) return '请选择场馆'
     if (!isPositiveInteger(form.venueId)) return '场馆ID不正确'
     if (!form.startTime) return '请选择开始时间'
@@ -205,28 +144,23 @@ function SessionsPageContent() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const validationError = validateForm()
-    if (validationError) {
+    if (validationError || !form) {
       setFormError(validationError)
       return
     }
     setSubmitting(true)
     setFormError('')
     try {
-      const body = {
+      await updateAdminSession(form.id, {
         userId,
         activityId: Number(form.activityId),
         venueId: Number(form.venueId),
         startTime: form.startTime,
         endTime: form.endTime || null,
         status: Number(form.status),
-        ...(form.activityLayoutId ? { activityLayoutId: Number(form.activityLayoutId) } : {}),
-      }
-      if (form.id) {
-        await updateAdminSession(form.id, body)
-      } else {
-        await createAdminSession(body)
-      }
+      })
       setFormOpen(false)
+      setForm(null)
       loadSessions(page)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : '保存场次失败')
@@ -237,187 +171,17 @@ function SessionsPageContent() {
 
   const handleDeleteSession = async (session: SessionAdminVO) => {
     if (session.ticketTypeCount > 0) {
-      const confirmed = await globalConfirm('该场次已有票档。删除场次会同时删除票档、座位快照和场次座位图。确认删除？')
+      const confirmed = await globalConfirm('该场次已有票档。删除场次会同时删除票档和座位快照。确认删除？')
       if (!confirmed) return
     } else if (!(await globalConfirm('确认删除该场次？'))) {
       return
     }
     try {
       await deleteAdminSession(session.id, userId)
-      if (ticketFormSession?.id === session.id) setTicketFormSession(null)
       loadSessions(page)
     } catch (err) {
       setError(err instanceof Error ? err.message : '删除场次失败')
     }
-  }
-
-  const isCurrentTicketRequest = (requestId: number, sessionId: number) => {
-    return ticketDraftRequestRef.current === requestId && ticketFormSessionIdRef.current === sessionId
-  }
-
-  const loadTicketLayout = (session: SessionAdminVO, drafts: SeatCraftSectionVO[], requestId: number) => {
-    getActivitySeatLayout(session.activityId, userId).then(layout => {
-      if (!isCurrentTicketRequest(requestId, session.id)) return
-      setTicketLayout(layout ? { ...layout, sections: mergeTicketDraftsIntoLayout(layout.sections, drafts), sessionId: session.id } : buildTicketDraftLayout(session, drafts))
-      setTicketFormMode('seatcraft')
-    }).catch(() => {
-      if (!isCurrentTicketRequest(requestId, session.id)) return
-      setTicketLayout(buildTicketDraftLayout(session, drafts))
-      setTicketFormMode('seatcraft')
-    })
-  }
-
-  const refreshTicketDrafts = async (session: SessionAdminVO) => {
-    const requestId = ticketDraftRequestRef.current + 1
-    ticketDraftRequestRef.current = requestId
-    setTicketFormMode('loading')
-    try {
-      const drafts = await getSessionTicketDrafts(session.id, userId)
-      if (!isCurrentTicketRequest(requestId, session.id)) return
-      setTicketDrafts(drafts)
-      setSelectedLayoutSectionIds([])
-      if (drafts.length === 0) {
-        setTicketLayout(null)
-        setTicketFormMode('seatcraft')
-        return
-      }
-      loadTicketLayout(session, drafts, requestId)
-    } catch (err) {
-      if (isCurrentTicketRequest(requestId, session.id)) setTicketFormMode('seatcraft')
-      throw err
-    }
-  }
-
-  const openTicketForm = async (session: SessionAdminVO) => {
-    ticketFormSessionIdRef.current = session.id
-    setTicketFormSession(session)
-    setTicketName('')
-    setTicketPrice('')
-    setEditingTicketId(null)
-    setTicketDrafts([])
-    setTicketLayout(null)
-    setTicketFormMode('loading')
-    setSelectedLayoutSectionIds([])
-    setTicketMessage('')
-    const requestId = ticketDraftRequestRef.current + 1
-    ticketDraftRequestRef.current = requestId
-    getSessionTicketDrafts(session.id, userId)
-      .then(drafts => {
-        if (!isCurrentTicketRequest(requestId, session.id)) return
-        setTicketDrafts(drafts)
-        setSelectedLayoutSectionIds([])
-        if (drafts.length > 0) {
-          loadTicketLayout(session, drafts, requestId)
-        } else {
-          setTicketLayout(null)
-          setTicketFormMode('seatcraft')
-        }
-      })
-      .catch(() => {
-        if (!isCurrentTicketRequest(requestId, session.id)) return
-        setTicketDrafts([])
-        setTicketLayout(null)
-        setTicketFormMode('seatcraft')
-      })
-  }
-
-  const usingSeatCraftDrafts = ticketDrafts.length > 0
-  const activeTicketLayout = ticketFormMode === 'seatcraft' && usingSeatCraftDrafts ? ticketLayout : null
-  const usingSeatCraftEditor = activeTicketLayout !== null
-  const estimatedSeatCount = usingSeatCraftDrafts
-    ? ticketDrafts.filter(section => selectedLayoutSectionIds.includes(section.id)).reduce((sum, section) => sum + (section.seatCount || section.rows * section.cols), 0)
-    : 0
-
-  const handleCreateTicketType = async () => {
-    if (!ticketFormSession) return
-    if (!ticketName.trim()) {
-      setTicketMessage('请填写票档名称')
-      return
-    }
-    if (!ticketPrice || Number(ticketPrice) <= 0) {
-      setTicketMessage('请填写有效票价')
-      return
-    }
-    if (usingSeatCraftEditor && selectedLayoutSectionIds.length === 0) {
-      setTicketMessage('请选择绑定分区')
-      return
-    }
-    if (!usingSeatCraftEditor) {
-      setTicketMessage('当前场次还没有座位图，请先进入场次座位设计器创建后再创建票档')
-      return
-    }
-    try {
-      if (editingTicketId != null) {
-        await updateAdminTicketType(editingTicketId, {
-          userId,
-          name: ticketName.trim(),
-          price: Number(ticketPrice),
-        })
-        setTicketMessage('票档已更新')
-        setTicketName('')
-        setTicketPrice('')
-        setEditingTicketId(null)
-        setSelectedLayoutSectionIds([])
-        updateCurrentTicketTypes(current => current.map(ticket => ticket.id === editingTicketId ? { ...ticket, name: ticketName.trim(), price: Number(ticketPrice) } : ticket))
-        loadSessions(page)
-        return
-      }
-      const seatCraftPayload = usingSeatCraftEditor ? { layoutSectionIds: selectedLayoutSectionIds } : {}
-      await createAdminTicketType({
-        userId,
-        sessionId: ticketFormSession.id,
-        name: ticketName.trim(),
-        price: Number(ticketPrice),
-        ...seatCraftPayload,
-      })
-      setTicketMessage('票档已创建，库存已按分区座位自动计算')
-      setTicketName('')
-      setTicketPrice('')
-      setSelectedLayoutSectionIds([])
-      try {
-        await refreshTicketDrafts(ticketFormSession)
-      } catch (err) {
-        setTicketMessage(err instanceof Error ? `票档已创建，但刷新绑定分区失败：${err.message}` : '票档已创建，但刷新绑定分区失败')
-      }
-      loadSessions(page)
-    } catch (err) {
-      setTicketMessage(err instanceof Error ? err.message : '创建票档失败')
-    }
-  }
-
-  const handleEditTicketType = (ticket: NonNullable<SessionAdminVO['ticketTypes']>[number]) => {
-    setEditingTicketId(ticket.id)
-    setTicketName(ticket.name)
-    setTicketPrice(String(ticket.price))
-    setSelectedLayoutSectionIds([])
-    setTicketMessage('正在编辑已有票档，只允许修改名称和票价。')
-  }
-
-  const handleDeleteTicketType = async (ticket: NonNullable<SessionAdminVO['ticketTypes']>[number]) => {
-    if (!ticketFormSession) return
-    if (!(await globalConfirm(`确认删除票档“${ticket.name}”？`))) return
-    try {
-      await deleteAdminTicketType(ticket.id, userId)
-      if (editingTicketId === ticket.id) {
-        setEditingTicketId(null)
-        setTicketName('')
-        setTicketPrice('')
-      }
-      setTicketMessage('票档已删除')
-      updateCurrentTicketTypes(current => current.filter(item => item.id !== ticket.id))
-      await refreshTicketDrafts(ticketFormSession)
-      loadSessions(page)
-    } catch (err) {
-      setTicketMessage(err instanceof Error ? err.message : '删除票档失败')
-    }
-  }
-
-  const updateCurrentTicketTypes = (updater: (tickets: NonNullable<SessionAdminVO['ticketTypes']>) => NonNullable<SessionAdminVO['ticketTypes']>) => {
-    setTicketFormSession(current => {
-      if (!current) return current
-      const currentTickets = current.ticketTypes ?? []
-      return { ...current, ticketTypes: updater(currentTickets) }
-    })
   }
 
   return (
@@ -427,9 +191,6 @@ function SessionsPageContent() {
           <h1 className="text-[22px] font-bold text-[#1a1a2e]">场次管理</h1>
           <p className="mt-1 text-[13px] text-[#999]">管理活动场次、场馆安排和票档库存统计。</p>
         </div>
-        <button onClick={openCreate} className="inline-flex items-center gap-1.5 rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white transition-colors hover:bg-[#e0105a]">
-          <Plus className="h-4 w-4" /> 新建场次
-        </button>
       </div>
 
       <form onSubmit={handleSearch} className="mb-5 grid gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 lg:grid-cols-[1fr_1fr_160px_auto]">
@@ -449,31 +210,22 @@ function SessionsPageContent() {
         <button type="submit" className="h-10 rounded-lg bg-[#1a1a2e] px-5 text-[14px] font-medium text-white transition-colors hover:bg-[#2a2a42]">查询</button>
       </form>
 
-      {formOpen && (
+      {formOpen && form && (
         <form onSubmit={handleSubmit} className="mb-5 rounded-xl border border-[#ffd9e6] bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-[16px] font-bold text-[#1a1a2e]">{form.id ? '编辑场次' : '新建场次'}</h2>
-            <button type="button" onClick={() => setFormOpen(false)} className="rounded-full p-1 text-[#999] hover:bg-[#f5f5f5]"><X className="h-4 w-4" /></button>
+            <h2 className="text-[16px] font-bold text-[#1a1a2e]">编辑场次</h2>
+            <button type="button" onClick={() => { setFormOpen(false); setForm(null) }} className="rounded-full p-1 text-[#999] hover:bg-[#f5f5f5]"><X className="h-4 w-4" /></button>
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
             <label className="block text-[13px] text-[#666]">
-              活动 *
-              <select value={form.activityId} disabled={Boolean(form.id)} onChange={event => {
-                const nextForm = { ...form, activityId: event.target.value, activityLayoutId: '' }
-                setForm(nextForm)
-                loadSeatLayoutOptions(nextForm)
-              }} className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]">
-                <option value="">请选择活动</option>
+              活动
+              <select value={form.activityId} disabled className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none disabled:bg-[#f5f5f5]">
                 {activities.map(activity => <option key={activity.id} value={activity.id}>{activity.name}</option>)}
               </select>
             </label>
             <label className="block text-[13px] text-[#666]">
               场馆 *
-              <select value={form.venueId} onChange={event => {
-                const nextForm = { ...form, venueId: event.target.value, activityLayoutId: '' }
-                setForm(nextForm)
-                loadSeatLayoutOptions(nextForm)
-              }} className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
+              <select value={form.venueId} onChange={event => setForm({ ...form, venueId: event.target.value })} className="mt-1 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
                 <option value="">请选择场馆</option>
                 {venues.map(venue => <option key={venue.id} value={venue.id}>{venue.name} ({venue.city})</option>)}
               </select>
@@ -497,7 +249,7 @@ function SessionsPageContent() {
 
           {formError && <div className="mt-3 text-[13px] text-[#ef4444]">{formError}</div>}
           <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666]">取消</button>
+            <button type="button" onClick={() => { setFormOpen(false); setForm(null) }} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666]">取消</button>
             <button disabled={submitting} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-50">{submitting ? '保存中...' : '保存场次'}</button>
           </div>
         </form>
@@ -513,7 +265,7 @@ function SessionsPageContent() {
           </button>
         </div>
       ) : sessions.length === 0 ? (
-        <div className="rounded-xl border border-[#e5e5e5] bg-white py-20 text-center text-[14px] text-[#999]">暂无匹配场次，可调整筛选条件或新建场次。</div>
+        <div className="rounded-xl border border-[#e5e5e5] bg-white py-20 text-center text-[14px] text-[#999]">暂无匹配场次，可调整筛选条件。</div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-[#e5e5e5] bg-white">
           <table className="w-full text-[14px]">
@@ -546,12 +298,8 @@ function SessionsPageContent() {
                   <td className="p-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <Link href={`/console/sessions/${session.id}/seat-layout?mode=tickets`} className="rounded-lg border border-[#ff1268] px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]">票档</Link>
-                      <button onClick={() => openEdit(session)} className="inline-flex rounded p-1.5 text-[#3b82f6] transition-colors hover:bg-[#f0f0f0]" title="编辑">
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => handleDeleteSession(session)} className="inline-flex rounded p-1.5 text-[#ef4444] transition-colors hover:bg-[#fff1f2]" title="删除">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <button onClick={() => openEdit(session)} className="inline-flex rounded p-1.5 text-[#3b82f6] transition-colors hover:bg-[#f0f0f0]" title="编辑"><Edit className="h-4 w-4" /></button>
+                      <button onClick={() => handleDeleteSession(session)} className="inline-flex rounded p-1.5 text-[#ef4444] transition-colors hover:bg-[#fff1f2]" title="删除"><Trash2 className="h-4 w-4" /></button>
                     </div>
                   </td>
                 </tr>
@@ -567,93 +315,8 @@ function SessionsPageContent() {
           </div>
         </div>
       )}
-
-      {ticketFormSession && (
-        <div className="mt-5 rounded-xl border border-[#ffd9e6] bg-white p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-[16px] font-bold text-[#1a1a2e]">票档管理</h2>
-              <p className="mt-1 text-[13px] text-[#999]">{ticketFormSession.activityName || `活动 #${ticketFormSession.activityId}`} · {ticketFormSession.venueName || `场馆 #${ticketFormSession.venueId}`}</p>
-            </div>
-            <button onClick={() => {
-              ticketFormSessionIdRef.current = null
-              ticketDraftRequestRef.current += 1
-              setTicketFormSession(null)
-            }} className="text-[13px] text-[#999]">关闭</button>
-          </div>
-          {(ticketFormSession.ticketTypes?.length ?? 0) > 0 && (
-            <div className="mb-4 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3">
-              <div className="mb-2 text-[13px] font-medium text-[#666]">已有票档</div>
-              <div className="grid gap-2">
-                {ticketFormSession.ticketTypes?.map(ticket => (
-                  <div key={ticket.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-[13px] text-[#666]">
-                    <span className="font-medium text-[#333]">{ticket.name}</span>
-                    <span>¥{Number(ticket.price).toFixed(2)}</span>
-                    <span>余票 {ticket.remainStock} / {ticket.totalStock}</span>
-                    <div className="ml-auto flex items-center gap-2">
-                      <button type="button" onClick={() => handleEditTicketType(ticket)} className="rounded border border-[#3b82f6] px-2 py-1 text-[#3b82f6]">修改</button>
-                      <button type="button" onClick={() => handleDeleteTicketType(ticket)} className="rounded border border-[#ef4444] px-2 py-1 text-[#ef4444]">删除</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {ticketFormMode === 'loading' ? (
-            <div className="rounded-lg border border-[#f0f0f0] bg-[#fafafa] p-8 text-center text-[13px] text-[#999]">正在加载票档分区...</div>
-          ) : usingSeatCraftEditor ? (
-            <SeatCraftTicketEditor
-              layout={activeTicketLayout}
-              ticketDrafts={ticketDrafts}
-              selectedSectionIds={selectedLayoutSectionIds}
-              onSelectedSectionIdsChange={setSelectedLayoutSectionIds}
-              ticketName={ticketName}
-              ticketPrice={ticketPrice}
-              onTicketNameChange={setTicketName}
-              onTicketPriceChange={setTicketPrice}
-              estimatedSeatCount={estimatedSeatCount}
-              onSubmit={handleCreateTicketType}
-              allowSubmitWithoutSelection={editingTicketId != null}
-              submitLabel={editingTicketId != null ? '保存修改' : '保存票档'}
-            />
-          ) : (
-            <div className="rounded-lg border border-dashed border-[#e5e5e5] bg-[#fafafa] p-8 text-center text-[13px] text-[#999]">
-              <div>当前场次还没有座位图，票档必须绑定座位块后才能创建。</div>
-              <Link href={`/console/sessions/${ticketFormSession.id}/seat-layout?from=tickets`} className="mt-4 inline-flex rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">
-                去场次座位设计器创建
-              </Link>
-            </div>
-          )}
-          {ticketMessage && <div className="mt-3 text-[13px] text-[#666]">{ticketMessage}</div>}
-        </div>
-      )}
     </div>
   )
-}
-
-function mergeTicketDraftsIntoLayout(sections: SeatCraftSectionVO[], drafts: SeatCraftSectionVO[]) {
-  const draftById = new Map(drafts.map(draft => [draft.id, draft]))
-  const draftBySectionKey = new Map(drafts.map(draft => [draft.sectionKey, draft]))
-  return sections.map(section => draftById.get(section.id) ?? draftBySectionKey.get(section.sectionKey) ?? section)
-}
-
-function buildTicketDraftLayout(session: SessionAdminVO, drafts: SeatCraftSectionVO[]): SeatCraftLayoutVO {
-  const maxX = drafts.reduce((max, section) => Math.max(max, section.x + section.cols * 18 + 80), 0)
-  const maxY = drafts.reduce((max, section) => Math.max(max, section.y + section.rows * 18 + 80), 0)
-  return {
-    id: 0,
-    venueId: session.venueId,
-    activityId: session.activityId,
-    sessionId: session.id,
-    name: `${session.activityName || `活动 #${session.activityId}`} 票档分区`,
-    templateType: 'custom',
-    stageTitle: '舞台',
-    stageX: 80,
-    stageY: 40,
-    canvasWidth: Math.max(960, maxX),
-    canvasHeight: Math.max(640, maxY),
-    sections: drafts,
-  }
 }
 
 function toInputTime(value: string) {

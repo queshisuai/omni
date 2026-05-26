@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SessionSeatMapperSqlTest {
 
@@ -21,6 +22,17 @@ class SessionSeatMapperSqlTest {
                 .toLowerCase();
 
         assertFalse(sql.contains("order_seat"), "ticket 服务 SQL 不能引用 order-owned order_seat 表");
+    }
+
+    @Test
+    void releasingSeatsKeepsTicketTypeBinding() throws Exception {
+        String releaseSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod("releaseLockedSeat", Long.class, Long.class)).toLowerCase();
+        String restoreSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod("restoreSoldSeat", Long.class, Long.class)).toLowerCase();
+
+        assertFalse(releaseSql.contains("ticket_type_id = null"), "释放锁座不能清空票档绑定");
+        assertFalse(restoreSql.contains("ticket_type_id = null"), "退款可二次销售不能清空票档绑定");
+        assertTrue(releaseSql.contains("status = 1"));
+        assertTrue(restoreSql.contains("status = 1"));
     }
 
     private String annotationSql(Method method) {

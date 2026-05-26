@@ -3,7 +3,9 @@ package com.omni.ticket.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.entity.Activity;
+import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.Station;
 import com.omni.ticket.entity.TicketType;
@@ -24,8 +26,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.lang.reflect.Array;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,11 +44,14 @@ public class TourStationService {
     private static final String PUBLISH_STATUS_CITY_ANNOUNCED = "city_announced";
     private static final String PUBLISH_STATUS_RISK_SUSPENDED = "risk_suspended";
     private static final String PUBLISH_STATUS_PUBLISHED = "published";
+    private static final String PUBLISH_STATUS_DEACTIVATED = "deactivated";
+    private static final String REVIEW_STATUS_DEACTIVATED = "deactivated";
     private static final String SALE_STATUS_UNANNOUNCED = "unannounced";
     private static final String SALE_STATUS_COMING_SOON = "coming_soon";
     private static final String SALE_STATUS_TICKET_TBA = "ticket_tba";
     private static final String SALE_STATUS_TO_BE_SCHEDULED = "to_be_scheduled";
     private static final String SALE_STATUS_SUSPENDED = "suspended";
+    private static final String SALE_STATUS_DEACTIVATED = "deactivated";
     private static final String SALE_STATUS_SOLD_OUT = "sold_out";
     private static final String SALE_STATUS_ON_SALE = "on_sale";
     private static final String SALE_STATUS_TEXT_UNANNOUNCED = "未公布";
@@ -52,6 +59,7 @@ public class TourStationService {
     private static final String SALE_STATUS_TEXT_TO_BE_SCHEDULED = "待定";
     private static final String SALE_STATUS_TEXT_TICKET_TBA = "票档待公布";
     private static final String SALE_STATUS_TEXT_SUSPENDED = "暂时停止售票";
+    private static final String SALE_STATUS_TEXT_DEACTIVATED = "已下架";
     private static final String SALE_STATUS_TEXT_SOLD_OUT = "已售罄";
     private static final String SALE_STATUS_TEXT_ON_SALE = "售票中";
     private static final String PRIMARY_ACTION_NONE = "none";
@@ -67,11 +75,12 @@ public class TourStationService {
     private final VenueMapper venueMapper;
     private final ActivitySeatLayoutService activitySeatLayoutService;
     private final SessionSeatLayoutService sessionSeatLayoutService;
+    private final ActivityAdminService activityAdminService;
 
     public TourStationService(TourMapper tourMapper,
                                StationMapper stationMapper,
                                UserAccessService userAccessService) {
-        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null, null, null);
+        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null, null, null, null);
     }
 
     public TourStationService(TourMapper tourMapper,
@@ -83,7 +92,21 @@ public class TourStationService {
                               ActivitySeatLayoutService activitySeatLayoutService,
                               SessionSeatLayoutService sessionSeatLayoutService) {
         this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
-                null, null, activitySeatLayoutService, sessionSeatLayoutService);
+                null, null, activitySeatLayoutService, sessionSeatLayoutService, null);
+    }
+
+    public TourStationService(TourMapper tourMapper,
+                               StationMapper stationMapper,
+                               UserAccessService userAccessService,
+                               VenueApplicationMapper venueApplicationMapper,
+                               ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               TicketTypeMapper ticketTypeMapper,
+                               VenueMapper venueMapper,
+                               ActivitySeatLayoutService activitySeatLayoutService,
+                               SessionSeatLayoutService sessionSeatLayoutService) {
+        this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
+                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, null);
     }
 
     @Autowired
@@ -96,7 +119,8 @@ public class TourStationService {
                                TicketTypeMapper ticketTypeMapper,
                                VenueMapper venueMapper,
                                ActivitySeatLayoutService activitySeatLayoutService,
-                               SessionSeatLayoutService sessionSeatLayoutService) {
+                               SessionSeatLayoutService sessionSeatLayoutService,
+                               ActivityAdminService activityAdminService) {
         this.tourMapper = tourMapper;
         this.stationMapper = stationMapper;
         this.userAccessService = userAccessService;
@@ -107,6 +131,7 @@ public class TourStationService {
         this.venueMapper = venueMapper;
         this.activitySeatLayoutService = activitySeatLayoutService;
         this.sessionSeatLayoutService = sessionSeatLayoutService;
+        this.activityAdminService = activityAdminService;
     }
 
     @Transactional
@@ -128,6 +153,17 @@ public class TourStationService {
         tour.setCreateTime(now);
         tour.setUpdateTime(now);
         tourMapper.insert(tour);
+        for (String city : parseCities(body.get("cities"))) {
+            Station station = new Station();
+            station.setTourId(tour.getId());
+            station.setCity(city);
+            station.setStationName(city + "站");
+            station.setPublishStatus(PUBLISH_STATUS_DRAFT);
+            station.setStatus(1);
+            station.setCreateTime(now);
+            station.setUpdateTime(now);
+            stationMapper.insert(station);
+        }
         return tour;
     }
 
@@ -144,8 +180,9 @@ public class TourStationService {
         LocalDateTime now = LocalDateTime.now();
         Station station = new Station();
         station.setTourId(tourId);
-        station.setCity(requireText(body == null ? null : body.get("city"), "城市不能为空"));
-        station.setStationName(requireText(body == null ? null : body.get("stationName"), "站点名称不能为空"));
+        String city = requireText(body == null ? null : body.get("city"), "城市不能为空");
+        station.setCity(city);
+        station.setStationName(defaultText(optionalText(body == null ? null : body.get("stationName")), city + "站"));
         Long venueApplicationId = parsePositiveLong(body.get("venueApplicationId"));
         station.setVenueApplicationId(venueApplicationId);
         station.setPoster(optionalText(body.get("poster")));
@@ -164,11 +201,118 @@ public class TourStationService {
         InternalUserRefResponse user = requireAdminOrOrganizer(userId);
         LambdaQueryWrapper<Tour> wrapper = new LambdaQueryWrapper<Tour>()
                 .eq(Tour::getStatus, 1)
-                .orderByDesc(Tour::getId);
+                .orderByAsc(Tour::getId);
         if ("organizer".equals(user.getRole())) {
             wrapper.eq(Tour::getOrganizerId, userId);
         }
         return tourMapper.selectPage(new Page<>(Math.max(1, page), Math.max(1, size)), wrapper);
+    }
+
+    @Transactional
+    public Tour announceTourCities(Long userId, Long tourId) {
+        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
+        Tour tour = tourMapper.selectById(tourId);
+        if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
+            throw new BusinessException(404, "演出项目不存在");
+        }
+        if ("organizer".equals(user.getRole()) && !userId.equals(tour.getOrganizerId())) {
+            throw new BusinessException(403, "只能官宣自己的演出项目");
+        }
+        List<Station> stations = stationMapper.selectList(new LambdaQueryWrapper<Station>()
+                .eq(Station::getTourId, tourId)
+                .eq(Station::getStatus, 1));
+        if (stations == null) {
+            stations = Collections.emptyList();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (Station station : stations) {
+            if (PUBLISH_STATUS_PUBLISHED.equals(station.getPublishStatus())) {
+                continue;
+            }
+            station.setPublishStatus(PUBLISH_STATUS_CITY_ANNOUNCED);
+            station.setUpdateTime(now);
+            stationMapper.updateById(station);
+        }
+        tour.setReviewStatus("announced");
+        tour.setUpdateTime(now);
+        tourMapper.updateById(tour);
+        return tour;
+    }
+
+    @Transactional
+    public void deleteTourDraft(Long userId, Long tourId) {
+        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
+        Tour tour = tourMapper.selectById(tourId);
+        if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
+            throw new BusinessException(404, "演出项目不存在");
+        }
+        if ("organizer".equals(user.getRole()) && !userId.equals(tour.getOrganizerId())) {
+            throw new BusinessException(403, "只能删除自己的演出项目");
+        }
+        List<Station> stations = stationMapper.selectList(new LambdaQueryWrapper<Station>()
+                .eq(Station::getTourId, tourId)
+                .eq(Station::getStatus, 1));
+        if (stations == null) {
+            stations = Collections.emptyList();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (Station station : stations) {
+            station.setStatus(0);
+            station.setPublishStatus("cancelled");
+            station.setUpdateTime(now);
+            stationMapper.updateById(station);
+        }
+        tour.setStatus(0);
+        tour.setReviewStatus("deleted");
+        tour.setUpdateTime(now);
+        tourMapper.updateById(tour);
+    }
+
+    @Transactional
+    public RefundImpactResponse deactivateTour(Long tourId, DeactivateActivityRequest request) {
+        if (request == null || request.getUserId() == null) {
+            throw new BusinessException(400, "下架参数不能为空");
+        }
+        if (!Boolean.TRUE.equals(request.getConfirmRefund())) {
+            throw new BusinessException(400, "下架巡演活动前必须确认同意为所有已支付订单退款");
+        }
+        if (activityAdminService == null) {
+            throw new BusinessException(500, "活动下架服务未配置");
+        }
+        InternalUserRefResponse user = requireAdminOrOrganizer(request.getUserId());
+        Tour tour = tourMapper.selectById(tourId);
+        if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
+            throw new BusinessException(404, "演出项目不存在");
+        }
+        if ("organizer".equals(user.getRole()) && !request.getUserId().equals(tour.getOrganizerId())) {
+            throw new BusinessException(403, "只能管理自己的演出项目");
+        }
+        List<Activity> activities = activityMapper.selectList(new LambdaQueryWrapper<Activity>()
+                .eq(Activity::getTourId, tourId)
+                .in(Activity::getPublishStatus, List.of(PUBLISH_STATUS_PUBLISHED, PUBLISH_STATUS_RISK_SUSPENDED)));
+        if (activities == null) {
+            activities = Collections.emptyList();
+        }
+        RefundImpactResponse response = activityAdminService.deactivateActivities(activities, request.getReason());
+
+        List<Station> stations = stationMapper.selectList(new LambdaQueryWrapper<Station>()
+                .eq(Station::getTourId, tourId)
+                .eq(Station::getStatus, 1));
+        if (stations == null) {
+            stations = Collections.emptyList();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (Station station : stations) {
+            station.setPublishStatus(PUBLISH_STATUS_DEACTIVATED);
+            station.setUpdateTime(now);
+            stationMapper.updateById(station);
+        }
+        tour.setReviewStatus(REVIEW_STATUS_DEACTIVATED);
+        tour.setUpdateTime(now);
+        tourMapper.updateById(tour);
+        response.setActivityId(tour.getId());
+        response.setActivityName(tour.getTitle());
+        return response;
     }
 
     public Map<String, Object> getTourDetail(Long tourId) {
@@ -277,6 +421,10 @@ public class TourStationService {
             putSaleState(item, SALE_STATUS_SUSPENDED, SALE_STATUS_TEXT_SUSPENDED, PRIMARY_ACTION_NONE);
             return;
         }
+        if (PUBLISH_STATUS_DEACTIVATED.equals(station.getPublishStatus())) {
+            putSaleState(item, SALE_STATUS_DEACTIVATED, SALE_STATUS_TEXT_DEACTIVATED, PRIMARY_ACTION_NONE);
+            return;
+        }
         if (!PUBLISH_STATUS_PUBLISHED.equals(station.getPublishStatus()) || activity == null) {
             putSaleState(item, SALE_STATUS_COMING_SOON, SALE_STATUS_TEXT_COMING_ANNOUNCE, PRIMARY_ACTION_NONE);
             return;
@@ -337,6 +485,9 @@ public class TourStationService {
         if (station == null || !Integer.valueOf(1).equals(station.getStatus())) {
             throw new BusinessException(404, "站点不存在");
         }
+        if (station.getActivityId() != null && station.getTourId() == null) {
+            return publishActivityStation(user, userId, station, body);
+        }
         Tour tour = tourMapper.selectById(station.getTourId());
         if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
             throw new BusinessException(404, "演出项目不存在");
@@ -352,10 +503,10 @@ public class TourStationService {
         }
         VenueApplication application = requireVenueApplication(station.getVenueApplicationId());
         if ("organizer".equals(user.getRole()) && !userId.equals(application.getApplicantId())) {
-            throw new BusinessException(403, "只能使用自己的场地申请");
+            throw new BusinessException(403, "只能使用自己的场馆审核资料");
         }
         if (!Integer.valueOf(1).equals(application.getStatus()) || application.getVenueId() == null) {
-            throw new BusinessException(400, "场地申请未审核通过");
+            throw new BusinessException(400, "场馆审核资料未通过");
         }
         if (!scheduleTba) {
             validateApplicationValidity(application, startTime, endTime);
@@ -388,7 +539,7 @@ public class TourStationService {
             activityMapper.insert(activity);
         }
 
-        activitySeatLayoutService.copyFromVenueApplication(userId, activity.getId(), application.getId());
+        copyPublishSeatCraftLayout(userId, activity, station, application);
 
         Session session = null;
         if (!scheduleTba) {
@@ -420,13 +571,85 @@ public class TourStationService {
         return result;
     }
 
+    private Map<String, Object> publishActivityStation(InternalUserRefResponse user, Long userId, Station station, Map<String, Object> body) {
+        Activity activity = activityMapper.selectById(station.getActivityId());
+        if (activity == null || !Integer.valueOf(1).equals(activity.getStatus())) {
+            throw new BusinessException(404, "活动不存在");
+        }
+        if ("organizer".equals(user.getRole()) && !userId.equals(activity.getOrganizerId())) {
+            throw new BusinessException(403, "只能发布自己的活动");
+        }
+        boolean scheduleTba = isTrue(body == null ? null : body.get("scheduleTba"));
+        LocalDateTime startTime = scheduleTba ? null : parseTime(body == null ? null : body.get("startTime"), "开始时间不能为空");
+        LocalDateTime endTime = scheduleTba ? null : parseTime(body == null ? null : body.get("endTime"), "结束时间不能为空");
+        if (!scheduleTba && !endTime.isAfter(startTime)) {
+            throw new BusinessException(400, "结束时间必须晚于开始时间");
+        }
+        VenueApplication application = requireVenueApplication(station.getVenueApplicationId());
+        if ("organizer".equals(user.getRole()) && !userId.equals(application.getApplicantId())) {
+            throw new BusinessException(403, "只能使用自己的场馆审核资料");
+        }
+        if (!Integer.valueOf(1).equals(application.getStatus()) || application.getVenueId() == null) {
+            throw new BusinessException(400, "场馆审核资料未通过");
+        }
+        if (!scheduleTba) {
+            validateApplicationValidity(application, startTime, endTime);
+            ensureNoVenueConflict(application.getVenueId(), startTime, endTime);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        activity.setVenueApplicationId(application.getId());
+        activity.setPublishStatus(PUBLISH_STATUS_PUBLISHED);
+        activity.setPerUserLimit(parsePerUserLimit(body == null ? null : body.get("perUserLimit")));
+        activity.setUpdateTime(now);
+        copyPublishSeatCraftLayout(userId, activity, station, application);
+
+        Session session = null;
+        if (!scheduleTba) {
+            session = new Session();
+            session.setActivityId(activity.getId());
+            session.setVenueId(application.getVenueId());
+            session.setStartTime(startTime);
+            session.setEndTime(endTime);
+            session.setStatus(1);
+            session.setCreateTime(now);
+            session.setUpdateTime(now);
+            sessionMapper.insert(session);
+            sessionSeatLayoutService.copyFromActivity(userId, session.getId(), activity.getId());
+            sessionSeatLayoutService.generateSessionSeats(session.getId());
+        }
+
+        activityMapper.updateById(activity);
+        station.setPublishStatus(PUBLISH_STATUS_PUBLISHED);
+        station.setUpdateTime(now);
+        stationMapper.updateById(station);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("station", station);
+        result.put("activity", activity);
+        result.put("session", session);
+        return result;
+    }
+
+    private void copyPublishSeatCraftLayout(Long userId, Activity activity, Station station, VenueApplication application) {
+        if (station.getTourId() != null && activitySeatLayoutService.hasBlockLayout("station", station.getId())) {
+            activitySeatLayoutService.copyFromSeatCraftOwner(userId, activity.getId(), "station", station.getId());
+            return;
+        }
+        if (station.getActivityId() != null && activitySeatLayoutService.hasBlockLayout("activity", activity.getId())) {
+            activitySeatLayoutService.copyFromSeatCraftOwner(userId, activity.getId(), "activity", activity.getId());
+            return;
+        }
+        activitySeatLayoutService.copyFromVenueApplication(userId, activity.getId(), application.getId());
+    }
+
     private VenueApplication requireVenueApplication(Long venueApplicationId) {
         if (venueApplicationId == null) {
-            throw new BusinessException(400, "站点缺少场地申请");
+            throw new BusinessException(400, "站点缺少场馆审核资料");
         }
         VenueApplication application = venueApplicationMapper.selectById(venueApplicationId);
         if (application == null) {
-            throw new BusinessException(404, "场地申请不存在");
+            throw new BusinessException(404, "场馆审核资料不存在");
         }
         return application;
     }
@@ -434,7 +657,7 @@ public class TourStationService {
     private void validateApplicationValidity(VenueApplication application, LocalDateTime startTime, LocalDateTime endTime) {
         if (application.getValidFrom() == null || application.getValidTo() == null
                 || startTime.isBefore(application.getValidFrom()) || endTime.isAfter(application.getValidTo())) {
-            throw new BusinessException(400, "场次时间不在场地使用权有效期内");
+            throw new BusinessException(400, "场次时间不在场馆审批文件有效期内");
         }
     }
 
@@ -481,6 +704,39 @@ public class TourStationService {
 
     private boolean isTrue(Object value) {
         return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
+    }
+
+    private List<String> parseCities(Object value) {
+        if (value == null) {
+            return Collections.emptyList();
+        }
+        List<String> cities = new ArrayList<>();
+        if (value instanceof List<?>) {
+            for (Object item : (List<?>) value) {
+                String city = optionalText(item);
+                if (city != null) {
+                    cities.add(city);
+                }
+            }
+            return cities;
+        }
+        if (value.getClass().isArray()) {
+            int length = Array.getLength(value);
+            for (int i = 0; i < length; i++) {
+                String city = optionalText(Array.get(value, i));
+                if (city != null) {
+                    cities.add(city);
+                }
+            }
+            return cities;
+        }
+        for (String part : value.toString().split(",")) {
+            String city = optionalText(part);
+            if (city != null) {
+                cities.add(city);
+            }
+        }
+        return cities;
     }
 
     private Long parsePositiveLong(Object value) {

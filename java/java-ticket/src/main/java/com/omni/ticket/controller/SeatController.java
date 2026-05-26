@@ -3,8 +3,12 @@ package com.omni.ticket.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatMapResponse;
+import com.omni.ticket.dto.SessionSeatUsageItemResponse;
+import com.omni.ticket.dto.SessionSeatUsageRequest;
+import com.omni.ticket.dto.SessionSeatUsageResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
@@ -23,13 +27,17 @@ import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueAreaMapper;
 import com.omni.ticket.service.SeatCraftBlockLayoutService;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -44,7 +52,23 @@ public class SeatController {
     private final SessionSeatLayoutMapper sessionSeatLayoutMapper;
     private final SessionSeatLayoutSectionMapper sessionSeatLayoutSectionMapper;
     private final SeatCraftBlockLayoutService seatCraftBlockLayoutService;
+    private final OrderInternalClient orderInternalClient;
+    private final String internalApiToken;
 
+    public SeatController(ActivityMapper activityMapper,
+                           SessionMapper sessionMapper,
+                           TicketTypeMapper ticketTypeMapper,
+                           TicketTypeAreaMapper ticketTypeAreaMapper,
+                            VenueAreaMapper venueAreaMapper,
+                             SessionSeatMapper sessionSeatMapper,
+                             SessionSeatLayoutMapper sessionSeatLayoutMapper,
+                             SessionSeatLayoutSectionMapper sessionSeatLayoutSectionMapper,
+                             SeatCraftBlockLayoutService seatCraftBlockLayoutService) {
+        this(activityMapper, sessionMapper, ticketTypeMapper, ticketTypeAreaMapper, venueAreaMapper, sessionSeatMapper,
+                sessionSeatLayoutMapper, sessionSeatLayoutSectionMapper, seatCraftBlockLayoutService, null, null);
+    }
+
+    @Autowired
     public SeatController(ActivityMapper activityMapper,
                            SessionMapper sessionMapper,
                            TicketTypeMapper ticketTypeMapper,
@@ -53,7 +77,9 @@ public class SeatController {
                             SessionSeatMapper sessionSeatMapper,
                             SessionSeatLayoutMapper sessionSeatLayoutMapper,
                             SessionSeatLayoutSectionMapper sessionSeatLayoutSectionMapper,
-                            SeatCraftBlockLayoutService seatCraftBlockLayoutService) {
+                            SeatCraftBlockLayoutService seatCraftBlockLayoutService,
+                            OrderInternalClient orderInternalClient,
+                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
@@ -63,6 +89,8 @@ public class SeatController {
         this.sessionSeatLayoutMapper = sessionSeatLayoutMapper;
         this.sessionSeatLayoutSectionMapper = sessionSeatLayoutSectionMapper;
         this.seatCraftBlockLayoutService = seatCraftBlockLayoutService;
+        this.orderInternalClient = orderInternalClient;
+        this.internalApiToken = internalApiToken;
     }
 
     @GetMapping("/sessions/{sessionId}/ticket-types/{ticketTypeId}/seats")
@@ -135,15 +163,63 @@ public class SeatController {
                 && !layoutResponse.getBlockLayout().getBlocks().isEmpty()) {
             seats = sessionSeatMapper.selectList(new LambdaQueryWrapper<SessionSeat>()
                     .eq(SessionSeat::getSessionId, sessionId)
-                    .eq(SessionSeat::getTicketTypeId, ticketType.getId())
                     .isNotNull(SessionSeat::getSeatBlockId)
                     .orderByAsc(SessionSeat::getSeatBlockId)
                     .orderByAsc(SessionSeat::getGeneratedRowNo)
                     .orderByAsc(SessionSeat::getGeneratedSeatNo));
         }
+        normalizeSeatUsage(seats, ticketType.getId());
         SeatMapResponse response = SeatMapResponse.of(sessionId, ticketType, Collections.emptyList(), seats);
         response.setLayout(layoutResponse);
         return response;
+    }
+
+    private void normalizeSeatUsage(List<SessionSeat> seats, Long selectedTicketTypeId) {
+        if (seats == null || seats.isEmpty() || orderInternalClient == null || internalApiToken == null || internalApiToken.isBlank()) {
+            return;
+        }
+        List<Long> seatIds = seats.stream()
+                .map(SessionSeat::getId)
+                .filter(id -> id != null)
+                .collect(Collectors.toList());
+        if (seatIds.isEmpty()) {
+            return;
+        }
+        SessionSeatUsageRequest request = new SessionSeatUsageRequest();
+        request.setSessionSeatIds(seatIds);
+        Result<SessionSeatUsageResponse> result = orderInternalClient.inspectSessionSeatUsage(request, internalApiToken);
+        if (result == null || result.getCode() != 200 || result.getData() == null || result.getData().getSeats() == null) {
+            return;
+        }
+        Map<Long, SessionSeatUsageItemResponse> usageBySeatId = new HashMap<>();
+        for (SessionSeatUsageItemResponse item : result.getData().getSeats()) {
+            if (item != null && item.getSessionSeatId() != null) {
+                usageBySeatId.put(item.getSessionSeatId(), item);
+            }
+        }
+        for (SessionSeat seat : seats) {
+            SessionSeatUsageItemResponse usage = usageBySeatId.get(seat.getId());
+            if (usage == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(usage.getUsedByOrder())) {
+                if (Integer.valueOf(1).equals(usage.getOrderSeatStatus())) {
+                    seat.setStatus(2);
+                } else if (Integer.valueOf(2).equals(usage.getOrderSeatStatus())) {
+                    seat.setStatus(3);
+                }
+                seat.setOrderId(usage.getOrderId());
+            } else if (Boolean.TRUE.equals(usage.getEditable())) {
+                boolean selectedTicketSeat = selectedTicketTypeId != null && selectedTicketTypeId.equals(seat.getTicketTypeId());
+                if (selectedTicketSeat) {
+                    seat.setStatus(1);
+                } else if (seat.getTicketTypeId() == null && Integer.valueOf(1).equals(seat.getStatus())) {
+                    seat.setStatus(3);
+                }
+                seat.setOrderId(null);
+                seat.setLockExpireTime(null);
+            }
+        }
     }
 
     private SessionSeatLayout findActiveLayout(Long sessionId) {

@@ -99,7 +99,7 @@ export default function VenueSeatTemplatePage() {
     return (
       <div className="rounded-xl border border-[#ffd9e6] bg-white p-6 text-[14px] text-[#666]">
         <div className="text-[#ff4d4f]">{error}</div>
-        <Link href="/console/venue" className="mt-4 inline-block rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666]">返回场馆管理</Link>
+        <Link href="/console/venue" className="mt-4 inline-block rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666]">返回场馆记录</Link>
       </div>
     )
   }
@@ -111,7 +111,7 @@ export default function VenueSeatTemplatePage() {
           <h1 className="text-[22px] font-bold text-[#1a1a2e]">场馆 SeatCraft 座位图</h1>
           <p className="mt-1 text-[13px] text-[#999]">维护场馆默认 SeatCraft 座位图；活动和场次可从这里复制生成。</p>
         </div>
-        <Link href="/console/venue" className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] hover:bg-[#fafafa]">返回场馆管理</Link>
+        <Link href="/console/venue" className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] hover:bg-[#fafafa]">返回场馆记录</Link>
       </div>
 
       {error && <div className="mb-4 rounded-lg bg-[#fff0f3] px-3 py-2 text-[13px] text-[#ff4d4f]">{error}</div>}

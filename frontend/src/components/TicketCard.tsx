@@ -8,7 +8,7 @@ interface TicketCardProps {
 export function TicketCard({ activity }: TicketCardProps) {
   return (
     <a
-      href={`/activity/${activity.id}`}
+      href={activity.itemType === 'tour' ? `/tour/${activity.id}` : `/activity/${activity.id}`}
       className="group block bg-white rounded-2xl overflow-hidden hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 border border-gray-100"
     >
       {/* Poster */}

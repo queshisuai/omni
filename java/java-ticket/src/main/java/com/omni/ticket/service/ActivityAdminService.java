@@ -44,6 +44,8 @@ import java.util.stream.Collectors;
 @Service
 public class ActivityAdminService {
 
+    private static final String PUBLISH_STATUS_DEACTIVATED = "deactivated";
+    private static final String PUBLISH_STATUS_PUBLISHED = "published";
     private static final String REFUND_STATUS_SUCCESS = "SUCCESS";
     private static final String REFUND_STATUS_FAILED = "FAILED";
     private static final String REFUND_STATUS_UNKNOWN = "UNKNOWN";
@@ -127,6 +129,9 @@ public class ActivityAdminService {
         }
         if (Integer.valueOf(1).equals(request.getStatus())) {
             validatePublishable(activityId);
+            if (PUBLISH_STATUS_DEACTIVATED.equals(activity.getPublishStatus())) {
+                activity.setPublishStatus(PUBLISH_STATUS_PUBLISHED);
+            }
         }
         activity.setStatus(request.getStatus());
         activityMapper.updateById(activity);
@@ -199,7 +204,7 @@ public class ActivityAdminService {
         throw new BusinessException(ResultCode.INTERNAL_ERROR, "取消主办方资格需通过用户服务接口处理");
     }
 
-    private RefundImpactResponse deactivateActivities(List<Activity> activities, String reason) {
+    public RefundImpactResponse deactivateActivities(List<Activity> activities, String reason) {
         String token = requireInternalApiToken();
         if (activities == null) {
             activities = Collections.emptyList();
@@ -218,6 +223,7 @@ public class ActivityAdminService {
 
         for (Activity activity : activities) {
             activity.setStatus(0);
+            activity.setPublishStatus(PUBLISH_STATUS_DEACTIVATED);
             activityMapper.updateById(activity);
         }
         for (Session session : sessions) {

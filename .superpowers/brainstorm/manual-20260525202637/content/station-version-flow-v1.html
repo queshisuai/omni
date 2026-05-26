@@ -1,0 +1,90 @@
+<h2>城市站点与场馆变更闭环</h2>
+<p class="subtitle">按你的选择：分级审核，并像 SeatCraft 草稿一样保留历史记录，草稿可删除。</p>
+
+<div class="mockup">
+  <div class="mockup-header">城市站点生命周期</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:stretch">
+      <div class="placeholder">
+        <div class="label">草稿</div>
+        <h3>Draft</h3>
+        <p>城市、站点名、场馆、时间都可编辑。</p>
+        <p>未发布草稿可删除。</p>
+      </div>
+      <div class="placeholder">
+        <div class="label">官宣</div>
+        <h3>City Announced</h3>
+        <p>C 端可见城市。</p>
+        <p>删除需提交审核。</p>
+      </div>
+      <div class="placeholder">
+        <div class="label">已确定场馆</div>
+        <h3>Venue Confirmed</h3>
+        <p>绑定已通过场馆申请或平台场馆。</p>
+        <p>更换场馆走审核。</p>
+      </div>
+      <div class="placeholder">
+        <div class="label">已发布售票</div>
+        <h3>Published</h3>
+        <p>已有活动/场次/票档。</p>
+        <p>删除、改期、换场馆进入高风险审核。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">新增城市/新增场馆</div>
+    <div class="mockup-body">
+      <div class="section">
+        <h3>新增城市</h3>
+        <p>巡演创建时可先添加城市；后续也可继续添加城市站点。</p>
+      </div>
+      <div class="section">
+        <h3>新增场馆</h3>
+        <p>输入新场馆信息时必须上传申请资料，提交为场地申请。</p>
+      </div>
+      <div class="section">
+        <h3>历史模板</h3>
+        <p>若同名/同城市/已关联场馆存在历史座位图，提示是否复用。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">已确定场馆更换</div>
+    <div class="mockup-body">
+      <div class="section">
+        <h3>变更申请草稿</h3>
+        <p>主办方发起新版本：目标场馆、申请资料、变更原因。</p>
+      </div>
+      <div class="section">
+        <h3>历史记录</h3>
+        <p>保留历次草稿、已提交、已通过、已驳回记录。</p>
+      </div>
+      <div class="section">
+        <h3>草稿删除</h3>
+        <p>未提交审核的变更草稿可以删除，不影响当前已生效配置。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>下一处需要确认：普通活动是否也使用同一套“站点版本/场馆变更审核”模型？</h3>
+<div class="options">
+  <div class="option" data-choice="unified" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>统一模型</h3>
+      <p>普通活动内部也有一个“单站点”，场馆确定、更换、历史草稿、审核规则与巡演一致。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="tour-only" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>只给巡演</h3>
+      <p>普通活动保持活动/场次模型，只在巡演城市站点上做版本和审核。</p>
+    </div>
+  </div>
+</div>

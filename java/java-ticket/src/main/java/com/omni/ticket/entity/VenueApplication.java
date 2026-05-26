@@ -1,12 +1,15 @@
 package com.omni.ticket.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.omni.ticket.typehandler.JsonbStringTypeHandler;
+import org.apache.ibatis.type.JdbcType;
 
 import java.time.LocalDateTime;
 
-@TableName("venue_application")
+@TableName(value = "venue_application", autoResultMap = true)
 public class VenueApplication {
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -26,6 +29,7 @@ public class VenueApplication {
     private String proofNote;
     private String proofFileUrl;
     private Long proofAssetId;
+    @TableField(typeHandler = JsonbStringTypeHandler.class, jdbcType = JdbcType.OTHER)
     private String layoutSnapshot;
     private Boolean setAsRecommendedLayout;
     private Integer status;

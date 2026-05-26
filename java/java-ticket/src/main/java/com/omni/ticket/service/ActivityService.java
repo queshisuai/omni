@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -25,6 +25,8 @@ import java.util.stream.Collectors;
 @Service
 public class ActivityService {
 
+    private static final String PUBLISH_STATUS_PUBLISHED = "published";
+
     private final ActivityMapper activityMapper;
     private final CategoryMapper categoryMapper;
     private final ArtistMapper artistMapper;
@@ -32,18 +34,30 @@ public class ActivityService {
     private final VenueMapper venueMapper;
     private final TicketTypeMapper ticketTypeMapper;
     private final ActivityArtistService activityArtistService;
+    private final TourMapper tourMapper;
+    private final StationMapper stationMapper;
 
     public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
-                            ArtistMapper artistMapper, SessionMapper sessionMapper,
-                            VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper) {
-        this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper, null);
+                             ArtistMapper artistMapper, SessionMapper sessionMapper,
+                             VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper) {
+        this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper, null, null, null);
     }
 
-    @Autowired
     public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
                            ArtistMapper artistMapper, SessionMapper sessionMapper,
                            VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
                            ActivityArtistService activityArtistService) {
+        this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper,
+                activityArtistService, null, null);
+    }
+
+    @Autowired
+    public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
+                            ArtistMapper artistMapper, SessionMapper sessionMapper,
+                            VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
+                            ActivityArtistService activityArtistService,
+                            TourMapper tourMapper,
+                            StationMapper stationMapper) {
         this.activityMapper = activityMapper;
         this.categoryMapper = categoryMapper;
         this.artistMapper = artistMapper;
@@ -51,6 +65,8 @@ public class ActivityService {
         this.venueMapper = venueMapper;
         this.ticketTypeMapper = ticketTypeMapper;
         this.activityArtistService = activityArtistService;
+        this.tourMapper = tourMapper;
+        this.stationMapper = stationMapper;
     }
 
     /**
@@ -62,12 +78,20 @@ public class ActivityService {
             wrapper.eq(Activity::getCategoryId, categoryId);
         }
         wrapper.eq(Activity::getStatus, 1);
+        wrapper.eq(Activity::getPublishStatus, PUBLISH_STATUS_PUBLISHED);
+        wrapper.isNull(Activity::getTourId);
         wrapper.orderByDesc(Activity::getCreateTime);
 
         Page<Activity> activityPage = activityMapper.selectPage(new Page<>(page, size), wrapper);
         List<Activity> records = activityPage.getRecords();
-        if (records.isEmpty()) {
+        Page<Tour> tourPage = selectAnnouncedTours(page, size, categoryId);
+        if (records.isEmpty() && (tourPage == null || tourPage.getRecords().isEmpty())) {
             return new Page<ActivityVO>(page, size, activityPage.getTotal()).setRecords(Collections.emptyList());
+        }
+        List<ActivityVO> announcedTours = buildAnnouncedTourItems(tourPage);
+        long tourTotal = tourPage == null ? 0 : tourPage.getTotal();
+        if (records.isEmpty()) {
+            return new Page<ActivityVO>(page, size, activityPage.getTotal() + tourTotal).setRecords(announcedTours);
         }
 
         // 1. 收集所有的 ID
@@ -113,6 +137,7 @@ public class ActivityService {
         List<ActivityVO> voList = records.stream().map(activity -> {
             ActivityVO vo = new ActivityVO();
             vo.setId(activity.getId());
+            vo.setItemType("activity");
             vo.setName(activity.getName());
             vo.setPoster(activity.getPoster());
             vo.setStatus(activity.getStatus());
@@ -152,9 +177,124 @@ public class ActivityService {
             }
             return vo;
         }).collect(Collectors.toList());
+        voList.addAll(0, announcedTours);
 
         voPage.setRecords(voList);
+        voPage.setTotal(activityPage.getTotal() + tourTotal);
         return voPage;
+    }
+
+    private Page<Tour> selectAnnouncedTours(Integer page, Integer size, Long categoryId) {
+        if (tourMapper == null) {
+            return new Page<>(page, size, 0);
+        }
+        LambdaQueryWrapper<Tour> wrapper = new LambdaQueryWrapper<Tour>()
+                .eq(Tour::getStatus, 1)
+                .eq(Tour::getReviewStatus, "announced")
+                .orderByDesc(Tour::getUpdateTime);
+        if (categoryId != null) {
+            wrapper.eq(Tour::getCategoryId, categoryId);
+        }
+        return tourMapper.selectPage(new Page<>(page, size), wrapper);
+    }
+
+    private List<ActivityVO> buildAnnouncedTourItems(Page<Tour> tourPage) {
+        if (tourPage == null || tourPage.getRecords() == null || tourPage.getRecords().isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, List<Station>> stationsByTour = Collections.emptyMap();
+        if (stationMapper != null) {
+            List<Long> tourIds = tourPage.getRecords().stream().map(Tour::getId).collect(Collectors.toList());
+            List<Station> stations = stationMapper.selectList(new LambdaQueryWrapper<Station>()
+                    .in(Station::getTourId, tourIds)
+                    .eq(Station::getStatus, 1)
+                    .orderByAsc(Station::getId));
+            stationsByTour = stations == null ? Collections.emptyMap()
+                    : stations.stream().collect(Collectors.groupingBy(Station::getTourId));
+        }
+        Set<Long> stationIds = stationsByTour.values().stream()
+                .flatMap(List::stream)
+                .map(Station::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<Activity> tourActivities = stationIds.isEmpty() ? Collections.emptyList()
+                : activityMapper.selectList(new LambdaQueryWrapper<Activity>()
+                        .in(Activity::getStationId, stationIds)
+                        .eq(Activity::getStatus, 1)
+                        .eq(Activity::getPublishStatus, PUBLISH_STATUS_PUBLISHED));
+        if (tourActivities == null) {
+            tourActivities = Collections.emptyList();
+        }
+        Map<Long, Activity> activityByStation = tourActivities.stream()
+                .filter(activity -> activity.getStationId() != null)
+                .collect(Collectors.toMap(Activity::getStationId, Function.identity(), (a, b) -> a));
+        Set<Long> activityIds = tourActivities.stream()
+                .map(Activity::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<Session> sessions = activityIds.isEmpty() ? Collections.emptyList()
+                : sessionMapper.selectList(new LambdaQueryWrapper<Session>()
+                        .in(Session::getActivityId, activityIds)
+                        .eq(Session::getStatus, 1)
+                        .orderByAsc(Session::getStartTime));
+        if (sessions == null) {
+            sessions = Collections.emptyList();
+        }
+        Map<Long, List<Session>> sessionsByActivity = sessions.stream()
+                .collect(Collectors.groupingBy(Session::getActivityId));
+        Set<Long> sessionIds = sessions.stream()
+                .map(Session::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<TicketType> ticketTypes = sessionIds.isEmpty() ? Collections.emptyList()
+                : ticketTypeMapper.selectList(new LambdaQueryWrapper<TicketType>()
+                        .in(TicketType::getSessionId, sessionIds)
+                        .eq(TicketType::getStatus, 1));
+        if (ticketTypes == null) {
+            ticketTypes = Collections.emptyList();
+        }
+        Map<Long, List<TicketType>> ticketTypesBySession = ticketTypes.stream()
+                .collect(Collectors.groupingBy(TicketType::getSessionId));
+        final Map<Long, List<Station>> finalStationsByTour = stationsByTour;
+        final Map<Long, Activity> finalActivityByStation = activityByStation;
+        final Map<Long, List<Session>> finalSessionsByActivity = sessionsByActivity;
+        final Map<Long, List<TicketType>> finalTicketTypesBySession = ticketTypesBySession;
+        return tourPage.getRecords().stream().map(tour -> {
+            ActivityVO vo = new ActivityVO();
+            vo.setId(tour.getId());
+            vo.setItemType("tour");
+            vo.setName(tour.getTitle());
+            vo.setPoster(tour.getPoster());
+            Category category = tour.getCategoryId() == null ? null : categoryMapper.selectById(tour.getCategoryId());
+            if (category != null) vo.setCategoryName(category.getName());
+            Artist artist = tour.getArtistId() == null ? null : artistMapper.selectById(tour.getArtistId());
+            if (artist != null) vo.setArtistName(artist.getName());
+            List<Station> stations = finalStationsByTour.getOrDefault(tour.getId(), Collections.emptyList());
+            vo.setVenueCity(stations.stream()
+                    .map(Station::getCity)
+                    .filter(StringUtils::hasText)
+                    .collect(Collectors.joining(" / ")));
+            List<Session> tourSessions = stations.stream()
+                    .map(station -> finalActivityByStation.get(station.getId()))
+                    .filter(Objects::nonNull)
+                    .flatMap(activity -> finalSessionsByActivity.getOrDefault(activity.getId(), Collections.emptyList()).stream())
+                    .collect(Collectors.toList());
+            LocalDateTime firstStartTime = tourSessions.stream()
+                    .map(Session::getStartTime)
+                    .filter(Objects::nonNull)
+                    .min(LocalDateTime::compareTo)
+                    .orElse(null);
+            vo.setStartTime(firstStartTime);
+            BigDecimal minPrice = tourSessions.stream()
+                    .flatMap(session -> finalTicketTypesBySession.getOrDefault(session.getId(), Collections.emptyList()).stream())
+                    .map(TicketType::getPrice)
+                    .filter(Objects::nonNull)
+                    .min(BigDecimal::compareTo)
+                    .orElse(null);
+            vo.setMinPrice(minPrice);
+            vo.setStatus(minPrice == null ? 2 : 1);
+            return vo;
+        }).collect(Collectors.toList());
     }
 
     /**
@@ -162,7 +302,7 @@ public class ActivityService {
      */
     public ActivityDetailVO getActivityDetail(Long id) {
         Activity activity = activityMapper.selectById(id);
-        if (activity == null) {
+        if (!isPublicActivity(activity)) {
             throw new BusinessException(ResultCode.NOT_FOUND, "活动不存在");
         }
 
@@ -196,6 +336,12 @@ public class ActivityService {
         detail.setSessions(sessionDetails);
 
         return detail;
+    }
+
+    private boolean isPublicActivity(Activity activity) {
+        return activity != null
+                && Integer.valueOf(1).equals(activity.getStatus())
+                && PUBLISH_STATUS_PUBLISHED.equals(activity.getPublishStatus());
     }
 
     /**

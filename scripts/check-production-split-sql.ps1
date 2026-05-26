@@ -82,6 +82,7 @@ $schemaColumns = @{
     "session_seat_layout_section" = New-ColumnSet @("id", "session_layout_id", "activity_layout_section_id", "ticket_type_id")
     "sms_code" = New-ColumnSet @("id")
     "station" = New-ColumnSet @("id", "tour_id")
+    "station_config_version" = New-ColumnSet @("id", "station_id", "activity_id", "tour_id", "venue_id", "venue_application_id", "reviewer_id", "created_by")
     "stock_log" = New-ColumnSet @("id", "session_id", "ticket_type_id")
     "ticket_group" = New-ColumnSet @("id")
     "ticket_asset" = New-ColumnSet @("id", "uploader_id")

@@ -98,7 +98,16 @@
       "Bash(PGPASSWORD=123456 \"C:/Program Files/PostgreSQL/17/bin/psql\" -U postgres -d damai_ticket -c \"UPDATE \\\\\"user\\\\\" SET role='admin', organizer_name='Platform' WHERE phone='13800000001'; UPDATE \\\\\"user\\\\\" SET role='organizer', organizer_name='Beijing Music' WHERE phone='13800000002';\")",
       "Bash(grep *)",
       "Bash(pnpm typecheck *)",
-      "Bash(mvn -q -pl . -am compile -DskipTests)"
+      "Bash(mvn -q -pl . -am compile -DskipTests)",
+      "Bash(mvn -pl java/java-ticket -Dtest=ActivityRiskResponseServiceTest test)",
+      "Bash(mvn -f \"java/pom.xml\" -pl java-ticket -Dtest=ActivityRiskResponseServiceTest test)",
+      "Bash(pnpm --dir \"frontend\" typecheck)",
+      "Bash(pnpm --dir \"frontend\" dev)",
+      "Bash(python -)",
+      "Bash(npx skills *)",
+      "Bash(mvn -f \"java/pom.xml\" -pl java-ticket -Dtest=StationConfigVersionServiceTest test)",
+      "Bash(mvn -f \"java/pom.xml\" -pl java-ticket -Dtest=StationConfigVersionServiceTest,ActivityRiskResponseServiceTest test)",
+      "Bash(pnpm dev *)"
     ]
   }
 }

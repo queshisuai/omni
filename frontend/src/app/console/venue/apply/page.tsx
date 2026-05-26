@@ -30,6 +30,8 @@ export default function VenueApplyPage() {
   const [submitting, setSubmitting] = useState(false)
   const [uploadingProof, setUploadingProof] = useState(false)
   const [message, setMessage] = useState('')
+  const [applicationsLoading, setApplicationsLoading] = useState(true)
+  const [applicationsError, setApplicationsError] = useState('')
   const [proofAsset, setProofAsset] = useState<PrivateAssetVO | null>(null)
   const [form, setForm] = useState({
     venueName: '',
@@ -49,7 +51,12 @@ export default function VenueApplyPage() {
 
   const loadApplications = (nextUserId = userId) => {
     if (!nextUserId) return
-    listMyVenueApplications().then(setApplications).catch(() => {})
+    setApplicationsLoading(true)
+    setApplicationsError('')
+    listMyVenueApplications()
+      .then(setApplications)
+      .catch(err => setApplicationsError(err instanceof Error ? err.message : '加载我的场馆审核资料失败'))
+      .finally(() => setApplicationsLoading(false))
   }
 
   useEffect(() => {
@@ -66,7 +73,7 @@ export default function VenueApplyPage() {
   }, [form.venueName])
 
   const validate = () => {
-    if (!form.venueName.trim()) return '请填写地点名称'
+    if (!form.venueName.trim()) return '请填写场馆名称'
     if (!form.city.trim()) return '请填写城市'
     if (!form.address.trim()) return '请填写地址'
     if (!form.contactName.trim()) return '请填写联系人姓名'
@@ -74,7 +81,7 @@ export default function VenueApplyPage() {
     if (!form.validFrom) return '请选择凭证有效开始时间'
     if (!form.validTo) return '请选择凭证有效结束时间'
     if (form.validTo <= form.validFrom) return '凭证有效结束时间必须晚于开始时间'
-    if (!form.proofNote.trim() && !proofAsset) return '请填写场地审批凭证说明或上传私有附件'
+    if (!form.proofNote.trim() && !proofAsset) return '请填写场馆审批文件说明或上传审核附件'
     if (!layoutDraft || ((layoutDraft.blocks?.length ?? 0) === 0 && layoutDraft.sections.length === 0)) return '请绘制至少一个座位区域'
     if ((layoutDraft.blocks?.length ?? 0) > 0 && (layoutDraft.ticketGroups?.length ?? 0) === 0) return '请至少配置一个票档组'
     return ''
@@ -135,7 +142,7 @@ export default function VenueApplyPage() {
         proofAssetId: proofAsset?.id ?? null,
         layout: layoutPayload,
       })
-      setMessage('活动地点凭证已提交，等待平台审核')
+      setMessage('场馆审核资料已提交，等待平台审核')
       setForm({ venueName: '', city: '', address: '', capacity: '', contactName: '', contactPhone: '', qualificationNo: '', businessScope: '', description: '', validFrom: '', validTo: '', proofNote: '' })
       setProofAsset(null)
       setLayoutDraft(null)
@@ -158,12 +165,12 @@ export default function VenueApplyPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-[22px] font-bold text-[#1a1a2e]">提交活动地点凭证</h1>
-      <p className="mb-5 text-[13px] text-[#999]">提交现实地点资料和场地审批凭证，平台只审核资料与凭证，不授予场地使用权。</p>
+      <h1 className="mb-1 text-[22px] font-bold text-[#1a1a2e]">提交场馆审核资料</h1>
+      <p className="mb-5 text-[13px] text-[#999]">上传场馆资料和场地审批文件供平台核验真伪，避免虚假材料造成后续纠纷；平台不拥有场馆，也不授予场地使用权。</p>
 
       <form onSubmit={handleSubmit} className="mb-6 rounded-xl border border-[#e5e5e5] bg-white p-5">
         <div className="grid gap-3 lg:grid-cols-2">
-          <input value={form.venueName} onChange={e => setForm({ ...form, venueName: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="地点名称 *" />
+          <input value={form.venueName} onChange={e => setForm({ ...form, venueName: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="场馆名称 *" />
           <input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="城市 *" />
           <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="地址 *" />
           <input type="number" value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="容量" />
@@ -180,10 +187,10 @@ export default function VenueApplyPage() {
           </label>
           <textarea value={form.businessScope} onChange={e => setForm({ ...form, businessScope: e.target.value })} rows={3} className="rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="经营范围" />
           <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} className="rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="资料说明/备注" />
-          <textarea value={form.proofNote} onChange={e => setForm({ ...form, proofNote: e.target.value })} rows={3} className="rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="场地审批凭证说明（与私有附件至少填写一项）" />
+          <textarea value={form.proofNote} onChange={e => setForm({ ...form, proofNote: e.target.value })} rows={3} className="rounded-lg border border-[#ddd] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="场馆审批文件说明（与审核附件至少填写一项）" />
           <div className="lg:col-span-2">
             <PrivateFileUpload
-              label="场地审批凭证私有附件"
+              label="场馆审核资料附件"
               value={proofAsset}
               accept="application/pdf,image/jpeg,image/png,image/webp"
               uploading={uploadingProof || submitting}
@@ -195,7 +202,7 @@ export default function VenueApplyPage() {
         </div>
 
         <div className="mt-5">
-          <h3 className="mb-2 text-[15px] font-semibold text-[#1a1a2e]">本次活动地点 SeatCraft 草图</h3>
+          <h3 className="mb-2 text-[15px] font-semibold text-[#1a1a2e]">本次场馆 SeatCraft 草图</h3>
           <div className="rounded-lg border border-[#e5e5e5] overflow-hidden">
             {layoutDraft && (
               <SeatLayoutDesigner layout={layoutDraft} onChange={setLayoutDraft} />
@@ -208,13 +215,13 @@ export default function VenueApplyPage() {
           disabled={submitting || uploadingProof || !layoutDraft || ((layoutDraft.blocks?.length ?? 0) === 0 && layoutDraft.sections.length === 0)}
           className="mt-4 rounded-lg bg-[#ff1268] px-5 py-2 text-[14px] font-medium text-white disabled:opacity-50"
         >
-          {uploadingProof ? '附件上传中...' : submitting ? '提交中...' : '提交地点凭证'}
+          {uploadingProof ? '附件上传中...' : submitting ? '提交中...' : '提交场馆审核资料'}
         </button>
       </form>
 
       <div className="rounded-xl border border-[#e5e5e5] bg-white p-5">
-        <h2 className="mb-3 text-[16px] font-bold text-[#1a1a2e]">我的地点凭证</h2>
-        {applications.length === 0 ? <div className="text-[14px] text-[#999]">暂无申请记录</div> : (
+        <h2 className="mb-3 text-[16px] font-bold text-[#1a1a2e]">我的场馆审核资料</h2>
+        {applicationsError ? <div className="text-[14px] text-[#ff4d4f]">{applicationsError}</div> : applicationsLoading ? <div className="text-[14px] text-[#999]">加载中...</div> : applications.length === 0 ? <div className="text-[14px] text-[#999]">暂无申请记录</div> : (
           <div className="space-y-3">
             {applications.map(item => (
               <div key={item.id} className="rounded-lg border border-[#f0f0f0] p-3 text-[14px]">

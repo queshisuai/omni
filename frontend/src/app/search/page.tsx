@@ -31,6 +31,7 @@ const TIME_LABELS: Record<Exclude<TimeFilter, 'custom'>, string> = {
 function toActivity(vo: ActivityVO): Activity {
   return {
     id: String(vo.id),
+    itemType: vo.itemType || 'activity',
     title: vo.name,
     categoryId: vo.categoryName,
     poster: vo.poster || '/background.png',
@@ -493,7 +494,7 @@ function SearchContent() {
               {allFiltered.slice(0, 4).map((a) => (
                 <a
                   key={a.id}
-                  href={`/activity/${a.id}`}
+                  href={a.itemType === 'tour' ? `/tour/${a.id}` : `/activity/${a.id}`}
                   className="flex gap-4 group"
                 >
                   <div className="w-[84px] h-[112px] shrink-0 bg-gray-100 rounded-xl overflow-hidden relative shadow-sm">

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { listAdminActivities, listActivityRiskResolutions, submitActivityRiskResolution } from '@/lib/api'
+import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { globalAlert } from '@/components/GlobalDialog'
 import type { ActivityEntity, ActivityRiskResolutionVO } from '@/types/api'
@@ -24,6 +25,7 @@ const TYPE_PREFIX: Record<ResolutionType, string> = {
 }
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
+  awaiting_response: { label: '待处理', color: '#6b7280', bg: '#f3f4f6' },
   pending: { label: '审核中', color: '#b45309', bg: '#fffbeb' },
   approved: { label: '已通过', color: '#15803d', bg: '#f0fdf4' },
   rejected: { label: '已驳回', color: '#b91c1c', bg: '#fef2f2' },
@@ -47,6 +49,7 @@ export default function OrganizerRiskEventsPage() {
   const [resolutionType, setResolutionType] = useState<ResolutionType>('explain')
   const [resolutionNote, setResolutionNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [page, setPage] = useState(1)
 
   const loadData = async (uid: number) => {
     setLoading(true)
@@ -54,11 +57,12 @@ export default function OrganizerRiskEventsPage() {
     try {
       const [activitiesPage, resolutionList] = await Promise.all([
         listAdminActivities(uid, { page: 1, size: 100 }),
-        listActivityRiskResolutions(uid).catch(() => [] as ActivityRiskResolutionVO[]),
+        listActivityRiskResolutions(uid),
       ])
       const items = (activitiesPage.records || []).filter((a) => a.publishStatus === 'risk_suspended')
       setSuspended(items)
       setResolutions(resolutionList || [])
+      setPage(1)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '加载风险事件失败')
     } finally {
@@ -84,6 +88,7 @@ export default function OrganizerRiskEventsPage() {
     }
     return map
   }, [resolutions])
+  const pageSuspended = useMemo(() => suspended.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [suspended, page])
 
   const closeDialog = () => {
     if (submitting) return
@@ -130,7 +135,10 @@ export default function OrganizerRiskEventsPage() {
       ) : suspended.length === 0 ? (
         <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">暂无风险事件，所有活动状态正常。</div>
       ) : (
-        <RiskList suspended={suspended} latestResolutionByActivity={latestResolutionByActivity} onOpenDialog={(a) => { setTarget(a); setResolutionType('explain'); setResolutionNote('') }} />
+        <>
+          <RiskList suspended={pageSuspended} latestResolutionByActivity={latestResolutionByActivity} onOpenDialog={(a) => { setTarget(a); setResolutionType('explain'); setResolutionNote('') }} />
+          <Pagination page={page} total={suspended.length} loading={loading} onChange={setPage} />
+        </>
       )}
       {target && (
         <ResolutionDialog

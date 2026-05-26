@@ -14,6 +14,7 @@ import type { SectionData, Activity } from '@/types/damai'
 function toActivity(vo: ActivityVO): Activity {
   return {
     id: String(vo.id),
+    itemType: vo.itemType || 'activity',
     title: vo.name,
     categoryId: vo.categoryName,
     poster: vo.poster || '/background.png',

@@ -161,6 +161,7 @@ class ActivityAdminServiceTest {
         RefundImpactResponse response = service.deactivateActivity(10L, request);
 
         assertEquals(0, activity.getStatus());
+        assertEquals("deactivated", activity.getPublishStatus());
         assertEquals(0, firstSession.getStatus());
         assertEquals(0, secondSession.getStatus());
         assertEquals(0, firstTicketType.getStatus());
@@ -451,6 +452,29 @@ class ActivityAdminServiceTest {
         service.updateActivityStatus(10L, request);
 
         assertEquals(1, activity.getStatus());
+        verify(activityMapper).updateById(activity);
+    }
+
+    @Test
+    void publishActivityRestoresDeactivatedPublishStatus() {
+        Activity activity = activity(10L, 2003L);
+        activity.setStatus(0);
+        activity.setPublishStatus("deactivated");
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
+        when(activityArtistMapper.selectList(any())).thenReturn(Collections.singletonList(activityArtist(501L)));
+        when(artistMapper.selectBatchIds(any())).thenReturn(Collections.singletonList(artist(501L, "approved", "normal", 1)));
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(1);
+
+        service.updateActivityStatus(10L, request);
+
+        assertEquals(1, activity.getStatus());
+        assertEquals("published", activity.getPublishStatus());
         verify(activityMapper).updateById(activity);
     }
 

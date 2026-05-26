@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 public class ActivityRiskResolutionResponse {
     private Long id;
     private Long activityId;
+    private String activityName;
     private Long organizerId;
     private Long riskArtistId;
     private String status;
@@ -18,6 +19,8 @@ public class ActivityRiskResolutionResponse {
     public void setId(Long id) { this.id = id; }
     public Long getActivityId() { return activityId; }
     public void setActivityId(Long activityId) { this.activityId = activityId; }
+    public String getActivityName() { return activityName; }
+    public void setActivityName(String activityName) { this.activityName = activityName; }
     public Long getOrganizerId() { return organizerId; }
     public void setOrganizerId(Long organizerId) { this.organizerId = organizerId; }
     public Long getRiskArtistId() { return riskArtistId; }

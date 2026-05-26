@@ -9,7 +9,9 @@ import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Tour;
+import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.InternalUserRefResponse;
+import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueApplication;
 import com.omni.ticket.mapper.ActivityMapper;
@@ -41,6 +43,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -68,6 +72,8 @@ class TourStationServiceTest {
     private ActivitySeatLayoutService activitySeatLayoutService;
     @Mock
     private SessionSeatLayoutService sessionSeatLayoutService;
+    @Mock
+    private ActivityAdminService activityAdminService;
 
     private TourStationService service;
 
@@ -75,7 +81,7 @@ class TourStationServiceTest {
     void setUp() {
         service = new TourStationService(tourMapper, stationMapper, userAccessService, venueApplicationMapper,
                 activityMapper, sessionMapper, ticketTypeMapper, venueMapper,
-                activitySeatLayoutService, sessionSeatLayoutService);
+                activitySeatLayoutService, sessionSeatLayoutService, activityAdminService);
     }
 
     @Test
@@ -105,6 +111,73 @@ class TourStationServiceTest {
     }
 
     @Test
+    void createTourDraftCreatesStationDraftsForCities() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        doAnswer(invocation -> {
+            Tour tour = invocation.getArgument(0);
+            tour.setId(10L);
+            return 1;
+        }).when(tourMapper).insert(any(Tour.class));
+
+        Tour result = service.createTourDraft(2003L, Map.of(
+                "title", "巡回演唱会",
+                "cities", List.of("北京", " 上海 ", "")
+        ));
+
+        assertEquals(10L, result.getId());
+        ArgumentCaptor<Station> captor = ArgumentCaptor.forClass(Station.class);
+        verify(stationMapper, org.mockito.Mockito.times(2)).insert(captor.capture());
+        List<Station> stations = captor.getAllValues();
+        assertEquals("北京", stations.get(0).getCity());
+        assertEquals("北京站", stations.get(0).getStationName());
+        assertEquals(10L, stations.get(0).getTourId());
+        assertEquals("draft", stations.get(0).getPublishStatus());
+        assertEquals(1, stations.get(0).getStatus());
+        assertNotNull(stations.get(0).getCreateTime());
+        assertEquals("上海", stations.get(1).getCity());
+        assertEquals("上海站", stations.get(1).getStationName());
+    }
+
+    @Test
+    void createTourDraftCreatesStationDraftsFromCommaSeparatedCities() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        doAnswer(invocation -> {
+            Tour tour = invocation.getArgument(0);
+            tour.setId(10L);
+            return 1;
+        }).when(tourMapper).insert(any(Tour.class));
+
+        service.createTourDraft(2003L, Map.of("title", "巡回演唱会", "cities", "北京, 上海, ,广州"));
+
+        ArgumentCaptor<Station> captor = ArgumentCaptor.forClass(Station.class);
+        verify(stationMapper, org.mockito.Mockito.times(3)).insert(captor.capture());
+        List<Station> stations = captor.getAllValues();
+        assertEquals("北京", stations.get(0).getCity());
+        assertEquals("上海", stations.get(1).getCity());
+        assertEquals("广州", stations.get(2).getCity());
+    }
+
+    @Test
+    void createTourDraftCreatesStationDraftsFromArrayCities() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        doAnswer(invocation -> {
+            Tour tour = invocation.getArgument(0);
+            tour.setId(10L);
+            return 1;
+        }).when(tourMapper).insert(any(Tour.class));
+
+        service.createTourDraft(2003L, Map.of("title", "巡回演唱会", "cities", new Object[]{"北京", " 上海 ", ""}));
+
+        ArgumentCaptor<Station> captor = ArgumentCaptor.forClass(Station.class);
+        verify(stationMapper, org.mockito.Mockito.times(2)).insert(captor.capture());
+        List<Station> stations = captor.getAllValues();
+        assertEquals("北京", stations.get(0).getCity());
+        assertEquals("北京站", stations.get(0).getStationName());
+        assertEquals("上海", stations.get(1).getCity());
+        assertEquals("上海站", stations.get(1).getStationName());
+    }
+
+    @Test
     void normalUserCannotCreateTourDraft() {
         when(userAccessService.requireAdminOrOrganizer(2004L)).thenThrow(new BusinessException(403, "无权限"));
 
@@ -131,6 +204,18 @@ class TourStationServiceTest {
     }
 
     @Test
+    void stationDraftDefaultsBlankStationNameToCityStation() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(tourMapper.selectById(10L)).thenReturn(tour(10L, 2003L));
+
+        service.createStationDraft(2003L, 10L, Map.of("city", "杭州", "stationName", "  "));
+
+        ArgumentCaptor<Station> captor = ArgumentCaptor.forClass(Station.class);
+        verify(stationMapper).insert(captor.capture());
+        assertEquals("杭州站", captor.getValue().getStationName());
+    }
+
+    @Test
     void stationDraftStoresVenueApplicationIdWhenProvided() {
         when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(tourMapper.selectById(10L)).thenReturn(tour(10L, 2003L));
@@ -140,6 +225,80 @@ class TourStationServiceTest {
         ArgumentCaptor<Station> captor = ArgumentCaptor.forClass(Station.class);
         verify(stationMapper).insert(captor.capture());
         assertEquals(88L, captor.getValue().getVenueApplicationId());
+    }
+
+    @Test
+    void publishSingleActivityDraftStationUpdatesExistingActivityAndCreatesSession() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Station station = activityStation(40L, 30L, 88L);
+        Activity activity = activity(30L, null, 40L, "draft");
+        activity.setOrganizerId(2003L);
+        VenueApplication application = approvedApplication(88L, 2003L, 66L,
+                LocalDateTime.of(2026, 6, 1, 0, 0), LocalDateTime.of(2026, 6, 3, 0, 0));
+        when(stationMapper.selectById(40L)).thenReturn(station);
+        when(activityMapper.selectById(30L)).thenReturn(activity);
+        when(venueApplicationMapper.selectById(88L)).thenReturn(application);
+        when(sessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        doAnswer(invocation -> {
+            Session session = invocation.getArgument(0);
+            session.setId(501L);
+            return 1;
+        }).when(sessionMapper).insert(any(Session.class));
+
+        Map<String, Object> result = service.publishStation(2003L, 40L, Map.of(
+                "scheduleTba", false,
+                "startTime", "2026-06-01T19:30",
+                "endTime", "2026-06-01T21:30",
+                "perUserLimit", 2
+        ));
+
+        assertSame(activity, result.get("activity"));
+        verify(activityMapper).updateById(argThat(updated -> Long.valueOf(30L).equals(updated.getId())
+                && "published".equals(updated.getPublishStatus())
+                && Long.valueOf(88L).equals(updated.getVenueApplicationId())
+                && Integer.valueOf(2).equals(updated.getPerUserLimit())));
+        verify(sessionMapper).insert(argThat(session -> Long.valueOf(30L).equals(session.getActivityId())
+                && Long.valueOf(66L).equals(session.getVenueId())
+                && LocalDateTime.of(2026, 6, 1, 19, 30).equals(session.getStartTime())
+                && LocalDateTime.of(2026, 6, 1, 21, 30).equals(session.getEndTime())));
+        verify(activitySeatLayoutService).copyFromVenueApplication(2003L, 30L, 88L);
+        verify(sessionSeatLayoutService).copyFromActivity(2003L, 501L, 30L);
+        verify(sessionSeatLayoutService).generateSessionSeats(501L);
+        verify(stationMapper).updateById(argThat(updated -> "published".equals(updated.getPublishStatus())));
+    }
+
+    @Test
+    void publishSingleActivityDraftStationRejectsOtherOrganizer() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Activity activity = activity(30L, null, 40L, "draft");
+        activity.setOrganizerId(9999L);
+        when(stationMapper.selectById(40L)).thenReturn(activityStation(40L, 30L, 88L));
+        when(activityMapper.selectById(30L)).thenReturn(activity);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.publishStation(2003L, 40L, Map.of("scheduleTba", true)));
+
+        assertEquals(403, error.getCode());
+        verify(activityMapper, never()).updateById(any());
+    }
+
+    @Test
+    void publishSingleActivityStationPrefersActivitySeatCraftLayout() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Station station = activityStation(40L, 30L, 88L);
+        Activity activity = activity(30L, null, 40L, "draft");
+        activity.setOrganizerId(2003L);
+        VenueApplication application = approvedApplication(88L, 2003L, 66L,
+                LocalDateTime.of(2026, 6, 1, 0, 0), LocalDateTime.of(2026, 6, 3, 0, 0));
+        when(stationMapper.selectById(40L)).thenReturn(station);
+        when(activityMapper.selectById(30L)).thenReturn(activity);
+        when(venueApplicationMapper.selectById(88L)).thenReturn(application);
+        when(activitySeatLayoutService.hasBlockLayout("activity", 30L)).thenReturn(true);
+
+        service.publishStation(2003L, 40L, Map.of("scheduleTba", true));
+
+        verify(activitySeatLayoutService).copyFromSeatCraftOwner(2003L, 30L, "activity", 30L);
+        verify(activitySeatLayoutService, never()).copyFromVenueApplication(any(), any(), any());
     }
 
     @Test
@@ -176,6 +335,156 @@ class TourStationServiceTest {
 
         assertSame(page, result);
         verify(tourMapper).selectPage(any(), any());
+    }
+
+    @Test
+    void listManageableToursOrdersByIdAsc() {
+        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        Page<Tour> page = new Page<>(1, 10);
+        when(tourMapper.selectPage(any(), any())).thenReturn(page);
+
+        service.listManageableTours(2002L, 1, 10);
+
+        @SuppressWarnings("rawtypes")
+        ArgumentCaptor<LambdaQueryWrapper> wrapperCaptor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(tourMapper).selectPage(any(), wrapperCaptor.capture());
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), Tour.class);
+        LambdaUtils.installCache(TableInfoHelper.getTableInfo(Tour.class));
+        String queryConditions = wrapperCaptor.getValue().getSqlSegment().toLowerCase();
+        assertTrue(queryConditions.contains("order by") && queryConditions.contains("id asc"), queryConditions);
+    }
+
+    @Test
+    void organizerAnnouncesOwnTourCitiesWithoutVenueApplication() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Tour tour = tour(10L, 2003L);
+        tour.setReviewStatus("draft");
+        when(tourMapper.selectById(10L)).thenReturn(tour);
+        Station station = station(20L, 10L, null);
+        station.setPublishStatus("draft");
+        when(stationMapper.selectList(any())).thenReturn(List.of(station));
+
+        Tour result = service.announceTourCities(2003L, 10L);
+
+        assertSame(tour, result);
+        verify(stationMapper).updateById(argThat(updated -> Long.valueOf(20L).equals(updated.getId())
+                && "city_announced".equals(updated.getPublishStatus())
+                && Integer.valueOf(1).equals(updated.getStatus())
+                && updated.getUpdateTime() != null));
+        verify(tourMapper).updateById(argThat(updated -> Long.valueOf(10L).equals(updated.getId())
+                && "announced".equals(updated.getReviewStatus())
+                && Integer.valueOf(1).equals(updated.getStatus())
+                && updated.getUpdateTime() != null));
+    }
+
+    @Test
+    void organizerCannotAnnounceOtherOrganizerTour() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Tour tour = tour(10L, 9999L);
+        tour.setReviewStatus("draft");
+        when(tourMapper.selectById(10L)).thenReturn(tour);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.announceTourCities(2003L, 10L));
+
+        assertEquals(403, error.getCode());
+        verify(tourMapper, never()).updateById(any());
+        verify(stationMapper, never()).updateById(any());
+    }
+
+    @Test
+    void organizerDeletesOwnTourDraftAndStations() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Tour tour = tour(10L, 2003L);
+        tour.setReviewStatus("draft");
+        when(tourMapper.selectById(10L)).thenReturn(tour);
+        Station station = station(20L, 10L, null);
+        station.setPublishStatus("draft");
+        when(stationMapper.selectList(any())).thenReturn(List.of(station));
+
+        service.deleteTourDraft(2003L, 10L);
+
+        verify(stationMapper).updateById(argThat(updated -> Long.valueOf(20L).equals(updated.getId())
+                && Integer.valueOf(0).equals(updated.getStatus())
+                && "cancelled".equals(updated.getPublishStatus())));
+        verify(tourMapper).updateById(argThat(updated -> Long.valueOf(10L).equals(updated.getId())
+                && Integer.valueOf(0).equals(updated.getStatus())
+                && "deleted".equals(updated.getReviewStatus())));
+    }
+
+    @Test
+    void organizerCannotDeleteOtherTourDraft() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Tour tour = tour(10L, 9999L);
+        tour.setReviewStatus("draft");
+        when(tourMapper.selectById(10L)).thenReturn(tour);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.deleteTourDraft(2003L, 10L));
+
+        assertEquals(403, error.getCode());
+        verify(tourMapper, never()).updateById(any());
+        verify(stationMapper, never()).updateById(any());
+    }
+
+    @Test
+    void organizerDeactivatesOwnTourAndRefundsPublishedActivities() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Tour tour = tour(10L, 2003L);
+        tour.setTitle("万象巡演");
+        tour.setReviewStatus("announced");
+        when(tourMapper.selectById(10L)).thenReturn(tour);
+        Activity activity = activity(301L, 10L, 20L, "published");
+        when(activityMapper.selectList(any())).thenReturn(List.of(activity));
+        Station publishedStation = station(20L, 10L, 88L);
+        publishedStation.setPublishStatus("published");
+        Station announcedStation = station(21L, 10L, null);
+        announcedStation.setPublishStatus("city_announced");
+        when(stationMapper.selectList(any())).thenReturn(List.of(publishedStation, announcedStation));
+        RefundImpactResponse impact = new RefundImpactResponse();
+        impact.setDeactivatedActivityCount(1);
+        when(activityAdminService.deactivateActivities(any(), eq("巡演取消"))).thenReturn(impact);
+        DeactivateActivityRequest request = new DeactivateActivityRequest();
+        request.setUserId(2003L);
+        request.setConfirmRefund(true);
+        request.setReason("巡演取消");
+
+        RefundImpactResponse result = service.deactivateTour(10L, request);
+
+        assertSame(impact, result);
+        assertEquals(10L, result.getActivityId());
+        assertEquals("万象巡演", result.getActivityName());
+        verify(activityAdminService).deactivateActivities(argThat(activities ->
+                activities.size() == 1 && Long.valueOf(301L).equals(activities.get(0).getId())), eq("巡演取消"));
+        verify(stationMapper).updateById(argThat(updated -> Long.valueOf(20L).equals(updated.getId())
+                && "deactivated".equals(updated.getPublishStatus())
+                && Integer.valueOf(1).equals(updated.getStatus())
+                && updated.getUpdateTime() != null));
+        verify(stationMapper).updateById(argThat(updated -> Long.valueOf(21L).equals(updated.getId())
+                && "deactivated".equals(updated.getPublishStatus())
+                && Integer.valueOf(1).equals(updated.getStatus())
+                && updated.getUpdateTime() != null));
+        verify(tourMapper).updateById(argThat(updated -> Long.valueOf(10L).equals(updated.getId())
+                && "deactivated".equals(updated.getReviewStatus())
+                && Integer.valueOf(1).equals(updated.getStatus())
+                && updated.getUpdateTime() != null));
+    }
+
+    @Test
+    void organizerCannotDeactivateOtherOrganizerTour() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Tour tour = tour(10L, 9999L);
+        tour.setReviewStatus("announced");
+        when(tourMapper.selectById(10L)).thenReturn(tour);
+        DeactivateActivityRequest request = new DeactivateActivityRequest();
+        request.setUserId(2003L);
+        request.setConfirmRefund(true);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.deactivateTour(10L, request));
+
+        assertEquals(403, error.getCode());
+        verify(activityAdminService, never()).deactivateActivities(any(), any());
+        verify(tourMapper, never()).updateById(any());
+        verify(stationMapper, never()).updateById(any());
     }
 
     @Test
@@ -512,6 +821,30 @@ class TourStationServiceTest {
     }
 
     @Test
+    void publishTourStationPrefersStationSeatCraftLayout() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Tour tour = tour(10L, 2003L);
+        tour.setTitle("涓囪薄宸℃紨");
+        Station station = station(20L, 10L, 88L);
+        VenueApplication application = approvedApplication(88L, 2003L, 101L,
+                LocalDateTime.of(2026, 6, 1, 0, 0), LocalDateTime.of(2026, 6, 30, 23, 59));
+        when(tourMapper.selectById(10L)).thenReturn(tour);
+        when(stationMapper.selectById(20L)).thenReturn(station);
+        when(venueApplicationMapper.selectById(88L)).thenReturn(application);
+        when(activitySeatLayoutService.hasBlockLayout("station", 20L)).thenReturn(true);
+        doAnswer(invocation -> {
+            Activity activity = invocation.getArgument(0);
+            activity.setId(301L);
+            return 1;
+        }).when(activityMapper).insert(any(Activity.class));
+
+        service.publishStation(2003L, 20L, Map.of("scheduleTba", true));
+
+        verify(activitySeatLayoutService).copyFromSeatCraftOwner(2003L, 301L, "station", 20L);
+        verify(activitySeatLayoutService, never()).copyFromVenueApplication(any(), any(), any());
+    }
+
+    @Test
     void publishStationReusesExistingStationActivity() {
         when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         Tour tour = tour(10L, 2003L);
@@ -565,7 +898,7 @@ class TourStationServiceTest {
                 "startTime", "2026-06-10T20:00",
                 "endTime", "2026-06-10T22:00")));
 
-        assertEquals("场次时间不在场地使用权有效期内", error.getMessage());
+        assertEquals("场次时间不在场馆审批文件有效期内", error.getMessage());
     }
 
     private InternalUserRefResponse user(Long id, String role) {
@@ -592,6 +925,14 @@ class TourStationServiceTest {
         station.setVenueApplicationId(venueApplicationId);
         station.setPublishStatus("draft");
         station.setStatus(1);
+        return station;
+    }
+
+    private Station activityStation(Long id, Long activityId, Long venueApplicationId) {
+        Station station = station(id, null, venueApplicationId);
+        station.setActivityId(activityId);
+        station.setStationName("北京站");
+        station.setCity("北京");
         return station;
     }
 

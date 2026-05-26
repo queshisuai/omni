@@ -8,6 +8,8 @@ public class RefundRequestVO {
     private Long id;
     private Long orderId;
     private String orderNo;
+    private String activityName;
+    private String orderName;
     private Long userId;
     private Long paymentId;
     private String refundNo;
@@ -30,6 +32,10 @@ public class RefundRequestVO {
     public void setOrderId(Long orderId) { this.orderId = orderId; }
     public String getOrderNo() { return orderNo; }
     public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+    public String getActivityName() { return activityName; }
+    public void setActivityName(String activityName) { this.activityName = activityName; }
+    public String getOrderName() { return orderName; }
+    public void setOrderName(String orderName) { this.orderName = orderName; }
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
     public Long getPaymentId() { return paymentId; }

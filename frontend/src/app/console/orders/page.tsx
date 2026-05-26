@@ -1,13 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { listConsoleOrders } from '@/lib/api'
+import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
 import type { OrderEntity } from '@/types/api'
 
 export default function ConsoleOrdersPage() {
   const [orders, setOrders] = useState<OrderEntity[]>([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     const u = getUser()
@@ -16,6 +18,7 @@ export default function ConsoleOrdersPage() {
   }, [])
 
   const statusLabels: Record<number, string> = { 1: '待支付', 2: '已支付', 3: '已取消', 4: '已退款' }
+  const pageOrders = useMemo(() => orders.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [orders, page])
 
   return (
     <div>
@@ -34,18 +37,22 @@ export default function ConsoleOrdersPage() {
         <div className="bg-white rounded-xl border border-[#e5e5e5] overflow-hidden">
           <table className="w-full text-[14px]">
             <thead>
-              <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
-                <th className="text-left p-3 font-medium text-[#666]">订单号</th>
-                <th className="text-left p-3 font-medium text-[#666]">金额</th>
+                <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
+                  <th className="text-left p-3 font-medium text-[#666]">订单号</th>
+                  <th className="text-left p-3 font-medium text-[#666]">活动</th>
+                  <th className="text-left p-3 font-medium text-[#666]">金额</th>
                 <th className="text-left p-3 font-medium text-[#666]">数量</th>
                 <th className="text-left p-3 font-medium text-[#666]">状态</th>
                 <th className="text-left p-3 font-medium text-[#666]">时间</th>
               </tr>
             </thead>
             <tbody>
-              {orders.map(o => (
+              {pageOrders.map(o => (
                 <tr key={o.id} className="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
                   <td className="p-3 font-medium text-[#333]">{o.orderNo}</td>
+                  <td className="p-3 text-[#333] max-w-[260px]">
+                    <div className="font-medium line-clamp-2">{o.activityName || '未知活动'}</div>
+                  </td>
                   <td className="p-3 text-[#ff1268] font-medium">¥{o.amount}</td>
                   <td className="p-3 text-[#666]">{o.quantity}张</td>
                   <td className="p-3">
@@ -60,6 +67,9 @@ export default function ConsoleOrdersPage() {
               ))}
             </tbody>
           </table>
+          <div className="px-4 pb-4">
+            <Pagination page={page} total={orders.length} loading={loading} onChange={setPage} />
+          </div>
         </div>
       )}
     </div>

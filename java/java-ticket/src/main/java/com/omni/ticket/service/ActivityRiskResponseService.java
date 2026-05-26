@@ -9,6 +9,7 @@ import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
 import com.omni.ticket.dto.NotificationMessageRequest;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.ActivityArtist;
 import com.omni.ticket.entity.ActivityRiskResolution;
@@ -86,11 +87,12 @@ public class ActivityRiskResponseService {
         }
         String trimmedReason = StringUtils.hasText(reason) ? reason.trim() : "平台主动停售";
         suspendActivity(activity, null, trimmedReason);
-        ActivityRiskResolution latest = resolutionMapper.selectOne(new LambdaQueryWrapper<ActivityRiskResolution>()
-                .eq(ActivityRiskResolution::getActivityId, activityId)
-                .orderByDesc(ActivityRiskResolution::getCreateTime)
-                .last("LIMIT 1"));
-        return toResponse(latest);
+        ActivityRiskResolution response = new ActivityRiskResolution();
+        response.setActivityId(activityId);
+        response.setOrganizerId(activity.getOrganizerId());
+        response.setStatus("awaiting_response");
+        response.setResolutionNote("等待活动归属方提交恢复申请");
+        return toResponse(response);
     }
 
     public List<ActivityRiskCaseResponse> listRiskCases(Long adminUserId) {
@@ -127,9 +129,23 @@ public class ActivityRiskResponseService {
     public ActivityRiskResolutionResponse submitResolution(Long activityId, ActivityRiskResolutionRequest request) {
         if (request == null || request.getUserId() == null) throw new BusinessException(ResultCode.BAD_REQUEST, "处理申请参数不能为空");
         Activity activity = requireActivity(activityId);
+        if (!"risk_suspended".equals(activity.getPublishStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅风险停票活动可提交恢复申请");
+        }
         String role = userAccessService.requireAdminOrOrganizerRole(request.getUserId());
-        if ("organizer".equals(role) && !request.getUserId().equals(activity.getOrganizerId())) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "只能处理自己主办的活动");
+        InternalUserRefResponse owner = userAccessService.requireUser(activity.getOrganizerId());
+        if ("organizer".equals(owner.getRole()) && !request.getUserId().equals(activity.getOrganizerId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "只能由活动主办方提交恢复申请");
+        }
+        if ("admin".equals(owner.getRole()) && !"admin".equals(role)) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "平台上报活动只能由平台管理员提交恢复申请");
+        }
+        ActivityRiskResolution pending = resolutionMapper.selectOne(new LambdaQueryWrapper<ActivityRiskResolution>()
+                .eq(ActivityRiskResolution::getActivityId, activityId)
+                .eq(ActivityRiskResolution::getStatus, "pending")
+                .last("LIMIT 1"));
+        if (pending != null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "该活动已有待审核恢复申请");
         }
         ActivityRiskResolution resolution = new ActivityRiskResolution();
         resolution.setActivityId(activityId);
@@ -158,6 +174,15 @@ public class ActivityRiskResponseService {
         ActivityRiskResolution resolution = resolutionMapper.selectById(id);
         if (resolution == null) throw new BusinessException(ResultCode.NOT_FOUND, "处理申请不存在");
         Activity activity = requireActivity(resolution.getActivityId());
+        if (!"pending".equals(resolution.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "只能审核待审核恢复申请");
+        }
+        if (request.getUserId().equals(resolution.getSubmittedBy())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "恢复申请提交人不能审核自己的申请");
+        }
+        if (!"risk_suspended".equals(activity.getPublishStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "活动已不处于风险停票状态");
+        }
         LocalDateTime now = LocalDateTime.now();
         if ("approve".equals(request.getAction())) {
             activityAdminService.validatePublishableForReview(activity.getId());
@@ -200,7 +225,7 @@ public class ActivityRiskResponseService {
         resolution.setActivityId(activity.getId());
         resolution.setOrganizerId(activity.getOrganizerId());
         resolution.setRiskArtistId(artistId);
-        resolution.setStatus("pending");
+        resolution.setStatus("awaiting_response");
         resolution.setSubmittedBy(activity.getOrganizerId());
         resolution.setResolutionNote("系统因风险艺人自动停止售票，等待主办方处理");
         resolution.setCreateTime(LocalDateTime.now());
@@ -246,6 +271,10 @@ public class ActivityRiskResponseService {
         ActivityRiskResolutionResponse response = new ActivityRiskResolutionResponse();
         response.setId(resolution.getId());
         response.setActivityId(resolution.getActivityId());
+        Activity activity = resolution.getActivityId() == null ? null : activityMapper.selectById(resolution.getActivityId());
+        if (activity != null) {
+            response.setActivityName(activity.getName());
+        }
         response.setOrganizerId(resolution.getOrganizerId());
         response.setRiskArtistId(resolution.getRiskArtistId());
         response.setStatus(resolution.getStatus());

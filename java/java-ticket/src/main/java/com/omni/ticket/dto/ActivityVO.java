@@ -10,6 +10,7 @@ import java.util.List;
 public class ActivityVO {
 
     private Long id;
+    private String itemType;
     private String name;
     private String poster;
     private String categoryName;
@@ -22,6 +23,8 @@ public class ActivityVO {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    public String getItemType() { return itemType; }
+    public void setItemType(String itemType) { this.itemType = itemType; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public String getPoster() { return poster; }

@@ -85,6 +85,22 @@ class RefundServiceBoundaryTest {
     }
 
     @Test
+    void listAdminRefundsIncludesActivityNameAndOrderName() {
+        RefundRequest refund = refund(1L, 10L, new BigDecimal("380.00"), 0);
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("380.00"), 2);
+        order.setActivityName("经典歌剧《茶花女》上海站");
+        when(userInternalClient.getUserRef(2002L, "test-internal-token")).thenReturn(Result.success(adminUser(2002L)));
+        when(refundRequestMapper.selectList(any())).thenReturn(List.of(refund));
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+
+        List<RefundRequestVO> result = service.listAdminRefunds(2002L, 0);
+
+        assertEquals(1, result.size());
+        assertEquals("经典歌剧《茶花女》上海站", result.get(0).getActivityName());
+        assertEquals("经典歌剧《茶花女》上海站", result.get(0).getOrderName());
+    }
+
+    @Test
     void applyPartialRefundRejectsQuantityOverRefundable() {
         OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
         order.setUserId(2004L);

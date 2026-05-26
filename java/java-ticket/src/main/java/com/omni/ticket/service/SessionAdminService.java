@@ -171,6 +171,9 @@ public class SessionAdminService {
         }
         requireManageableActivity(session.getActivityId(), userId, role);
         sessionSeatService.deleteBySessionId(id);
+        if (sessionSeatLayoutService != null) {
+            sessionSeatLayoutService.deleteBySessionId(id);
+        }
         if (ticketTypeMapper != null) {
             ticketTypeMapper.delete(new LambdaQueryWrapper<TicketType>()
                     .eq(TicketType::getSessionId, id));

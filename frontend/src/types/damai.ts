@@ -6,6 +6,7 @@ export interface Category {
 
 export interface Activity {
   id: string;
+  itemType?: 'activity' | 'tour';
   title: string;
   categoryId: string;
   poster: string;

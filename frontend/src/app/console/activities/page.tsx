@@ -3,17 +3,54 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getToken, getUser } from '@/lib/auth'
-import { listAdminActivities, deleteAdminActivity, updateActivityStatus, deactivateActivity, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
-import { Plus, Edit, Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
+import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
+import { Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
-import type { ActivityEntity, UserRole } from '@/types/api'
+import type { ActivityEntity, RefundImpactResponse, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
+const ADMIN_FETCH_SIZE = 500
+
+function compareActivityRows(a: ActivityEntity, b: ActivityEntity) {
+  const byId = a.id - b.id
+  if (byId !== 0) return byId
+  return (a.itemType || 'activity').localeCompare(b.itemType || 'activity')
+}
 
 function parsePrivateAssetRef(value?: string | null) {
   if (!value?.startsWith('private-asset:')) return null
   const id = Number(value.slice('private-asset:'.length))
   return Number.isInteger(id) && id > 0 ? id : null
+}
+
+function activityRowKey(activity: ActivityEntity) {
+  return `${activity.itemType || 'activity'}-${activity.id}`
+}
+
+function getTourRowStatus(tour: { reviewStatus?: string | null; status: number }) {
+  return tour.reviewStatus === 'deactivated' || tour.reviewStatus === 'risk_suspended' ? 0 : tour.status
+}
+
+function getActivityStatusText(activity: ActivityEntity) {
+  if (activity.publishStatus === 'draft') return '草稿'
+  if (activity.publishStatus === 'risk_suspended') return '风险停票'
+  if (activity.publishStatus === 'deactivated') return '下架'
+  if (activity.publishStatus === 'announced') return '上架'
+  return activity.status === 1 ? '上架' : '下架'
+}
+
+function getActivityStatusClass(activity: ActivityEntity) {
+  if (activity.publishStatus === 'draft') return 'bg-[#fff7ed] text-[#f97316]'
+  if (activity.publishStatus === 'risk_suspended') return 'bg-[#fff1f2] text-[#e11d48]'
+  return activity.status === 1 ? 'bg-[#f0fff4] text-[#22c55e]' : 'bg-[#f5f5f5] text-[#999]'
+}
+
+function canToggleSaleStatus(activity: ActivityEntity) {
+  if (activity.publishStatus === 'draft' || activity.publishStatus === 'risk_suspended') return false
+  if (activity.itemType === 'tour') {
+    return activity.status === 1 && activity.publishStatus !== 'deactivated'
+  }
+  return true
 }
 
 export default function ActivitiesPage() {
@@ -28,28 +65,64 @@ export default function ActivitiesPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
+  const [publishingKey, setPublishingKey] = useState<string | null>(null)
   const loadDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
   const isAdmin = role === 'admin'
+  const canPublishDraft = (activity: ActivityEntity) => {
+    return activity.publishStatus === 'draft' && (isAdmin || activity.organizerId === userId)
+  }
 
   const loadData = (nextPage = page) => {
     const u = getUser()
-    if (!u) return
+    if (!u) {
+      setCheckingRole(false)
+      setLoading(false)
+      return
+    }
     setUserId(u.userId)
     setRole(u.role || 'user')
     setCheckingRole(false)
+    if (u.role !== 'admin' && u.role !== 'organizer') {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError('')
-    listAdminActivities(u.userId, {
-      page: nextPage,
-      size: PAGE_SIZE,
-      keyword,
-      status: status === '' ? undefined : Number(status),
-    }).then(res => {
-      setActivities(res.records)
-      setTotal(res.total)
-      setPages(res.pages || 1)
-      setPage(res.current || nextPage)
+    Promise.all([
+      listAdminActivities(u.userId, {
+        page: 1,
+        size: ADMIN_FETCH_SIZE,
+        keyword,
+        status: status === '' ? undefined : Number(status),
+      }),
+      listAdminTours(u.userId, { page: 1, size: ADMIN_FETCH_SIZE }),
+    ]).then(([activityRes, tourRes]) => {
+      const tourActivities: ActivityEntity[] = tourRes.records
+        .filter(tour => !keyword.trim() || tour.title.includes(keyword.trim()))
+        .filter(tour => status === '' || getTourRowStatus(tour) === Number(status))
+        .map(tour => ({
+          id: tour.id,
+          itemType: 'tour' as const,
+          categoryId: tour.categoryId ?? 0,
+          artistId: tour.artistId ?? 0,
+          organizerId: tour.organizerId,
+          name: tour.title,
+          description: tour.description ?? null,
+          poster: tour.poster ?? null,
+          publishStatus: tour.reviewStatus,
+          status: getTourRowStatus(tour),
+          createTime: tour.createTime || '',
+        }))
+      const records = [...activityRes.records.map(activity => ({ ...activity, itemType: 'activity' as const })), ...tourActivities]
+        .sort(compareActivityRows)
+      const nextTotal = records.length
+      const nextPages = Math.ceil(nextTotal / PAGE_SIZE) || 1
+      const safePage = Math.min(Math.max(1, nextPage), nextPages)
+      setActivities(records.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE))
+      setTotal(nextTotal)
+      setPages(nextPages)
+      setPage(safePage)
       setLoading(false)
     }).catch(err => {
       setError(err instanceof Error ? err.message : '加载活动失败')
@@ -57,7 +130,9 @@ export default function ActivitiesPage() {
     })
   }
 
-  loadDataRef.current = loadData
+  useEffect(() => {
+    loadDataRef.current = loadData
+  })
 
   const refreshWhenVisible = () => {
     const now = Date.now()
@@ -66,7 +141,10 @@ export default function ActivitiesPage() {
     loadDataRef.current()
   }
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    const timer = window.setTimeout(() => loadDataRef.current(), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   useEffect(() => {
     const handlePageShow = (event: PageTransitionEvent) => {
@@ -85,7 +163,33 @@ export default function ActivitiesPage() {
     }
   }, [])
 
+  const alertRefundImpact = async (targetLabel: string, result: RefundImpactResponse) => {
+    const abnormalCount = result.refundFailedCount + result.refundUnknownCount + result.refundCompensationRequiredCount
+    const summary = `已下架活动 ${result.deactivatedActivityCount} 个，已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
+    if (abnormalCount > 0) {
+      await globalAlert(`${targetLabel}已下架并发起退款，但部分退款失败/结果未知/需人工处理。${summary}`)
+    } else {
+      await globalAlert(`${targetLabel}已下架并发起退款。${summary}`)
+    }
+  }
+
   const handleToggleStatus = async (activity: ActivityEntity) => {
+    if (activity.itemType === 'tour') {
+      if (activity.status !== 1 || activity.publishStatus === 'deactivated') {
+        await globalAlert('该巡演/多站点活动已下架，暂不支持从列表直接重新上架。')
+        return
+      }
+      const confirmed = await globalConfirm('下架并退款后，巡演/多站点活动下已发布的城市站点、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意下架并同意退款。')
+      if (!confirmed) return
+      const result = await deactivateTour(activity.id, {
+        userId,
+        confirmRefund: true,
+        reason: isAdmin ? '平台下架巡演/多站点活动自动退款' : '主办方下架巡演/多站点活动自动退款',
+      })
+      await alertRefundImpact('巡演/多站点活动', result)
+      loadData(page)
+      return
+    }
     const newStatus = activity.status === 1 ? 0 : 1
     if (newStatus === 0) {
       const confirmed = await globalConfirm('下架并退款后，活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意下架并同意退款。')
@@ -95,13 +199,7 @@ export default function ActivitiesPage() {
         confirmRefund: true,
         reason: isAdmin ? '平台下架活动自动退款' : '主办方下架活动自动退款',
       })
-      const abnormalCount = result.refundFailedCount + result.refundUnknownCount + result.refundCompensationRequiredCount
-      const summary = `已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
-      if (abnormalCount > 0) {
-        await globalAlert(`活动已下架并发起退款，但部分退款失败/结果未知/需人工处理。${summary}`)
-      } else {
-        await globalAlert(`活动已下架并发起退款。${summary}`)
-      }
+      await alertRefundImpact('活动', result)
     } else {
       await updateActivityStatus(activity.id, { userId, status: newStatus })
     }
@@ -109,6 +207,24 @@ export default function ActivitiesPage() {
   }
 
   const handleDelete = async (activity: ActivityEntity) => {
+    if (activity.itemType === 'tour') {
+      if (activity.publishStatus !== 'draft') {
+        await globalAlert('已发布的巡演活动请先进入巡演详情，按城市站点完成下架/退款处理后再删除。')
+        return
+      }
+      if (!(await globalConfirm('确认删除该巡演活动草稿？'))) return
+      await deleteTourDraft(userId, activity.id)
+      await globalAlert('巡演活动草稿已删除')
+      loadData(page)
+      return
+    }
+    if (activity.publishStatus === 'draft') {
+      if (!(await globalConfirm('确认删除该活动草稿？'))) return
+      const result = await deleteAdminActivity(activity.id, { userId, reason: '删除活动草稿' })
+      await globalAlert(result.message || '活动草稿已删除')
+      loadData(page)
+      return
+    }
     const reason = await globalPrompt('删除活动前请填写原因。已发布且有订单的活动需先完成下架退款。', '删除活动', '请输入删除原因（必填）')
     if (reason === null) return
     if (!reason.trim()) {
@@ -118,6 +234,42 @@ export default function ActivitiesPage() {
     const result = await deleteAdminActivity(activity.id, { userId, reason: reason.trim() })
     await globalAlert(result.message || '活动已删除')
     loadData(page)
+  }
+
+  const handlePublishDraft = async (activity: ActivityEntity) => {
+    const key = activityRowKey(activity)
+    if (activity.itemType === 'tour') {
+      const confirmed = await globalConfirm('确认发布该巡演活动草稿并公开城市站点？场馆、时间、座位票档可继续按城市站点补齐。')
+      if (!confirmed) return
+      setPublishingKey(key)
+      try {
+        await announceTourCities(userId, activity.id)
+        await globalAlert('巡演活动和城市站点已发布，后续请在巡演详情补齐各城市站点的场馆、时间和座位票档。')
+        loadData(page)
+      } catch (err) {
+        await globalAlert(err instanceof Error ? err.message : '发布巡演活动失败')
+      } finally {
+        setPublishingKey(null)
+      }
+      return
+    }
+    const confirmed = await globalConfirm('确认发布该活动草稿？发布前请确认站点场馆审批已通过，座位票档已配置。')
+    if (!confirmed) return
+    setPublishingKey(key)
+    try {
+      const detail = await getActivityStation(activity.id)
+      await publishStation(detail.station.id, {
+        userId,
+        scheduleTba: true,
+        perUserLimit: activity.perUserLimit ?? null,
+      })
+      await globalAlert('活动草稿已发布。若需要具体开演时间，请在活动配置中补齐站点排期并检查 SeatCraft 座位票档。')
+      loadData(page)
+    } catch (err) {
+      await globalAlert(err instanceof Error ? err.message : '发布活动失败')
+    } finally {
+      setPublishingKey(null)
+    }
   }
 
   const [riskTarget, setRiskTarget] = useState<ActivityEntity | null>(null)
@@ -216,28 +368,47 @@ export default function ActivitiesPage() {
       link.click()
       link.remove()
     } catch {
-      await globalAlert('场地审批凭证下载失败，请稍后重试')
+      await globalAlert('场馆审核文件下载失败，请稍后重试')
     } finally {
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }
 
-  if (checkingRole || !role) {
+  if (checkingRole) {
     return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
+  }
+
+  if (!role) {
+    return (
+      <div className="max-w-[720px] rounded-xl border border-[#e5e5e5] bg-white p-6">
+        <h1 className="mb-2 text-[22px] font-bold text-[#1a1a2e]">请先登录</h1>
+        <p className="mb-5 text-[14px] text-[#666]">登录后可查看和管理活动。</p>
+        <Link href="/login" className="inline-flex rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">去登录</Link>
+      </div>
+    )
+  }
+
+  if (role !== 'admin' && role !== 'organizer') {
+    return <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">无权限访问</div>
   }
 
   return (
     <div>
       <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '平台活动管理' : '我的活动管理'}</h1>
-          <p className="mt-1 text-[13px] text-[#999]">{isAdmin ? '搜索、筛选和维护全平台活动上下架状态。' : '维护自己主办活动的编辑、删除、上架与下架并退款。'}</p>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '活动发布管理' : '我的活动管理'}</h1>
+          <p className="mt-1 text-[13px] text-[#999]">{isAdmin ? '管理平台活动草稿、补齐配置并处理发布状态。' : '维护自己主办的活动草稿、发布申请与后续上下架。'}</p>
         </div>
-        <Link
-          href="/console/activities/new"
-          className="flex items-center gap-1.5 bg-[#ff1268] text-white px-4 py-2 rounded-lg text-[14px] font-medium hover:bg-[#e0105a] transition-colors"
-        >
-          <Plus className="w-4 h-4" /> {isAdmin ? '新建平台活动' : '新建我的活动'}
+      </div>
+
+      <div className="mb-5 grid gap-3 md:grid-cols-2">
+        <Link href="/console/activities/new" className="rounded-xl border border-[#ffd0df] bg-white p-4 text-[14px] font-medium text-[#ff1268] hover:bg-[#fff7fb]">
+          新建活动草稿
+          <span className="mt-1 block text-[12px] font-normal text-[#999]">普通活动或巡演活动都从这里创建，创建后继续补齐站点、场馆审核资料和座位票档。</span>
+        </Link>
+        <Link href="/console/tours" className="rounded-xl border border-[#e5e5e5] bg-white p-4 text-[14px] font-medium text-[#1a1a2e] hover:bg-[#fafafa]">
+          活动发布/多站点草稿管理
+          <span className="mt-1 block text-[12px] font-normal text-[#999]">进入已创建的普通活动草稿和巡演/多站点草稿，补齐场馆审核资料、SeatCraft 座位票档和发布配置。</span>
         </Link>
       </div>
 
@@ -282,14 +453,14 @@ export default function ActivitiesPage() {
         </div>
       ) : activities.length === 0 ? (
         <div className="text-center text-[#999] py-20 bg-white rounded-xl border border-[#e5e5e5] text-[14px]">
-          暂无匹配活动，可调整筛选条件或点击右上角新建。
+          暂无匹配活动，可调整筛选条件或点击上方新建活动草稿。
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-[#e5e5e5] bg-white">
           <table className="w-full text-[14px]">
             <thead>
               <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
-                <th className="text-left p-3 font-medium text-[#666]">ID</th>
+                <th className="text-left p-3 font-medium text-[#666]">活动类型</th>
                 <th className="text-left p-3 font-medium text-[#666]">活动名称</th>
                 <th className="text-left p-3 font-medium text-[#666]">状态</th>
                 <th className="text-left p-3 font-medium text-[#666]">创建时间</th>
@@ -297,35 +468,51 @@ export default function ActivitiesPage() {
               </tr>
             </thead>
             <tbody>
-              {activities.map(a => (
-                <tr key={a.id} className="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
-                  <td className="p-3 text-[#999]">{a.id}</td>
+              {activities.map(a => {
+                const rowKey = activityRowKey(a)
+                const isTour = a.itemType === 'tour'
+                const configHref = isTour ? `/console/tours/${a.id}` : `/console/activities/${a.id}/edit`
+                const seatHref = isTour ? `/console/tours/${a.id}?mode=seatcraft` : `/console/sessions?activityId=${a.id}`
+                return (
+                <tr key={rowKey} className="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
+                  <td className="p-3">
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[12px] ${isTour ? 'bg-[#eff6ff] text-[#2563eb]' : 'bg-[#f5f5f5] text-[#666]'}`}>
+                      {isTour ? '巡演 / 多站点活动' : '普通活动'}
+                    </span>
+                  </td>
                   <td className="p-3">
                     <div className="font-medium text-[#333]">{a.name}</div>
                     {a.artistName ? <div className="mt-1 text-[12px] font-normal text-[#999]">阵容：{a.artistName}</div> : null}
                   </td>
                   <td className="p-3">
-                    <span className={`text-[12px] px-2 py-0.5 rounded-full ${a.status === 1 ? 'bg-[#f0fff4] text-[#22c55e]' : 'bg-[#f5f5f5] text-[#999]'}`}>
-                      {a.publishStatus === 'risk_suspended' ? '风险停票' : a.status === 1 ? '上架' : '下架'}
+                    <span className={`text-[12px] px-2 py-0.5 rounded-full ${getActivityStatusClass(a)}`}>
+                      {getActivityStatusText(a)}
                     </span>
                   </td>
                   <td className="p-3 text-[#999]">{a.createTime?.substring(0, 10)}</td>
                   <td className="p-3">
                     <div className="flex items-center justify-center gap-2">
-                      <button
-                        onClick={() => handleToggleStatus(a)}
-                        className="p-1.5 rounded hover:bg-[#f0f0f0] text-[#666] transition-colors bg-transparent border-none cursor-pointer"
-                        title={a.status === 1 ? '下架并退款' : '上架'}
-                      >
-                        {a.status === 1 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                      <Link
-                        href={`/console/activities/${a.id}/edit`}
-                        className="p-1.5 rounded hover:bg-[#f0f0f0] text-[#3b82f6] transition-colors"
-                        title="编辑"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Link>
+                      {canToggleSaleStatus(a) && (
+                        <button
+                          onClick={() => handleToggleStatus(a)}
+                          className="p-1.5 rounded hover:bg-[#f0f0f0] text-[#666] transition-colors bg-transparent border-none cursor-pointer"
+                          title={a.itemType === 'tour' || a.status === 1 ? '下架并退款' : '上架'}
+                        >
+                          {a.itemType === 'tour' || a.status === 1 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      )}
+                      <Link href={configHref} className="rounded px-2 py-1 text-[12px] text-[#3b82f6] hover:bg-[#eff6ff]">继续配置</Link>
+                      <Link href={seatHref} className="rounded px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]">座位票档</Link>
+                      {canPublishDraft(a) && (
+                        <button
+                          onClick={() => handlePublishDraft(a)}
+                          disabled={publishingKey === rowKey}
+                          className="rounded px-2 py-1 text-[12px] text-[#16a34a] hover:bg-[#f0fff4] disabled:text-[#aaa]"
+                          title="发布活动草稿"
+                        >
+                          {publishingKey === rowKey ? '发布中' : '发布'}
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDelete(a)}
                         className="p-1.5 rounded hover:bg-[#fee2e2] text-[#ef4444] transition-colors bg-transparent border-none cursor-pointer"
@@ -346,12 +533,21 @@ export default function ActivitiesPage() {
                         <button
                           onClick={() => downloadVenueApprovalAsset(a)}
                           className="p-1.5 rounded hover:bg-[#f0f0f0] text-[#666] transition-colors bg-transparent border-none cursor-pointer"
-                          title="下载场地审批凭证"
+                          title="下载场馆审核文件"
                         >
                           <FileDown className="w-4 h-4" />
                         </button>
                       )}
-                      {isAdmin && a.publishStatus === 'published' && a.status === 1 && (
+                      {isAdmin && isTour && a.publishStatus !== 'draft' && a.status === 1 && (
+                        <Link
+                          href={`/console/tours/${a.id}?mode=risk`}
+                          className="rounded px-2 py-1 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"
+                          title="风险停售"
+                        >
+                          风险停售
+                        </Link>
+                      )}
+                      {isAdmin && !isTour && a.publishStatus === 'published' && a.status === 1 && (
                         <button
                           onClick={() => handleAdminSuspend(a)}
                           className="rounded px-2 py-1 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"
@@ -363,7 +559,7 @@ export default function ActivitiesPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
           <div className="flex flex-col gap-3 border-t border-[#f0f0f0] px-4 py-3 text-[13px] text-[#666] sm:flex-row sm:items-center sm:justify-between">

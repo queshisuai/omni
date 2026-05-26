@@ -13,6 +13,7 @@ public class OrderInfoResponse {
     private Integer quantity;
     private BigDecimal amount;
     private Integer status;
+    private String activityName;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -32,6 +33,8 @@ public class OrderInfoResponse {
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
+    public String getActivityName() { return activityName; }
+    public void setActivityName(String activityName) { this.activityName = activityName; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getUpdateTime() { return updateTime; }

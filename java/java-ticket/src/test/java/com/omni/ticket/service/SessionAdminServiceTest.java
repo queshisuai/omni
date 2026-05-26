@@ -161,6 +161,7 @@ class SessionAdminServiceTest {
 
         verify(ticketTypeMapper).delete(any());
         verify(sessionSeatService).deleteBySessionId(50L);
+        verify(sessionSeatLayoutService).deleteBySessionId(50L);
         verify(sessionMapper).deleteById(50L);
     }
 

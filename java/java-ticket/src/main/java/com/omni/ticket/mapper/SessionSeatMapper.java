@@ -67,12 +67,12 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                      @Param("sessionId") Long sessionId,
                      @Param("orderId") Long orderId);
 
-    @Update("UPDATE session_seat SET status = 1, order_id = NULL, ticket_type_id = NULL, lock_expire_time = NULL, update_time = CURRENT_TIMESTAMP " +
+    @Update("UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, update_time = CURRENT_TIMESTAMP " +
             "WHERE id = #{seatId} AND session_id = #{sessionId} AND status = 2")
     int releaseLockedSeat(@Param("seatId") Long seatId,
                           @Param("sessionId") Long sessionId);
 
-    @Update("UPDATE session_seat SET status = 1, order_id = NULL, ticket_type_id = NULL, lock_expire_time = NULL, update_time = CURRENT_TIMESTAMP " +
+    @Update("UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, update_time = CURRENT_TIMESTAMP " +
             "WHERE id = #{seatId} AND session_id = #{sessionId} AND status = 3")
     int restoreSoldSeat(@Param("seatId") Long seatId,
                         @Param("sessionId") Long sessionId);

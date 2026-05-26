@@ -93,13 +93,12 @@ public class OrderController {
      * 内部订单详情
      */
     @GetMapping("/internal/{id}")
-    public Result<Order> getInternalOrderDetail(@PathVariable Long id,
-                                                  @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+    public Result<OrderListItemResponse> getInternalOrderDetail(@PathVariable Long id,
+                                                                @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
             return Result.fail(403, "无权限");
         }
-        Order order = orderService.getOrderDetail(id);
-        return Result.success(order);
+        return Result.success(orderService.getOrderItemDetail(id));
     }
 
     @GetMapping("/internal/{id}/refund-options")

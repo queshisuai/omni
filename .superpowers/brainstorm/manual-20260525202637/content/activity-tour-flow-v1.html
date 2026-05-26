@@ -1,0 +1,82 @@
+<h2>活动/巡演创建重构范围</h2>
+<p class="subtitle">完整产品闭环：普通活动与巡演都支持先公布、后补齐，关键变更进入审核。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">普通非巡演活动</div>
+    <div class="mockup-body">
+      <div class="section">
+        <div class="label">步骤 1</div>
+        <h3>活动基础信息</h3>
+        <p>活动名、分类、艺人、简介、海报、限购、是否巡演。</p>
+        <p><strong>不再填写场馆、场地凭证、场馆证明。</strong></p>
+      </div>
+      <div class="section">
+        <div class="label">步骤 2</div>
+        <h3>设置场次</h3>
+        <p>选择城市，输入或选择场馆，填写时间。支持先保存为待补齐。</p>
+      </div>
+      <div class="section">
+        <div class="label">模板复用</div>
+        <h3>检测历史场馆座位模板</h3>
+        <p>若该场馆曾有活动或已通过场地申请上传过座位模板，弹出询问是否复用。</p>
+      </div>
+      <div class="section">
+        <div class="label">步骤 3</div>
+        <h3>票档</h3>
+        <p>票档可留空，表示票档待公布。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">巡演活动</div>
+    <div class="mockup-body">
+      <div class="section">
+        <div class="label">步骤 1</div>
+        <h3>巡演基础信息</h3>
+        <p>巡演名、分类、艺人、简介、主海报、限购策略。</p>
+      </div>
+      <div class="section">
+        <div class="label">步骤 2</div>
+        <h3>城市清单</h3>
+        <p>先填写城市，可选站点名。场馆、时间、票档都可空。</p>
+      </div>
+      <div class="section">
+        <div class="label">公布</div>
+        <h3>城市官宣</h3>
+        <p>已填写城市可先展示为“待定/即将公布”，后续逐站补场馆、时间、票档。</p>
+      </div>
+      <div class="section">
+        <div class="label">审核</div>
+        <h3>城市站变更/删除审核</h3>
+        <p>未公布草稿可直接删；已官宣、已绑定场馆、已发布售票的站点删除需提交审核。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>删除/变更审核强度</h3>
+<div class="options">
+  <div class="option" data-choice="strict" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>严格审核</h3>
+      <p>城市站一旦对 C 端可见，删除、改城市、改核心时间都必须审核。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="balanced" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>分级审核</h3>
+      <p>未发布直接改删；已官宣删除需审核；已售票删除/改期走更严格审核。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="sale-only" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>只管售票后</h3>
+      <p>只有已生成活动/场次或已售票的站点需要审核；仅官宣城市可直接删除。</p>
+    </div>
+  </div>
+</div>

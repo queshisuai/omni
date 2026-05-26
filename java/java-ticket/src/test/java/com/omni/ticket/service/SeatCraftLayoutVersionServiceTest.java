@@ -7,6 +7,7 @@ import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
+import com.omni.ticket.entity.Station;
 import com.omni.ticket.entity.SeatBlock;
 import com.omni.ticket.entity.SeatLayoutVersion;
 import com.omni.ticket.entity.SeatLayoutVersionBlock;
@@ -15,6 +16,7 @@ import com.omni.ticket.entity.SeatLayoutVersionOverride;
 import com.omni.ticket.entity.SeatLayoutVersionTicketGroup;
 import com.omni.ticket.entity.SeatOverride;
 import com.omni.ticket.entity.TicketGroup;
+import com.omni.ticket.entity.Tour;
 import com.omni.ticket.mapper.SeatBlockMapper;
 import com.omni.ticket.mapper.SeatLayoutVersionBlockMapper;
 import com.omni.ticket.mapper.SeatLayoutVersionGroupBindingMapper;
@@ -25,6 +27,8 @@ import com.omni.ticket.mapper.SeatOverrideMapper;
 import com.omni.ticket.mapper.TicketGroupMapper;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import com.omni.ticket.mapper.StationMapper;
+import com.omni.ticket.mapper.TourMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,8 +46,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -74,6 +80,10 @@ class SeatCraftLayoutVersionServiceTest {
     private SessionMapper sessionMapper;
     @Mock
     private UserAccessService userAccessService;
+    @Mock
+    private StationMapper stationMapper;
+    @Mock
+    private TourMapper tourMapper;
 
     private SeatCraftLayoutVersionService service;
 
@@ -91,8 +101,13 @@ class SeatCraftLayoutVersionServiceTest {
                 activityMapper,
                 sessionMapper,
                 userAccessService,
+                stationMapper,
+                tourMapper,
                 null,
                 null);
+        lenient().when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        lenient().when(sessionMapper.selectById(3001L)).thenReturn(session(3001L, 10L));
+        lenient().when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
     }
 
     @Test
@@ -210,6 +225,56 @@ class SeatCraftLayoutVersionServiceTest {
         assertEquals("舞台", result.getStageTitle());
         assertEquals(0, result.getStageX());
         assertEquals(0, result.getStageY());
+    }
+
+    @Test
+    void organizerCanSaveStationSeatCraftForOwnTourStation() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        Station station = station(10L, 20L, null);
+        when(stationMapper.selectById(10L)).thenReturn(station);
+        when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
+        when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(versionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        doAnswer(invocation -> {
+            SeatLayoutVersion version = invocation.getArgument(0);
+            version.setId(100L);
+            return 1;
+        }).when(versionMapper).insert(any(SeatLayoutVersion.class));
+        doAnswer(invocation -> {
+            SeatLayoutVersionBlock block = invocation.getArgument(0);
+            block.setId(200L);
+            return 1;
+        }).when(blockMapper).insert(any(SeatLayoutVersionBlock.class));
+
+        service.saveDraft("station", 10L, sampleLayout(), 2003L);
+
+        verify(versionMapper).insert(argThat(version -> "station".equals(version.getOwnerType())
+                && Long.valueOf(10L).equals(version.getOwnerId())));
+    }
+
+    @Test
+    void organizerCannotSaveStationSeatCraftForOtherTourStation() {
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null));
+        when(tourMapper.selectById(20L)).thenReturn(tour(20L, 9999L));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.saveDraft("station", 10L, sampleLayout(), 2003L));
+
+        assertEquals(403, error.getCode());
+        verify(versionMapper, never()).insert(any());
+    }
+
+    @Test
+    void organizerCannotSaveActivitySeatCraftForOtherOrganizerActivity() {
+        when(userAccessService.requireAdminOrOrganizer(2004L)).thenReturn(user(2004L, "organizer"));
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.saveDraft("activity", 10L, sampleLayout(), 2004L));
+
+        assertEquals(403, error.getCode());
+        verify(versionMapper, never()).insert(any());
     }
 
     @Test
@@ -885,5 +950,21 @@ class SeatCraftLayoutVersionServiceTest {
         activity.setOrganizerId(organizerId);
         activity.setStatus(1);
         return activity;
+    }
+
+    private Station station(Long id, Long tourId, Long activityId) {
+        Station station = new Station();
+        station.setId(id);
+        station.setTourId(tourId);
+        station.setActivityId(activityId);
+        station.setStatus(1);
+        return station;
+    }
+
+    private Tour tour(Long id, Long organizerId) {
+        Tour tour = new Tour();
+        tour.setId(id);
+        tour.setOrganizerId(organizerId);
+        return tour;
     }
 }

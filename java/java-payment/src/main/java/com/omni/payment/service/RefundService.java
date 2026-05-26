@@ -171,7 +171,7 @@ public class RefundService {
             }
             throw e;
         }
-        return toVO(refund, order.getOrderNo());
+        return toVO(refund, order);
     }
 
     private String formatRefundReason(String reason, String reasonType) {
@@ -213,7 +213,7 @@ public class RefundService {
         for (RefundRequest refund : refunds) {
             OrderInfoResponse order = getOrderOrThrow(refund.getOrderId());
             if (canOrganizerReview(order, reviewerId)) {
-                result.add(toVO(refund, order.getOrderNo()));
+                result.add(toVO(refund, order));
             }
         }
         return result;
@@ -227,7 +227,7 @@ public class RefundService {
 
         LocalDateTime now = LocalDateTime.now();
         refund = updateRefundRejected(refundId, reviewerId, reviewNote, now);
-        return toVO(refund, order.getOrderNo());
+        return toVO(refund, order);
     }
 
     public RefundRequestVO approve(Long refundId, Long reviewerId, String reviewNote) {
@@ -236,7 +236,7 @@ public class RefundService {
         OrderInfoResponse order = getOrderOrThrow(refund.getOrderId());
         requireReviewPermission(reviewerId, order);
         if (REFUND_STATUS_REFUNDED.equals(refund.getStatus())) {
-            return toVO(refund, order.getOrderNo());
+            return toVO(refund, order);
         }
         requireApprovable(refund);
         if (!ORDER_STATUS_PAID.equals(order.getStatus())) {
@@ -277,7 +277,7 @@ public class RefundService {
                             "支付宝退款已成功，但订单状态更新失败，需人工补偿");
                 }
                 refund = updateRefundSucceeded(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), now);
-                return toVO(refund, order.getOrderNo());
+                return toVO(refund, order);
             }
 
             if (response != null && !response.isSuccess()) {
@@ -285,10 +285,10 @@ public class RefundService {
             } else {
                 refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款响应为空，退款结果未知，请稍后重试/查询", now);
             }
-            return toVO(refund, order.getOrderNo());
+            return toVO(refund, order);
         } catch (AlipayApiException e) {
             refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款异常，退款结果未知，请稍后重试/查询: " + e.getMessage(), now);
-            return toVO(refund, order.getOrderNo());
+            return toVO(refund, order);
         }
     }
 
@@ -771,7 +771,16 @@ public class RefundService {
 
     private RefundRequestVO toVOWithOrderNo(RefundRequest refund) {
         OrderInfoResponse order = getOrderOrThrow(refund.getOrderId());
-        return toVO(refund, order.getOrderNo());
+        return toVO(refund, order);
+    }
+
+    private RefundRequestVO toVO(RefundRequest refund, OrderInfoResponse order) {
+        RefundRequestVO vo = toVO(refund, order != null ? order.getOrderNo() : null);
+        if (order != null) {
+            vo.setActivityName(order.getActivityName());
+            vo.setOrderName(StringUtils.hasText(order.getActivityName()) ? order.getActivityName() : order.getOrderNo());
+        }
+        return vo;
     }
 
     private RefundRequestVO toVO(RefundRequest refund, String orderNo) {

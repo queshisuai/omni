@@ -97,6 +97,17 @@ class SessionSeatLayoutServiceTest {
     }
 
     @Test
+    void deleteBySessionIdDeletesLayoutSectionsAndBlockLayout() {
+        when(sessionLayoutMapper.selectList(any())).thenReturn(List.of(layout(55L, 99L), layout(56L, 99L)));
+
+        service.deleteBySessionId(99L);
+
+        verify(sessionSectionMapper).delete(any());
+        verify(sessionLayoutMapper).delete(any());
+        verify(blockLayoutService).deleteLayout("session", 99L);
+    }
+
+    @Test
     void generateSessionSeatsDelegatesToBlockStockServiceWhenBlockLayoutExists() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));

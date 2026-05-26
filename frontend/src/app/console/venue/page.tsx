@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
-import { createAdminVenue, listAdminVenues, updateAdminVenue } from '@/lib/api'
-import { ClipboardList, Plus } from 'lucide-react'
+import { createAdminVenue, deleteAdminVenue, listAdminVenues, updateAdminVenue } from '@/lib/api'
+import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
+import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
+import { ClipboardList, Plus, Trash2 } from 'lucide-react'
 import type { VenueEntity } from '@/types/api'
 
 export default function VenuePage() {
@@ -15,17 +17,33 @@ export default function VenuePage() {
   const [city, setCity] = useState('')
   const [address, setAddress] = useState('')
   const [capacity, setCapacity] = useState('')
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [page, setPage] = useState(1)
 
   const [editingVenue, setEditingVenue] = useState<VenueEntity | null>(null)
+  const pageVenues = useMemo(() => venues.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [venues, page])
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     const u = getUser()
     if (!u) return
     setRole(u.role || '')
-    listAdminVenues(u.userId).then(setVenues).catch(() => {})
-  }
+    setLoading(true)
+    setLoadError('')
+    listAdminVenues(u.userId)
+      .then(data => {
+        setVenues(data)
+        setPage(1)
+      })
+      .catch(err => setLoadError(err instanceof Error ? err.message : '加载场馆记录失败'))
+      .finally(() => setLoading(false))
+  }, [])
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    const timer = window.setTimeout(loadData, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadData])
 
   const resetForm = () => {
     setName(''); setCity(''); setAddress(''); setCapacity('')
@@ -73,19 +91,35 @@ export default function VenuePage() {
     loadData()
   }
 
+  const handleDelete = async (venue: VenueEntity) => {
+    const u = getUser()
+    if (!u) return
+    if (!(await globalConfirm(`确认永久删除场馆记录“${venue.name}”？如果该场馆已被场次、审核资料或座位模板引用，系统会拒绝删除。`))) return
+    setDeletingId(venue.id)
+    try {
+      await deleteAdminVenue(venue.id, u.userId)
+      if (editingVenue?.id === venue.id) resetForm()
+      loadData()
+    } catch (err) {
+      await globalAlert(err instanceof Error ? err.message : '删除场馆记录失败')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
-        <h1 className="text-[22px] font-bold text-[#1a1a2e]">地点档案</h1>
+        <h1 className="text-[22px] font-bold text-[#1a1a2e]">场馆记录</h1>
         <div className="flex items-center gap-2">
           {role === 'organizer' && (
             <Link href="/console/venue/apply" className="flex items-center gap-1.5 bg-[#ff1268] text-white px-4 py-2 rounded-lg text-[14px] font-medium hover:bg-[#e0105a] transition-colors">
-              <ClipboardList className="w-4 h-4" /> 提交活动地点凭证
+              <ClipboardList className="w-4 h-4" /> 提交场馆审核资料
             </Link>
           )}
           {role === 'admin' && (
             <button onClick={openCreate} className="flex items-center gap-1.5 bg-[#ff1268] text-white px-4 py-2 rounded-lg text-[14px] font-medium hover:bg-[#e0105a] transition-colors border-none cursor-pointer">
-              <Plus className="w-4 h-4" /> 登记地点资料
+              <Plus className="w-4 h-4" /> 新增场馆记录
             </button>
           )}
         </div>
@@ -93,27 +127,34 @@ export default function VenuePage() {
 
       {role === 'organizer' && (
         <div className="text-[13px] text-[#666] bg-[#fff8e1] border border-[#ffe082] rounded-lg p-3 mb-4">
-          主办方可查看平台地点档案。活动地点凭证随活动或地点资料提交，平台只审核资料和凭证，不授予场地使用权。
+          主办方可查看已审核场馆记录。场馆审核资料随活动或场馆记录提交，平台只核验资料真伪，不代表拥有场馆或授予场地使用权。
         </div>
       )}
 
       {showForm && (
         <div className="bg-white rounded-xl border border-[#e5e5e5] p-5 mb-5 max-w-[900px]">
           <div className="grid gap-3">
-              <div className="mb-1 text-[14px] font-medium text-[#333]">{editingVenue ? '编辑地点资料' : '登记地点资料'}</div>
+              <div className="mb-1 text-[14px] font-medium text-[#333]">{editingVenue ? '编辑场馆记录' : '新增场馆记录'}</div>
               <input value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="场馆名称 *" />
               <input value={city} onChange={e => setCity(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="城市" />
               <input value={address} onChange={e => setAddress(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="地址" />
               <input value={capacity} onChange={e => setCapacity(e.target.value)} type="number" className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="容量" />
               <div className="flex gap-2">
-                <button onClick={handleSave} disabled={!name.trim()} className="bg-[#ff1268] text-white px-4 py-2 rounded-lg text-[14px] border-none cursor-pointer hover:bg-[#e0105a] disabled:opacity-50 disabled:cursor-not-allowed">保存地点资料</button>
+                <button onClick={handleSave} disabled={!name.trim()} className="bg-[#ff1268] text-white px-4 py-2 rounded-lg text-[14px] border-none cursor-pointer hover:bg-[#e0105a] disabled:opacity-50 disabled:cursor-not-allowed">保存场馆记录</button>
                 <button onClick={resetForm} className="text-[14px] text-[#666] bg-transparent border-none cursor-pointer hover:text-[#333]">取消</button>
               </div>
             </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#e5e5e5] overflow-hidden">
+      {loadError ? (
+        <div className="rounded-xl border border-[#ffd9e6] bg-white py-16 text-center text-[14px] text-[#ff4d4f]">{loadError}</div>
+      ) : loading ? (
+        <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">加载中...</div>
+      ) : venues.length === 0 ? (
+        <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">暂无场馆记录</div>
+      ) : (
+        <div className="bg-white rounded-xl border border-[#e5e5e5] overflow-hidden">
         <table className="w-full text-[14px]">
           <thead>
             <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
@@ -126,7 +167,7 @@ export default function VenuePage() {
             </tr>
           </thead>
           <tbody>
-            {venues.map(v => (
+            {pageVenues.map(v => (
               <tr key={v.id} className="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
                 <td className="p-3 text-[#999]">{v.id}</td>
                 <td className="p-3 font-medium text-[#333]">{v.name}</td>
@@ -137,6 +178,14 @@ export default function VenuePage() {
                   <td className="p-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => openEdit(v)} className="rounded-lg border border-[#ddd] px-3 py-1.5 text-[13px] text-[#666] hover:bg-[#fafafa] cursor-pointer">编辑</button>
+                      <button
+                        onClick={() => handleDelete(v)}
+                        disabled={deletingId === v.id}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[#fecaca] px-3 py-1.5 text-[13px] text-[#ef4444] hover:bg-[#fff1f2] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {deletingId === v.id ? '删除中' : '删除'}
+                      </button>
                     </div>
                   </td>
                 )}
@@ -144,7 +193,11 @@ export default function VenuePage() {
             ))}
           </tbody>
         </table>
+        <div className="px-4 pb-4">
+          <Pagination page={page} total={venues.length} loading={loading} onChange={setPage} />
+        </div>
       </div>
+      )}
     </div>
   )
 }

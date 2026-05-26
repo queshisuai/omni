@@ -9,6 +9,7 @@ import com.omni.ticket.dto.PaidOrderCountRequest;
 import com.omni.ticket.dto.PaidOrderCountResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
+import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
@@ -47,19 +48,22 @@ class AdminSummaryServiceTest {
     private UserAccessService userAccessService;
     @Mock
     private OrderInternalClient orderInternalClient;
+    @Mock
+    private TourMapper tourMapper;
 
     private AdminSummaryService service;
 
     @BeforeEach
     void setUp() {
         service = new AdminSummaryService(activityMapper, sessionMapper, ticketTypeMapper,
-                userAccessService, orderInternalClient, "internal-token");
+                userAccessService, orderInternalClient, tourMapper, "internal-token");
     }
 
     @Test
     void adminSummaryCountsAllActivitiesAndUsesPaidOrderCountFromOrderService() {
         when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
         when(activityMapper.selectList(any())).thenReturn(activities(30, 2003L));
+        when(tourMapper.selectCount(any())).thenReturn(1L);
         when(sessionMapper.selectList(any())).thenReturn(Arrays.asList(session(10L), session(11L)));
         when(ticketTypeMapper.selectCount(any())).thenReturn(90L);
         when(orderInternalClient.countPaidBySessions(any(PaidOrderCountRequest.class), eq("internal-token")))
@@ -67,7 +71,7 @@ class AdminSummaryServiceTest {
 
         AdminSummaryResponse summary = service.getSummary(2002L);
 
-        assertEquals(30L, summary.getActivityCount());
+        assertEquals(31L, summary.getActivityCount());
         assertEquals(90L, summary.getTicketTypeCount());
         assertEquals(12L, summary.getPaidOrderCount());
         ArgumentCaptor<PaidOrderCountRequest> requestCaptor = ArgumentCaptor.forClass(PaidOrderCountRequest.class);
@@ -79,6 +83,7 @@ class AdminSummaryServiceTest {
     void organizerSummaryCountsOnlyOwnActivitiesAndUsesPaidOrderCountFromOrderService() {
         when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectList(any())).thenReturn(Arrays.asList(activity(101L, 2003L), activity(102L, 2003L)));
+        when(tourMapper.selectCount(any())).thenReturn(1L);
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(20L)));
         when(ticketTypeMapper.selectCount(any())).thenReturn(6L);
         when(orderInternalClient.countPaidBySessions(any(PaidOrderCountRequest.class), eq("internal-token")))
@@ -86,7 +91,7 @@ class AdminSummaryServiceTest {
 
         AdminSummaryResponse summary = service.getSummary(2003L);
 
-        assertEquals(2L, summary.getActivityCount());
+        assertEquals(3L, summary.getActivityCount());
         assertEquals(6L, summary.getTicketTypeCount());
         assertEquals(3L, summary.getPaidOrderCount());
         verify(orderInternalClient).countPaidBySessions(any(PaidOrderCountRequest.class), eq("internal-token"));
@@ -134,7 +139,7 @@ class AdminSummaryServiceTest {
     @Test
     void throwsInternalErrorAndSkipsOrderServiceWhenInternalTokenMissing() {
         service = new AdminSummaryService(activityMapper, sessionMapper, ticketTypeMapper,
-                userAccessService, orderInternalClient, "");
+                userAccessService, orderInternalClient, tourMapper, "");
         when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
         when(activityMapper.selectList(any())).thenReturn(Collections.singletonList(activity(101L, 2002L)));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(10L)));

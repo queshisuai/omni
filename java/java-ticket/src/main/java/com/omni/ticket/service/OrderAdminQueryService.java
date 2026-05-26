@@ -18,7 +18,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -65,6 +67,18 @@ public class OrderAdminQueryService {
             String message = result != null && StringUtils.hasText(result.getMessage()) ? result.getMessage() : "订单服务无响应";
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "查询订单失败: " + message);
         }
-        return result.getData() == null ? Collections.emptyList() : result.getData();
+        List<OrderInfoResponse> orders = result.getData() == null ? Collections.emptyList() : result.getData();
+        Map<Long, String> activityNameBySessionId = new HashMap<>();
+        Map<Long, Activity> activityById = activities.stream().collect(Collectors.toMap(Activity::getId, activity -> activity, (first, second) -> first));
+        for (Session session : sessions) {
+            Activity activity = activityById.get(session.getActivityId());
+            if (activity != null) {
+                activityNameBySessionId.put(session.getId(), activity.getName());
+            }
+        }
+        for (OrderInfoResponse order : orders) {
+            order.setActivityName(activityNameBySessionId.get(order.getSessionId()));
+        }
+        return orders;
     }
 }

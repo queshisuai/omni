@@ -114,7 +114,7 @@ export default function ConsoleHome() {
           {[
             { label: '新建活动', href: '/console/activities/new' },
             { label: '管理活动', href: '/console/activities' },
-            { label: '场馆管理', href: '/console/venue' },
+            { label: '场馆记录', href: '/console/venue' },
             { label: '查看订单', href: '/console/orders' },
           ].map(item => (
             <a

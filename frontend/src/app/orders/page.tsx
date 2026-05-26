@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
+import { Pagination, DEFAULT_PAGE_SIZE } from '@/components/Pagination'
 import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund, getRefundOptions } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { ArrowLeft, Check, Ticket as TicketIcon, Search, PackageOpen, Trash2, RotateCcw, AlertCircle, RefreshCw, EyeOff, Loader2 } from 'lucide-react'
@@ -97,6 +98,7 @@ export default function OrdersPage() {
   const [hiding, setHiding] = useState<number | null>(null)
   const [restoring, setRestoring] = useState<number | null>(null)
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const [page, setPage] = useState(1)
   const loadOrdersRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
   const refundOptionsRequestIdRef = useRef(0)
@@ -353,6 +355,8 @@ export default function OrdersPage() {
         return o.status === 3 || o.status === 4
       })
 
+  const pageOrders = useMemo(() => filteredOrders.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [filteredOrders, page])
+
   const tabs: { key: StatusTab; label: string }[] = [
     { key: 'all', label: '全部订单' },
     { key: 'unpaid', label: '待支付' },
@@ -377,7 +381,7 @@ export default function OrdersPage() {
           {tabs.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => { setActiveTab(tab.key); setPage(1) }}
               className="cursor-pointer border-none bg-transparent outline-none px-6 py-3 text-[14px] transition-colors border-b-2 -mb-[1px]"
               style={{
                 color: activeTab === tab.key ? '#ff1268' : '#666',
@@ -407,7 +411,7 @@ export default function OrdersPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-6">
-            {filteredOrders.map((order) => {
+            {pageOrders.map((order) => {
               const refundInfo = refundMap[order.id]
               const activeRefund = refundInfo?.active
               const latestRefund = refundInfo?.latest
@@ -556,6 +560,7 @@ export default function OrdersPage() {
                 </div>
               )
             })}
+            <Pagination page={page} total={filteredOrders.length} loading={loading} onChange={setPage} />
           </div>
         )}
       </main>

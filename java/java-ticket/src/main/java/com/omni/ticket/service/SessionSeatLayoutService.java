@@ -202,6 +202,28 @@ public class SessionSeatLayoutService {
     }
 
     @Transactional
+    public void deleteBySessionId(Long sessionId) {
+        if (sessionId == null || sessionId <= 0) {
+            return;
+        }
+        List<SessionSeatLayout> layouts = sessionLayoutMapper.selectList(new LambdaQueryWrapper<SessionSeatLayout>()
+                .eq(SessionSeatLayout::getSessionId, sessionId));
+        List<Long> layoutIds = layouts == null ? Collections.emptyList() : layouts.stream()
+                .map(SessionSeatLayout::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (!layoutIds.isEmpty()) {
+            sessionSectionMapper.delete(new LambdaQueryWrapper<SessionSeatLayoutSection>()
+                    .in(SessionSeatLayoutSection::getSessionLayoutId, layoutIds));
+        }
+        sessionLayoutMapper.delete(new LambdaQueryWrapper<SessionSeatLayout>()
+                .eq(SessionSeatLayout::getSessionId, sessionId));
+        if (blockLayoutService != null) {
+            blockLayoutService.deleteLayout("session", sessionId);
+        }
+    }
+
+    @Transactional
     public SeatCraftLayoutDtos.LayoutResponse updateLayout(Long userId, Long sessionId, SeatCraftLayoutDtos.LayoutResponse request) {
         Session session = requireManageableSession(userId, sessionId);
         if (request == null) {

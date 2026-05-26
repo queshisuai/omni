@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getToken, getUser } from '@/lib/auth'
 import { listAdminVenues, listVenueApplications, privateAssetDownloadUrl, reviewVenueApplication } from '@/lib/api'
+import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
 import type { PrivateAssetVO, VenueApplicationVO, VenueEntity } from '@/types/api'
 
 const statusText: Record<number, string> = { 0: '待审核', 1: '已通过', 2: '已驳回' }
@@ -28,11 +29,29 @@ export default function VenueApplicationsPage() {
   const [venueId, setVenueId] = useState('')
   const [reviewNote, setReviewNote] = useState('')
   const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [page, setPage] = useState(1)
 
-  const loadData = (nextUserId = userId) => {
+  const pageApplications = useMemo(() => applications.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [applications, page])
+
+  const loadData = async (nextUserId = userId) => {
     if (!nextUserId) return
-    listVenueApplications({ status: status === '' ? undefined : Number(status) }).then(setApplications).catch(() => {})
-    listAdminVenues(nextUserId).then(setVenues).catch(() => {})
+    setLoading(true)
+    setLoadError('')
+    try {
+      const [applicationList, venueList] = await Promise.all([
+        listVenueApplications({ status: status === '' ? undefined : Number(status) }),
+        listAdminVenues(nextUserId),
+      ])
+      setApplications(applicationList)
+      setVenues(venueList)
+      setPage(1)
+    } catch (err) {
+      setLoadError(getErrorMessage(err, '加载场馆资料审核失败'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -120,11 +139,11 @@ export default function VenueApplicationsPage() {
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-bold text-[#1a1a2e]">活动地点凭证审核</h1>
-          <p className="mt-1 text-[13px] text-[#999]">审核主办方提交的地点资料和场地审批凭证，平台不授予场地使用权。</p>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">场馆资料审核</h1>
+          <p className="mt-1 text-[13px] text-[#999]">核验主办方上传的场馆资料和场地审批文件真伪，避免虚假材料造成后续纠纷；平台不拥有场馆，也不授予场地使用权。</p>
         </div>
         <div className="flex gap-2">
-          <select value={status} onChange={e => setStatus(e.target.value)} className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
+          <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
             <option value="">全部状态</option>
             <option value="0">待审核</option>
             <option value="1">已通过</option>
@@ -137,7 +156,7 @@ export default function VenueApplicationsPage() {
       {message && <div className="mb-4 rounded-lg border border-[#fecaca] bg-[#fef2f2] px-4 py-2 text-[13px] text-[#ef4444]">{message}</div>}
 
       <div className="space-y-4">
-        {applications.length === 0 ? <div className="rounded-xl border border-[#e5e5e5] bg-white py-20 text-center text-[14px] text-[#999]">暂无地点凭证</div> : applications.map(item => (
+        {loadError ? <div className="rounded-xl border border-[#ffd9e6] bg-white py-20 text-center text-[14px] text-[#ff4d4f]">{loadError}</div> : loading ? <div className="rounded-xl border border-[#e5e5e5] bg-white py-20 text-center text-[14px] text-[#999]">加载中...</div> : applications.length === 0 ? <div className="rounded-xl border border-[#e5e5e5] bg-white py-20 text-center text-[14px] text-[#999]">暂无场馆审核资料</div> : pageApplications.map(item => (
           <div key={item.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -152,16 +171,16 @@ export default function VenueApplicationsPage() {
                 {item.description && <div className="mt-2 text-[13px] text-[#999]">申请说明：{item.description}</div>}
                 {item.proofAsset && (
                   <div className="mt-3 rounded-lg border border-[#f0f0f0] bg-[#fafafa] p-3 text-[13px] text-[#666]">
-                    <div className="font-medium text-[#333]">私有凭证附件</div>
+                    <div className="font-medium text-[#333]">审核资料附件</div>
                     <div className="mt-1 grid gap-1 sm:grid-cols-3">
                       <div>文件名：{item.proofAsset.originalFilename || '-'}</div>
                       <div>大小：{formatSize(item.proofAsset.fileSize)}</div>
                       <div>类型：{item.proofAsset.contentType || '-'}</div>
                     </div>
-                    <button onClick={() => downloadProofAsset(item.proofAsset!)} className="mt-2 rounded-lg border border-[#ff1268] px-3 py-1.5 text-[12px] font-medium text-[#ff1268]">下载凭证</button>
+                    <button onClick={() => downloadProofAsset(item.proofAsset!)} className="mt-2 rounded-lg border border-[#ff1268] px-3 py-1.5 text-[12px] font-medium text-[#ff1268]">下载审核文件</button>
                   </div>
                 )}
-                {item.proofFileUrl && <div className="mt-2 text-[13px] text-[#999]">历史凭证链接：<a href={item.proofFileUrl} target="_blank" rel="noreferrer" className="text-[#666] underline break-all">{item.proofFileUrl}</a></div>}
+                {item.proofFileUrl && <div className="mt-2 text-[13px] text-[#999]">历史审核文件链接：<a href={item.proofFileUrl} target="_blank" rel="noreferrer" className="text-[#666] underline break-all">{item.proofFileUrl}</a></div>}
                 {item.reviewNote && <div className="mt-2 text-[13px] text-[#999]">审核备注：{item.reviewNote}</div>}
               </div>
               <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -173,12 +192,12 @@ export default function VenueApplicationsPage() {
             {reviewingId === item.id && (
               <div className="mt-4 rounded-lg border border-[#ffd9e6] bg-[#fff7fa] p-4">
                 <div className="mb-3 flex gap-4 text-[14px] text-[#333]">
-                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'create'} onChange={() => setMode('create')} /> 登记新地点资料</label>
-                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'link'} onChange={() => setMode('link')} /> 关联已有地点档案</label>
+                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'create'} onChange={() => setMode('create')} /> 新增场馆记录</label>
+                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'link'} onChange={() => setMode('link')} /> 关联已有场馆记录</label>
                 </div>
                 {mode === 'link' && (
                   <select value={venueId} onChange={e => setVenueId(e.target.value)} className="mb-3 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
-                    <option value="">请选择已有地点档案</option>
+                    <option value="">请选择已有场馆记录</option>
                     {venues.map(venue => <option key={venue.id} value={venue.id}>{venue.name} ({venue.city})</option>)}
                   </select>
                 )}
@@ -194,6 +213,9 @@ export default function VenueApplicationsPage() {
           </div>
         ))}
       </div>
+      {!loadError && !loading && applications.length > 0 && (
+        <Pagination page={page} total={applications.length} loading={loading} onChange={setPage} />
+      )}
     </div>
   )
 }

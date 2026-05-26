@@ -11,6 +11,7 @@ public class Station {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long tourId;
+    private Long activityId;
     private String city;
     private String stationName;
     private String poster;
@@ -25,6 +26,8 @@ public class Station {
     public void setId(Long id) { this.id = id; }
     public Long getTourId() { return tourId; }
     public void setTourId(Long tourId) { this.tourId = tourId; }
+    public Long getActivityId() { return activityId; }
+    public void setActivityId(Long activityId) { this.activityId = activityId; }
     public String getCity() { return city; }
     public void setCity(String city) { this.city = city; }
     public String getStationName() { return stationName; }

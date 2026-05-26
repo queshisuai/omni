@@ -1,14 +1,19 @@
 package com.omni.ticket.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.core.toolkit.LambdaUtils;
 import com.omni.common.result.Result;
 import com.omni.common.util.JwtUtil;
+import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.ActivityArtistDto;
+import com.omni.ticket.dto.ActivityDraftResponse;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
@@ -19,6 +24,9 @@ import com.omni.ticket.dto.PrivateAssetResponse;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
+import com.omni.ticket.dto.StationConfigVersionRequest;
+import com.omni.ticket.dto.StationConfigVersionResponse;
+import com.omni.ticket.dto.StationConfigVersionReviewRequest;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.dto.VenueApplicationReviewRequest;
 import com.omni.ticket.dto.VenueApplicationResponse;
@@ -36,6 +44,7 @@ import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
+import com.omni.ticket.service.ActivityDraftService;
 import com.omni.ticket.service.ArtistAdminService;
 import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivityRiskResponseService;
@@ -49,6 +58,7 @@ import com.omni.ticket.service.SessionSeatProtectionService;
 import com.omni.ticket.service.SessionSeatService;
 import com.omni.ticket.service.PrivateAssetService;
 import com.omni.ticket.service.SeatCraftLayoutVersionService;
+import com.omni.ticket.service.StationConfigVersionService;
 import com.omni.ticket.service.TicketAssetService;
 import com.omni.ticket.service.TicketTypeAreaService;
 import com.omni.ticket.service.TicketTypeStockRecalculationService;
@@ -59,6 +69,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
@@ -66,6 +78,7 @@ import org.springframework.http.ResponseEntity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -138,6 +151,10 @@ class AdminControllerTest {
     private PrivateAssetService privateAssetService;
     @Mock
     private SeatCraftLayoutVersionService seatCraftLayoutVersionService;
+    @Mock
+    private ActivityDraftService activityDraftService;
+    @Mock
+    private StationConfigVersionService stationConfigVersionService;
 
     @Test
     void listAdminVenuesUsesStableDisplayOrder() {
@@ -151,7 +168,23 @@ class AdminControllerTest {
         ArgumentCaptor<QueryWrapper<Venue>> captor = ArgumentCaptor.forClass(QueryWrapper.class);
         verify(venueMapper).selectList(captor.capture());
         String sqlSegment = captor.getValue().getSqlSegment().trim();
-        assertEquals("ORDER BY city ASC,name ASC,id ASC", sqlSegment);
+        assertEquals("(status = #{ew.paramNameValuePairs.MPGENVAL1}) ORDER BY city ASC,name ASC,id ASC", sqlSegment);
+    }
+
+    @Test
+    void deleteVenuePhysicallyDeletesRecord() {
+        AdminController controller = controller();
+        Venue venue = new Venue();
+        venue.setId(13L);
+        venue.setStatus(1);
+        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        when(venueMapper.selectById(13L)).thenReturn(venue);
+
+        Result<Void> result = controller.deleteVenue(13L, 2002L);
+
+        assertEquals(200, result.getCode());
+        verify(venueMapper).deleteById(13L);
+        verify(venueMapper, never()).updateById(any());
     }
 
     @Test
@@ -389,6 +422,23 @@ class AdminControllerTest {
 
         assertEquals(401, result.getCode());
         verify(activityAdminService, never()).deactivateOrganizer(any());
+    }
+
+    @Test
+    void deactivateTourDelegatesToTourStationService() {
+        AdminController controller = controller();
+        DeactivateActivityRequest request = new DeactivateActivityRequest();
+        request.setUserId(2003L);
+        request.setConfirmRefund(true);
+        RefundImpactResponse response = new RefundImpactResponse();
+        response.setActivityId(10L);
+        when(tourStationService.deactivateTour(10L, request)).thenReturn(response);
+
+        Result<RefundImpactResponse> result = controller.deactivateTour(10L, request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(10L, result.getData().getActivityId());
+        verify(tourStationService).deactivateTour(10L, request);
     }
 
     @Test
@@ -937,6 +987,24 @@ class AdminControllerTest {
     }
 
     @Test
+    void listAdminActivitiesOrdersByIdAsc() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<Activity> page = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10, 0);
+        when(activityMapper.selectPage(any(), any())).thenReturn(page);
+
+        controller.listAdminActivities(2003L, 1, 10, null, null);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<Activity>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(activityMapper).selectPage(any(), captor.capture());
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), Activity.class);
+        LambdaUtils.installCache(TableInfoHelper.getTableInfo(Activity.class));
+        String sqlSegment = captor.getValue().getSqlSegment();
+        assertTrue(sqlSegment.contains("ORDER BY id ASC"));
+    }
+
+    @Test
     void updateActivityWithLineupUsesFirstArtistWhenNoPrimary() {
         AdminController controller = controller();
         when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
@@ -1292,8 +1360,292 @@ class AdminControllerTest {
         verify(artistGovernanceService, never()).updateRisk(any(), any());
     }
 
+    @Test
+    void createActivityDraftDelegatesToDraftService() {
+        AdminController controller = controller();
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", "9999");
+        Activity activity = new Activity();
+        activity.setId(30L);
+        com.omni.ticket.entity.Station station = new com.omni.ticket.entity.Station();
+        station.setId(10L);
+        ActivityDraftResponse response = new ActivityDraftResponse(activity, station);
+        when(activityDraftService.createDraft(eq(2003L), eq(body))).thenReturn(response);
+
+        Result<ActivityDraftResponse> result = controller.createActivityDraft(organizerToken(), body);
+
+        assertEquals(200, result.getCode());
+        assertEquals(30L, result.getData().getActivity().getId());
+        verify(activityDraftService).createDraft(2003L, body);
+    }
+
+    @Test
+    void createActivityDraftRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<ActivityDraftResponse> result = controller.createActivityDraft(null, validCreateActivityBody());
+
+        assertEquals(401, result.getCode());
+        verify(activityDraftService, never()).createDraft(any(), any());
+    }
+
+    @Test
+    void createStationConfigVersionUsesTokenSubjectOverBodyUserId() {
+        AdminController controller = controller();
+        StationConfigVersionRequest request = stationConfigRequest(9999L);
+        StationConfigVersionResponse response = stationConfigResponse(100L, "draft");
+        when(stationConfigVersionService.createDraft(eq(2003L), eq(10L), eq(request))).thenReturn(response);
+
+        Result<StationConfigVersionResponse> result = controller.createStationConfigVersion(10L, organizerToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(100L, result.getData().getId());
+        verify(stationConfigVersionService).createDraft(2003L, 10L, request);
+    }
+
+    @Test
+    void createStationConfigVersionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<StationConfigVersionResponse> result = controller.createStationConfigVersion(10L, null, stationConfigRequest(2003L));
+
+        assertEquals(401, result.getCode());
+        verify(stationConfigVersionService, never()).createDraft(any(), any(), any());
+    }
+
+    @Test
+    void updateStationConfigVersionUsesTokenSubjectOverBodyUserId() {
+        AdminController controller = controller();
+        StationConfigVersionRequest request = stationConfigRequest(9999L);
+        StationConfigVersionResponse response = stationConfigResponse(100L, "draft");
+        when(stationConfigVersionService.updateDraft(eq(2003L), eq(100L), eq(request))).thenReturn(response);
+
+        Result<StationConfigVersionResponse> result = controller.updateStationConfigVersion(100L, organizerToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals("draft", result.getData().getStatus());
+        verify(stationConfigVersionService).updateDraft(2003L, 100L, request);
+    }
+
+    @Test
+    void updateStationConfigVersionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<StationConfigVersionResponse> result = controller.updateStationConfigVersion(100L, null, stationConfigRequest(2003L));
+
+        assertEquals(401, result.getCode());
+        verify(stationConfigVersionService, never()).updateDraft(any(), any(), any());
+    }
+
+    @Test
+    void deleteStationConfigVersionDelegatesToService() {
+        AdminController controller = controller();
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", "9999");
+
+        Result<Void> result = controller.deleteStationConfigVersion(100L, organizerToken(), body);
+
+        assertEquals(200, result.getCode());
+        verify(stationConfigVersionService).deleteDraft(100L, 2003L);
+    }
+
+    @Test
+    void deleteStationConfigVersionAllowsMissingBody() {
+        AdminController controller = controller();
+
+        Result<Void> result = controller.deleteStationConfigVersion(100L, organizerToken(), null);
+
+        assertEquals(200, result.getCode());
+        verify(stationConfigVersionService).deleteDraft(100L, 2003L);
+    }
+
+    @Test
+    void deleteStationConfigVersionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<Void> result = controller.deleteStationConfigVersion(100L, null, null);
+
+        assertEquals(401, result.getCode());
+        verify(stationConfigVersionService, never()).deleteDraft(any(), any());
+    }
+
+    @Test
+    void submitStationConfigVersionDelegatesToService() {
+        AdminController controller = controller();
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", 9999L);
+        StationConfigVersionResponse response = stationConfigResponse(100L, "submitted");
+        when(stationConfigVersionService.submit(100L, 2003L)).thenReturn(response);
+
+        Result<StationConfigVersionResponse> result = controller.submitStationConfigVersion(100L, organizerToken(), body);
+
+        assertEquals(200, result.getCode());
+        assertEquals("submitted", result.getData().getStatus());
+        verify(stationConfigVersionService).submit(100L, 2003L);
+    }
+
+    @Test
+    void submitStationConfigVersionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<StationConfigVersionResponse> result = controller.submitStationConfigVersion(100L, null, null);
+
+        assertEquals(401, result.getCode());
+        verify(stationConfigVersionService, never()).submit(any(), any());
+    }
+
+    @Test
+    void withdrawStationConfigVersionAllowsMissingBody() {
+        AdminController controller = controller();
+        StationConfigVersionResponse response = stationConfigResponse(100L, "withdrawn");
+        when(stationConfigVersionService.withdraw(100L, 2003L)).thenReturn(response);
+
+        Result<StationConfigVersionResponse> result = controller.withdrawStationConfigVersion(100L, organizerToken(), null);
+
+        assertEquals(200, result.getCode());
+        assertEquals("withdrawn", result.getData().getStatus());
+        verify(stationConfigVersionService).withdraw(100L, 2003L);
+    }
+
+    @Test
+    void withdrawStationConfigVersionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<StationConfigVersionResponse> result = controller.withdrawStationConfigVersion(100L, null, null);
+
+        assertEquals(401, result.getCode());
+        verify(stationConfigVersionService, never()).withdraw(any(), any());
+    }
+
+    @Test
+    void approveStationConfigVersionUsesTokenSubjectOverBodyUserIds() {
+        AdminController controller = controller();
+        StationConfigVersionReviewRequest request = new StationConfigVersionReviewRequest();
+        request.setUserId(9999L);
+        request.setReviewerId(9999L);
+        request.setReviewNote("通过");
+        StationConfigVersionResponse response = stationConfigResponse(100L, "applied");
+        when(stationConfigVersionService.approve(eq(2002L), eq(100L), eq(request))).thenReturn(response);
+
+        Result<StationConfigVersionResponse> result = controller.approveStationConfigVersion(100L, adminToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals("applied", result.getData().getStatus());
+        verify(stationConfigVersionService).approve(2002L, 100L, request);
+    }
+
+    @Test
+    void approveStationConfigVersionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<StationConfigVersionResponse> result = controller.approveStationConfigVersion(
+                100L, null, new StationConfigVersionReviewRequest());
+
+        assertEquals(401, result.getCode());
+        verify(stationConfigVersionService, never()).approve(any(), any(), any());
+    }
+
+    @Test
+    void approveStationConfigVersionAllowsNullBody() {
+        AdminController controller = controller();
+        StationConfigVersionResponse response = stationConfigResponse(100L, "applied");
+        when(stationConfigVersionService.approve(eq(2002L), eq(100L), any())).thenReturn(response);
+
+        Result<StationConfigVersionResponse> result = controller.approveStationConfigVersion(100L, adminToken(), null);
+
+        assertEquals(200, result.getCode());
+        assertEquals("applied", result.getData().getStatus());
+        verify(stationConfigVersionService).approve(2002L, 100L, null);
+    }
+
+    @Test
+    void rejectStationConfigVersionUsesTokenSubjectOverBodyUserIds() {
+        AdminController controller = controller();
+        StationConfigVersionReviewRequest request = new StationConfigVersionReviewRequest();
+        request.setUserId(9999L);
+        request.setReviewerId(9999L);
+        request.setReviewNote("资料不足");
+        StationConfigVersionResponse response = stationConfigResponse(100L, "rejected");
+        when(stationConfigVersionService.reject(eq(2002L), eq(100L), eq(request))).thenReturn(response);
+
+        Result<StationConfigVersionResponse> result = controller.rejectStationConfigVersion(100L, adminToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals("rejected", result.getData().getStatus());
+        verify(stationConfigVersionService).reject(2002L, 100L, request);
+    }
+
+    @Test
+    void rejectStationConfigVersionAllowsNullBody() {
+        AdminController controller = controller();
+        StationConfigVersionResponse response = stationConfigResponse(100L, "rejected");
+        when(stationConfigVersionService.reject(eq(2002L), eq(100L), any())).thenReturn(response);
+
+        Result<StationConfigVersionResponse> result = controller.rejectStationConfigVersion(100L, adminToken(), null);
+
+        assertEquals(200, result.getCode());
+        assertEquals("rejected", result.getData().getStatus());
+        verify(stationConfigVersionService).reject(2002L, 100L, null);
+    }
+
+    @Test
+    void rejectStationConfigVersionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<StationConfigVersionResponse> result = controller.rejectStationConfigVersion(
+                100L, null, new StationConfigVersionReviewRequest());
+
+        assertEquals(401, result.getCode());
+        verify(stationConfigVersionService, never()).reject(any(), any(), any());
+    }
+
+    @Test
+    void listStationConfigVersionReviewsUsesTokenSubject() {
+        AdminController controller = controller();
+        StationConfigVersionResponse response = stationConfigResponse(100L, "submitted");
+        when(stationConfigVersionService.listReviews(2002L, "submitted")).thenReturn(List.of(response));
+
+        Result<List<StationConfigVersionResponse>> result = controller.listStationConfigVersionReviews(adminToken(), "submitted");
+
+        assertEquals(200, result.getCode());
+        assertEquals(1, result.getData().size());
+        verify(stationConfigVersionService).listReviews(2002L, "submitted");
+    }
+
+    @Test
+    void listStationConfigVersionReviewsRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<List<StationConfigVersionResponse>> result = controller.listStationConfigVersionReviews(null, "submitted");
+
+        assertEquals(401, result.getCode());
+        verify(stationConfigVersionService, never()).listReviews(any(), any());
+    }
+
     private AdminController controller() {
-        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService, privateAssetService, seatCraftLayoutVersionService);
+        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService, privateAssetService, seatCraftLayoutVersionService, activityDraftService, stationConfigVersionService);
+    }
+
+    private StationConfigVersionRequest stationConfigRequest(Long userId) {
+        StationConfigVersionRequest request = new StationConfigVersionRequest();
+        request.setUserId(userId);
+        request.setChangeType("update_city");
+        return request;
+    }
+
+    private StationConfigVersionResponse stationConfigResponse(Long id, String status) {
+        StationConfigVersionResponse response = new StationConfigVersionResponse();
+        response.setId(id);
+        response.setStatus(status);
+        return response;
+    }
+
+    private String adminToken() {
+        return "Bearer " + JwtUtil.generateToken(2002L, "13800000001", "admin");
+    }
+
+    private String organizerToken() {
+        return "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer");
     }
 
     private Map<String, Object> validCreateActivityBody() {

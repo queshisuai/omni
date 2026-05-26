@@ -112,7 +112,7 @@ public class PrivateAssetService {
     public PrivateAssetResponse bindVenueProof(Long assetId, Long venueApplicationId, Long userId) {
         userAccessService.requireAdminOrOrganizer(userId);
         if (venueApplicationId == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "场地申请ID不能为空");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "场馆审核资料ID不能为空");
         }
         PrivateAsset asset = requireAsset(assetId);
         if (!BIZ_TYPE_VENUE_PROOF.equals(asset.getBizType())) {

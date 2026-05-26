@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { approveRefund, listAdminRefunds, rejectRefund } from '@/lib/api'
+import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
 import type { RefundRequestVO, RefundStatus, UserRole } from '@/types/api'
 
 const STATUS_OPTIONS: Array<{ label: string; value?: RefundStatus }> = [
@@ -50,7 +51,9 @@ export default function ConsoleRefundsPage() {
   const [submittingId, setSubmittingId] = useState<number | null>(null)
   const [role, setRole] = useState<UserRole | ''>('')
   const [checkingRole, setCheckingRole] = useState(true)
+  const [page, setPage] = useState(1)
   const isAdmin = role === 'admin'
+  const pageRefunds = useMemo(() => refunds.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [refunds, page])
 
   useEffect(() => {
     let ignore = false
@@ -64,7 +67,10 @@ export default function ConsoleRefundsPage() {
     setError('')
     listAdminRefunds(status)
       .then(data => {
-        if (!ignore) setRefunds(data)
+        if (!ignore) {
+          setRefunds(data)
+          setPage(1)
+        }
       })
       .catch(() => {
         if (!ignore) setError('加载退款申请失败，请稍后重试')
@@ -82,6 +88,7 @@ export default function ConsoleRefundsPage() {
     setError('')
     const data = await listAdminRefunds(status)
     setRefunds(data)
+    setPage(1)
   }
 
   const startReview = (id: number, action: ReviewAction) => {
@@ -168,7 +175,7 @@ export default function ConsoleRefundsPage() {
               <thead>
                 <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
                   <th className="text-left p-3 font-medium text-[#666]">退款号</th>
-                  <th className="text-left p-3 font-medium text-[#666]">订单号/ID</th>
+                  <th className="text-left p-3 font-medium text-[#666]">订单/活动</th>
                   <th className="text-left p-3 font-medium text-[#666]">用户ID</th>
                   <th className="text-left p-3 font-medium text-[#666]">金额</th>
                   <th className="text-left p-3 font-medium text-[#666]">原因</th>
@@ -179,7 +186,7 @@ export default function ConsoleRefundsPage() {
                 </tr>
               </thead>
               <tbody>
-                {refunds.map(refund => {
+                {pageRefunds.map(refund => {
                   const meta = STATUS_META[refund.status] || UNKNOWN_STATUS_META
                   const reviewing = draft?.id === refund.id
                   const submitting = submittingId === refund.id
@@ -187,7 +194,8 @@ export default function ConsoleRefundsPage() {
                     <tr key={refund.id} className="border-b border-[#f0f0f0] align-top hover:bg-[#fafafa]">
                       <td className="p-3 font-medium text-[#333]">{refund.refundNo || refund.id}</td>
                       <td className="p-3 text-[#666]">
-                        <div className="font-medium text-[#333]">{refund.orderNo || '-'}</div>
+                        <div className="font-medium text-[#333]">{refund.orderName || refund.activityName || '未知活动'}</div>
+                        <div className="text-[12px] text-[#666]">订单号：{refund.orderNo || '-'}</div>
                         <div className="text-[12px] text-[#999]">ID: {refund.orderId}</div>
                       </td>
                       <td className="p-3 text-[#666]">{refund.userId}</td>
@@ -256,6 +264,9 @@ export default function ConsoleRefundsPage() {
                 })}
               </tbody>
             </table>
+          </div>
+          <div className="px-4 pb-4">
+            <Pagination page={page} total={refunds.length} loading={loading} onChange={setPage} />
           </div>
         </div>
       )}

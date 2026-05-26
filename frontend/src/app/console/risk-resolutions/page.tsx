@@ -1,25 +1,57 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { listActivityRiskResolutions, reviewActivityRiskResolution } from '@/lib/api'
+import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
 import type { ActivityRiskResolutionVO } from '@/types/api'
 
+type ResolutionStatus = 'pending' | 'approved' | 'rejected' | ''
+
+const STATUS_OPTIONS: { value: ResolutionStatus; label: string }[] = [
+  { value: 'pending', label: '待审核' },
+  { value: 'approved', label: '已通过' },
+  { value: 'rejected', label: '已驳回' },
+  { value: '', label: '全部记录' },
+]
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: '待审核',
+  approved: '已通过',
+  rejected: '已驳回',
+}
+
 export default function RiskResolutionsPage() {
+  return (
+    <Suspense fallback={<div className="text-[#999]">加载中...</div>}>
+      <RiskResolutionsContent />
+    </Suspense>
+  )
+}
+
+function RiskResolutionsContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [items, setItems] = useState<ActivityRiskResolutionVO[]>([])
   const [userId, setUserId] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [note, setNote] = useState('')
+  const [notes, setNotes] = useState<Record<number, string>>({})
+  const [processingId, setProcessingId] = useState<number | null>(null)
+  const [page, setPage] = useState(1)
+  const status = normalizeStatus(searchParams.get('status'))
+  const activityId = searchParams.get('activityId') || ''
 
-  const loadData = async (id = userId) => {
+  const loadData = async (id = userId, nextStatus = status) => {
     if (!id) return
     setLoading(true)
     setError('')
     try {
-      setItems(await listActivityRiskResolutions(id, 'pending'))
+      const data = await listActivityRiskResolutions(id, nextStatus || undefined)
+      const visible = activityId ? data.filter(item => String(item.activityId) === activityId) : data
+      setItems(visible)
+      setPage(1)
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载恢复申请失败')
     } finally {
@@ -34,37 +66,101 @@ export default function RiskResolutionsPage() {
       return
     }
     setUserId(user.userId)
-    void loadData(user.userId)
-  }, [router])
+    void loadData(user.userId, status)
+  }, [router, status, activityId])
+
+  const setStatus = (nextStatus: ResolutionStatus) => {
+    setPage(1)
+    const params = new URLSearchParams(searchParams.toString())
+    if (nextStatus) params.set('status', nextStatus)
+    else params.delete('status')
+    router.replace(`/console/risk-resolutions?${params.toString()}`)
+  }
+
+  const pageItems = useMemo(() => items.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [items, page])
 
   const review = async (id: number, action: 'approve' | 'reject') => {
-    await reviewActivityRiskResolution(id, { userId, action, reviewNote: note.trim() || null })
-    setNote('')
-    await loadData(userId)
+    setProcessingId(id)
+    setError('')
+    try {
+      const note = notes[id] || ''
+      await reviewActivityRiskResolution(id, { userId, action, reviewNote: note.trim() || null })
+      setNotes(current => {
+        const next = { ...current }
+        delete next[id]
+        return next
+      })
+      await loadData(userId, status)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '审核恢复申请失败')
+    } finally {
+      setProcessingId(null)
+    }
   }
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-[#1a1a2e]">恢复售票审核</h1>
-        <p className="mt-1 text-[13px] text-[#999]">审核风险停票活动的主办方处理申请。</p>
+        <h1 className="text-[22px] font-bold text-[#1a1a2e]">恢复售票审核 / 记录</h1>
+        <p className="mt-1 text-[13px] text-[#999]">审核风险停票活动的恢复申请，并查看历史恢复记录。</p>
       </div>
-      <textarea value={note} onChange={event => setNote(event.target.value)} className="h-20 w-full rounded-xl border border-[#ddd] p-3 text-[14px]" placeholder="审核备注" />
+
+      <div className="flex flex-wrap gap-2">
+        {STATUS_OPTIONS.map(option => (
+          <button
+            key={option.label}
+            onClick={() => setStatus(option.value)}
+            className="rounded-full border bg-white px-3 py-1 text-[12px] outline-none"
+            style={{
+              borderColor: status === option.value ? '#ff1268' : '#ddd',
+              color: status === option.value ? '#ff1268' : '#666',
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       {error && <div className="rounded-xl bg-[#fef2f2] p-3 text-[#dc2626]">{error}</div>}
-      {loading ? <div className="text-[#999]">加载中...</div> : items.length === 0 ? <div className="rounded-xl bg-white p-8 text-center text-[#999]">暂无待审核申请</div> : (
+      {loading ? <div className="text-[#999]">加载中...</div> : items.length === 0 ? <div className="rounded-xl bg-white p-8 text-center text-[#999]">暂无恢复申请记录</div> : (
         <div className="space-y-3">
-          {items.map(item => (
-            <div key={item.id} className="rounded-xl border border-[#eee] bg-white p-4">
-              <div className="font-semibold text-[#1a1a2e]">活动 #{item.activityId}</div>
-              <div className="mt-1 text-[13px] text-[#666]">处理说明：{item.resolutionNote || '未填写'}</div>
-              <div className="mt-3 flex gap-2">
-                <button onClick={() => review(item.id, 'approve')} className="rounded-full bg-[#16a34a] px-4 py-2 text-[13px] text-white">通过恢复</button>
-                <button onClick={() => review(item.id, 'reject')} className="rounded-full bg-[#ef4444] px-4 py-2 text-[13px] text-white">拒绝</button>
+          {pageItems.map(item => {
+            const editable = item.status === 'pending'
+            return (
+              <div key={item.id} className="rounded-xl border border-[#eee] bg-white p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-semibold text-[#1a1a2e]">{item.activityName || `活动 #${item.activityId}`}</div>
+                  <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{STATUS_LABEL[item.status] || item.status}</span>
+                </div>
+                <div className="mt-1 text-[12px] text-[#999]">活动ID：{item.activityId}</div>
+                <div className="mt-1 text-[13px] text-[#666]">处理说明：{item.resolutionNote || '未填写'}</div>
+                {item.reviewNote && <div className="mt-1 text-[13px] text-[#666]">审核备注：{item.reviewNote}</div>}
+                {editable ? (
+                  <>
+                    <textarea
+                      value={notes[item.id] || ''}
+                      onChange={event => setNotes(current => ({ ...current, [item.id]: event.target.value }))}
+                      className="mt-3 h-20 w-full rounded-xl border border-[#ddd] p-3 text-[14px]"
+                      placeholder="审核备注"
+                    />
+                    <div className="mt-3 flex gap-2">
+                      <button disabled={processingId === item.id} onClick={() => review(item.id, 'approve')} className="rounded-full bg-[#16a34a] px-4 py-2 text-[13px] text-white disabled:opacity-60">通过恢复</button>
+                      <button disabled={processingId === item.id} onClick={() => review(item.id, 'reject')} className="rounded-full bg-[#ef4444] px-4 py-2 text-[13px] text-white disabled:opacity-60">拒绝</button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-3 text-[12px] text-[#999]">历史记录仅供查看。</div>
+                )}
               </div>
-            </div>
-          ))}
+            )
+          })}
+          <Pagination page={page} total={items.length} loading={loading} onChange={setPage} />
         </div>
       )}
     </div>
   )
+}
+
+function normalizeStatus(value: string | null): ResolutionStatus {
+  return value === 'approved' || value === 'rejected' || value === 'pending' ? value : 'pending'
 }

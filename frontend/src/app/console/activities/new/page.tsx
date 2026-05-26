@@ -1,48 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { listCategories, listAdminVenues, createAdminActivity, createAdminSession, createAdminTicketType, deleteAdminActivity, listVenueSeatLayoutTemplates, updateActivitySeatLayout, uploadTicketAsset, uploadPrivateAsset, listMyVenueApplications } from '@/lib/api'
+import { listCategories, listAdminVenues, createActivityDraft, createStationConfigVersion, createTourDraft, getAdminTourDetail, listVenueSeatLayoutTemplates, submitStationConfigVersion, submitVenueApplication, uploadPrivateAsset, uploadTicketAsset } from '@/lib/api'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
 import { LocalFileUpload } from '@/components/LocalFileUpload'
-import { PrivateFileUpload } from '@/components/PrivateFileUpload'
+import { StationVenueApprovalForm, createEmptyStationVenueApprovalValue, validateStationVenueApproval, type StationVenueApprovalValue } from '@/components/station-config/StationVenueApprovalForm'
 import { globalAlert } from '@/components/GlobalDialog'
-import type { CategoryVO, VenueEntity, ActivityEntity, SessionEntity, SeatLayoutTemplateCandidateVO, UserRole, ActivityArtistVO, PrivateAssetVO, VenueApplicationVO } from '@/types/api'
-
-type SessionDraft = {
-  key: string
-  venueId: number | null
-  venueApplicationId: number | null
-  startTime: string
-  endTime: string
-}
-
-type TicketTypeDraft = {
-  key: string
-  sessionKey: string
-  name: string
-  price: string
-  totalStock: string
-}
+import type { CategoryVO, VenueEntity, SeatLayoutTemplateCandidateVO, UserRole, ActivityArtistVO } from '@/types/api'
 
 type SeatMapVisibility = 'published' | 'hidden'
+type ActivityMode = 'single' | 'tour'
 
-function sessionVenueValue(session: SessionDraft) {
-  return session.venueApplicationId ? `application:${session.venueApplicationId}` : session.venueId ? `venue:${session.venueId}` : ''
-}
-
-function resolveVenueSelection(value: string, applications: VenueApplicationVO[]) {
-  if (!value) return { venueId: null, venueApplicationId: null }
-  const [type, rawId] = value.split(':')
-  const id = Number(rawId)
-  if (!Number.isInteger(id) || id <= 0) return { venueId: null, venueApplicationId: null }
-  if (type === 'application') {
-    const application = applications.find(item => item.id === id)
-    return { venueId: application?.venueId ?? null, venueApplicationId: application?.id ?? null }
-  }
-  return { venueId: id, venueApplicationId: null }
+type TourStationDraft = {
+  key: string
+  value: StationVenueApprovalValue
 }
 
 export default function NewActivityPage() {
@@ -52,10 +27,9 @@ export default function NewActivityPage() {
   const [role, setRole] = useState<UserRole | ''>('')
   const [checkingRole, setCheckingRole] = useState(true)
 
-  // 分类和场馆
+  // 分类和场馆记录
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [venues, setVenues] = useState<VenueEntity[]>([])
-  const [venueApplications, setVenueApplications] = useState<VenueApplicationVO[]>([])
 
   // 步骤1：基本信息
   const [name, setName] = useState('')
@@ -63,38 +37,31 @@ export default function NewActivityPage() {
   const [artists, setArtists] = useState<ActivityArtistVO[]>([])
   const [description, setDescription] = useState('')
   const [poster, setPoster] = useState('')
-  const [venueApprovalNo, setVenueApprovalNo] = useState('')
-  const [venueApprovalFileUrl, setVenueApprovalFileUrl] = useState('')
-  const [venueApprovalAsset, setVenueApprovalAsset] = useState<PrivateAssetVO | null>(null)
-  const [venueApprovalNote, setVenueApprovalNote] = useState('')
+  const [activityMode, setActivityMode] = useState<ActivityMode>('single')
   const [seatMapVisibility, setSeatMapVisibility] = useState<SeatMapVisibility>('hidden')
   const [perUserLimit, setPerUserLimit] = useState('')
-  const [uploadingVenueApproval, setUploadingVenueApproval] = useState(false)
 
-  // 步骤2：场次
-  const [sessions, setSessions] = useState<SessionDraft[]>([{ key: 's1', venueId: null, venueApplicationId: null, startTime: '', endTime: '' }])
+  // 步骤2：站点配置。普通活动一个站点，巡演多个站点。
+  const [stationConfig, setStationConfig] = useState(() => createEmptyStationVenueApprovalValue())
   const [templateCandidates, setTemplateCandidates] = useState<SeatLayoutTemplateCandidateVO[]>([])
   const [selectedTemplateSource, setSelectedTemplateSource] = useState('')
   const [loadingTemplates, setLoadingTemplates] = useState(false)
-
-  // 步骤3：票档
-  const [ticketTypes, setTicketTypes] = useState<TicketTypeDraft[]>([
-    { key: 't1', sessionKey: 's1', name: '', price: '', totalStock: '' },
-  ])
+  const [tourStations, setTourStations] = useState<TourStationDraft[]>([{ key: 'tc1', value: createEmptyStationVenueApprovalValue() }])
+  const [uploadingProof, setUploadingProof] = useState(false)
 
   useEffect(() => {
     const u = getUser()
-    if (!u) return
+    if (!u) {
+      setCheckingRole(false)
+      return
+    }
     setRole(u.role || 'user')
     setCheckingRole(false)
     listCategories().then(setCategories).catch(() => {})
     listAdminVenues(u.userId).then(setVenues).catch(() => {})
-    listMyVenueApplications()
-      .then(items => setVenueApplications(items.filter(item => item.status === 1 && item.venueId != null)))
-      .catch(() => setVenueApplications([]))
   }, [])
 
-  const primaryVenueId = sessions.find(s => s.venueId)?.venueId ?? null
+  const primaryVenueId = stationConfig.mode === 'existing' ? stationConfig.venueId : null
 
   useEffect(() => {
     const u = getUser()
@@ -123,48 +90,49 @@ export default function NewActivityPage() {
     return () => { cancelled = true }
   }, [primaryVenueId])
 
-  const addSession = () => {
-    const key = 's' + Date.now()
-    setSessions([...sessions, { key, venueId: null, venueApplicationId: null, startTime: '', endTime: '' }])
-    setTicketTypes([...ticketTypes, { key: 't' + Date.now(), sessionKey: key, name: '', price: '', totalStock: '' }])
+  const addTourStation = () => {
+    setTourStations(prev => [...prev, { key: `tc${Date.now()}`, value: createEmptyStationVenueApprovalValue() }])
   }
 
-  const removeSession = (key: string) => {
-    if (sessions.length <= 1) return
-    setSessions(sessions.filter(s => s.key !== key))
-    setTicketTypes(ticketTypes.filter(t => t.sessionKey !== key))
+  const removeTourStation = (key: string) => {
+    setTourStations(prev => prev.length <= 1 ? prev : prev.filter(item => item.key !== key))
   }
 
-  const addTicketType = (sessionKey: string) => {
-    setTicketTypes([...ticketTypes, { key: 't' + Date.now(), sessionKey, name: '', price: '', totalStock: '' }])
+  const updateTourStation = (key: string, value: StationVenueApprovalValue) => {
+    setTourStations(prev => prev.map(item => item.key === key ? { ...item, value } : item))
   }
 
-  const removeTicketType = (key: string) => {
-    setTicketTypes(ticketTypes.filter(t => t.key !== key))
-  }
-
-  const updateSession = (key: string, field: string, value: string | number | null) => {
-    setSessions(sessions.map(s => s.key === key ? { ...s, [field]: value } : s))
-  }
-
-  const updateSessionVenueSource = (key: string, value: string) => {
-    const selection = resolveVenueSelection(value, venueApplications)
-    setSessions(sessions.map(s => s.key === key ? { ...s, ...selection } : s))
-  }
-
-  const updateTicketType = (key: string, field: string, value: string) => {
-    setTicketTypes(ticketTypes.map(t => t.key === key ? { ...t, [field]: value } : t))
-  }
-
-  const handleVenueApprovalUpload = async (file: File) => {
+  const handleProofUpload = async (file: File) => {
     const u = getUser()
     if (!u?.userId) throw new Error('请先登录')
-    setUploadingVenueApproval(true)
+    setUploadingProof(true)
     try {
-      return await uploadPrivateAsset({ userId: u.userId, bizType: 'activity-venue-proof', file })
+      return await uploadPrivateAsset({ userId: u.userId, bizType: 'venue-proof', file })
     } finally {
-      setUploadingVenueApproval(false)
+      setUploadingProof(false)
     }
+  }
+
+  const submitVenueMaterial = async (value: StationVenueApprovalValue) => {
+    if (value.mode === 'tba') return null
+    const application = await submitVenueApplication({
+      venueId: value.mode === 'existing' ? value.venueId : null,
+      venueName: value.venueName.trim(),
+      city: value.city.trim(),
+      address: value.venueAddress.trim(),
+      capacity: value.capacity ? Number(value.capacity) : null,
+      contactName: value.contactName.trim(),
+      contactPhone: value.contactPhone.trim(),
+      qualificationNo: value.qualificationNo.trim() || null,
+      businessScope: value.businessScope.trim() || null,
+      description: value.description.trim() || null,
+      validFrom: value.validFrom,
+      validTo: value.validTo,
+      proofNote: value.proofNote.trim() || null,
+      proofAssetId: value.proofAsset?.id ?? null,
+      layoutSnapshot: '{}',
+    })
+    return application.id
   }
 
   const handleSubmit = async () => {
@@ -175,31 +143,73 @@ export default function NewActivityPage() {
       await globalAlert('个人限购张数必须为正整数')
       return
     }
-    const validSessions = sessions.filter(s => s.venueId && s.startTime)
-    if (validSessions.length === 0) {
-      await globalAlert('请至少填写一个有效场次的场馆和开始时间')
+    if (activityMode === 'tour') {
+      for (const item of tourStations) {
+        const error = validateStationVenueApproval(item.value)
+        if (error) {
+          await globalAlert(error)
+          return
+        }
+      }
+      const cities = tourStations
+        .map(item => ({ city: item.value.city.trim(), stationName: item.value.stationName.trim() }))
+        .filter(item => item.city)
+      if (cities.length === 0) {
+        await globalAlert('请至少添加一个巡演城市站点')
+        return
+      }
+      setSubmitting(true)
+      try {
+        const primaryArtist = artists.find(artist => artist.isPrimary || artist.primary) || artists[0]
+        const tour = await createTourDraft({
+          userId: u.userId,
+          title: name.trim(),
+          categoryId,
+          artistId: primaryArtist.artistId,
+          poster: poster || null,
+          description: description.trim() || null,
+          cities: cities.map(item => item.stationName ? { city: item.city, stationName: item.stationName } : item.city),
+        })
+        const detail = await getAdminTourDetail(u.userId, tour.id)
+        for (let index = 0; index < tourStations.length; index += 1) {
+          const value = tourStations[index].value
+          const station = detail.stations[index]
+          if (!station) continue
+          const venueApplicationId = await submitVenueMaterial(value)
+          await createStationConfigVersion(station.id, {
+            userId: u.userId,
+            changeType: 'set_venue',
+            city: value.city.trim(),
+            stationName: value.stationName.trim() || `${value.city.trim()}站`,
+            venueId: value.mode === 'existing' ? value.venueId : null,
+            venueApplicationId,
+            venueName: value.venueName.trim() || null,
+            venueAddress: value.venueAddress.trim() || null,
+            startTime: value.startTime || null,
+            endTime: value.endTime || null,
+            scheduleTba: !value.startTime,
+            reason: '新建巡演站点初始配置',
+          })
+        }
+        await globalAlert('巡演草稿已创建。已填写的站点配置已保存为草稿，请在巡演详情逐站点提交审核；座位票档请在巡演详情进入 SeatCraft 配置。')
+        router.push(`/console/tours/${tour.id}`)
+      } catch (err) {
+        await globalAlert('创建失败: ' + (err instanceof Error ? err.message : '未知错误'))
+      } finally {
+        setSubmitting(false)
+      }
       return
     }
-    if (validSessions.length !== sessions.length) {
-      await globalAlert('场次信息需填写完整，或删除未填写完整的场次')
-      return
-    }
-    const hasIncompleteTicketType = ticketTypes.some(t => {
-      const price = Number(t.price)
-      const totalStock = Number(t.totalStock)
-      const hasAnyValue = Boolean(t.name.trim()) || Boolean(t.price.trim()) || Boolean(t.totalStock.trim())
-      const isComplete = Boolean(t.name.trim()) && Number.isFinite(price) && price > 0 && Number.isInteger(totalStock) && totalStock > 0
-      return hasAnyValue && !isComplete
-    })
-    if (hasIncompleteTicketType) {
-      await globalAlert('票档信息需填写完整，或整行留空表示票档待公布')
+    const stationError = validateStationVenueApproval(stationConfig)
+    if (stationError) {
+      await globalAlert(stationError)
       return
     }
     setSubmitting(true)
     try {
-      // 1. 创建活动，并保存有序艺人阵容
-      const activity: ActivityEntity = await createAdminActivity({
-        userId: u.userId,
+      const selectedTemplate = templateCandidates.find(candidate => `${candidate.sourceType}:${candidate.sourceId}` === selectedTemplateSource)
+      const city = stationConfig.city.trim()
+      const draft = await createActivityDraft({
         categoryId,
         artists: artists.map((artist, index) => ({
           artistId: artist.artistId,
@@ -212,57 +222,46 @@ export default function NewActivityPage() {
         name: name.trim(),
         description,
         poster,
-        venueApprovalNo: venueApprovalNo.trim() || null,
-        venueApprovalFileUrl: venueApprovalAsset ? `private-asset:${venueApprovalAsset.id}` : venueApprovalFileUrl.trim() || null,
-        venueApprovalNote: venueApprovalNote.trim() || null,
-        venueApplicationId: sessions.find(s => s.venueApplicationId)?.venueApplicationId ?? null,
         seatMapVisibility,
         perUserLimit: limitText ? Number(limitText) : null,
       })
 
-      const selectedTemplate = templateCandidates.find(candidate => `${candidate.sourceType}:${candidate.sourceId}` === selectedTemplateSource)
-      if (selectedTemplate) {
-        try {
-          await updateActivitySeatLayout(activity.id, {
-            userId: u.userId,
-            layout: selectedTemplate.layout,
-          })
-        } catch (err) {
-          await deleteAdminActivity(activity.id, { userId: u.userId, reason: '创建活动失败自动清理' }).catch(() => {})
-          throw err
-        }
-      }
-
-      // 2. 创建场次
-      const createdSessions: Map<string, SessionEntity> = new Map()
-      for (const s of sessions) {
-        if (!s.venueId || !s.startTime) continue
-        const session: SessionEntity = await createAdminSession({
+      let version
+      try {
+        const venueApplicationId = await submitVenueMaterial(stationConfig)
+        version = await createStationConfigVersion(draft.station.id, {
           userId: u.userId,
-          activityId: activity.id,
-          venueId: s.venueId,
-          startTime: s.startTime,
-          endTime: s.endTime || null,
+          changeType: 'set_venue',
+          city,
+          stationName: stationConfig.stationName.trim() || `${city}站`,
+          venueId: stationConfig.mode === 'existing' ? stationConfig.venueId : null,
+          venueApplicationId,
+          venueName: stationConfig.venueName.trim() || null,
+          venueAddress: stationConfig.venueAddress.trim() || null,
+          startTime: stationConfig.startTime || null,
+          endTime: stationConfig.endTime || null,
+          scheduleTba: !stationConfig.startTime,
+          seatTemplateSourceType: selectedTemplate?.sourceType || null,
+          seatTemplateSourceId: selectedTemplate?.sourceId || null,
+          reason: '新建活动初始站点配置',
         })
-        createdSessions.set(s.key, session)
+      } catch (configErr) {
+        await globalAlert(`活动草稿已创建，但站点配置保存失败：${configErr instanceof Error ? configErr.message : '未知错误'}。请在活动管理中继续补齐站点配置。`)
+        router.push('/console/activities')
+        return
       }
 
-      // 3. 创建票档
-      for (const t of ticketTypes) {
-        const session = createdSessions.get(t.sessionKey)
-        const price = Number(t.price)
-        const totalStock = Number(t.totalStock)
-        if (!session || !t.name.trim() || !Number.isFinite(price) || price <= 0 || !Number.isInteger(totalStock) || totalStock <= 0) continue
-        await createAdminTicketType({
-          userId: u.userId,
-          sessionId: session.id,
-          name: t.name.trim(),
-          price,
-          totalStock,
-        })
+      let message = '活动草稿已保存，站点配置仍为草稿，可后续补齐/提交。票档请后续在活动管理中补齐。'
+      try {
+        await submitStationConfigVersion(version.id)
+        message = '活动草稿已创建，已提交站点配置审核。票档请后续在活动管理中补齐。'
+      } catch {
+        message = '活动草稿已保存，站点配置仍为草稿，可后续补齐/提交。票档请后续在活动管理中补齐。'
       }
 
-      router.push('/console/activities')
+      await globalAlert(message)
+
+      router.push(`/console/activities/${draft.activity.id}/edit`)
     } catch (err) {
       await globalAlert('创建失败: ' + (err instanceof Error ? err.message : '未知错误'))
     } finally {
@@ -270,18 +269,32 @@ export default function NewActivityPage() {
     }
   }
 
-  const steps = ['活动信息', '设置场次', '设置票档']
+  const steps = activityMode === 'tour' ? ['活动信息', '巡演站点', '确认提交'] : ['活动信息', '站点配置', '确认提交']
   const isAdmin = role === 'admin'
 
-  if (checkingRole || !role) {
+  if (checkingRole) {
     return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
+  }
+
+  if (!role) {
+    return (
+      <div className="max-w-[720px] rounded-xl border border-[#e5e5e5] bg-white p-6">
+        <h1 className="mb-2 text-[22px] font-bold text-[#1a1a2e]">请先登录</h1>
+        <p className="mb-5 text-[14px] text-[#666]">登录后可创建活动草稿并保存站点配置。</p>
+        <Link href="/login" className="inline-flex rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">去登录</Link>
+      </div>
+    )
+  }
+
+  if (role !== 'admin' && role !== 'organizer') {
+    return <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">无权限访问</div>
   }
 
   return (
     <div>
       <div className="mb-5">
         <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '新建平台活动' : '新建我的活动'}</h1>
-        <p className="mt-1 text-[13px] text-[#999]">{isAdmin ? '为平台创建活动，并配置场次、票档和初始库存。' : '为自己主办的项目创建活动，并配置场次、票档和初始库存。'}</p>
+        <p className="mt-1 text-[13px] text-[#999]">选择普通活动或巡演活动；巡演可先添加城市站点，场馆、时间和票档后续补齐。</p>
       </div>
 
       {/* 步骤条 */}
@@ -327,6 +340,19 @@ export default function NewActivityPage() {
               <label className="block text-[13px] font-medium text-[#333] mb-1.5">活动简介</label>
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268] resize-none" placeholder="描述活动内容..." />
             </div>
+            <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4">
+              <div className="mb-2 text-[14px] font-semibold text-[#1a1a2e]">活动类型 *</div>
+              <div className="space-y-2 text-[13px] text-[#333]">
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input type="radio" name="activityMode" value="single" checked={activityMode === 'single'} onChange={() => setActivityMode('single')} className="mt-0.5 accent-[#ff1268]" />
+                  <span><span className="font-medium">普通活动</span>：创建一个活动草稿，并在下一步填写单个活动站点配置。</span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input type="radio" name="activityMode" value="tour" checked={activityMode === 'tour'} onChange={() => setActivityMode('tour')} className="mt-0.5 accent-[#ff1268]" />
+                  <span><span className="font-medium">巡演活动</span>：创建巡演草稿，下一步先添加城市站点，场馆和时间可后续补齐。</span>
+                </label>
+              </div>
+            </div>
             <div className="mb-4">
               <LocalFileUpload
                 label="活动海报"
@@ -348,23 +374,6 @@ export default function NewActivityPage() {
               <input type="number" min={1} value={perUserLimit} onChange={e => setPerUserLimit(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空表示不限购，例如 2" />
               <p className="mt-1 text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</p>
             </div>
-            <div className="rounded-xl border border-[#ffe1ec] bg-[#fff7fa] p-4">
-              <div className="mb-3 text-[14px] font-semibold text-[#1a1a2e]">场地审批凭证</div>
-              <div className="grid gap-3">
-                <input value={venueApprovalNo} onChange={e => setVenueApprovalNo(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="凭证编号" />
-                <PrivateFileUpload
-                  label="场地审批凭证附件"
-                  value={venueApprovalAsset}
-                  accept="application/pdf,image/jpeg,image/png,image/webp"
-                  uploading={submitting || uploadingVenueApproval}
-                  onUpload={handleVenueApprovalUpload}
-                  onChange={setVenueApprovalAsset}
-                  hint="支持 PDF、JPEG、PNG、WEBP；附件以私有文件保存，仅供平台审核。"
-                />
-                <input value={venueApprovalFileUrl} onChange={e => setVenueApprovalFileUrl(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="外部凭证链接（可选）" />
-                <textarea value={venueApprovalNote} onChange={e => setVenueApprovalNote(e.target.value)} rows={2} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268] resize-none" placeholder="凭证说明" />
-              </div>
-            </div>
             <div className="mt-4 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4">
               <div className="mb-2 text-[14px] font-semibold text-[#1a1a2e]">座位图展示策略</div>
               <div className="space-y-2 text-[13px] text-[#333]">
@@ -381,8 +390,8 @@ export default function NewActivityPage() {
           </div>
         )}
 
-        {/* 步骤2：场次 */}
-        {step === 2 && (
+        {/* 步骤2：站点配置 */}
+        {step === 2 && activityMode === 'single' && (
           <div>
             {primaryVenueId && (
               <div className="mb-5 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4">
@@ -403,83 +412,72 @@ export default function NewActivityPage() {
               </div>
             )}
 
-            {sessions.map((s, i) => (
-              <div key={s.key} className="mb-5 p-4 border border-[#f0f0f0] rounded-lg bg-[#fafafa]">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[14px] font-medium text-[#333]">场次 {i + 1}</span>
-                  {sessions.length > 1 && (
-                    <button onClick={() => removeSession(s.key)} className="text-[12px] text-[#ef4444] bg-transparent border-none cursor-pointer">删除</button>
-                  )}
+            <StationVenueApprovalForm
+              value={stationConfig}
+              venues={venues}
+              submitting={submitting}
+              uploading={uploadingProof}
+              onUploadProof={handleProofUpload}
+              onChange={setStationConfig}
+            />
+          </div>
+        )}
+
+        {step === 2 && activityMode === 'tour' && (
+          <div>
+            <div className="mb-4 rounded-lg bg-[#fff7fb] px-4 py-3 text-[13px] text-[#666]">
+              先添加巡演城市站点即可创建草稿；站点名可留空，系统会默认生成“城市 + 站”。场馆、时间、座位图和票档后续在巡演详情中补齐；绑定场馆时同样需要已通过的场馆审核资料。
+            </div>
+            {tourStations.map((item, index) => (
+              <div key={item.key} className="mb-4 rounded-lg border border-[#f0f0f0] bg-[#fafafa] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-[14px] font-medium text-[#333]">城市站点 {index + 1}</div>
+                  {tourStations.length > 1 && <button onClick={() => removeTourStation(item.key)} className="border-none bg-transparent text-[12px] text-[#ef4444]">删除</button>}
                 </div>
-                <div className="mb-3">
-                  <label className="block text-[12px] text-[#666] mb-1">场馆 *</label>
-                  <select value={sessionVenueValue(s)} onChange={e => updateSessionVenueSource(s.key, e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]">
-                    <option value="">选择场馆</option>
-                    {venues.length > 0 && (
-                      <optgroup label="平台场馆">
-                        {venues.map(v => <option key={`venue:${v.id}`} value={`venue:${v.id}`}>{v.name} ({v.city})</option>)}
-                      </optgroup>
-                    )}
-                    {venueApplications.length > 0 && (
-                      <optgroup label="我的已通过场地申请">
-                        {venueApplications.map(item => <option key={`application:${item.id}`} value={`application:${item.id}`}>{item.venueName} ({item.city})</option>)}
-                      </optgroup>
-                    )}
-                  </select>
-                  {venues.length === 0 && venueApplications.length === 0 && <div className="mt-2 text-[12px] text-[#999]">暂无可用场馆，请先提交并通过场地凭证审核。</div>}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[12px] text-[#666] mb-1">开始时间 *</label>
-                    <input type="datetime-local" value={s.startTime} onChange={e => updateSession(s.key, 'startTime', e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" />
-                  </div>
-                  <div>
-                    <label className="block text-[12px] text-[#666] mb-1">结束时间</label>
-                    <input type="datetime-local" value={s.endTime} onChange={e => updateSession(s.key, 'endTime', e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" />
-                  </div>
-                </div>
+                <StationVenueApprovalForm
+                  value={item.value}
+                  venues={venues}
+                  submitting={submitting}
+                  uploading={uploadingProof}
+                  onUploadProof={handleProofUpload}
+                  onChange={value => updateTourStation(item.key, value)}
+                />
               </div>
             ))}
-            <button onClick={addSession} className="text-[13px] text-[#ff1268] bg-transparent border border-dashed border-[#ff1268] rounded-lg px-4 py-2 w-full cursor-pointer hover:bg-[#fff0f3] transition-colors">
-              + 添加场次
+            <button onClick={addTourStation} className="w-full rounded-lg border border-dashed border-[#ff1268] bg-transparent px-4 py-2 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">
+              + 添加城市站点
             </button>
           </div>
         )}
 
-        {/* 步骤3：票档 */}
+        {/* 步骤3：确认提交 */}
         {step === 3 && (
-          <div>
-            <div className="mb-4 rounded-lg bg-[#fff7fb] px-4 py-3 text-[13px] text-[#666]">
-              票档可以暂不公布：整行留空即可先创建活动和场次，后续在场次管理中补充票档。
+          <div className="space-y-4 text-[14px] text-[#333]">
+            <div className="rounded-lg bg-[#fff7fb] px-4 py-3 text-[13px] text-[#666]">
+              {activityMode === 'tour' ? '当前将创建巡演草稿，并添加城市站点。场馆、时间、座位图和票档后续在巡演详情中补齐。' : '当前将创建活动草稿，并保存一个默认站点配置草稿。票档、库存和更多场次请在活动管理中继续补齐，避免当前填写后丢失。'}
             </div>
-            {sessions.map((s, si) => {
-              const sessionTT = ticketTypes.filter(t => t.sessionKey === s.key)
-              return (
-                <div key={s.key} className="mb-5">
-                  <div className="text-[14px] font-medium text-[#333] mb-3">场次 {si + 1} 的票档</div>
-                  {sessionTT.map(tt => (
-                    <div key={tt.key} className="flex items-end gap-3 mb-2 p-3 border border-[#f0f0f0] rounded-lg bg-[#fafafa]">
-                      <div className="flex-1">
-                        <label className="block text-[12px] text-[#666] mb-1">名称</label>
-                        <input value={tt.name} onChange={e => updateTicketType(tt.key, 'name', e.target.value)} className="w-full px-3 py-1.5 border border-[#ddd] rounded text-[13px] outline-none focus:border-[#ff1268]" placeholder="如：普通票/VIP/套票" />
-                      </div>
-                      <div className="w-[120px]">
-                        <label className="block text-[12px] text-[#666] mb-1">价格</label>
-                        <input type="number" min="0" value={tt.price} onChange={e => updateTicketType(tt.key, 'price', e.target.value)} className="w-full px-3 py-1.5 border border-[#ddd] rounded text-[13px] outline-none focus:border-[#ff1268]" placeholder="0" />
-                      </div>
-                      <div className="w-[120px]">
-                        <label className="block text-[12px] text-[#666] mb-1">库存</label>
-                        <input type="number" min="0" step="1" value={tt.totalStock} onChange={e => updateTicketType(tt.key, 'totalStock', e.target.value)} className="w-full px-3 py-1.5 border border-[#ddd] rounded text-[13px] outline-none focus:border-[#ff1268]" placeholder="0" />
-                      </div>
-                      <button onClick={() => removeTicketType(tt.key)} className="text-[12px] text-[#ef4444] bg-transparent border-none cursor-pointer pb-1.5 whitespace-nowrap">删除</button>
-                    </div>
-                  ))}
-                  <button onClick={() => addTicketType(s.key)} className="text-[12px] text-[#ff1268] bg-transparent border-none cursor-pointer">
-                    + 添加票档
-                  </button>
-                </div>
-              )
-            })}
+            <div className="rounded-xl border border-[#f0f0f0] bg-[#fafafa] p-4">
+              <div className="mb-2 font-semibold text-[#1a1a2e]">提交内容确认</div>
+              <div className="grid gap-1 text-[13px] text-[#666] sm:grid-cols-2">
+                <div>活动名称：{name.trim() || '未填写'}</div>
+                <div>活动类型：{activityMode === 'tour' ? '巡演活动' : '普通活动'}</div>
+                {activityMode === 'tour' ? (
+                  <>
+                    <div className="sm:col-span-2">城市站点：{tourStations.map(item => item.value.city.trim()).filter(Boolean).join('、') || '未填写'}</div>
+                    <div>场馆时间：后续补齐</div>
+                    <div>票档库存：后续补齐</div>
+                  </>
+                ) : (
+                  <>
+                    <div>城市：{stationConfig.city.trim() || '未填写'}</div>
+                    <div>场馆：{stationConfig.venueName.trim() || '待定'}</div>
+                    <div>时间：{stationConfig.startTime ? stationConfig.startTime : '待定'}</div>
+                    <div>票档库存：后续补齐</div>
+                    <div>更多场次：后续在活动管理中补齐</div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

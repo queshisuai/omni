@@ -34,6 +34,7 @@ function formatStationStatus(item: StationPurchaseDetail) {
     on_sale: '售票中',
     sold_out: '已售罄',
     suspended: '暂停销售',
+    deactivated: '已下架',
   }
   const publishStatusText: Record<string, string> = {
     draft: '未公布',
@@ -44,6 +45,7 @@ function formatStationStatus(item: StationPurchaseDetail) {
     publishing: '即将开售',
     published: '已发布',
     risk_suspended: '暂停销售',
+    deactivated: '已下架',
     cancelled: '已取消',
   }
   return item.saleStatusText || saleStatusText[item.saleStatus || ''] || publishStatusText[item.station.publishStatus] || '未公布'
@@ -83,22 +85,25 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError('')
-    getTourDetail(Number(id)).then(data => {
-      if (cancelled) return
-      setDetail(data)
-      const details = getStationDetails(data)
-      setSelectedStation(details[0] || null)
-    }).catch(err => {
-      if (cancelled) return
-      setError(err instanceof Error ? err.message : '加载失败')
-    }).finally(() => {
-      if (cancelled) return
-      setLoading(false)
-    })
+    const timer = window.setTimeout(() => {
+      setLoading(true)
+      setError('')
+      getTourDetail(Number(id)).then(data => {
+        if (cancelled) return
+        setDetail(data)
+        const details = getStationDetails(data)
+        setSelectedStation(details[0] || null)
+      }).catch(err => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : '加载失败')
+      }).finally(() => {
+        if (cancelled) return
+        setLoading(false)
+      })
+    }, 0)
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
     }
   }, [id])
 
@@ -143,6 +148,8 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
                   ) : stationDetails.map(item => {
                     const active = selectedStation?.station.id === item.station.id
                     const stationPoster = item.station.poster || detail.tour.poster || '/background.png'
+                    const stationName = item.station.stationName || '未命名站点'
+                    const stationCity = item.station.city || '城市待定'
                     return (
                       <button
                         key={item.station.id}
@@ -155,9 +162,9 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
                           background: active ? '#fff0f5' : '#fff',
                         }}
                       >
-                        <img src={stationPoster} alt={item.station.stationName} className="h-10 w-10 rounded-xl object-cover" />
+                        <img src={stationPoster} alt={stationName} className="h-10 w-10 rounded-xl object-cover" />
                         <span className="min-w-0">
-                          <span className="block truncate font-medium">{item.station.city}</span>
+                          <span className="block truncate font-medium">{stationCity}</span>
                           <span className="mt-0.5 block truncate text-[12px] opacity-80">{formatStationStatus(item)}</span>
                         </span>
                       </button>

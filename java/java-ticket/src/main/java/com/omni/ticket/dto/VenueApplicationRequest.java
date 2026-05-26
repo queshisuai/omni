@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 public class VenueApplicationRequest {
     private Long userId;
+    private Long venueId;
     private String venueName;
     private String city;
     private String address;
@@ -24,6 +25,8 @@ public class VenueApplicationRequest {
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
+    public Long getVenueId() { return venueId; }
+    public void setVenueId(Long venueId) { this.venueId = venueId; }
     public String getVenueName() { return venueName; }
     public void setVenueName(String venueName) { this.venueName = venueName; }
     public String getCity() { return city; }

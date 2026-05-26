@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { listAdminRiskCases } from '@/lib/api'
+import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import type { ActivityRiskCaseVO } from '@/types/api'
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
-  pending: { label: '审核中', color: '#b45309', bg: '#fffbeb' },
+  awaiting_response: { label: '待主办方处理', color: '#6b7280', bg: '#f3f4f6' },
+  pending: { label: '待平台审核', color: '#b45309', bg: '#fffbeb' },
   approved: { label: '已通过', color: '#15803d', bg: '#f0fdf4' },
   rejected: { label: '已驳回', color: '#b91c1c', bg: '#fef2f2' },
 }
@@ -26,7 +28,8 @@ export default function RiskCasesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [cases, setCases] = useState<ActivityRiskCaseVO[]>([])
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
+  const [filter, setFilter] = useState<'all' | 'awaiting_response' | 'pending' | 'approved' | 'rejected'>('all')
+  const [page, setPage] = useState(1)
 
   const load = async (uid: number) => {
     setLoading(true)
@@ -34,6 +37,7 @@ export default function RiskCasesPage() {
     try {
       const data = await listAdminRiskCases(uid)
       setCases(data || [])
+      setPage(1)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '加载风险案例失败')
     } finally {
@@ -50,8 +54,9 @@ export default function RiskCasesPage() {
 
   const visible = useMemo(() => {
     if (filter === 'all') return cases
-    return cases.filter(item => (item.latestResolutionStatus || 'pending') === filter)
+    return cases.filter(item => (item.latestResolutionStatus || 'awaiting_response') === filter)
   }, [filter, cases])
+  const pageVisible = useMemo(() => visible.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [visible, page])
 
   return (
     <div>
@@ -71,13 +76,14 @@ export default function RiskCasesPage() {
       <div className="mb-5 flex flex-wrap gap-2">
         {([
           { key: 'all', label: '全部' },
-          { key: 'pending', label: '处置中' },
+          { key: 'awaiting_response', label: '待主办方处理' },
+          { key: 'pending', label: '待平台审核' },
           { key: 'approved', label: '已恢复' },
           { key: 'rejected', label: '已驳回' },
         ] as const).map(tab => (
           <button
             key={tab.key}
-            onClick={() => setFilter(tab.key)}
+            onClick={() => { setFilter(tab.key); setPage(1) }}
             className="rounded-full border bg-white px-3 py-1 text-[12px] outline-none"
             style={{
               borderColor: filter === tab.key ? '#ff1268' : '#ddd',
@@ -97,8 +103,8 @@ export default function RiskCasesPage() {
         <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">暂无风险案例</div>
       ) : (
         <div className="space-y-3">
-          {visible.map(item => {
-            const status = item.latestResolutionStatus || 'pending'
+          {pageVisible.map(item => {
+            const status = item.latestResolutionStatus || 'awaiting_response'
             const meta = STATUS_META[status]
             return (
               <div key={item.activityId} className="rounded-xl border border-[#ffd9e6] bg-white p-5">
@@ -116,17 +122,29 @@ export default function RiskCasesPage() {
                     {item.latestResolutionNote && <div className="mt-2 rounded bg-[#f9fafb] px-3 py-2 text-[12px] leading-5 text-[#444]">最近一次处置：{item.latestResolutionNote}</div>}
                   </div>
                   <div className="flex flex-shrink-0 flex-col items-end gap-2">
-                    <Link
-                      href="/console/risk-resolutions"
-                      className="rounded-lg border border-[#ff1268] px-4 py-2 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]"
-                    >
-                      去审核处置
-                    </Link>
+                    {status === 'pending' ? (
+                      <Link
+                        href={`/console/risk-resolutions?status=pending&activityId=${item.activityId}`}
+                        className="rounded-lg border border-[#ff1268] px-4 py-2 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]"
+                      >
+                        去审核处置
+                      </Link>
+                    ) : status === 'approved' || status === 'rejected' ? (
+                      <Link
+                        href={`/console/risk-resolutions?status=${status}&activityId=${item.activityId}`}
+                        className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[13px] text-[#666] hover:border-[#ff1268] hover:text-[#ff1268]"
+                      >
+                        查看恢复记录
+                      </Link>
+                    ) : (
+                      <span className="rounded-lg bg-[#f3f4f6] px-4 py-2 text-[13px] text-[#666]">等待主办方处理</span>
+                    )}
                   </div>
                 </div>
               </div>
             )
           })}
+          <Pagination page={page} total={visible.length} loading={loading} onChange={setPage} />
         </div>
       )}
     </div>

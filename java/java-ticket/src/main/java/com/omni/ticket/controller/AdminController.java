@@ -18,6 +18,7 @@ import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
 import com.omni.ticket.dto.AssetUploadResponse;
+import com.omni.ticket.dto.ActivityDraftResponse;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSearchResponse;
@@ -29,6 +30,10 @@ import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatTemplateResponse;
 import com.omni.ticket.dto.SeatTemplateSyncResponse;
 import com.omni.ticket.dto.SessionAdminResponse;
+import com.omni.ticket.dto.StationConfigVersionDetailResponse;
+import com.omni.ticket.dto.StationConfigVersionRequest;
+import com.omni.ticket.dto.StationConfigVersionResponse;
+import com.omni.ticket.dto.StationConfigVersionReviewRequest;
 import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.dto.VenueApplicationResponse;
@@ -42,6 +47,7 @@ import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
+import com.omni.ticket.service.ActivityDraftService;
 import com.omni.ticket.service.ArtistAdminService;
 import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivityRiskResponseService;
@@ -54,6 +60,7 @@ import com.omni.ticket.service.SessionAdminService;
 import com.omni.ticket.service.SessionSeatLayoutService;
 import com.omni.ticket.service.SessionSeatProtectionService;
 import com.omni.ticket.service.SessionSeatService;
+import com.omni.ticket.service.StationConfigVersionService;
 import com.omni.ticket.service.TicketTypeAreaService;
 import com.omni.ticket.service.TicketTypeStockRecalculationService;
 import com.omni.ticket.service.TourStationService;
@@ -65,6 +72,7 @@ import com.omni.ticket.service.SeatCraftLayoutVersionService;
 import io.jsonwebtoken.Claims;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -125,6 +133,8 @@ public class AdminController {
     private final TicketAssetService ticketAssetService;
     private final PrivateAssetService privateAssetService;
     private final SeatCraftLayoutVersionService seatCraftLayoutVersionService;
+    private final ActivityDraftService activityDraftService;
+    private final StationConfigVersionService stationConfigVersionService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -139,7 +149,7 @@ public class AdminController {
                                  VenueDefaultLayoutService venueDefaultLayoutService) {
         this(activityMapper, null, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
-                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Autowired
@@ -163,10 +173,12 @@ public class AdminController {
                                       ActivityArtistService activityArtistService,
                                        ArtistAdminService artistAdminService,
                                         ArtistGovernanceService artistGovernanceService,
-                                        ActivityRiskResponseService activityRiskResponseService,
-                                        TicketAssetService ticketAssetService,
-                                        PrivateAssetService privateAssetService,
-                                        SeatCraftLayoutVersionService seatCraftLayoutVersionService) {
+                                         ActivityRiskResponseService activityRiskResponseService,
+                                         TicketAssetService ticketAssetService,
+                                         PrivateAssetService privateAssetService,
+                                         SeatCraftLayoutVersionService seatCraftLayoutVersionService,
+                                         ActivityDraftService activityDraftService,
+                                         StationConfigVersionService stationConfigVersionService) {
         this.activityMapper = activityMapper;
         this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
@@ -194,6 +206,8 @@ public class AdminController {
         this.ticketAssetService = ticketAssetService;
         this.privateAssetService = privateAssetService;
         this.seatCraftLayoutVersionService = seatCraftLayoutVersionService;
+        this.activityDraftService = activityDraftService;
+        this.stationConfigVersionService = stationConfigVersionService;
     }
 
     @GetMapping("/seatcraft/{ownerType}/{ownerId}/draft")
@@ -516,6 +530,116 @@ public class AdminController {
         return Result.success(adminSummaryService.getSummary(userId));
     }
 
+    @PostMapping("/activities/draft")
+    public Result<ActivityDraftResponse> createActivityDraft(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody Map<String, Object> body) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(activityDraftService.createDraft(operatorId, body));
+    }
+
+    @GetMapping("/activities/{activityId}/station")
+    public Result<StationConfigVersionDetailResponse> getActivityStation(@PathVariable Long activityId,
+                                                                          @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.getActivityStationDetail(operatorId, activityId));
+    }
+
+    @PostMapping("/stations/{stationId}/config-versions")
+    public Result<StationConfigVersionResponse> createStationConfigVersion(@PathVariable Long stationId,
+                                                                           @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                           @RequestBody StationConfigVersionRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.createDraft(operatorId, stationId, request));
+    }
+
+    @PutMapping("/station-config-versions/{versionId}")
+    public Result<StationConfigVersionResponse> updateStationConfigVersion(@PathVariable Long versionId,
+                                                                           @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                           @RequestBody StationConfigVersionRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.updateDraft(operatorId, versionId, request));
+    }
+
+    @DeleteMapping("/station-config-versions/{versionId}")
+    public Result<Void> deleteStationConfigVersion(@PathVariable Long versionId,
+                                                   @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                   @RequestBody(required = false) Map<String, Object> body) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        stationConfigVersionService.deleteDraft(versionId, operatorId);
+        return Result.success();
+    }
+
+    @PostMapping("/station-config-versions/{versionId}/submit")
+    public Result<StationConfigVersionResponse> submitStationConfigVersion(@PathVariable Long versionId,
+                                                                           @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                           @RequestBody(required = false) Map<String, Object> body) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.submit(versionId, operatorId));
+    }
+
+    @PostMapping("/station-config-versions/{versionId}/withdraw")
+    public Result<StationConfigVersionResponse> withdrawStationConfigVersion(@PathVariable Long versionId,
+                                                                             @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                             @RequestBody(required = false) Map<String, Object> body) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.withdraw(versionId, operatorId));
+    }
+
+    @GetMapping("/station-config-versions/reviews")
+    public Result<List<StationConfigVersionResponse>> listStationConfigVersionReviews(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(defaultValue = "submitted") String status) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.listReviews(operatorId, status));
+    }
+
+    @PostMapping("/station-config-versions/{versionId}/approve")
+    public Result<StationConfigVersionResponse> approveStationConfigVersion(@PathVariable Long versionId,
+                                                                            @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                            @RequestBody(required = false) StationConfigVersionReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.approve(operatorId, versionId, request));
+    }
+
+    @PostMapping("/station-config-versions/{versionId}/reject")
+    public Result<StationConfigVersionResponse> rejectStationConfigVersion(@PathVariable Long versionId,
+                                                                           @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                           @RequestBody(required = false) StationConfigVersionReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.reject(operatorId, versionId, request));
+    }
+
     @GetMapping("/orders")
     public Result<List<OrderInfoResponse>> listAdminOrders(@RequestParam Long userId,
                                                            @RequestParam(defaultValue = "false") Boolean paidOnly) {
@@ -538,6 +662,24 @@ public class AdminController {
     @GetMapping("/tours/{tourId}")
     public Result<Map<String, Object>> getTour(@PathVariable Long tourId, @RequestParam Long userId) {
         return Result.success(tourStationService.getManageableTourDetail(userId, tourId));
+    }
+
+    @DeleteMapping("/tours/{tourId}")
+    public Result<Void> deleteTourDraft(@PathVariable Long tourId, @RequestParam Long userId) {
+        tourStationService.deleteTourDraft(userId, tourId);
+        return Result.success();
+    }
+
+    @PostMapping("/tours/{tourId}/announce")
+    public Result<Tour> announceTourCities(@PathVariable Long tourId, @RequestBody Map<String, Object> body) {
+        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
+        return Result.success(tourStationService.announceTourCities(userId, tourId));
+    }
+
+    @PostMapping("/tours/{tourId}/deactivate")
+    public Result<RefundImpactResponse> deactivateTour(@PathVariable Long tourId,
+                                                       @RequestBody DeactivateActivityRequest request) {
+        return Result.success(tourStationService.deactivateTour(tourId, request));
     }
 
     @PostMapping("/tours/{tourId}/stations/draft")
@@ -832,6 +974,7 @@ public class AdminController {
 
     private String normalizePrivateAssetBizType(String bizType) {
         if ("activity-venue-proof".equals(bizType)) return "venue-proof";
+        if ("venue-change-proof".equals(bizType)) return "venue-proof";
         return bizType;
     }
 
@@ -887,13 +1030,14 @@ public class AdminController {
             wrapper.eq(Activity::getOrganizerId, userId);
         }
         wrapper.ne(Activity::getPublishStatus, "deleted");
+        wrapper.isNull(Activity::getTourId);
         if (StringUtils.hasText(keyword)) {
             wrapper.like(Activity::getName, keyword.trim());
         }
         if (status != null) {
             wrapper.eq(Activity::getStatus, status);
         }
-        wrapper.orderByDesc(Activity::getCreateTime);
+        wrapper.orderByAsc(Activity::getId);
         Page<Activity> result = activityMapper.selectPage(new Page<>(page, size), wrapper);
         if (activityArtistService != null) {
             result.getRecords().forEach(this::attachLineupSummary);
@@ -1106,7 +1250,7 @@ public class AdminController {
         public void setBindings(List<SessionSeatLayoutService.TicketBindingInput> bindings) { this.bindings = bindings; }
     }
 
-    // ========== 场馆管理（admin全权限，organizer只读） ==========
+    // ========== 场馆记录（admin全权限，organizer只读） ==========
 
     @PostMapping("/venues")
     public Result<Venue> createVenue(@RequestBody Map<String, Object> body) {
@@ -1149,11 +1293,30 @@ public class AdminController {
         return Result.success(venue);
     }
 
+    @DeleteMapping("/venues/{id}")
+    public Result<Void> deleteVenue(@PathVariable Long id, @RequestParam Long userId) {
+        String role = checkRole(userId);
+        if (role == null) return Result.fail(403, "无权限");
+        if ("organizer".equals(role)) return Result.fail(403, "仅平台管理员可删除场馆记录");
+
+        Venue venue = venueMapper.selectById(id);
+        if (venue == null) {
+            return Result.fail(404, "场馆记录不存在");
+        }
+        try {
+            venueMapper.deleteById(id);
+        } catch (DataIntegrityViolationException e) {
+            return Result.fail(400, "场馆记录已被场次、审核资料或座位模板引用，不能永久删除");
+        }
+        return Result.success();
+    }
+
     @GetMapping("/venues")
     public Result<List<Venue>> listAdminVenues(@RequestParam Long userId) {
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         return Result.success(venueMapper.selectList(new QueryWrapper<Venue>()
+                .eq("status", 1)
                 .orderByAsc("city")
                 .orderByAsc("name")
                 .orderByAsc("id")));
