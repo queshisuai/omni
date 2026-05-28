@@ -107,7 +107,11 @@
       "Bash(npx skills *)",
       "Bash(mvn -f \"java/pom.xml\" -pl java-ticket -Dtest=StationConfigVersionServiceTest test)",
       "Bash(mvn -f \"java/pom.xml\" -pl java-ticket -Dtest=StationConfigVersionServiceTest,ActivityRiskResponseServiceTest test)",
-      "Bash(pnpm dev *)"
+      "Bash(pnpm dev *)",
+      "Bash(export PGPASSWORD='123456')",
+      "Bash(createdb -h localhost -p 5432 -U postgres omni_grab)",
+      "WebFetch(domain:skills.sh)",
+      "Bash(powershell.exe -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=25092' | Select-Object ProcessId,CommandLine | Format-List\")"
     ]
   }
 }
