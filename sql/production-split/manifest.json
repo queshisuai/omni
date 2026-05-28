@@ -36,6 +36,14 @@
       "targetInstance": "pg-notification",
       "targetDatabase": "omni_notification",
       "tables": ["notification"]
+    },
+    {
+      "service": "grab-service",
+      "key": "grab",
+      "targetInstance": "pg-grab",
+      "targetDatabase": "omni_grab",
+      "tables": ["grab_request"],
+      "migrations": ["grab/001_create_grab_request.sql"]
     }
   ]
 }

@@ -1,6 +1,7 @@
 package com.omni.ticket.service;
 
 import com.omni.common.result.ResultCode;
+import com.omni.common.util.ProjectPathUtil;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.AssetUploadResponse;
 import com.omni.ticket.entity.TicketAsset;
@@ -8,7 +9,6 @@ import com.omni.ticket.mapper.TicketAssetMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -16,7 +16,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -39,7 +38,7 @@ public class TicketAssetService {
     public TicketAssetService(TicketAssetMapper ticketAssetMapper,
                               @Value("${omni.upload.root:${OMNI_UPLOAD_ROOT:}}") String uploadRoot) {
         this.ticketAssetMapper = ticketAssetMapper;
-        this.uploadRoot = resolveUploadRoot(uploadRoot);
+        this.uploadRoot = ProjectPathUtil.resolvePublicUploadRoot(uploadRoot);
     }
 
     @Transactional
@@ -111,15 +110,6 @@ public class TicketAssetService {
         response.setMimeType(asset.getMimeType());
         response.setSizeBytes(asset.getSizeBytes());
         return response;
-    }
-
-    private Path resolveUploadRoot(String configuredRoot) {
-        if (StringUtils.hasText(configuredRoot)) {
-            return Paths.get(configuredRoot).toAbsolutePath().normalize();
-        }
-        return Paths.get(System.getProperty("user.dir"), "..", "runtime", "uploads")
-                .toAbsolutePath()
-                .normalize();
     }
 
     private byte[] readHeader(MultipartFile file) {

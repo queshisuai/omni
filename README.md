@@ -194,6 +194,23 @@ mvn clean install -pl java-common
 powershell -ExecutionPolicy Bypass -File start-project.ps1
 ```
 
+Docker middleware mode starts PostgreSQL, Redis, and Nacos through Docker Compose,
+then runs the application services on the host:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File start-project.ps1 -UseDockerInfra
+```
+
+To start only the middleware containers:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-infra.ps1
+```
+
+Docker middleware publishes PostgreSQL `5432`, Redis `6379`, and Nacos `8848`
+on `localhost`, so the existing application configuration does not need to
+change.
+
 该脚本会自动：
 - 检查 PostgreSQL 和 Nacos 是否已在运行
 - 以 `prod-split` 模式启动五个业务服务

@@ -52,6 +52,6 @@ spring:
           predicates:
             - Path=/api/notification/**
         - id: grab-service
-          uri: http://localhost:3000
+          uri: http://localhost:3001
           predicates:
-            - Path=/grab/**
+            - Path=/api/grab/**

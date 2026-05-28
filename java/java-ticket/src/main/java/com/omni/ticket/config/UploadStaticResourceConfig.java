@@ -1,13 +1,10 @@
 package com.omni.ticket.config;
 
+import com.omni.common.util.ProjectPathUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
-
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
 @Configuration
 public class UploadStaticResourceConfig implements WebMvcConfigurer {
@@ -25,16 +22,7 @@ public class UploadStaticResourceConfig implements WebMvcConfigurer {
     }
 
     static String ticketUploadLocation(String configuredRoot) {
-        return withTrailingSlash(resolveUploadRoot(configuredRoot).resolve("ticket").normalize().toUri().toString());
-    }
-
-    static Path resolveUploadRoot(String configuredRoot) {
-        if (StringUtils.hasText(configuredRoot)) {
-            return Paths.get(configuredRoot).toAbsolutePath().normalize();
-        }
-        return Paths.get(System.getProperty("user.dir"), "..", "runtime", "uploads")
-                .toAbsolutePath()
-                .normalize();
+        return withTrailingSlash(ProjectPathUtil.resolvePublicUploadRoot(configuredRoot).resolve("ticket").normalize().toUri().toString());
     }
 
     private static String withTrailingSlash(String location) {

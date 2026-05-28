@@ -6,7 +6,7 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
-import { getActivityDetail, createOrderWithSeats, createAlipayQrPay, getSeatMap } from '@/lib/api'
+import { getActivityDetail, submitGrabRequest, getGrabRequest, createAlipayQrPay, getSeatMap } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import type { ActivityDetailVO, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, TicketTypeEntity } from '@/types/api'
@@ -82,6 +82,17 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     if (now - lastRefreshRef.current < 200) return
     lastRefreshRef.current = now
     void loadDetailRef.current()
+  }
+
+  const waitForGrabResult = async (requestId: string) => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const result = await getGrabRequest(requestId)
+      if (result.status === 'ORDER_CREATED' || result.status === 'SOLD_OUT' || result.status === 'LIMITED' || result.status === 'FAILED' || result.status === 'EXPIRED') {
+        return result
+      }
+      await new Promise(resolve => setTimeout(resolve, 800))
+    }
+    throw new Error('抢票排队超时，请稍后查看订单')
   }
 
   useEffect(() => {
@@ -183,15 +194,21 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         setOrderError('请选择对应数量的座位')
         return
       }
-      const order = await createOrderWithSeats({
-        userId: user.userId,
+      const idempotencyKey = `${user.userId}-${selectedSession.session.id}-${selectedTicket.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const grab = await submitGrabRequest({
         sessionId: selectedSession.session.id,
         ticketTypeId: selectedTicket.id,
         seatIds,
         quantity,
-        unitPrice: selectedTicket.price,
+        allocateRandom: Boolean(showsSeatCraftSelection && seatIds.length === 0),
+        idempotencyKey,
       })
-      const pay = await createAlipayQrPay(order.id)
+      const result = grab.status === 'ORDER_CREATED' ? grab : await waitForGrabResult(grab.requestId)
+      if (result.status !== 'ORDER_CREATED' || !result.orderId) {
+        setOrderError(result.failReason || '抢票失败，请稍后重试')
+        return
+      }
+      const pay = await createAlipayQrPay(result.orderId)
       setQrPay(pay)
       setShowConfirm(false)
     } catch (err: unknown) {

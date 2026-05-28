@@ -59,6 +59,7 @@ Omni/
 | `java-order` | `omni_order` |
 | `java-payment` | `omni_payment` |
 | `java-notification` | `omni_notification` |
+| `grab-service` | `omni_grab` |
 | `java-gateway` | 不连接业务数据库 |
 
 ### 连接信息
@@ -85,10 +86,27 @@ Omni/
 powershell -ExecutionPolicy Bypass -File start-project.ps1
 ```
 
+Docker middleware mode:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File start-project.ps1 -UseDockerInfra
+```
+
+Infrastructure only:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-infra.ps1
+```
+
+Docker middleware publishes PostgreSQL `5432`, Redis `6379`, and Nacos `8848`
+on `localhost`. Java services, NestJS grab-service, and frontend still run on
+the host.
+
 脚本默认行为：
 - 启动/检查 PostgreSQL 与 Nacos。
 - 以 `prod-split` profile 启动五个业务服务。
 - 为五个业务服务注入当前本机五库 datasource。
+- 启动 NestJS grab-service 抢票入口服务。
 - 启动前端开发服务。
 
 ### 历史共享库模式
@@ -133,7 +151,7 @@ C:\nacos\bin\startup.cmd -m standalone
 | java-payment | 8084 | 支付服务 |
 | java-notification | 8085 | 通知服务 |
 | frontend | 3000 | Next.js 前端 |
-| grab-service | 3001 | NestJS 抢票核心预留 |
+| grab-service | 3001 | NestJS 抢票入口服务 |
 
 ## 测试账号
 

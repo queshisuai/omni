@@ -17,6 +17,7 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -289,6 +290,32 @@ class PrivateAssetServiceTest {
     }
 
     @Test
+    void defaultPrivateRootUsesProjectRuntimePrivateUploadsWhenStartedFromServiceDirectory() throws Exception {
+        String previousUserDir = System.getProperty("user.dir");
+        Path projectRoot = findProjectRoot(Paths.get(previousUserDir).toAbsolutePath().normalize());
+        Path expectedRoot = projectRoot.resolve("runtime/private-uploads/ticket");
+        try {
+            System.setProperty("user.dir", projectRoot.resolve("java/java-ticket").toString());
+            when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+            when(privateAssetMapper.insert(any(PrivateAsset.class))).thenAnswer(invocation -> {
+                PrivateAsset asset = invocation.getArgument(0);
+                asset.setId(9102L);
+                return 1;
+            });
+            PrivateAssetService service = new PrivateAssetService(privateAssetMapper, venueApplicationMapper, userAccessService, "");
+
+            PrivateAssetResponse response = service.upload(APPLICANT_ID, "venue-proof", pdfFile());
+
+            ArgumentCaptor<PrivateAsset> captor = ArgumentCaptor.forClass(PrivateAsset.class);
+            verify(privateAssetMapper).insert(captor.capture());
+            assertEquals(9102L, response.getId());
+            assertTrue(Files.exists(expectedRoot.resolve(captor.getValue().getRelativePath())));
+        } finally {
+            System.setProperty("user.dir", previousUserDir);
+        }
+    }
+
+    @Test
     void prepareDownloadRejectsPathTraversal() throws Exception {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
         Path outside = Files.createTempFile("omni-private-asset-outside", ".pdf");
@@ -303,6 +330,17 @@ class PrivateAssetServiceTest {
                 () -> service.prepareDownload(9101L, APPLICANT_ID));
 
         assertEquals(403, error.getCode());
+    }
+
+    private Path findProjectRoot(Path start) {
+        Path cursor = start;
+        while (cursor != null) {
+            if (Files.isDirectory(cursor.resolve("java")) && Files.isDirectory(cursor.resolve("frontend"))) {
+                return cursor;
+            }
+            cursor = cursor.getParent();
+        }
+        throw new IllegalStateException("Cannot find project root from " + start);
     }
 
     private MockMultipartFile pdfFile() {

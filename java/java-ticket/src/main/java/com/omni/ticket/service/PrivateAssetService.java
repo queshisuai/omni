@@ -1,6 +1,7 @@
 package com.omni.ticket.service;
 
 import com.omni.common.result.ResultCode;
+import com.omni.common.util.ProjectPathUtil;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.dto.PrivateAssetDownload;
@@ -20,7 +21,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -53,7 +53,7 @@ public class PrivateAssetService {
         this.privateAssetMapper = privateAssetMapper;
         this.venueApplicationMapper = venueApplicationMapper;
         this.userAccessService = userAccessService;
-        this.privateRoot = resolvePrivateRoot(privateRoot);
+        this.privateRoot = ProjectPathUtil.resolvePrivateUploadRoot(privateRoot, SERVICE_NAME);
     }
 
     @Transactional
@@ -210,15 +210,6 @@ public class PrivateAssetService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权下载该私有资产");
         }
         return application;
-    }
-
-    private Path resolvePrivateRoot(String configuredRoot) {
-        if (StringUtils.hasText(configuredRoot)) {
-            return Paths.get(configuredRoot).toAbsolutePath().normalize();
-        }
-        return Paths.get(System.getProperty("user.dir"), "..", "runtime", "private-uploads", "ticket")
-                .toAbsolutePath()
-                .normalize();
     }
 
     private void assertInsidePrivateRoot(Path path) {

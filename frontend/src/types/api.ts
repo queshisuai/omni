@@ -90,6 +90,32 @@ export type OrganizerApplicationStatus = 0 | 1 | 2
 export type OrganizerStatus = 0 | 1 | 2 | 3
 export type SubjectType = 'personal' | 'enterprise'
 
+export type GrabStatus =
+  | 'PENDING'
+  | 'ACCEPTED'
+  | 'ORDER_CREATING'
+  | 'ORDER_CREATED'
+  | 'SOLD_OUT'
+  | 'LIMITED'
+  | 'FAILED'
+  | 'EXPIRED'
+
+export interface SubmitGrabRequestPayload {
+  sessionId: number
+  ticketTypeId: number
+  quantity: number
+  seatIds?: number[]
+  allocateRandom?: boolean
+  idempotencyKey: string
+}
+
+export interface GrabRequestResult {
+  requestId: string
+  status: GrabStatus
+  orderId: number | null
+  failReason: string | null
+}
+
 export interface OrganizerApplicationVO {
   id: number
   userId: number

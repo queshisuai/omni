@@ -10,7 +10,7 @@ if (-not (Test-Path -LiteralPath $manifestFile)) {
 }
 
 $manifest = Get-Content -Raw -LiteralPath $manifestFile | ConvertFrom-Json
-$expectedKeys = @("user", "ticket", "order", "payment", "notification")
+$expectedKeys = @("user", "ticket", "order", "payment", "notification", "grab")
 
 function New-ColumnSet([string[]] $columns) {
     $set = @{}
@@ -64,6 +64,7 @@ $schemaColumns = @{
     "activity_seat_layout_section" = New-ColumnSet @("id", "activity_layout_id")
     "artist" = New-ColumnSet @("id")
     "category" = New-ColumnSet @("id")
+    "grab_request" = New-ColumnSet @("id", "request_id", "idempotency_key", "user_id", "session_id", "ticket_type_id", "quantity", "seat_ids", "allocate_random", "status", "order_id", "fail_reason", "expire_time", "created_at", "updated_at")
     "notification" = New-ColumnSet @("id")
     "order" = New-ColumnSet @("id")
     "order_seat" = New-ColumnSet @("id", "order_id")
@@ -140,7 +141,7 @@ $forbiddenText = @(
 
 foreach ($file in $sqlFiles) {
     $content = Get-Content -Raw -LiteralPath $file.FullName
-    if ($content -notmatch '(?m)^-- owner: java-(user|ticket|order|payment|notification)') {
+    if ($content -notmatch '(?m)^-- owner: (java-(user|ticket|order|payment|notification)|grab-service)') {
         Write-Host "FAIL SQL file missing owner comment: $($file.FullName)"
         exit 1
     }

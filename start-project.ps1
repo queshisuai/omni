@@ -4,7 +4,8 @@ param(
     [switch]$SkipJava,
     [switch]$SkipFrontend,
     [switch]$SkipInstall,
-    [switch]$UseSharedDatabase
+    [switch]$UseSharedDatabase,
+    [switch]$UseDockerInfra
 )
 
 $ErrorActionPreference = "Continue"
@@ -62,31 +63,46 @@ try {
     Write-Host "[npm] using npm instead of pnpm" -ForegroundColor Yellow
 }
 
+if ($UseDockerInfra) {
+    Write-Step "Starting Docker Infrastructure..."
+    & (Join-Path $projectRoot "scripts\start-infra.ps1")
+}
+
 # 2. Check PostgreSQL
-Write-Step "Starting PostgreSQL..."
-$pgSvc = Get-Service -Name "postgresql-x64-17" -ErrorAction SilentlyContinue
-if ($pgSvc -and $pgSvc.Status -eq "Running") {
-    Write-Host "[PostgreSQL] Running" -ForegroundColor Green
+if ($UseDockerInfra) {
+    Write-Step "Using Docker PostgreSQL..."
+    Write-Host "[PostgreSQL] Docker infrastructure selected" -ForegroundColor Green
 } else {
-    Start-Service -Name "postgresql-x64-17" -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 2
-    Write-Host "[PostgreSQL] Started" -ForegroundColor Green
+    Write-Step "Starting PostgreSQL..."
+    $pgSvc = Get-Service -Name "postgresql-x64-17" -ErrorAction SilentlyContinue
+    if ($pgSvc -and $pgSvc.Status -eq "Running") {
+        Write-Host "[PostgreSQL] Running" -ForegroundColor Green
+    } else {
+        Start-Service -Name "postgresql-x64-17" -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        Write-Host "[PostgreSQL] Started" -ForegroundColor Green
+    }
 }
 
 # 3. Start Nacos
-Write-Step "Starting Nacos..."
-$nacosPort = 8848
-try {
-    $nacosCheck = Invoke-WebRequest -Uri "http://localhost:$nacosPort/nacos" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
-    Write-Host "[Nacos] Already Running" -ForegroundColor Green
-} catch {
-    Write-Host "[Nacos] Starting..." -ForegroundColor Yellow
-    if (-not $nacosHome) {
-        Write-Host "[Nacos] NOT FOUND! Please install Nacos to C:\nacos or D:\nacos, or start it manually." -ForegroundColor Red
-    } else {
-        Start-Process cmd -ArgumentList "/c", "$nacosHome\bin\startup.cmd -m standalone" -WorkingDirectory "$nacosHome\bin" -PassThru | Out-Null
-        Start-Sleep -Seconds 15
-        Write-Host "[Nacos] Started" -ForegroundColor Green
+if ($UseDockerInfra) {
+    Write-Step "Using Docker Nacos..."
+    Write-Host "[Nacos] Docker infrastructure selected" -ForegroundColor Green
+} else {
+    Write-Step "Starting Nacos..."
+    $nacosPort = 8848
+    try {
+        $nacosCheck = Invoke-WebRequest -Uri "http://localhost:$nacosPort/nacos" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
+        Write-Host "[Nacos] Already Running" -ForegroundColor Green
+    } catch {
+        Write-Host "[Nacos] Starting..." -ForegroundColor Yellow
+        if (-not $nacosHome) {
+            Write-Host "[Nacos] NOT FOUND! Please install Nacos to C:\nacos or D:\nacos, or start it manually." -ForegroundColor Red
+        } else {
+            Start-Process cmd -ArgumentList "/c", "$nacosHome\bin\startup.cmd -m standalone" -WorkingDirectory "$nacosHome\bin" -PassThru | Out-Null
+            Start-Sleep -Seconds 15
+            Write-Host "[Nacos] Started" -ForegroundColor Green
+        }
     }
 }
 
@@ -115,6 +131,16 @@ if (-not $SkipInstall -and -not $SkipFrontend) {
     } else {
         Write-Host "[Frontend] node_modules already exists" -ForegroundColor Green
     }
+
+    $grabPath = Join-Path $projectRoot "nestjs\grab-service"
+    if (-not (Test-Path (Join-Path $grabPath "node_modules"))) {
+        Write-Host "Running npm install for grab-service..." -ForegroundColor Cyan
+        Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd $grabPath; npm install" -WorkingDirectory $grabPath -PassThru | Out-Null
+        Start-Sleep -Seconds 10
+        Write-Host "[Info] grab-service dependencies installing in background..." -ForegroundColor Yellow
+    } else {
+        Write-Host "[grab-service] node_modules already exists" -ForegroundColor Green
+    }
 }
 
 # 6. Start Java Services
@@ -136,12 +162,14 @@ if (-not $SkipJava) {
         @{Name="java-notification"; Port=8085; Path="java\java-notification"; Database="omni_notification"}
     )
 
+    $uploadRoot = Join-Path $projectRoot "runtime\uploads"
+
     foreach ($svc in $javaServices) {
         $fullPath = Join-Path $projectRoot $svc.Path
         Write-Host "Starting $($svc.Name) on port $($svc.Port)..." -ForegroundColor Cyan
-        $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.arguments=`"--spring.cloud.nacos.discovery.ip=127.0.0.1`""
+        $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.arguments=`"--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot`""
         if (-not $UseSharedDatabase -and $svc.Database) {
-            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=omni-local-internal-token --spring.cloud.nacos.discovery.ip=127.0.0.1`""
+            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=omni-local-internal-token --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot`""
         }
         Start-Service-InBackground -Name $svc.Name -Command $command -WorkDir $fullPath
         Start-Sleep -Seconds 5
@@ -149,7 +177,17 @@ if (-not $SkipJava) {
     Write-Host "`n[Info] Java services need a few minutes to start" -ForegroundColor Yellow
 }
 
-# 7. Start Frontend
+# 7. Start Grab Service
+if (-not $SkipFrontend) {
+    Write-Step "Starting Grab Service..."
+
+    $grabPath = Join-Path $projectRoot "nestjs\grab-service"
+    $grabCommand = "cd $grabPath; `$env:GRAB_SERVICE_PORT='3001'; `$env:GRAB_DB_HOST='localhost'; `$env:GRAB_DB_PORT='5432'; `$env:GRAB_DB_NAME='omni_grab'; `$env:GRAB_DB_USER='postgres'; `$env:GRAB_DB_PASSWORD='123456'; `$env:ORDER_SERVICE_URL='http://localhost:8088'; `$env:JWT_SECRET='$env:JWT_SECRET'; npm run start:dev"
+    Start-Service-InBackground -Name "grab-service" -Command $grabCommand -WorkDir $grabPath
+    Write-Host "`n[Info] Grab service access through gateway /api/grab" -ForegroundColor Yellow
+}
+
+# 8. Start Frontend
 if (-not $SkipFrontend) {
     Write-Step "Starting Frontend..."
 
@@ -167,6 +205,7 @@ Write-Host @"
   Ports:
   - Nacos:      http://localhost:8848
   - Gateway:    http://localhost:8088
+  - Grab:       http://localhost:3001
   - Frontend:   http://localhost:3000
 
   Test Accounts:

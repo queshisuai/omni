@@ -1,6 +1,8 @@
 .claude/
+**/node_modules/
 # build artifacts
 target/
+**/dist/
 *.log
 logs/
 artifacts/

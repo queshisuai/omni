@@ -1,67 +1,127 @@
-import { Injectable } from '@nestjs/common';
-import { RedisService } from './redis.service';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { GrabAdmissionService } from './grab-admission.service';
+import { GrabRepository } from './grab.repository';
+import { GRAB_STATUS } from './grab-status';
+import type { GrabRequestRecord, GrabRequestResponse, SubmitGrabRequestDto } from './grab.types';
+import { OrderClientService } from './order-client.service';
 
 @Injectable()
 export class GrabService {
-  private readonly GRAB_LUA_SCRIPT = `
-    local stockKey = KEYS[1]
-    local userKey = KEYS[2]
-    local userId = ARGV[1]
-    local sessionId = ARGV[2]
-    local ticketTypeId = ARGV[3]
+  private readonly requestTtlSeconds = 900;
 
-    local stock = redis.call('get', stockKey)
-    if not stock or tonumber(stock) <= 0 then
-      return -1
-    end
+  constructor(
+    private readonly repository: GrabRepository,
+    private readonly admissionService: GrabAdmissionService,
+    private readonly orderClient: OrderClientService,
+  ) {}
 
-    local userGrabKey = userKey .. ':' .. userId .. ':' .. sessionId .. ':' .. ticketTypeId
-    local hasGrabbed = redis.call('get', userGrabKey)
-    if hasGrabbed then
-      return -2
-    end
+  async submitRequest(userId: number, dto: SubmitGrabRequestDto): Promise<GrabRequestResponse> {
+    this.validateSubmitRequest(dto);
+    const existing = await this.repository.findByUserAndIdempotency(userId, dto.idempotencyKey);
+    if (existing) return this.toResponse(existing);
 
-    redis.call('decr', stockKey)
-    redis.call('setex', userGrabKey, 300, '1')
+    const requestId = this.generateRequestId();
+    const seatIds = dto.seatIds ?? [];
+    const created = await this.repository.createPending({
+      requestId,
+      idempotencyKey: dto.idempotencyKey,
+      userId,
+      sessionId: dto.sessionId,
+      ticketTypeId: dto.ticketTypeId,
+      quantity: dto.quantity,
+      seatIds,
+      allocateRandom: Boolean(dto.allocateRandom),
+      expireTime: new Date(Date.now() + this.requestTtlSeconds * 1000),
+    });
 
-    return 1
-  `;
+    const admission = await this.admissionService.admit({
+      requestId: created.requestId,
+      userId,
+      sessionId: dto.sessionId,
+      ticketTypeId: dto.ticketTypeId,
+      quantity: dto.quantity,
+      seatIds,
+      idempotencyKey: dto.idempotencyKey,
+      ttlSeconds: this.requestTtlSeconds,
+    });
 
-  constructor(private readonly redisService: RedisService) {}
-
-  async grabTicket(
-    userId: string,
-    sessionId: string,
-    ticketTypeId: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const stockKey = `stock:${sessionId}:${ticketTypeId}`;
-    const userKey = 'grab:user';
-
-    const result = await this.redisService.eval(
-      this.GRAB_LUA_SCRIPT,
-      [stockKey, userKey],
-      [userId, sessionId, ticketTypeId],
-    );
-
-    if (result === 1) {
-      return { success: true, message: '抢票成功' };
-    } else if (result === -1) {
-      return { success: false, message: '库存不足' };
-    } else if (result === -2) {
-      return { success: false, message: '已抢过该票' };
+    if (admission.outcome === 'IDEMPOTENT' && admission.existingRequestId) {
+      const record = await this.repository.findByRequestId(admission.existingRequestId);
+      return record ? this.toResponse(record) : this.toResponse(created);
+    }
+    if (admission.outcome === 'SOLD_OUT') {
+      return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.SOLD_OUT, '库存不足'));
+    }
+    if (admission.outcome === 'LIMITED') {
+      return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.LIMITED, '请勿重复抢票'));
     }
 
-    return { success: false, message: '抢票失败' };
+    const shouldRestoreStock = admission.outcome === 'ACCEPTED';
+    await this.repository.updateStatus(created.requestId, GRAB_STATUS.ACCEPTED);
+    await this.repository.updateStatus(created.requestId, GRAB_STATUS.ORDER_CREATING);
+
+    try {
+      const order = await this.orderClient.createOrder({
+        userId,
+        sessionId: dto.sessionId,
+        ticketTypeId: dto.ticketTypeId,
+        quantity: dto.quantity,
+        seatIds,
+        allocateRandom: Boolean(dto.allocateRandom),
+      });
+      return this.toResponse(await this.repository.markOrderCreated(created.requestId, order.id));
+    } catch (error) {
+      await this.admissionService.release({
+        userId,
+        sessionId: dto.sessionId,
+        ticketTypeId: dto.ticketTypeId,
+        quantity: dto.quantity,
+        seatIds,
+        idempotencyKey: dto.idempotencyKey,
+        restoreStock: shouldRestoreStock,
+      });
+      const message = error instanceof Error ? error.message : '订单创建失败';
+      const status = message.includes('库存') ? GRAB_STATUS.SOLD_OUT : message.includes('限购') ? GRAB_STATUS.LIMITED : GRAB_STATUS.FAILED;
+      return this.toResponse(await this.repository.updateStatus(created.requestId, status, message));
+    }
   }
 
-  async initStock(sessionId: string, ticketTypeId: string, stock: number): Promise<void> {
-    const stockKey = `stock:${sessionId}:${ticketTypeId}`;
-    await this.redisService.set(stockKey, stock.toString());
+  async getRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {
+    const record = await this.repository.findByRequestId(requestId);
+    if (!record) throw new NotFoundException('抢票请求不存在');
+    if (record.userId !== userId) throw new ForbiddenException('不能查看他人的抢票请求');
+    return this.toResponse(record);
   }
 
-  async getStock(sessionId: string, ticketTypeId: string): Promise<number> {
-    const stockKey = `stock:${sessionId}:${ticketTypeId}`;
-    const stock = await this.redisService.get(stockKey);
-    return stock ? parseInt(stock) : 0;
+  async cancelRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {
+    const record = await this.repository.findByRequestId(requestId);
+    if (!record) throw new NotFoundException('抢票请求不存在');
+    if (record.userId !== userId) throw new ForbiddenException('不能取消他人的抢票请求');
+    if (record.orderId) return this.toResponse(record);
+    await this.admissionService.release(record);
+    return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, '抢票请求已取消'));
+  }
+
+  private validateSubmitRequest(dto: SubmitGrabRequestDto): void {
+    if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('场次不正确');
+    if (!Number.isInteger(dto.ticketTypeId) || dto.ticketTypeId <= 0) throw new BadRequestException('票档不正确');
+    if (!Number.isInteger(dto.quantity) || dto.quantity <= 0) throw new BadRequestException('数量不正确');
+    if (!dto.idempotencyKey?.trim()) throw new BadRequestException('幂等键不能为空');
+    if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('座位数量不正确');
+  }
+
+  private generateRequestId(): string {
+    const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+    const random = Math.floor(Math.random() * 1_000_000).toString().padStart(6, '0');
+    return `GRAB${timestamp}${random}`;
+  }
+
+  private toResponse(record: Pick<GrabRequestRecord, 'requestId' | 'status' | 'orderId' | 'failReason'>): GrabRequestResponse {
+    return {
+      requestId: record.requestId,
+      status: record.status,
+      orderId: record.orderId,
+      failReason: record.failReason,
+    };
   }
 }

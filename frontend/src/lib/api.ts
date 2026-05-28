@@ -2,7 +2,7 @@
  * API 客户端 - fetch 封装
  */
 import { getToken } from './auth'
-import type { ApiResult, AssetUploadVO, ChangePasswordRequest, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, PrivateAssetVO, ResetPasswordRequest, SeatMapResponse, SubjectType, UserInfo } from '@/types/api'
+import type { ApiResult, AssetUploadVO, ChangePasswordRequest, GrabRequestResult, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, PrivateAssetVO, ResetPasswordRequest, SeatMapResponse, SubmitGrabRequestPayload, SubjectType, UserInfo } from '@/types/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -349,6 +349,21 @@ export async function listReservations(userId: number) {
 }
 
 // ========== 订单服务 ==========
+
+export async function submitGrabRequest(params: SubmitGrabRequestPayload) {
+  return request<GrabRequestResult>('/api/grab/requests', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function getGrabRequest(requestId: string) {
+  return request<GrabRequestResult>(`/api/grab/requests/${encodeURIComponent(requestId)}`)
+}
+
+export async function cancelGrabRequest(requestId: string) {
+  return request<GrabRequestResult>(`/api/grab/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' })
+}
 
 export async function createOrder(params: { userId: number; sessionId: number; ticketTypeId: number; quantity: number; unitPrice?: number }) {
   return request<{ id: number; orderNo: string; amount: number }>('/api/order/create', {
