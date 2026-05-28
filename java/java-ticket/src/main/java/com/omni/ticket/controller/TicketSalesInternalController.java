@@ -1,6 +1,9 @@
 package com.omni.ticket.controller;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
+import com.omni.ticket.config.TicketSentinelConfig;
 import com.omni.ticket.dto.TicketSalesLockRequest;
 import com.omni.ticket.dto.TicketSalesOrderRequest;
 import com.omni.ticket.dto.TicketSalesQuoteRequest;
@@ -37,6 +40,7 @@ public class TicketSalesInternalController {
     }
 
     @PostMapping("/lock-stock")
+    @SentinelResource(value = TicketSentinelConfig.SALES_LOCK_STOCK, blockHandler = "lockStockBlocked")
     public Result<Void> lockStock(@RequestBody TicketSalesLockRequest request,
                                   @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
@@ -46,7 +50,12 @@ public class TicketSalesInternalController {
         return Result.success();
     }
 
+    public Result<Void> lockStockBlocked(TicketSalesLockRequest request, String token, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
+    }
+
     @PostMapping("/lock-seats")
+    @SentinelResource(value = TicketSentinelConfig.SALES_LOCK_SEATS, blockHandler = "lockSeatsBlocked")
     public Result<TicketSalesSeatLockResponse> lockSeats(@RequestBody TicketSalesLockRequest request,
                                                           @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
@@ -55,7 +64,12 @@ public class TicketSalesInternalController {
         return Result.success(service.lockSeats(request));
     }
 
+    public Result<TicketSalesSeatLockResponse> lockSeatsBlocked(TicketSalesLockRequest request, String token, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
+    }
+
     @PostMapping("/confirm-sold")
+    @SentinelResource(value = TicketSentinelConfig.SALES_CONFIRM_SOLD, blockHandler = "confirmSoldBlocked")
     public Result<Void> confirmSold(@RequestBody TicketSalesOrderRequest request,
                                     @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
@@ -63,6 +77,10 @@ public class TicketSalesInternalController {
         }
         service.confirmSold(request);
         return Result.success();
+    }
+
+    public Result<Void> confirmSoldBlocked(TicketSalesOrderRequest request, String token, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
     @PostMapping("/release")

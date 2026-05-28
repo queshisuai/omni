@@ -1,12 +1,17 @@
 package com.omni.ticket.controller;
 
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
+import com.omni.ticket.dto.TicketSalesLockRequest;
+import com.omni.ticket.dto.TicketSalesOrderRequest;
 import com.omni.ticket.dto.TicketSalesQuoteRequest;
 import com.omni.ticket.dto.TicketSalesQuoteResponse;
+import com.omni.ticket.dto.TicketSalesSeatLockResponse;
 import com.omni.ticket.service.TicketSalesInternalService;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -41,6 +46,36 @@ class TicketSalesInternalControllerTest {
         Result<Void> result = controller.lockStock(null, null);
 
         assertEquals(403, result.getCode());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void lockStockBlockedReturnsTooManyRequests() {
+        Result<Void> result = controller.lockStockBlocked(new TicketSalesLockRequest(), "test-internal-token", mock(BlockException.class));
+
+        assertEquals(429, result.getCode());
+        assertEquals("系统繁忙，请稍后重试", result.getMessage());
+        assertNull(result.getData());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void lockSeatsBlockedReturnsTooManyRequests() {
+        Result<TicketSalesSeatLockResponse> result = controller.lockSeatsBlocked(new TicketSalesLockRequest(), "test-internal-token", mock(BlockException.class));
+
+        assertEquals(429, result.getCode());
+        assertEquals("系统繁忙，请稍后重试", result.getMessage());
+        assertNull(result.getData());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void confirmSoldBlockedReturnsTooManyRequests() {
+        Result<Void> result = controller.confirmSoldBlocked(new TicketSalesOrderRequest(), "test-internal-token", mock(BlockException.class));
+
+        assertEquals(429, result.getCode());
+        assertEquals("系统繁忙，请稍后重试", result.getMessage());
+        assertNull(result.getData());
         verifyNoInteractions(service);
     }
 }

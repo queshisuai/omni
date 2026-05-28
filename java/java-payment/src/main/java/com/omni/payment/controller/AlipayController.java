@@ -1,6 +1,9 @@
 package com.omni.payment.controller;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
+import com.omni.payment.config.PaymentSentinelConfig;
 import com.omni.payment.dto.PagePayRequest;
 import com.omni.payment.dto.PagePayResponse;
 import com.omni.payment.dto.PaymentSyncDecisionResponse;
@@ -48,6 +51,7 @@ public class AlipayController {
     }
 
     @PostMapping("/notify")
+    @SentinelResource(value = PaymentSentinelConfig.ALIPAY_NOTIFY, blockHandler = "notifyBlocked")
     public String notify(HttpServletRequest request) {
         Map<String, String> params = new HashMap<>();
         request.getParameterMap().forEach((key, values) -> {
@@ -58,9 +62,18 @@ public class AlipayController {
         return alipayService.handleNotify(params) ? "success" : "failure";
     }
 
+    public String notifyBlocked(HttpServletRequest request, BlockException exception) {
+        return "failure";
+    }
+
     @GetMapping("/sync/{orderId}")
+    @SentinelResource(value = PaymentSentinelConfig.ALIPAY_SYNC, blockHandler = "syncBlocked")
     public Result<PaymentStatusResponse> sync(@PathVariable Long orderId) {
         return Result.success(alipayService.syncByOrderId(orderId));
+    }
+
+    public Result<PaymentStatusResponse> syncBlocked(Long orderId, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
     @PostMapping("/internal/sync-order/{orderId}")

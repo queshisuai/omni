@@ -1,5 +1,9 @@
 package com.omni.payment.service;
 
+import com.alibaba.csp.sentinel.Entry;
+import com.alibaba.csp.sentinel.SphU;
+import com.alibaba.csp.sentinel.Tracer;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.alipay.api.AlipayApiException;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.DefaultAlipayClient;
@@ -14,6 +18,7 @@ import com.omni.payment.client.OrderClient;
 import com.omni.payment.client.TicketRefundReviewInternalClient;
 import com.omni.payment.client.UserInternalClient;
 import com.omni.payment.config.AlipayProperties;
+import com.omni.payment.config.PaymentSentinelConfig;
 import com.omni.payment.dto.DirectRefundResponse;
 import com.omni.payment.dto.InternalUserRefResponse;
 import com.omni.payment.dto.MarkPartialRefundedRequest;
@@ -266,7 +271,7 @@ public class RefundService {
         request.setBizContent(buildJson(bizContent));
 
         try {
-            AlipayTradeRefundResponse response = createClient().execute(request);
+            AlipayTradeRefundResponse response = callAlipayChannel(() -> createClient().execute(request));
             if (response != null && response.isSuccess()) {
                 String alipayRefundNo = firstText(response.getTradeNo(), response.getOutTradeNo());
                 try {
@@ -315,7 +320,7 @@ public class RefundService {
             bizContent.put("refund_reason", StringUtils.hasText(reason) ? reason : "活动下架自动退款");
             request.setBizContent(buildJson(bizContent));
 
-            AlipayTradeRefundResponse response = createClient().execute(request);
+            AlipayTradeRefundResponse response = callAlipayChannel(() -> createClient().execute(request));
             if (response != null && response.isSuccess()) {
                 try {
                     markOrderRefunded(order.getId());
@@ -338,6 +343,9 @@ public class RefundService {
             return directRefundResult(result, DIRECT_REFUND_STATUS_UNKNOWN, false,
                     "支付宝退款异常，退款结果未知，请查询/人工确认: " + e.getMessage());
         } catch (BusinessException e) {
+            if ("支付宝退款结果未知，请稍后重试/查询".equals(e.getMessage())) {
+                return directRefundResult(result, DIRECT_REFUND_STATUS_UNKNOWN, false, e.getMessage());
+            }
             return directRefundResult(result, DIRECT_REFUND_STATUS_FAILED, false, e.getMessage());
         }
     }
@@ -479,7 +487,7 @@ public class RefundService {
 
     private void markOrderRefunded(Long orderId) {
         String token = requireInternalApiToken();
-        Result<OrderInfoResponse> result = orderClient.markRefunded(orderId, token);
+        Result<OrderInfoResponse> result = callOrderClient(() -> orderClient.markRefunded(orderId, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
             String message = result != null && StringUtils.hasText(result.getMessage()) ? result.getMessage() : "更新订单退款状态失败";
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "更新订单退款状态失败: " + message);
@@ -499,7 +507,7 @@ public class RefundService {
         request.setQuantity(refund.getQuantity());
         request.setOrderSeatIds(parseIds(refund.getOrderSeatIds()));
         String token = requireInternalApiToken();
-        Result<OrderInfoResponse> result = orderClient.markPartialRefunded(orderId, request, token);
+        Result<OrderInfoResponse> result = callOrderClient(() -> orderClient.markPartialRefunded(orderId, request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
             String message = result != null && StringUtils.hasText(result.getMessage()) ? result.getMessage() : "更新订单部分退款状态失败";
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "更新订单部分退款状态失败: " + message);
@@ -513,7 +521,9 @@ public class RefundService {
         String token = requireInternalApiToken();
         Result<OrderInfoResponse> result;
         try {
-            result = orderClient.getOrder(orderId, token);
+            result = callOrderClient(() -> orderClient.getOrder(orderId, token));
+        } catch (BusinessException e) {
+            throw e;
         } catch (RuntimeException e) {
             log.error("订单服务调用失败: orderId={}", orderId, e);
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "订单服务无响应");
@@ -535,7 +545,9 @@ public class RefundService {
         String token = requireInternalApiToken();
         Result<OrderRefundOptionsResponse> result;
         try {
-            result = orderClient.getRefundOptions(orderId, token);
+            result = callOrderClient(() -> orderClient.getRefundOptions(orderId, token));
+        } catch (BusinessException e) {
+            throw e;
         } catch (RuntimeException e) {
             log.error("订单退款明细调用失败: orderId={}", orderId, e);
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "订单服务无响应");
@@ -894,6 +906,44 @@ public class RefundService {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "内部接口令牌未配置");
         }
         return internalApiToken;
+    }
+
+    private <T> T callOrderClient(Supplier<T> call) {
+        Entry entry = null;
+        try {
+            entry = SphU.entry(PaymentSentinelConfig.ORDER_CLIENT);
+            return call.get();
+        } catch (BlockException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "订单服务暂不可用，请稍后重试");
+        } catch (RuntimeException e) {
+            Tracer.traceEntry(e, entry);
+            throw e;
+        } finally {
+            if (entry != null) {
+                entry.exit();
+            }
+        }
+    }
+
+    private <T> T callAlipayChannel(AlipayCall<T> call) throws AlipayApiException {
+        Entry entry = null;
+        try {
+            entry = SphU.entry(PaymentSentinelConfig.ALIPAY_CHANNEL);
+            return call.execute();
+        } catch (BlockException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "支付宝退款结果未知，请稍后重试/查询");
+        } catch (AlipayApiException | RuntimeException e) {
+            Tracer.traceEntry(e, entry);
+            throw e;
+        } finally {
+            if (entry != null) {
+                entry.exit();
+            }
+        }
+    }
+
+    private interface AlipayCall<T> {
+        T execute() throws AlipayApiException;
     }
 
     private String requireText(String value, String message) {

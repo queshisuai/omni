@@ -1,5 +1,8 @@
 package com.omni.payment.service;
 
+import com.alibaba.csp.sentinel.slots.block.RuleConstant;
+import com.alibaba.csp.sentinel.slots.block.flow.FlowRule;
+import com.alibaba.csp.sentinel.slots.block.flow.FlowRuleManager;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.request.AlipayTradeRefundRequest;
 import com.alipay.api.response.AlipayTradeRefundResponse;
@@ -8,6 +11,7 @@ import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.payment.client.OrderClient;
 import com.omni.payment.config.AlipayProperties;
+import com.omni.payment.config.PaymentSentinelConfig;
 import com.omni.payment.client.TicketRefundReviewInternalClient;
 import com.omni.payment.client.UserInternalClient;
 import com.omni.payment.dto.InternalUserRefResponse;
@@ -16,6 +20,7 @@ import com.omni.payment.dto.OrderInfoResponse;
 import com.omni.payment.dto.OrderRefundOptionsResponse;
 import com.omni.payment.dto.RefundSeatOptionResponse;
 import com.omni.payment.dto.RefundRequestVO;
+import com.omni.payment.dto.DirectRefundResponse;
 import com.omni.payment.dto.TicketRefundReviewPermissionResponse;
 import com.omni.payment.entity.Payment;
 import com.omni.payment.entity.RefundRequest;
@@ -23,6 +28,7 @@ import com.omni.payment.mapper.PaymentMapper;
 import com.omni.payment.mapper.RefundRequestMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -57,6 +63,39 @@ class RefundServiceBoundaryTest {
         service = new RefundService(
                 alipayProperties(), orderClient, refundRequestMapper, paymentMapper,
                 userInternalClient, ticketRefundReviewInternalClient, "test-internal-token", () -> alipayClient);
+    }
+
+    @AfterEach
+    void tearDown() {
+        FlowRuleManager.loadRules(List.of());
+    }
+
+    @Test
+    void applyRefundDoesNotCallOrderClientWhenOrderClientResourceBlocked() {
+        blockResource(PaymentSentinelConfig.ORDER_CLIENT);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.applyRefund(40L, 2004L, "测试退款"));
+
+        assertEquals("订单服务暂不可用，请稍后重试", error.getMessage());
+        verify(orderClient, never()).getOrder(anyLong(), anyString());
+        verify(refundRequestMapper, never()).insert(any());
+    }
+
+    @Test
+    void directRefundReturnsUnknownAndDoesNotCallAlipayWhenChannelResourceBlocked() throws Exception {
+        OrderInfoResponse order = order(41L, "DM-TEST-041", new BigDecimal("100.00"), 2);
+        when(orderClient.getOrder(41L, "test-internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(successPayment(order));
+        blockResource(PaymentSentinelConfig.ALIPAY_CHANNEL);
+
+        DirectRefundResponse result = service.directRefund(41L, "渠道熔断测试");
+
+        assertEquals("UNKNOWN", result.getStatus());
+        assertEquals(false, result.getSuccess());
+        assertEquals("支付宝退款结果未知，请稍后重试/查询", result.getMessage());
+        verify(alipayClient, never()).execute(any(AlipayTradeRefundRequest.class));
+        verify(orderClient, never()).markRefunded(anyLong(), anyString());
     }
 
     @Test
@@ -514,6 +553,13 @@ class RefundServiceBoundaryTest {
                 () -> service.reject(refundId, reviewerId, "拒绝"));
         assertEquals("票务服务无响应", error.getMessage());
         verify(refundRequestMapper, never()).update(any(), any());
+    }
+
+    private void blockResource(String resource) {
+        FlowRule rule = new FlowRule(resource);
+        rule.setGrade(RuleConstant.FLOW_GRADE_QPS);
+        rule.setCount(0);
+        FlowRuleManager.loadRules(List.of(rule));
     }
 
     private RefundRequest refund(Long id, Long orderId, BigDecimal amount, Integer status) {

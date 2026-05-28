@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { GRAB_STATUS } from './grab-status';
 import { GrabService } from './grab.service';
 
@@ -265,5 +266,111 @@ describe('GrabService', () => {
     expect(admission.release).not.toHaveBeenCalled();
     expect(repository.updateStatus).not.toHaveBeenCalled();
     expect(result).toEqual({ requestId: 'GRAB-FAILED', status: GRAB_STATUS.FAILED, orderId: null, failReason: '抢票库存未初始化' });
+  });
+
+  it('rejects reading another user grab request', async () => {
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue({
+        requestId: 'GRAB-OTHER',
+        userId: 2005,
+        status: GRAB_STATUS.ORDER_CREATED,
+        orderId: 9001,
+        failReason: null,
+      }),
+    };
+    const admission: any = { release: jest.fn() };
+    const orderClient: any = { createOrder: jest.fn() };
+    const service = new GrabService(repository, admission, orderClient);
+
+    await expect(service.getRequest(2004, 'GRAB-OTHER')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repository.findByRequestId).toHaveBeenCalledWith('GRAB-OTHER');
+  });
+
+  it('rejects cancelling another user grab request', async () => {
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue({
+        requestId: 'GRAB-OTHER',
+        userId: 2005,
+        sessionId: 101,
+        ticketTypeId: 202,
+        quantity: 1,
+        seatIds: [],
+        allocateRandom: false,
+        idempotencyKey: 'idem-other',
+        status: GRAB_STATUS.ACCEPTED,
+        orderId: null,
+        failReason: null,
+      }),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = { release: jest.fn() };
+    const orderClient: any = { createOrder: jest.fn() };
+    const service = new GrabService(repository, admission, orderClient);
+
+    await expect(service.cancelRequest(2004, 'GRAB-OTHER')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(repository.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it('returns existing order-created request when cancelling after order creation', async () => {
+    const record = {
+      requestId: 'GRAB-ORDERED',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      seatIds: [],
+      allocateRandom: false,
+      idempotencyKey: 'idem-ordered',
+      status: GRAB_STATUS.ORDER_CREATED,
+      orderId: 9001,
+      failReason: null,
+    };
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = { release: jest.fn() };
+    const orderClient: any = { createOrder: jest.fn() };
+    const service = new GrabService(repository, admission, orderClient);
+
+    const result = await service.cancelRequest(2004, 'GRAB-ORDERED');
+
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(repository.updateStatus).not.toHaveBeenCalled();
+    expect(result).toEqual({ requestId: 'GRAB-ORDERED', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null });
+  });
+
+  it('expires accepted request and releases redis hold when cancelling an in-flight request', async () => {
+    const record = {
+      requestId: 'GRAB-ACCEPTED',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      seatIds: [],
+      allocateRandom: false,
+      idempotencyKey: 'idem-accepted',
+      status: GRAB_STATUS.ACCEPTED,
+      orderId: null,
+      failReason: null,
+    };
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn().mockResolvedValue({
+        ...record,
+        status: GRAB_STATUS.EXPIRED,
+        failReason: '抢票请求已取消',
+      }),
+    };
+    const admission: any = { release: jest.fn() };
+    const orderClient: any = { createOrder: jest.fn() };
+    const service = new GrabService(repository, admission, orderClient);
+
+    const result = await service.cancelRequest(2004, 'GRAB-ACCEPTED');
+
+    expect(admission.release).toHaveBeenCalledWith(record);
+    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-ACCEPTED', GRAB_STATUS.EXPIRED, '抢票请求已取消');
+    expect(result).toEqual({ requestId: 'GRAB-ACCEPTED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: '抢票请求已取消' });
   });
 });
