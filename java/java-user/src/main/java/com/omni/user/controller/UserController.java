@@ -4,6 +4,7 @@ import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
+import com.omni.user.config.UserSentinelConfig;
 import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.dto.LoginRequest;
@@ -21,6 +22,8 @@ import com.omni.user.service.OrganizerApplicationService;
 import com.omni.user.service.UserAssetService;
 import com.omni.user.service.UserService;
 import io.jsonwebtoken.Claims;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -77,9 +80,14 @@ public class UserController {
      * 用户登录
      */
     @PostMapping("/login")
+    @SentinelResource(value = UserSentinelConfig.LOGIN_PASSWORD, blockHandler = "loginBlocked")
     public Result<LoginResponse> login(@RequestBody LoginRequest request) {
         LoginResponse response = userService.login(request);
         return Result.success(response);
+    }
+
+    public Result<LoginResponse> loginBlocked(LoginRequest request, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
     /**
@@ -208,11 +216,16 @@ public class UserController {
      * 发送短信验证码（沙盒版：固定验证码）
      */
     @PostMapping("/send-code")
+    @SentinelResource(value = UserSentinelConfig.SEND_CODE, blockHandler = "sendCodeBlocked")
     public Result<String> sendCode(@RequestParam String phone) {
         System.out.println("==========================================");
         System.out.println("  短信验证码 [" + phone + "]: " + MOCK_SMS_CODE);
         System.out.println("==========================================");
         return Result.success(MOCK_SMS_CODE);
+    }
+
+    public Result<String> sendCodeBlocked(String phone, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
     private Long requireAuthUserId(String authorization) {

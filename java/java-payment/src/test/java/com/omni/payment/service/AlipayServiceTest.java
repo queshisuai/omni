@@ -1,5 +1,10 @@
 package com.omni.payment.service;
 
+import com.alibaba.csp.sentinel.slots.block.RuleConstant;
+import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRule;
+import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
+import com.alibaba.csp.sentinel.slots.block.flow.FlowRule;
+import com.alibaba.csp.sentinel.slots.block.flow.FlowRuleManager;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.request.AlipayTradePrecreateRequest;
 import com.alipay.api.response.AlipayTradePrecreateResponse;
@@ -7,20 +12,25 @@ import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.payment.client.OrderClient;
 import com.omni.payment.config.AlipayProperties;
+import com.omni.payment.config.PaymentSentinelConfig;
 import com.omni.payment.dto.OrderInfoResponse;
 import com.omni.payment.dto.QrPayResponse;
 import com.omni.payment.entity.Payment;
 import com.omni.payment.mapper.PaymentMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -153,6 +163,44 @@ class AlipayServiceTest {
     }
 
     @Test
+    void createQrPayOpensAlipayChannelCircuitAfterRuntimeFailures() throws Exception {
+        OrderInfoResponse order = order(18L, "DM1010", new BigDecimal("280.00"), 1);
+        when(orderClient.getOrder(18L, "internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+        when(alipayClient.execute(any(AlipayTradePrecreateRequest.class))).thenThrow(new RuntimeException("connection reset"));
+        DegradeRule rule = new DegradeRule();
+        rule.setResource(PaymentSentinelConfig.ALIPAY_CHANNEL);
+        rule.setGrade(RuleConstant.DEGRADE_GRADE_EXCEPTION_RATIO);
+        rule.setCount(0.5);
+        rule.setMinRequestAmount(1);
+        rule.setTimeWindow(10);
+        DegradeRuleManager.loadRules(List.of(rule));
+
+        assertThrows(BusinessException.class, () -> service.createQrPay(18L));
+
+        verify(alipayClient, org.mockito.Mockito.times(1)).execute(any(AlipayTradePrecreateRequest.class));
+        BusinessException blocked = assertThrows(BusinessException.class, () -> service.createQrPay(18L));
+        assertEquals("支付渠道暂不可用，请稍后重试", blocked.getMessage());
+    }
+
+    @Test
+    void createQrPayOpensOrderClientCircuitAfterRuntimeFailures() {
+        when(orderClient.getOrder(19L, "internal-token")).thenThrow(new RuntimeException("timeout"));
+        DegradeRule rule = new DegradeRule();
+        rule.setResource(PaymentSentinelConfig.ORDER_CLIENT);
+        rule.setGrade(RuleConstant.DEGRADE_GRADE_EXCEPTION_RATIO);
+        rule.setCount(0.5);
+        rule.setMinRequestAmount(1);
+        rule.setTimeWindow(10);
+        DegradeRuleManager.loadRules(List.of(rule));
+
+        assertThrows(BusinessException.class, () -> service.createQrPay(19L));
+
+        BusinessException blocked = assertThrows(BusinessException.class, () -> service.createQrPay(19L));
+        assertEquals("订单服务暂不可用，请稍后重试", blocked.getMessage());
+    }
+
+    @Test
     void createQrPayRejectsPaidOrder() {
         OrderInfoResponse order = order(11L, "DM1002", new BigDecimal("380.00"), 2);
         when(orderClient.getOrder(11L, "internal-token")).thenReturn(Result.success(order));
@@ -229,6 +277,39 @@ class AlipayServiceTest {
         verify(alipayClient, never()).execute(any(AlipayTradePrecreateRequest.class));
     }
 
+    @AfterEach
+    void tearDown() {
+        FlowRuleManager.loadRules(List.of());
+        DegradeRuleManager.loadRules(List.of());
+    }
+
+    @Test
+    void createQrPayDoesNotCallOrderClientWhenOrderClientResourceBlocked() throws Exception {
+        blockResource(PaymentSentinelConfig.ORDER_CLIENT);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createQrPay(31L));
+
+        assertEquals("订单服务暂不可用，请稍后重试", error.getMessage());
+        verify(orderClient, never()).getOrder(anyLong(), anyString());
+        verify(paymentMapper, never()).insert(any());
+        verify(alipayClient, never()).execute(any(AlipayTradePrecreateRequest.class));
+    }
+
+    @Test
+    void syncDecisionReturnsUnknownAndDoesNotCallAlipayWhenChannelResourceBlocked() throws Exception {
+        OrderInfoResponse order = order(32L, "DM1010", new BigDecimal("180.00"), 1);
+        when(orderClient.getOrder(32L, "internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+        blockResource(PaymentSentinelConfig.ALIPAY_CHANNEL);
+
+        var result = service.syncDecisionForCancel(32L);
+
+        assertEquals(false, result.getPaid());
+        assertEquals(false, result.getSafeToCancel());
+        assertEquals("支付结果确认中", result.getMessage());
+        verify(alipayClient, never()).execute(any(com.alipay.api.request.AlipayTradeQueryRequest.class));
+    }
+
     @Test
     void createQrPayMapsOrderServiceExceptionBeforePaymentInsert() throws Exception {
         when(orderClient.getOrder(30L, "internal-token")).thenThrow(new RuntimeException("timeout"));
@@ -237,6 +318,13 @@ class AlipayServiceTest {
         assertEquals("订单服务无响应", error.getMessage());
         verify(paymentMapper, never()).insert(any());
         verify(alipayClient, never()).execute(any(AlipayTradePrecreateRequest.class));
+    }
+
+    private void blockResource(String resource) {
+        FlowRule rule = new FlowRule(resource);
+        rule.setGrade(RuleConstant.FLOW_GRADE_QPS);
+        rule.setCount(0);
+        FlowRuleManager.loadRules(List.of(rule));
     }
 
     private OrderInfoResponse order(Long id, String orderNo, BigDecimal amount, Integer status) {

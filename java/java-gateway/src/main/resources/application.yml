@@ -13,6 +13,10 @@ spring:
   application:
     name: gateway
   cloud:
+    sentinel:
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:localhost:8858}
+        port: ${SENTINEL_GATEWAY_TRANSPORT_PORT:8719}
     nacos:
       discovery:
         server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}

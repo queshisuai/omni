@@ -1,5 +1,9 @@
 package com.omni.order.service;
 
+import com.alibaba.csp.sentinel.Entry;
+import com.alibaba.csp.sentinel.SphU;
+import com.alibaba.csp.sentinel.Tracer;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
@@ -7,6 +11,7 @@ import com.omni.exception.BusinessException;
 import com.omni.order.client.PaymentInternalClient;
 import com.omni.order.client.TicketSalesInternalClient;
 import com.omni.order.client.UserInternalClient;
+import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.MarkPartialRefundedRequest;
@@ -49,6 +54,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Service
@@ -624,7 +630,9 @@ public class OrderService {
         String token = requireInternalApiToken("用户服务接口令牌未配置");
         Result<InternalUserRefResponse> result;
         try {
-            result = userInternalClient.getUserRef(userId, token);
+            result = callUserValidate(() -> userInternalClient.getUserRef(userId, token));
+        } catch (BusinessException e) {
+            throw e;
         } catch (RuntimeException e) {
             log.error("用户服务调用失败: userId={}", userId, e);
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "用户服务无响应");
@@ -652,7 +660,7 @@ public class OrderService {
         request.setTicketTypeId(ticketTypeId);
         request.setSeatIds(seatIds);
         request.setQuantity(quantity);
-        Result<TicketSalesQuoteResponse> result = ticketSalesInternalClient.quote(request, token);
+        Result<TicketSalesQuoteResponse> result = callTicketSales(() -> ticketSalesInternalClient.quote(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
         }
@@ -681,7 +689,7 @@ public class OrderService {
         request.setSessionId(order.getSessionId());
         request.setTicketTypeId(order.getTicketTypeId());
         request.setQuantity(order.getQuantity());
-        Result<Void> result = ticketSalesInternalClient.lockStock(request, token);
+        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.lockStock(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
         }
@@ -693,7 +701,7 @@ public class OrderService {
         request.setOrderId(0L);
         request.setTicketTypeId(ticketTypeId);
         request.setQuantity(quantity);
-        Result<Void> result = ticketSalesInternalClient.lockStock(request, token);
+        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.lockStock(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
         }
@@ -701,7 +709,7 @@ public class OrderService {
 
     private TicketSalesSeatLockResponse lockSeats(TicketSalesLockRequest lockRequest) {
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<TicketSalesSeatLockResponse> result = ticketSalesInternalClient.lockSeats(lockRequest, token);
+        Result<TicketSalesSeatLockResponse> result = callTicketSales(() -> ticketSalesInternalClient.lockSeats(lockRequest, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
         }
@@ -734,7 +742,7 @@ public class OrderService {
             request.setSeatIds(seatIds);
         }
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<Void> result = ticketSalesInternalClient.confirmSold(request, token);
+        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.confirmSold(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
         }
@@ -760,7 +768,7 @@ public class OrderService {
             request.setSeatIds(seatIds);
         }
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<Void> result = ticketSalesInternalClient.release(request, token);
+        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.release(request, token));
         if (result != null && result.getCode() == ResultCode.SUCCESS.getCode()) {
             if (orderSeats != null) {
                 LocalDateTime now = LocalDateTime.now();
@@ -783,7 +791,7 @@ public class OrderService {
         request.setSeatIds(List.of(orderSeat.getSessionSeatId()));
         request.setQuantity(1);
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<Void> result = ticketSalesInternalClient.release(request, token);
+        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.release(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             log.warn("释放座位锁失败，票务服务拒绝: orderSeatId={}, sessionSeatId={}, orderId={}",
                     orderSeat.getId(), orderSeat.getSessionSeatId(), orderSeat.getOrderId());
@@ -817,7 +825,7 @@ public class OrderService {
             }
         }
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<Void> result = ticketSalesInternalClient.refund(request, token);
+        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.refund(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             log.warn("退款恢复票务资源失败: orderId={}", order.getId());
         }
@@ -833,9 +841,34 @@ public class OrderService {
             request.setSeatIds(orderSeats.stream().map(OrderSeat::getSessionSeatId).collect(Collectors.toList()));
         }
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<Void> result = ticketSalesInternalClient.refund(request, token);
+        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.refund(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
+        }
+    }
+
+    private <T> T callUserValidate(Supplier<T> call) {
+        return callWithSentinel(OrderSentinelConfig.USER_VALIDATE_RESOURCE, "用户服务暂不可用，请稍后重试", call);
+    }
+
+    private <T> T callTicketSales(Supplier<T> call) {
+        return callWithSentinel(OrderSentinelConfig.TICKET_SALES_RESOURCE, "票务服务暂不可用，请稍后重试", call);
+    }
+
+    private <T> T callWithSentinel(String resource, String blockMessage, Supplier<T> call) {
+        Entry entry = null;
+        try {
+            entry = SphU.entry(resource);
+            return call.get();
+        } catch (BlockException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, blockMessage);
+        } catch (RuntimeException e) {
+            Tracer.traceEntry(e, entry);
+            throw e;
+        } finally {
+            if (entry != null) {
+                entry.exit();
+            }
         }
     }
 

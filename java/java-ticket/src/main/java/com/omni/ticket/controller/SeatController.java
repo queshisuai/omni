@@ -1,9 +1,12 @@
 package com.omni.ticket.controller;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.client.OrderInternalClient;
+import com.omni.ticket.config.TicketSentinelConfig;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatMapResponse;
 import com.omni.ticket.dto.SessionSeatUsageItemResponse;
@@ -94,6 +97,7 @@ public class SeatController {
     }
 
     @GetMapping("/sessions/{sessionId}/ticket-types/{ticketTypeId}/seats")
+    @SentinelResource(value = TicketSentinelConfig.SEAT_MAP_READ, blockHandler = "getSeatMapBlocked")
     public Result<SeatMapResponse> getSeatMap(@PathVariable Long sessionId, @PathVariable Long ticketTypeId) {
         TicketType ticketType = ticketTypeMapper.selectById(ticketTypeId);
         if (ticketType == null || !sessionId.equals(ticketType.getSessionId())) {
@@ -121,6 +125,10 @@ public class SeatController {
                 .orderByAsc(SessionSeat::getRowNo)
                 .orderByAsc(SessionSeat::getSeatNo));
         return Result.success(SeatMapResponse.of(sessionId, ticketType, areas, seats));
+    }
+
+    public Result<SeatMapResponse> getSeatMapBlocked(Long sessionId, Long ticketTypeId, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
     private boolean isSeatMapHidden(Long sessionId) {

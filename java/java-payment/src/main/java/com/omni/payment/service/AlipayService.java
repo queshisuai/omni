@@ -1,5 +1,9 @@
 package com.omni.payment.service;
 
+import com.alibaba.csp.sentinel.Entry;
+import com.alibaba.csp.sentinel.SphU;
+import com.alibaba.csp.sentinel.Tracer;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.alipay.api.AlipayApiException;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.DefaultAlipayClient;
@@ -16,6 +20,7 @@ import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.payment.client.OrderClient;
 import com.omni.payment.config.AlipayProperties;
+import com.omni.payment.config.PaymentSentinelConfig;
 import com.omni.payment.dto.OrderInfoResponse;
 import com.omni.payment.dto.PagePayResponse;
 import com.omni.payment.dto.PaymentSyncDecisionResponse;
@@ -120,7 +125,7 @@ public class AlipayService {
         }
 
         try {
-            AlipayTradePagePayResponse alipayResponse = createClient().pageExecute(request);
+            AlipayTradePagePayResponse alipayResponse = callAlipayChannel(() -> createClient().pageExecute(request));
             if (alipayResponse == null || !alipayResponse.isSuccess() || !StringUtils.hasText(alipayResponse.getBody())) {
                 markPaymentFailed(payment, "支付宝支付表单响应为空或失败");
                 throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付表单失败");
@@ -190,6 +195,8 @@ public class AlipayService {
             response.setSubject(subject);
             response.setQrCode(alipayResponse.getQrCode());
             return response;
+        } catch (BusinessException e) {
+            throw e;
         } catch (AlipayApiException | RuntimeException e) {
             markPaymentFailed(payment, "生成支付宝支付二维码异常");
             log.error("生成支付宝支付二维码失败: orderId={}", orderId, e);
@@ -201,7 +208,7 @@ public class AlipayService {
         RuntimeException lastRuntimeException = null;
         for (int attempt = 1; attempt <= QRCODE_CREATE_MAX_ATTEMPTS; attempt++) {
             try {
-                return client.execute(request);
+                return callAlipayChannel(() -> client.execute(request));
             } catch (RuntimeException e) {
                 lastRuntimeException = e;
                 if (attempt >= QRCODE_CREATE_MAX_ATTEMPTS) {
@@ -221,7 +228,7 @@ public class AlipayService {
             queryRequest.setBizContent(buildJson(bizContent));
             AlipayTradeQueryResponse queryResponse;
             try {
-                queryResponse = client.execute(queryRequest);
+                queryResponse = callAlipayChannel(() -> client.execute(queryRequest));
             } catch (RuntimeException | AlipayApiException e) {
                 log.warn("支付宝二维码已生成，但交易可查询确认失败: outTradeNo={}, attempt={}, message={}", orderNo, attempt, e.getMessage());
                 return;
@@ -371,7 +378,7 @@ public class AlipayService {
         request.setBizContent(buildJson(bizContent));
 
         try {
-            AlipayTradeQueryResponse response = createClient().execute(request);
+            AlipayTradeQueryResponse response = callAlipayChannel(() -> createClient().execute(request));
             if (response.isSuccess() && isPaidTradeStatus(response.getTradeStatus())) {
                 if (!amountEquals(order.getAmount(), response.getTotalAmount())) {
                     throw new BusinessException(ResultCode.BAD_REQUEST, "支付宝支付金额与订单金额不一致");
@@ -390,6 +397,11 @@ public class AlipayService {
         } catch (AlipayApiException e) {
             log.warn("查询支付宝支付结果失败: orderId={}, outTradeNo={}", order.getId(), order.getOrderNo(), e);
             return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
+        } catch (BusinessException e) {
+            if ("支付渠道暂不可用，请稍后重试".equals(e.getMessage())) {
+                return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
+            }
+            throw e;
         }
     }
 
@@ -434,7 +446,7 @@ public class AlipayService {
 
     private void markOrderPaid(Long orderId) {
         String token = requireInternalApiToken();
-        Result<OrderInfoResponse> result = orderClient.markPaid(orderId, token);
+        Result<OrderInfoResponse> result = callOrderClient(() -> orderClient.markPaid(orderId, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "更新订单支付状态失败");
         }
@@ -447,7 +459,9 @@ public class AlipayService {
         String token = requireInternalApiToken();
         Result<OrderInfoResponse> result;
         try {
-            result = orderClient.getOrder(orderId, token);
+            result = callOrderClient(() -> orderClient.getOrder(orderId, token));
+        } catch (BusinessException e) {
+            throw e;
         } catch (RuntimeException e) {
             log.error("订单服务调用失败: orderId={}", orderId, e);
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "订单服务无响应");
@@ -456,6 +470,44 @@ public class AlipayService {
             throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
         }
         return result.getData();
+    }
+
+    private <T> T callOrderClient(Supplier<T> call) {
+        Entry entry = null;
+        try {
+            entry = SphU.entry(PaymentSentinelConfig.ORDER_CLIENT);
+            return call.get();
+        } catch (BlockException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "订单服务暂不可用，请稍后重试");
+        } catch (RuntimeException e) {
+            Tracer.traceEntry(e, entry);
+            throw e;
+        } finally {
+            if (entry != null) {
+                entry.exit();
+            }
+        }
+    }
+
+    private <T> T callAlipayChannel(AlipayCall<T> call) throws AlipayApiException {
+        Entry entry = null;
+        try {
+            entry = SphU.entry(PaymentSentinelConfig.ALIPAY_CHANNEL);
+            return call.execute();
+        } catch (BlockException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "支付渠道暂不可用，请稍后重试");
+        } catch (AlipayApiException | RuntimeException e) {
+            Tracer.traceEntry(e, entry);
+            throw e;
+        } finally {
+            if (entry != null) {
+                entry.exit();
+            }
+        }
+    }
+
+    private interface AlipayCall<T> {
+        T execute() throws AlipayApiException;
     }
 
     private String requireInternalApiToken() {

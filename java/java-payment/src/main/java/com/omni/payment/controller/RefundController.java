@@ -1,9 +1,12 @@
 package com.omni.payment.controller;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
+import com.omni.payment.config.PaymentSentinelConfig;
 import com.omni.payment.dto.ApplyRefundRequest;
 import com.omni.payment.dto.DirectRefundRequest;
 import com.omni.payment.dto.DirectRefundResponse;
@@ -43,6 +46,7 @@ public class RefundController {
     }
 
     @PostMapping("/apply")
+    @SentinelResource(value = PaymentSentinelConfig.REFUND_APPLY, blockHandler = "applyBlocked")
     public Result<RefundRequestVO> apply(@RequestHeader(value = "Authorization", required = false) String authorization,
                                          @RequestBody(required = false) ApplyRefundRequest request) {
         if (request == null) {
@@ -56,6 +60,10 @@ public class RefundController {
                 request.getReasonType(),
                 request.getQuantity(),
                 request.getOrderSeatIds()));
+    }
+
+    public Result<RefundRequestVO> applyBlocked(String authorization, ApplyRefundRequest request, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
     @GetMapping("/my")

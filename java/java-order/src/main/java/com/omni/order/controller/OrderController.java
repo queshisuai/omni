@@ -1,6 +1,9 @@
 package com.omni.order.controller;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
+import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.MarkPartialRefundedRequest;
@@ -69,6 +72,7 @@ public class OrderController {
     }
 
     @PostMapping("/internal/create")
+    @SentinelResource(value = OrderSentinelConfig.INTERNAL_CREATE_ORDER_RESOURCE, blockHandler = "createInternalOrderBlocked")
     public Result<Order> createInternalOrder(@RequestBody CreateOrderRequest request,
                                              @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
@@ -77,13 +81,22 @@ public class OrderController {
         return Result.success(orderService.createOrder(request));
     }
 
+    public Result<Order> createInternalOrderBlocked(CreateOrderRequest request, String token, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
+    }
+
     @PostMapping("/internal/create-with-seats")
+    @SentinelResource(value = OrderSentinelConfig.INTERNAL_CREATE_ORDER_WITH_SEATS_RESOURCE, blockHandler = "createInternalOrderWithSeatsBlocked")
     public Result<Order> createInternalOrderWithSeats(@RequestBody LockSeatsRequest request,
                                                       @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
             return Result.fail(403, "无权限");
         }
         return Result.success(orderService.createOrderWithSeats(request));
+    }
+
+    public Result<Order> createInternalOrderWithSeatsBlocked(LockSeatsRequest request, String token, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
     /**
@@ -202,6 +215,7 @@ public class OrderController {
      * 内部支付回调：标记订单为已支付
      */
     @PostMapping("/internal/{id}/paid")
+    @SentinelResource(value = OrderSentinelConfig.INTERNAL_MARK_PAID_RESOURCE, blockHandler = "markInternalPaidBlocked")
     public Result<Order> markInternalPaid(@PathVariable Long id,
                                             @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
@@ -209,6 +223,10 @@ public class OrderController {
         }
         Order order = orderService.markPaid(id);
         return Result.success(order);
+    }
+
+    public Result<Order> markInternalPaidBlocked(Long id, String token, BlockException exception) {
+        return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
     /**

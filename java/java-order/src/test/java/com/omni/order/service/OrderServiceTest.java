@@ -5,6 +5,7 @@ import com.omni.exception.BusinessException;
 import com.omni.order.client.PaymentInternalClient;
 import com.omni.order.client.TicketSalesInternalClient;
 import com.omni.order.client.UserInternalClient;
+import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.LockSeatsRequest;
@@ -13,6 +14,7 @@ import com.omni.order.dto.TicketSalesQuoteResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.mapper.OrderMapper;
 import com.omni.order.mapper.OrderSeatMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +23,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
+
+import com.alibaba.csp.sentinel.slots.block.RuleConstant;
+import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRule;
+import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -54,6 +60,44 @@ class OrderServiceTest {
     @BeforeEach
     void setUp() {
         service = new OrderService(orderMapper, orderSeatMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient);
+    }
+
+    @AfterEach
+    void tearDown() {
+        DegradeRuleManager.loadRules(List.of());
+    }
+
+    @Test
+    void createOrderOpensUserValidateCircuitAfterRuntimeFailures() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setQuantity(1);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenThrow(new RuntimeException("timeout"));
+        loadExceptionRatioRule(OrderSentinelConfig.USER_VALIDATE_RESOURCE);
+
+        assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        BusinessException blocked = assertThrows(BusinessException.class, () -> service.createOrder(request));
+        assertEquals("用户服务暂不可用，请稍后重试", blocked.getMessage());
+    }
+
+    @Test
+    void createOrderOpensTicketSalesCircuitAfterRuntimeFailures() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setQuantity(1);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenThrow(new RuntimeException("timeout"));
+        loadExceptionRatioRule(OrderSentinelConfig.TICKET_SALES_RESOURCE);
+
+        assertThrows(RuntimeException.class, () -> service.createOrder(request));
+
+        BusinessException blocked = assertThrows(BusinessException.class, () -> service.createOrder(request));
+        assertEquals("票务服务暂不可用，请稍后重试", blocked.getMessage());
     }
 
     @Test
@@ -180,5 +224,15 @@ class OrderServiceTest {
         user.setRole("user");
         user.setStatus(1);
         return user;
+    }
+
+    private void loadExceptionRatioRule(String resource) {
+        DegradeRule rule = new DegradeRule();
+        rule.setResource(resource);
+        rule.setGrade(RuleConstant.DEGRADE_GRADE_EXCEPTION_RATIO);
+        rule.setCount(0.5);
+        rule.setMinRequestAmount(1);
+        rule.setTimeWindow(10);
+        DegradeRuleManager.loadRules(List.of(rule));
     }
 }

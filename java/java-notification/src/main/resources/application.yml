@@ -18,6 +18,10 @@ spring:
           enabled: false
         server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
         file-extension: yaml
+    sentinel:
+      transport:
+        dashboard: ${SENTINEL_DASHBOARD:localhost:8858}
+        port: ${SENTINEL_NOTIFICATION_TRANSPORT_PORT:8724}
 
 mybatis-plus:
   configuration:

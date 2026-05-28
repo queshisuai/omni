@@ -1,5 +1,7 @@
 package com.omni.order.controller;
 
+import com.alibaba.csp.sentinel.slots.block.BlockException;
+import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
 import com.omni.common.result.Result;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
@@ -102,5 +104,52 @@ class OrderControllerInternalCreateTest {
         assertEquals(200, result.getCode());
         assertEquals(order, result.getData());
         verify(orderService).createOrderWithSeats(request);
+    }
+
+    @Test
+    void internalCreateBlockHandlerReturnsBusyResponse() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(7L);
+        request.setTicketTypeId(21L);
+        request.setQuantity(1);
+        BlockException exception = new FlowException("order-internal-create");
+
+        Result<Order> result = controller.createInternalOrderBlocked(request, "test-internal-token", exception);
+
+        assertEquals(429, result.getCode());
+        assertEquals("系统繁忙，请稍后重试", result.getMessage());
+        assertNull(result.getData());
+        verify(orderService, never()).createOrder(any());
+    }
+
+    @Test
+    void internalCreateWithSeatsBlockHandlerReturnsBusyResponse() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(7L);
+        request.setTicketTypeId(21L);
+        request.setQuantity(1);
+        request.setSeatIds(List.of(301L));
+        BlockException exception = new FlowException("order-internal-create-with-seats");
+
+        Result<Order> result = controller.createInternalOrderWithSeatsBlocked(request, "test-internal-token", exception);
+
+        assertEquals(429, result.getCode());
+        assertEquals("系统繁忙，请稍后重试", result.getMessage());
+        assertNull(result.getData());
+        verify(orderService, never()).createOrderWithSeats(any());
+    }
+
+    @Test
+    void internalMarkPaidBlockHandlerReturnsBusyResponse() {
+        BlockException exception = new FlowException("order-internal-mark-paid");
+
+        Result<Order> result = controller.markInternalPaidBlocked(14L, "test-internal-token", exception);
+
+        assertEquals(429, result.getCode());
+        assertEquals("系统繁忙，请稍后重试", result.getMessage());
+        assertNull(result.getData());
+        verify(orderService, never()).markPaid(any());
     }
 }
