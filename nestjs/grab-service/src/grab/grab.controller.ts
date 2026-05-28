@@ -1,36 +1,36 @@
-import { Controller, Post, Body, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { AuthenticatedRequest } from '../auth/authenticated-request';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GrabService } from './grab.service';
+import type { GrabRequestResponse, SubmitGrabRequestDto } from './grab.types';
 
-@Controller('grab')
+interface ApiResult<T> {
+  code: number;
+  message: string;
+  data: T;
+}
+
+function success<T>(data: T): ApiResult<T> {
+  return { code: 200, message: 'success', data };
+}
+
+@Controller('api/grab/requests')
+@UseGuards(JwtAuthGuard)
 export class GrabController {
   constructor(private readonly grabService: GrabService) {}
 
-  @Post('ticket')
-  async grabTicket(
-    @Body() body: { userId: string; sessionId: string; ticketTypeId: string },
-  ) {
-    const result = await this.grabService.grabTicket(
-      body.userId,
-      body.sessionId,
-      body.ticketTypeId,
-    );
-    return result;
+  @Post()
+  async submit(@Req() request: AuthenticatedRequest, @Body() body: SubmitGrabRequestDto): Promise<ApiResult<GrabRequestResponse>> {
+    return success(await this.grabService.submitRequest(request.user.userId, body));
   }
 
-  @Post('init-stock')
-  async initStock(
-    @Body() body: { sessionId: string; ticketTypeId: string; stock: number },
-  ) {
-    await this.grabService.initStock(body.sessionId, body.ticketTypeId, body.stock);
-    return { success: true, message: '库存初始化成功' };
+  @Get(':requestId')
+  async get(@Req() request: AuthenticatedRequest, @Param('requestId') requestId: string): Promise<ApiResult<GrabRequestResponse>> {
+    return success(await this.grabService.getRequest(request.user.userId, requestId));
   }
 
-  @Get('stock')
-  async getStock(
-    @Query('sessionId') sessionId: string,
-    @Query('ticketTypeId') ticketTypeId: string,
-  ) {
-    const stock = await this.grabService.getStock(sessionId, ticketTypeId);
-    return { stock };
+  @Post(':requestId/cancel')
+  async cancel(@Req() request: AuthenticatedRequest, @Param('requestId') requestId: string): Promise<ApiResult<GrabRequestResponse>> {
+    return success(await this.grabService.cancelRequest(request.user.userId, requestId));
   }
 }

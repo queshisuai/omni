@@ -26,7 +26,7 @@ class OrderControllerInternalSeatUsageTest {
     @BeforeEach
     void setUp() {
         orderService = mock(OrderService.class);
-        controller = new OrderController(orderService, "test-internal-token");
+        controller = new OrderController(orderService, "test-internal-token", "omni-jwt-secretomni-jwt-secretomni-jwt-secret");
     }
 
     @Test

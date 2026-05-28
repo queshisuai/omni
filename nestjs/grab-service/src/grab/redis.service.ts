@@ -33,6 +33,14 @@ export class RedisService {
     return this.client.incr(key);
   }
 
+  async incrBy(key: string, increment: number): Promise<number> {
+    return this.client.incrby(key, increment);
+  }
+
+  async del(keys: string[]): Promise<number> {
+    return this.client.del(...keys);
+  }
+
   async eval(script: string, keys: string[], args: string[]): Promise<any> {
     return this.client.eval(script, keys.length, ...keys, ...args);
   }

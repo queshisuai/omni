@@ -20,7 +20,7 @@ export default function VenueApplicationsPage() {
 
   const loadData = (nextUserId = userId) => {
     if (!nextUserId) return
-    listVenueApplications(nextUserId, status === '' ? undefined : Number(status)).then(setApplications).catch(() => {})
+    listVenueApplications(status === '' ? {} : { status: Number(status) }).then(setApplications).catch(() => {})
     listAdminVenues(nextUserId).then(setVenues).catch(() => {})
   }
 

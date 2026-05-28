@@ -1,10 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
-async function bootstrap() {
+export async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
-  await app.listen(3000);
-  console.log('Grab service running on http://localhost:3000');
+  const port = Number(process.env.GRAB_SERVICE_PORT || 3001);
+  await app.init();
+  await new Promise<void>((resolve) => app.getHttpServer().listen(port, 2048, resolve));
+  console.log(`Grab service running on http://localhost:${port}`);
 }
-bootstrap();
+
+if (require.main === module) {
+  bootstrap();
+}

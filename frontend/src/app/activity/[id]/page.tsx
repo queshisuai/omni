@@ -6,7 +6,7 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
-import { getActivityDetail, createOrderWithSeats, createAlipayQrPay, getSeatMap } from '@/lib/api'
+import { getActivityDetail, submitGrabRequest, getGrabRequest, createAlipayQrPay, getSeatMap } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import type { ActivityDetailVO, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, TicketTypeEntity } from '@/types/api'
@@ -29,6 +29,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [seatMap, setSeatMap] = useState<SeatMapResponse | null>(null)
   const [seatMapLoading, setSeatMapLoading] = useState(false)
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([])
+  const [grabIdempotency, setGrabIdempotency] = useState<{ intent: string; key: string } | null>(null)
   const seatMapRequestIdRef = useRef(0)
   const loadDetailRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
@@ -82,6 +83,17 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     if (now - lastRefreshRef.current < 200) return
     lastRefreshRef.current = now
     void loadDetailRef.current()
+  }
+
+  const waitForGrabResult = async (requestId: string) => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const result = await getGrabRequest(requestId)
+      if (result.status === 'ORDER_CREATED' || result.status === 'SOLD_OUT' || result.status === 'LIMITED' || result.status === 'FAILED' || result.status === 'EXPIRED') {
+        return result
+      }
+      await new Promise(resolve => setTimeout(resolve, 800))
+    }
+    throw new Error('抢票排队超时，请稍后查看订单')
   }
 
   useEffect(() => {
@@ -162,12 +174,36 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           const continuous = candidate.every((seat, index) => index === 0 || seat.seatNo === candidate[index - 1].seatNo + 1)
           if (continuous) {
             setSelectedSeatIds(candidate.map(seat => seat.id))
+            resetGrabIdempotencyKey()
             return
           }
         }
       }
     }
     setSelectedSeatIds(available.slice(0, quantity).map(seat => seat.id))
+    resetGrabIdempotencyKey()
+  }
+
+  const resetGrabIdempotencyKey = () => setGrabIdempotency(null)
+
+  const buildGrabIntent = (userId: number) => {
+    const seatPart = validSelectedSeatIds.slice().sort((a, b) => a - b).join(',')
+    return [
+      userId,
+      selectedSession?.session.id ?? 0,
+      selectedTicket?.id ?? 0,
+      quantity,
+      seatPart,
+      Boolean(showsSeatCraftSelection && validSelectedSeatIds.length === 0),
+    ].join(':')
+  }
+
+  const getOrCreateGrabIdempotencyKey = (userId: number) => {
+    const intent = buildGrabIntent(userId)
+    if (grabIdempotency?.intent === intent) return grabIdempotency.key
+    const key = `${intent}:${Date.now()}:${Math.random().toString(36).slice(2)}`
+    setGrabIdempotency({ intent, key })
+    return key
   }
 
   const handleConfirmOrder = async () => {
@@ -183,17 +219,24 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         setOrderError('请选择对应数量的座位')
         return
       }
-      const order = await createOrderWithSeats({
-        userId: user.userId,
+      const idempotencyKey = getOrCreateGrabIdempotencyKey(user.userId)
+      const grab = await submitGrabRequest({
         sessionId: selectedSession.session.id,
         ticketTypeId: selectedTicket.id,
         seatIds,
         quantity,
-        unitPrice: selectedTicket.price,
+        allocateRandom: Boolean(showsSeatCraftSelection && seatIds.length === 0),
+        idempotencyKey,
       })
-      const pay = await createAlipayQrPay(order.id)
+      const result = grab.status === 'ORDER_CREATED' ? grab : await waitForGrabResult(grab.requestId)
+      if (result.status !== 'ORDER_CREATED' || !result.orderId) {
+        setOrderError(result.failReason || '抢票失败，请稍后重试')
+        return
+      }
+      const pay = await createAlipayQrPay(result.orderId)
       setQrPay(pay)
       setShowConfirm(false)
+      resetGrabIdempotencyKey()
     } catch (err: unknown) {
       setOrderError(err instanceof Error ? err.message : '下单失败，请确认已登录并重试')
     } finally {
@@ -282,6 +325,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                     key={sd.session.id}
                     onClick={() => {
                       setSelectedSession(sd)
+                      resetGrabIdempotencyKey()
                       if (sd.ticketTypes.length > 0) {
                         setSelectedTicket(sd.ticketTypes[0])
                       } else {
@@ -311,12 +355,12 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                   <h3 className="text-[16px] text-[#111] font-medium mb-4">选择票档</h3>
                   <div className="flex flex-wrap gap-3 mb-6">
                     {selectedSession.ticketTypes.length === 0 ? (
-                      <p className="text-[#999] text-sm">暂无可售票档</p>
+                      <p className="text-[#999] text-sm">票档待公布</p>
                     ) : (
                       selectedSession.ticketTypes.map((tt) => (
                         <button
                           key={tt.id}
-                          onClick={() => { setSelectedTicket(tt); setQuantity(1); setSelectedSeatIds([]) }}
+                          onClick={() => { setSelectedTicket(tt); setQuantity(1); setSelectedSeatIds([]); resetGrabIdempotencyKey() }}
                           className="cursor-pointer border outline-none px-5 py-3 rounded text-sm transition-colors min-w-[100px]"
                           style={{
                             backgroundColor: selectedTicket?.id === tt.id ? '#fff0f5' : '#fff',
@@ -351,7 +395,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                             <SeatCraftSelector
                               selectionModel={seatCraftSelectionModel}
                               selectedSeatIds={validSelectedSeatIds}
-                              onChange={setSelectedSeatIds}
+                              onChange={(ids) => { setSelectedSeatIds(ids); resetGrabIdempotencyKey() }}
                               maxSelectable={quantity}
                               focusTarget={seatCraftFocusTarget}
                             />
@@ -366,14 +410,14 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         <span className="text-[14px] text-[#666]">数量</span>
                         <div className="flex items-center border border-[#e5e5e5] rounded">
                           <button
-                            onClick={() => { setQuantity(Math.max(1, quantity - 1)); setSelectedSeatIds(ids => ids.slice(0, Math.max(1, quantity - 1))) }}
+                            onClick={() => { setQuantity(Math.max(1, quantity - 1)); setSelectedSeatIds(ids => ids.slice(0, Math.max(1, quantity - 1))); resetGrabIdempotencyKey() }}
                             className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
                           >
                             -
                           </button>
                           <span className="w-12 text-center text-[14px] text-[#111]">{quantity}</span>
                           <button
-                            onClick={() => setQuantity(Math.min(selectedTicket.remainStock, quantity + 1))}
+                            onClick={() => { setQuantity(Math.min(selectedTicket.remainStock, quantity + 1)); resetGrabIdempotencyKey() }}
                             className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
                           >
                             +
@@ -504,117 +548,143 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       </main>
       <Footer />
 
-      {/* 订单确认弹窗 */}
-      {showConfirm && selectedSession && selectedTicket && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-          onClick={() => setShowConfirm(false)}
-        >
-          <div
-            className="bg-white rounded-lg p-6"
-            style={{ width: 420 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-[18px] text-[#111] font-medium mb-4">确认订单</h3>
+      {(() => {
+        const modals = (
+          <>
+            {/* 订单确认弹窗 */}
+            {showConfirm && selectedSession && selectedTicket && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+                onClick={() => {
+                  setShowConfirm(false)
+                  resetGrabIdempotencyKey()
+                }}
+              >
+                <div
+                  className="bg-white rounded-lg p-6"
+                  style={{ width: 420 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 className="text-[18px] text-[#111] font-medium mb-4">确认订单</h3>
 
-            <div className="text-[14px] text-[#333] space-y-2 mb-4">
-              <div className="flex justify-between">
-                <span className="text-[#999]">活动</span>
-                <span className="text-right flex-1 ml-4">{activity.name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#999]">场次</span>
-                <span>{selectedSession.session.startTime?.slice(0, 16).replace('T', ' ')}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#999]">场馆</span>
-                <span>{selectedSession.venue?.name}{selectedSession.venue?.city ? ` - ${selectedSession.venue.city}` : ''}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#999]">票档</span>
-                <span>{selectedTicket.name} × {quantity}张</span>
-              </div>
-              <div className="flex justify-between text-[16px] font-medium pt-3 border-t border-[#f0f0f0]">
-                <span>合计</span>
-                <span className="text-[#ff1268]">¥{(selectedTicket.price * quantity).toFixed(2)}</span>
-              </div>
-            </div>
+                  <div className="text-[14px] text-[#333] space-y-2 mb-4">
+                    <div className="flex justify-between">
+                      <span className="text-[#999]">活动</span>
+                      <span className="text-right flex-1 ml-4">{activity.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#999]">场次</span>
+                      <span>{selectedSession.session.startTime?.slice(0, 16).replace('T', ' ')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#999]">场馆</span>
+                      <span>{selectedSession.venue?.name}{selectedSession.venue?.city ? ` - ${selectedSession.venue.city}` : ''}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#999]">票档</span>
+                      <span>{selectedTicket.name} × {quantity}张</span>
+                    </div>
+                    {showsSeatCraftSelection && validSelectedSeatIds.length > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-[#999]">座位</span>
+                        <div className="text-right flex-1 ml-4 text-[13px] leading-relaxed">
+                          {validSelectedSeatIds.map(id => {
+                            const seat = seatMap?.seats.find(s => s.id === id)
+                            if (!seat) return ''
+                            const sectionName = seatMap?.layout?.sections.find(s => s.id === seat.layoutSectionId)?.name || seat.areaId || ''
+                            return `${sectionName ? sectionName + ' ' : ''}${seat.rowNo}排${seat.seatNo}座`
+                          }).join('，')}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-[16px] font-medium pt-3 border-t border-[#f0f0f0]">
+                      <span>合计</span>
+                      <span className="text-[#ff1268]">¥{(selectedTicket.price * quantity).toFixed(2)}</span>
+                    </div>
+                  </div>
 
-            {orderError && (
-              <div className="mb-4 p-2.5 bg-[#fff0f0] border border-[#ffcccc] rounded text-[#e74c3c] text-[13px]">
-                {orderError}
+                  {orderError && (
+                    <div className="mb-4 p-2.5 bg-[#fff0f0] border border-[#ffcccc] rounded text-[#e74c3c] text-[13px]">
+                      {orderError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 justify-end">
+                    <button
+                      onClick={() => {
+                        setShowConfirm(false)
+                        resetGrabIdempotencyKey()
+                      }}
+                      disabled={ordering}
+                      className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={handleConfirmOrder}
+                      disabled={ordering}
+                      className="cursor-pointer border-none outline-none text-white text-[14px] px-6 py-2 rounded"
+                      style={{ backgroundColor: '#ff1268', opacity: ordering ? 0.7 : 1 }}
+                    >
+                      {ordering ? '提交中...' : '确认支付'}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowConfirm(false)}
-                disabled={ordering}
-                className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
+            {/* 支付成功弹窗 */}
+            {showSuccess && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
               >
-                取消
-              </button>
-              <button
-                onClick={handleConfirmOrder}
-                disabled={ordering}
-                className="cursor-pointer border-none outline-none text-white text-[14px] px-6 py-2 rounded"
-                style={{ backgroundColor: '#ff1268', opacity: ordering ? 0.7 : 1 }}
-              >
-                {ordering ? '提交中...' : '确认支付'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                <div className="bg-white rounded-2xl p-8 flex flex-col items-center" style={{ width: 360 }}>
+                  {/* 成功图标 */}
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: '#f6ffed', border: '2px solid #52c41a' }}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                      <path d="M5 13l4 4L19 7" stroke="#52c41a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <h3 className="text-[20px] font-medium text-[#111] mb-2">支付成功</h3>
+                  <p className="text-[13px] text-[#999] mb-1">订单号</p>
+                  <p className="text-[14px] text-[#333] font-medium mb-6">{successOrderNo}</p>
+                  <div className="flex gap-3 w-full">
+                    <button
+                      onClick={() => setShowSuccess(false)}
+                      className="flex-1 cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] py-2.5 rounded-lg outline-none"
+                    >
+                      继续浏览
+                    </button>
+                    <button
+                      onClick={() => router.push('/orders')}
+                      className="flex-1 cursor-pointer border-none outline-none text-white text-[14px] py-2.5 rounded-lg"
+                      style={{ backgroundColor: '#ff1268' }}
+                    >
+                      查看订单
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
-      {/* 支付成功弹窗 */}
-      {showSuccess && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-        >
-          <div className="bg-white rounded-2xl p-8 flex flex-col items-center" style={{ width: 360 }}>
-            {/* 成功图标 */}
-            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: '#f6ffed', border: '2px solid #52c41a' }}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-                <path d="M5 13l4 4L19 7" stroke="#52c41a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <h3 className="text-[20px] font-medium text-[#111] mb-2">支付成功</h3>
-            <p className="text-[13px] text-[#999] mb-1">订单号</p>
-            <p className="text-[14px] text-[#333] font-medium mb-6">{successOrderNo}</p>
-            <div className="flex gap-3 w-full">
-              <button
-                onClick={() => setShowSuccess(false)}
-                className="flex-1 cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] py-2.5 rounded-lg outline-none"
-              >
-                继续浏览
-              </button>
-              <button
-                onClick={() => router.push('/orders')}
-                className="flex-1 cursor-pointer border-none outline-none text-white text-[14px] py-2.5 rounded-lg"
-                style={{ backgroundColor: '#ff1268' }}
-              >
-                查看订单
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {qrPay && (
-        <AlipayQrPayModal
-          pay={qrPay}
-          productName={activity.name}
-          onClose={() => setQrPay(null)}
-          onPaid={(result) => {
-            setSuccessOrderNo(result.orderNo || qrPay.orderNo)
-            setQrPay(null)
-            setShowSuccess(true)
-          }}
-        />
-      )}
+            {qrPay && (
+              <AlipayQrPayModal
+                pay={qrPay}
+                productName={activity.name}
+                onClose={() => setQrPay(null)}
+                onPaid={(result) => {
+                  setSuccessOrderNo(result.orderNo || qrPay.orderNo)
+                  setQrPay(null)
+                  setShowSuccess(true)
+                }}
+              />
+            )}
+          </>
+        )
+        return modals
+      })()}
     </>
   )
 }

@@ -74,10 +74,47 @@ export interface AssetUploadVO {
   sizeBytes: number
 }
 
+export interface PrivateAssetVO {
+  id: number
+  bizType: string
+  bizId?: number | null
+  originalFilename: string | null
+  contentType: string | null
+  fileSize: number
+  status: string
+  createTime?: string | null
+}
+
 export type UserRole = 'user' | 'organizer' | 'admin'
 export type OrganizerApplicationStatus = 0 | 1 | 2
 export type OrganizerStatus = 0 | 1 | 2 | 3
 export type SubjectType = 'personal' | 'enterprise'
+
+export type GrabStatus =
+  | 'PENDING'
+  | 'ACCEPTED'
+  | 'ORDER_CREATING'
+  | 'ORDER_CREATED'
+  | 'SOLD_OUT'
+  | 'LIMITED'
+  | 'FAILED'
+  | 'EXPIRED'
+
+export interface SubmitGrabRequestPayload {
+  sessionId: number
+  ticketTypeId: number
+  quantity: number
+  seatIds?: number[]
+  allocateRandom?: boolean
+  idempotencyKey: string
+}
+
+export interface GrabRequestResult {
+  requestId: string
+  status: GrabStatus
+  orderId: number | null
+  failReason: string | null
+}
 
 export interface OrganizerApplicationVO {
   id: number
@@ -114,6 +151,7 @@ export interface ActivityArtistVO {
   alias?: string | null
   artistType?: string | null
   countryOrRegion?: string | null
+  agency?: string | null
   categoryTags?: string | null
   avatar?: string | null
   isPrimary?: boolean | null
@@ -130,6 +168,7 @@ export interface ArtistSearchVO {
   alias?: string | null
   artistType?: string | null
   countryOrRegion?: string | null
+  agency?: string | null
   categoryTags?: string | null
   avatar?: string | null
   representativeWorks?: string | null
@@ -139,7 +178,6 @@ export interface ArtistSearchVO {
 }
 
 export interface ArtistSubmissionRequest {
-  userId: number
   name: string
   alias?: string | null
   artistType?: string | null
@@ -151,16 +189,34 @@ export interface ArtistSubmissionRequest {
   sourceNote?: string | null
 }
 
+export interface ArtistUpdateRequest {
+  name: string
+  alias?: string | null
+  artistType?: string | null
+  countryOrRegion?: string | null
+  agency?: string | null
+  representativeWorks?: string | null
+  categoryTags?: string | null
+  description?: string | null
+  avatar?: string | null
+}
+
 export interface ArtistReviewRequest {
-  userId: number
   action: 'approve' | 'reject'
   note?: string | null
 }
 
 export interface ArtistRiskRequest {
-  userId: number
   riskStatus: ArtistRiskStatus
   reason?: string | null
+}
+
+export interface ArtistListParams {
+  page?: number
+  size?: number
+  keyword?: string
+  reviewStatus?: ArtistReviewStatus | ''
+  riskStatus?: ArtistRiskStatus | ''
 }
 
 export interface ActivityRiskResolutionRequest {
@@ -177,9 +233,10 @@ export interface ActivityRiskResolutionReviewRequest {
 export interface ActivityRiskResolutionVO {
   id: number
   activityId: number
+  activityName?: string | null
   organizerId: number
   riskArtistId?: number | null
-  status: 'pending' | 'approved' | 'rejected' | string
+  status: 'awaiting_response' | 'pending' | 'approved' | 'rejected' | string
   resolutionNote?: string | null
   reviewNote?: string | null
   submittedBy?: number | null
@@ -221,8 +278,9 @@ export interface PageResult<T> {
 /** 活动列表项 */
 export interface ActivityVO {
   id: number
+  itemType?: 'activity' | 'tour'
   name: string
-  poster: string
+  poster: string | null
   categoryName: string
   artistName: string
   venueCity: string
@@ -244,6 +302,7 @@ export interface CategoryVO {
 /** 活动实体 */
 export interface ActivityEntity {
   id: number
+  itemType?: 'activity' | 'tour'
   categoryId: number
   artistId: number
   artistName?: string | null
@@ -255,7 +314,7 @@ export interface ActivityEntity {
   venueApprovalNote?: string | null
   name: string
   description: string | null
-  poster: string
+  poster: string | null
   publishStatus?: string | null
   riskSuspendedReason?: string | null
   riskSuspendedAt?: string | null
@@ -282,6 +341,7 @@ export interface ArtistEntity {
   alias?: string | null
   artistType?: string | null
   countryOrRegion?: string | null
+  agency?: string | null
   categoryTags?: string | null
   representativeWorks?: string | null
   reviewStatus?: ArtistReviewStatus | string | null
@@ -342,26 +402,49 @@ export type StationPublishStatus =
   | 'venue_pending'
   | 'venue_rejected'
   | 'venue_approved'
+  | 'venue_confirmed'
   | 'publishing'
   | 'published'
   | 'risk_suspended'
+  | 'deactivated'
   | 'cancelled'
   | string
 
 export type StationSaleStatus =
   | 'unannounced'
   | 'coming_soon'
+  | 'ticket_tba'
   | 'to_be_scheduled'
   | 'on_sale'
   | 'sold_out'
   | 'suspended'
+  | 'deactivated'
+  | string
+
+export type StationConfigChangeType =
+  | 'create'
+  | 'update_city'
+  | 'set_venue'
+  | 'change_venue'
+  | 'set_schedule'
+  | 'change_schedule'
+  | 'delete_station'
+  | string
+
+export type StationConfigVersionStatus =
+  | 'draft'
+  | 'submitted'
+  | 'applied'
+  | 'rejected'
+  | 'withdrawn'
   | string
 
 export interface StationEntity {
   id: number
-  tourId: number
-  city: string
-  stationName: string
+  tourId?: number | null
+  activityId?: number | null
+  city: string | null
+  stationName: string | null
   poster?: string | null
   description?: string | null
   venueApplicationId?: number | null
@@ -369,6 +452,81 @@ export interface StationEntity {
   status: number
   createTime?: string | null
   updateTime?: string | null
+}
+
+export interface StationConfigVersionVO {
+  id: number
+  stationId: number
+  activityId?: number | null
+  tourId?: number | null
+  versionNo?: number | null
+  changeType: StationConfigChangeType
+  status: StationConfigVersionStatus
+  city?: string | null
+  stationName?: string | null
+  venueId?: number | null
+  venueApplicationId?: number | null
+  venueName?: string | null
+  venueAddress?: string | null
+  startTime?: string | null
+  endTime?: string | null
+  scheduleTba?: boolean | null
+  seatTemplateSourceType?: string | null
+  seatTemplateSourceId?: number | null
+  reason?: string | null
+  reviewerId?: number | null
+  reviewNote?: string | null
+  reviewTime?: string | null
+  createdBy?: number | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  appliedAt?: string | null
+}
+
+export interface ActivityDraftPayload {
+  categoryId?: number | null
+  artistId?: number | null
+  artists?: Array<{
+    artistId: number
+    isPrimary?: boolean | null
+    primary?: boolean | null
+    roleType?: string | null
+    roleName?: string | null
+    visibility?: string | null
+    sort?: number | null
+  }> | null
+  name?: string | null
+  description?: string | null
+  poster?: string | null
+  seatMapVisibility?: 'published' | 'hidden' | null
+  perUserLimit?: number | null
+}
+
+export interface StationConfigVersionPayload {
+  userId?: number | null
+  changeType: StationConfigChangeType
+  city?: string | null
+  stationName?: string | null
+  venueId?: number | null
+  venueApplicationId?: number | null
+  venueName?: string | null
+  venueAddress?: string | null
+  startTime?: string | null
+  endTime?: string | null
+  scheduleTba?: boolean | null
+  seatTemplateSourceType?: string | null
+  seatTemplateSourceId?: number | null
+  reason?: string | null
+}
+
+export interface ActivityDraftResponseVO {
+  activity: ActivityEntity
+  station: StationEntity
+}
+
+export interface StationConfigVersionDetailVO {
+  station: StationEntity
+  versions: StationConfigVersionVO[]
 }
 
 export interface TourDetailVO {
@@ -424,6 +582,8 @@ export interface VenueApplicationVO {
   validTo?: string | null
   proofNote?: string | null
   proofFileUrl?: string | null
+  proofAssetId?: number | null
+  proofAsset?: PrivateAssetVO | null
   status: VenueApplicationStatus
   reviewerId: number | null
   reviewNote: string | null
@@ -484,8 +644,8 @@ export interface SessionSeatVO {
   id: number
   sessionId: number
   venueId: number
-  areaId: number
-  venueSeatId: number
+  areaId: number | null
+  venueSeatId: number | null
   rowNo: number
   seatNo: number
   seatLabel: string
@@ -503,7 +663,14 @@ export interface SessionSeatVO {
 export type SeatCraftTemplateType = 'concert' | 'cinema' | 'custom'
 export type SeatCraftSectionType = 'core' | 'stand' | 'zone'
 export type SeatCraftSectionLayout = 'grid' | 'curved'
-export type SeatCraftBlockType = 'gridBlock' | 'arcBlock' | 'standingBlock'
+export type SeatCraftBlockType = 'gridBlock' | 'arcBlock' | 'standingBlock' | 'polygonBlock'
+
+export interface SeatCraftBindingVO {
+  blockKey: string
+  groupKey: string
+  bindingRole?: string | null
+  sort?: number | null
+}
 
 export interface SeatCraftBlockVO {
   id: string | number
@@ -526,6 +693,7 @@ export interface SeatCraftBlockVO {
   width?: number | null
   height?: number | null
   capacity?: number | null
+  polygonPoints?: Array<{ x: number; y: number }> | string | null
   color: string
   sort: number
 }
@@ -574,6 +742,9 @@ export interface SeatCraftSectionVO {
 
 export interface SeatCraftLayoutVO {
   id: number
+  versionId?: number | null
+  versionNo?: number | null
+  versionStatus?: string | null
   venueId?: number | null
   activityId?: number | null
   sessionId?: number | null
@@ -585,17 +756,78 @@ export interface SeatCraftLayoutVO {
   canvasWidth: number
   canvasHeight: number
   sections: SeatCraftSectionVO[]
+  seats?: SessionSeatVO[]
   blocks?: SeatCraftBlockVO[]
   overrides?: SeatOverrideVO[]
   ticketGroups?: TicketGroupVO[]
+  bindings?: SeatCraftBindingVO[]
   blockLayout?: {
+    versionId?: number | null
+    versionNo?: number | null
+    versionStatus?: string | null
     name?: string | null
     canvasWidth?: number | null
     canvasHeight?: number | null
     blocks?: SeatCraftBlockVO[]
     overrides?: SeatOverrideVO[]
     ticketGroups?: TicketGroupVO[]
+    bindings?: SeatCraftBindingVO[]
   } | null
+}
+
+export interface SeatCraftVersionedLayoutVO {
+  versionId?: number | null
+  versionNo?: number | null
+  versionStatus?: string | null
+  name: string
+  canvasWidth: number
+  canvasHeight: number
+  blocks?: SeatCraftBlockVO[]
+  overrides?: SeatOverrideVO[]
+  ticketGroups?: TicketGroupVO[]
+  bindings?: SeatCraftBindingVO[]
+  id?: number | null
+  venueId?: number | null
+  activityId?: number | null
+  sessionId?: number | null
+  templateType?: SeatCraftTemplateType | null
+  stageTitle?: string | null
+  stageX?: number | null
+  stageY?: number | null
+  sections?: SeatCraftSectionVO[] | null
+}
+
+export interface SeatCraftVersionedLayoutRequest {
+  versionId?: number | null
+  versionNo?: number | null
+  versionStatus?: string | null
+  name: string
+  templateType: SeatCraftTemplateType
+  stageTitle: string
+  stageX: number
+  stageY: number
+  canvasWidth: number
+  canvasHeight: number
+  blocks: SeatCraftVersionedBlockRequest[]
+  overrides: SeatOverrideVO[]
+  ticketGroups: TicketGroupVO[]
+  bindings: SeatCraftBindingVO[]
+}
+
+export type SeatCraftVersionedBlockRequest = Omit<SeatCraftBlockVO, 'polygonPoints'> & {
+  polygonPoints?: string | null
+}
+
+export interface SeatCraftVersionSummaryVO {
+  id: number
+  versionNo?: number | null
+  versionStatus?: string | null
+  name?: string | null
+  baseVersionId?: number | null
+  publishedAt?: string | null
+  publishedBy?: number | null
+  createTime?: string | null
+  updateTime?: string | null
 }
 
 export interface SeatLayoutTemplateCandidateVO {
@@ -730,6 +962,8 @@ export interface RefundRequestVO {
   id: number
   orderId: number
   orderNo: string
+  activityName?: string | null
+  orderName?: string | null
   userId: number
   paymentId: number
   refundNo: string
@@ -739,9 +973,29 @@ export interface RefundRequestVO {
   reviewerId: number | null
   reviewNote: string | null
   alipayRefundNo: string | null
+  quantity?: number | null
+  orderSeatIds?: string | null
+  refundType?: 'full' | 'partial' | string | null
   createTime: string
   reviewTime: string | null
   refundTime: string | null
+}
+
+export interface RefundSeatOptionVO {
+  orderSeatId: number
+  sessionSeatId: number
+  sessionId: number
+  ticketTypeId: number
+  seatLabel?: string | null
+}
+
+export interface RefundOptionsVO {
+  orderId: number
+  totalQuantity: number
+  refundedQuantity: number
+  refundableQuantity: number
+  unitPrice: number
+  seats: RefundSeatOptionVO[]
 }
 
 export interface DirectRefundResponse {

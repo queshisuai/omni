@@ -15,11 +15,11 @@ export default function PendingArtistsPage() {
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
 
-  const loadData = async (userId: number) => {
+  const loadData = async () => {
     setLoading(true)
     setError('')
     try {
-      setItems(await listPendingAdminArtists(userId))
+      setItems(await listPendingAdminArtists())
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载待审核艺人失败')
     } finally {
@@ -42,7 +42,7 @@ export default function PendingArtistsPage() {
           return
         }
         setUser(info)
-        await loadData(info.id)
+        await loadData()
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : '校验后台权限失败')
       }
@@ -55,8 +55,8 @@ export default function PendingArtistsPage() {
     setSavingId(artistId)
     setError('')
     try {
-      await reviewAdminArtist(artistId, { userId: user.id, action, note: note.trim() || null })
-      await loadData(user.id)
+      await reviewAdminArtist(artistId, { action, note: note.trim() || null })
+      await loadData()
       setNote('')
     } catch (err) {
       setError(err instanceof Error ? err.message : '审核失败')
@@ -75,8 +75,8 @@ export default function PendingArtistsPage() {
     setSavingId(artistId)
     setError('')
     try {
-      await updateAdminArtistRisk(artistId, { userId: user.id, riskStatus: 'risky', reason })
-      await loadData(user.id)
+      await updateAdminArtistRisk(artistId, { riskStatus: 'risky', reason })
+      await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : '标记风险失败')
     } finally {

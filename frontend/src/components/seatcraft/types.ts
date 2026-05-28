@@ -3,7 +3,7 @@ import type { SeatCraftLayoutVO } from '@/types/api'
 export type SeatStatus = 'available' | 'reserved' | 'selected' | 'occupied'
 export type SectionType = 'core' | 'stand' | 'zone'
 export type SectionLayout = 'grid' | 'curved'
-export type SeatBlockType = 'gridBlock' | 'arcBlock' | 'standingBlock'
+export type SeatBlockType = 'gridBlock' | 'arcBlock' | 'standingBlock' | 'polygonBlock'
 export type SeatOverrideStatus = 'visible' | 'hidden' | 'deleted'
 export type SeatCanvasInteractionMode = 'design' | 'selection' | 'ticket'
 
