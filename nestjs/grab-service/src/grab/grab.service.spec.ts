@@ -130,6 +130,114 @@ describe('GrabService', () => {
     });
   });
 
+  it('restores redis stock and marks sold out when order creation reports stock failure after accepted admission', async () => {
+    const repository: any = {
+      findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
+      findActiveByIntent: jest.fn().mockResolvedValue(null),
+      createPending: jest.fn().mockResolvedValue({
+        requestId: 'GRAB202605270003',
+        userId: 2004,
+        sessionId: 101,
+        ticketTypeId: 202,
+        quantity: 2,
+        seatIds: [302, 301],
+        allocateRandom: false,
+        idempotencyKey: 'idem-stock',
+        status: GRAB_STATUS.PENDING,
+        orderId: null,
+        failReason: null,
+      }),
+      updateStatus: jest.fn().mockImplementation((requestId, status, failReason = null) => Promise.resolve({
+        requestId,
+        status,
+        orderId: null,
+        failReason,
+      })),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB202605270003' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockRejectedValue(new Error('库存锁定失败')),
+    };
+    const service = new GrabService(repository, admission, orderClient);
+
+    const result = await service.submitRequest(2004, {
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 2,
+      seatIds: [302, 301],
+      idempotencyKey: 'idem-stock',
+    });
+
+    expect(admission.release).toHaveBeenCalledWith({
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 2,
+      seatIds: [301, 302],
+      idempotencyKey: 'idem-stock',
+      restoreStock: true,
+    });
+    expect(repository.updateStatus).toHaveBeenLastCalledWith('GRAB202605270003', GRAB_STATUS.SOLD_OUT, '库存锁定失败');
+    expect(result).toEqual({ requestId: 'GRAB202605270003', status: GRAB_STATUS.SOLD_OUT, orderId: null, failReason: '库存锁定失败' });
+  });
+
+  it('restores redis stock and clears all holds when order creation times out after accepted admission', async () => {
+    const repository: any = {
+      findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
+      findActiveByIntent: jest.fn().mockResolvedValue(null),
+      createPending: jest.fn().mockResolvedValue({
+        requestId: 'GRAB202605270004',
+        userId: 2004,
+        sessionId: 101,
+        ticketTypeId: 202,
+        quantity: 2,
+        seatIds: [401, 402],
+        allocateRandom: false,
+        idempotencyKey: 'idem-timeout',
+        status: GRAB_STATUS.PENDING,
+        orderId: null,
+        failReason: null,
+      }),
+      updateStatus: jest.fn().mockImplementation((requestId, status, failReason = null) => Promise.resolve({
+        requestId,
+        status,
+        orderId: null,
+        failReason,
+      })),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB202605270004' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockRejectedValue(new Error('订单服务超时')),
+    };
+    const service = new GrabService(repository, admission, orderClient);
+
+    const result = await service.submitRequest(2004, {
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 2,
+      seatIds: [401, 402],
+      idempotencyKey: 'idem-timeout',
+    });
+
+    expect(admission.release).toHaveBeenCalledWith({
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 2,
+      seatIds: [401, 402],
+      idempotencyKey: 'idem-timeout',
+      restoreStock: true,
+    });
+    expect(repository.updateStatus).toHaveBeenLastCalledWith('GRAB202605270004', GRAB_STATUS.FAILED, '订单服务超时');
+    expect(result).toEqual({ requestId: 'GRAB202605270004', status: GRAB_STATUS.FAILED, orderId: null, failReason: '订单服务超时' });
+  });
+
   it('marks request failed and does not create order when redis stock is uninitialized', async () => {
     const repository: any = {
       findByUserAndIdempotency: jest.fn().mockResolvedValue(null),

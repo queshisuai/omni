@@ -536,31 +536,53 @@ public class OrderService {
         if (orderSeatMapper == null) {
             return 0;
         }
+        LocalDateTime now = LocalDateTime.now();
+        int released = 0;
         List<OrderSeat> expiredSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
                 .eq(OrderSeat::getStatus, ORDER_SEAT_LOCKED)
-                .le(OrderSeat::getLockExpireTime, LocalDateTime.now()));
-        if (expiredSeats == null || expiredSeats.isEmpty()) {
+                .le(OrderSeat::getLockExpireTime, now));
+        if (expiredSeats != null && !expiredSeats.isEmpty()) {
+            for (OrderSeat orderSeat : expiredSeats) {
+                Order order = orderMapper.selectById(orderSeat.getOrderId());
+                if (order == null) {
+                    continue;
+                }
+                if (order.getStatus() == STATUS_PENDING) {
+                    try {
+                        assertPendingOrderSafeToCancel(order);
+                        cancelPendingOrderOrThrow(order);
+                    } catch (BusinessException e) {
+                        log.warn("过期锁释放前确认支付状态失败，跳过释放: orderId={}, orderNo={}, message={}", order.getId(), order.getOrderNo(), e.getMessage());
+                        continue;
+                    }
+                } else if (order.getStatus() != STATUS_CANCELLED) {
+                    continue;
+                }
+                releaseSingleLockedSeat(orderSeat);
+                released++;
+            }
+        }
+        released += releaseExpiredPendingOrders(now.minusMinutes(15));
+        return released;
+    }
+
+    private int releaseExpiredPendingOrders(LocalDateTime expireBefore) {
+        List<Order> expiredOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+                .eq(Order::getStatus, STATUS_PENDING)
+                .le(Order::getCreateTime, expireBefore));
+        if (expiredOrders == null || expiredOrders.isEmpty()) {
             return 0;
         }
         int released = 0;
-        for (OrderSeat orderSeat : expiredSeats) {
-            Order order = orderMapper.selectById(orderSeat.getOrderId());
-            if (order == null) {
-                continue;
+        for (Order order : expiredOrders) {
+            try {
+                assertPendingOrderSafeToCancel(order);
+                cancelPendingOrderOrThrow(order);
+                releaseLockedResources(order);
+                released++;
+            } catch (BusinessException e) {
+                log.warn("过期待支付订单释放前确认支付状态失败，跳过释放: orderId={}, orderNo={}, message={}", order.getId(), order.getOrderNo(), e.getMessage());
             }
-            if (order.getStatus() == STATUS_PENDING) {
-                try {
-                    assertPendingOrderSafeToCancel(order);
-                    cancelPendingOrderOrThrow(order);
-                } catch (BusinessException e) {
-                    log.warn("过期锁释放前确认支付状态失败，跳过释放: orderId={}, orderNo={}, message={}", order.getId(), order.getOrderNo(), e.getMessage());
-                    continue;
-                }
-            } else if (order.getStatus() != STATUS_CANCELLED) {
-                continue;
-            }
-            releaseSingleLockedSeat(orderSeat);
-            released++;
         }
         return released;
     }

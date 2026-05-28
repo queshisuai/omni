@@ -1,10 +1,12 @@
 /**
  * API 客户端 - fetch 封装
  */
-import { getToken } from './auth'
+import { getToken } from './auth.ts'
 import type { ApiResult, AssetUploadVO, ChangePasswordRequest, GrabRequestResult, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, PrivateAssetVO, ResetPasswordRequest, SeatMapResponse, SubmitGrabRequestPayload, SubjectType, UserInfo } from '@/types/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
+const DEFAULT_REQUEST_TIMEOUT_MS = 5000
+const QR_PAY_REQUEST_TIMEOUT_MS = 15000
 
 class ApiError extends Error {
   code: number
@@ -21,7 +23,7 @@ function assertPositiveInteger(value: number, name: string) {
   }
 }
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
+async function request<T>(url: string, options?: RequestInit, config?: { timeoutMs?: number }): Promise<T> {
   const token = getToken()
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -30,7 +32,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
+  const timeoutId = setTimeout(() => controller.abort(), config?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
 
   let response: Response
   try {
@@ -67,7 +69,7 @@ async function multipartRequest<T>(url: string, formData: FormData, options?: Om
   }
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 5000) // 5秒超时
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS)
 
   let response: Response
   try {
@@ -418,7 +420,7 @@ export async function createAlipayQrPay(orderId: number) {
   return request<import('@/types/api').QrPayResponse>('/api/payment/alipay/qr-pay', {
     method: 'POST',
     body: JSON.stringify({ orderId }),
-  })
+  }, { timeoutMs: QR_PAY_REQUEST_TIMEOUT_MS })
 }
 
 export async function syncAlipayPayment(orderId: number) {

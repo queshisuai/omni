@@ -366,6 +366,64 @@ class OrderSeatServiceTest {
     }
 
     @Test
+    void releaseExpiredSeatLocksCancelsExpiredPendingStandingOrderAndRestoresStock() {
+        Order order = pendingOrder(1007L, 107L, 2007L);
+        order.setQuantity(3);
+        order.setCreateTime(LocalDateTime.now().minusMinutes(16));
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of());
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(paymentInternalClient.syncOrderForCancel(order.getId(), "test-internal-token"))
+                .thenReturn(Result.success(safeToCancelDecision()));
+        when(orderMapper.updateStatusIfCurrent(order.getId(), OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED)).thenReturn(1);
+        when(ticketSalesInternalClient.release(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
+
+        int released = service.releaseExpiredSeatLocks();
+
+        assertEquals(1, released);
+        assertEquals(OrderService.STATUS_CANCELLED, order.getStatus());
+        ArgumentCaptor<TicketSalesOrderRequest> captor = ArgumentCaptor.forClass(TicketSalesOrderRequest.class);
+        verify(ticketSalesInternalClient).release(captor.capture(), eq("test-internal-token"));
+        assertEquals(107L, captor.getValue().getSessionId());
+        assertEquals(2007L, captor.getValue().getTicketTypeId());
+        assertEquals(3, captor.getValue().getQuantity());
+        assertEquals(null, captor.getValue().getSeatIds());
+    }
+
+    @Test
+    void releaseExpiredSeatLocksKeepsPendingStandingOrderWhenPaymentSyncSaysPaid() {
+        Order order = pendingOrder(1008L, 108L, 2008L);
+        order.setCreateTime(LocalDateTime.now().minusMinutes(16));
+        PaymentSyncDecisionResponse decision = new PaymentSyncDecisionResponse();
+        decision.setPaid(true);
+        decision.setSafeToCancel(false);
+        decision.setMessage("支付成功");
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of());
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(paymentInternalClient.syncOrderForCancel(order.getId(), "test-internal-token"))
+                .thenReturn(Result.success(decision));
+
+        int released = service.releaseExpiredSeatLocks();
+
+        assertEquals(0, released);
+        verify(orderMapper, never()).updateStatusIfCurrent(any(), any(), any());
+        verify(ticketSalesInternalClient, never()).release(any(), any());
+    }
+
+    @Test
+    void releaseExpiredSeatLocksKeepsPaidStandingOrder() {
+        Order order = paidOrder(1008L, 108L, 2008L);
+        order.setCreateTime(LocalDateTime.now().minusMinutes(16));
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of());
+
+        int released = service.releaseExpiredSeatLocks();
+
+        assertEquals(0, released);
+        verify(paymentInternalClient, never()).syncOrderForCancel(any(), any());
+        verify(ticketSalesInternalClient, never()).release(any(), any());
+    }
+
+    @Test
     void markRefundedRestoresSoldSeats() {
         Order order = paidOrder(1003L, 103L, 2003L);
         OrderSeat soldSeat = soldOrderSeat(9003L, order.getId(), 3003L, 103L, 2003L);
