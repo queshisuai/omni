@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RedisService } from './redis.service';
 
-export type AdmissionOutcome = 'ACCEPTED' | 'IDEMPOTENT' | 'SOLD_OUT' | 'LIMITED' | 'BYPASSED';
+export type AdmissionOutcome = 'ACCEPTED' | 'IDEMPOTENT' | 'SOLD_OUT' | 'LIMITED' | 'STOCK_UNINITIALIZED';
 
 export interface AdmitInput {
   requestId: string;
@@ -42,13 +42,7 @@ export class GrabAdmissionService {
 
     local stock = redis.call('get', stockKey)
     if not stock then
-      redis.call('setex', idempotencyKey, ttl, requestId)
-      redis.call('setex', userHoldKey, ttl, requestId)
-      for i = 1, seatCount do
-        local seatKey = KEYS[3 + i]
-        redis.call('setex', seatKey, ttl, requestId)
-      end
-      return {'BYPASSED', requestId}
+      return {'STOCK_UNINITIALIZED', ''}
     end
     if tonumber(stock) < quantity then
       return {'SOLD_OUT', ''}

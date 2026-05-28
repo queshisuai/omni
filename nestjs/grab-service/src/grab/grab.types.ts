@@ -39,6 +39,15 @@ export interface CreatePendingGrabRequestInput {
   expireTime: Date;
 }
 
+export interface FindActiveGrabIntentInput {
+  userId: number;
+  sessionId: number;
+  ticketTypeId: number;
+  quantity: number;
+  seatIds: number[];
+  allocateRandom: boolean;
+}
+
 export interface GrabRequestResponse {
   requestId: string;
   status: GrabStatus;

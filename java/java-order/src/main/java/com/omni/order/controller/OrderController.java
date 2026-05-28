@@ -13,10 +13,14 @@ import com.omni.order.dto.SessionSeatUsageRequest;
 import com.omni.order.dto.SessionSeatUsageResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.service.OrderService;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -28,24 +32,57 @@ public class OrderController {
 
     private final OrderService orderService;
     private final String internalApiToken;
+    private final String jwtSecret;
 
     public OrderController(OrderService orderService,
-                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
+                           @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
         this.orderService = orderService;
         this.internalApiToken = internalApiToken;
+        this.jwtSecret = jwtSecret;
     }
 
     /**
      * 创建订单
      */
     @PostMapping("/create")
-    public Result<Order> createOrder(@RequestBody CreateOrderRequest request) {
+    public Result<Order> createOrder(@RequestBody CreateOrderRequest request,
+                                     @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
+        request.setUserId(userId);
         Order order = orderService.createOrder(request);
         return Result.success(order);
     }
 
     @PostMapping("/create-with-seats")
-    public Result<Order> createOrderWithSeats(@RequestBody LockSeatsRequest request) {
+    public Result<Order> createOrderWithSeats(@RequestBody LockSeatsRequest request,
+                                              @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
+        request.setUserId(userId);
+        return Result.success(orderService.createOrderWithSeats(request));
+    }
+
+    @PostMapping("/internal/create")
+    public Result<Order> createInternalOrder(@RequestBody CreateOrderRequest request,
+                                             @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(orderService.createOrder(request));
+    }
+
+    @PostMapping("/internal/create-with-seats")
+    public Result<Order> createInternalOrderWithSeats(@RequestBody LockSeatsRequest request,
+                                                      @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
         return Result.success(orderService.createOrderWithSeats(request));
     }
 
@@ -195,6 +232,29 @@ public class OrderController {
             return Result.fail(403, "无权限");
         }
         return Result.success(orderService.markPartialRefunded(id, request));
+    }
+
+    private Long requireAuthenticatedUserId(String authorization) {
+        if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
+            return null;
+        }
+        try {
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
+                    .build()
+                    .parseClaimsJws(authorization.substring("Bearer ".length()))
+                    .getBody();
+            Object userId = claims.get("userId");
+            if (userId == null) {
+                userId = claims.getSubject();
+            }
+            if (userId == null) {
+                return null;
+            }
+            return Long.valueOf(String.valueOf(userId));
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private boolean isValidInternalToken(String token) {

@@ -18,10 +18,15 @@ export interface CreatedOrderResponse {
 @Injectable()
 export class OrderClientService {
   private readonly baseUrl = process.env.ORDER_SERVICE_URL || 'http://localhost:8088';
+  private readonly internalToken = process.env.INTERNAL_API_TOKEN;
 
   async createOrder(input: CreateOrderInput): Promise<CreatedOrderResponse> {
+    if (!this.internalToken) {
+      throw new Error('订单内部接口令牌未配置');
+    }
+
     const usesSeatEndpoint = input.seatIds.length > 0 || input.allocateRandom;
-    const path = usesSeatEndpoint ? '/api/order/create-with-seats' : '/api/order/create';
+    const path = usesSeatEndpoint ? '/api/order/internal/create-with-seats' : '/api/order/internal/create';
     const body = usesSeatEndpoint
       ? {
           userId: input.userId,
@@ -39,7 +44,7 @@ export class OrderClientService {
 
     const response = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': this.internalToken },
       body: JSON.stringify(body),
     });
     const result = await response.json();

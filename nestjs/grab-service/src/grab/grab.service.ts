@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { GrabAdmissionService } from './grab-admission.service';
-import { GrabRepository } from './grab.repository';
+import { GrabRepository, isUniqueViolation } from './grab.repository';
 import { GRAB_STATUS } from './grab-status';
 import type { GrabRequestRecord, GrabRequestResponse, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
@@ -21,18 +22,38 @@ export class GrabService {
     if (existing) return this.toResponse(existing);
 
     const requestId = this.generateRequestId();
-    const seatIds = dto.seatIds ?? [];
-    const created = await this.repository.createPending({
-      requestId,
-      idempotencyKey: dto.idempotencyKey,
+    const seatIds = [...(dto.seatIds ?? [])].sort((a, b) => a - b);
+    const allocateRandom = Boolean(dto.allocateRandom);
+    const active = await this.repository.findActiveByIntent({
       userId,
       sessionId: dto.sessionId,
       ticketTypeId: dto.ticketTypeId,
       quantity: dto.quantity,
       seatIds,
-      allocateRandom: Boolean(dto.allocateRandom),
-      expireTime: new Date(Date.now() + this.requestTtlSeconds * 1000),
+      allocateRandom,
     });
+    if (active) return this.toResponse(active);
+
+    let created: GrabRequestRecord;
+    try {
+      created = await this.repository.createPending({
+        requestId,
+        idempotencyKey: dto.idempotencyKey,
+        userId,
+        sessionId: dto.sessionId,
+        ticketTypeId: dto.ticketTypeId,
+        quantity: dto.quantity,
+        seatIds,
+        allocateRandom,
+        expireTime: new Date(Date.now() + this.requestTtlSeconds * 1000),
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const record = await this.repository.findByUserAndIdempotency(userId, dto.idempotencyKey);
+        if (record) return this.toResponse(record);
+      }
+      throw error;
+    }
 
     const admission = await this.admissionService.admit({
       requestId: created.requestId,
@@ -55,8 +76,10 @@ export class GrabService {
     if (admission.outcome === 'LIMITED') {
       return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.LIMITED, '请勿重复抢票'));
     }
+    if (admission.outcome === 'STOCK_UNINITIALIZED') {
+      return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.FAILED, '抢票库存未初始化'));
+    }
 
-    const shouldRestoreStock = admission.outcome === 'ACCEPTED';
     await this.repository.updateStatus(created.requestId, GRAB_STATUS.ACCEPTED);
     await this.repository.updateStatus(created.requestId, GRAB_STATUS.ORDER_CREATING);
 
@@ -67,7 +90,7 @@ export class GrabService {
         ticketTypeId: dto.ticketTypeId,
         quantity: dto.quantity,
         seatIds,
-        allocateRandom: Boolean(dto.allocateRandom),
+        allocateRandom,
       });
       return this.toResponse(await this.repository.markOrderCreated(created.requestId, order.id));
     } catch (error) {
@@ -78,7 +101,7 @@ export class GrabService {
         quantity: dto.quantity,
         seatIds,
         idempotencyKey: dto.idempotencyKey,
-        restoreStock: shouldRestoreStock,
+        restoreStock: true,
       });
       const message = error instanceof Error ? error.message : '订单创建失败';
       const status = message.includes('库存') ? GRAB_STATUS.SOLD_OUT : message.includes('限购') ? GRAB_STATUS.LIMITED : GRAB_STATUS.FAILED;
@@ -98,6 +121,7 @@ export class GrabService {
     if (!record) throw new NotFoundException('抢票请求不存在');
     if (record.userId !== userId) throw new ForbiddenException('不能取消他人的抢票请求');
     if (record.orderId) return this.toResponse(record);
+    if (record.status !== GRAB_STATUS.ACCEPTED && record.status !== GRAB_STATUS.ORDER_CREATING) return this.toResponse(record);
     await this.admissionService.release(record);
     return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, '抢票请求已取消'));
   }
@@ -111,9 +135,7 @@ export class GrabService {
   }
 
   private generateRequestId(): string {
-    const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-    const random = Math.floor(Math.random() * 1_000_000).toString().padStart(6, '0');
-    return `GRAB${timestamp}${random}`;
+    return `GRAB${randomBytes(12).toString('hex')}`;
   }
 
   private toResponse(record: Pick<GrabRequestRecord, 'requestId' | 'status' | 'orderId' | 'failReason'>): GrabRequestResponse {

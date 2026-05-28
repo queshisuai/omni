@@ -41,7 +41,7 @@ export default function VenueApplicationsPage() {
     setLoadError('')
     try {
       const [applicationList, venueList] = await Promise.all([
-        listVenueApplications({ status: status === '' ? undefined : Number(status) }),
+        listVenueApplications(status === '' ? {} : { status: Number(status) }),
         listAdminVenues(nextUserId),
       ])
       setApplications(applicationList)

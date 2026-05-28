@@ -29,6 +29,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [seatMap, setSeatMap] = useState<SeatMapResponse | null>(null)
   const [seatMapLoading, setSeatMapLoading] = useState(false)
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([])
+  const [grabIdempotency, setGrabIdempotency] = useState<{ intent: string; key: string } | null>(null)
   const seatMapRequestIdRef = useRef(0)
   const loadDetailRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
@@ -173,12 +174,36 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           const continuous = candidate.every((seat, index) => index === 0 || seat.seatNo === candidate[index - 1].seatNo + 1)
           if (continuous) {
             setSelectedSeatIds(candidate.map(seat => seat.id))
+            resetGrabIdempotencyKey()
             return
           }
         }
       }
     }
     setSelectedSeatIds(available.slice(0, quantity).map(seat => seat.id))
+    resetGrabIdempotencyKey()
+  }
+
+  const resetGrabIdempotencyKey = () => setGrabIdempotency(null)
+
+  const buildGrabIntent = (userId: number) => {
+    const seatPart = validSelectedSeatIds.slice().sort((a, b) => a - b).join(',')
+    return [
+      userId,
+      selectedSession?.session.id ?? 0,
+      selectedTicket?.id ?? 0,
+      quantity,
+      seatPart,
+      Boolean(showsSeatCraftSelection && validSelectedSeatIds.length === 0),
+    ].join(':')
+  }
+
+  const getOrCreateGrabIdempotencyKey = (userId: number) => {
+    const intent = buildGrabIntent(userId)
+    if (grabIdempotency?.intent === intent) return grabIdempotency.key
+    const key = `${intent}:${Date.now()}:${Math.random().toString(36).slice(2)}`
+    setGrabIdempotency({ intent, key })
+    return key
   }
 
   const handleConfirmOrder = async () => {
@@ -194,7 +219,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         setOrderError('请选择对应数量的座位')
         return
       }
-      const idempotencyKey = `${user.userId}-${selectedSession.session.id}-${selectedTicket.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const idempotencyKey = getOrCreateGrabIdempotencyKey(user.userId)
       const grab = await submitGrabRequest({
         sessionId: selectedSession.session.id,
         ticketTypeId: selectedTicket.id,
@@ -211,6 +236,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       const pay = await createAlipayQrPay(result.orderId)
       setQrPay(pay)
       setShowConfirm(false)
+      resetGrabIdempotencyKey()
     } catch (err: unknown) {
       setOrderError(err instanceof Error ? err.message : '下单失败，请确认已登录并重试')
     } finally {
@@ -299,6 +325,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                     key={sd.session.id}
                     onClick={() => {
                       setSelectedSession(sd)
+                      resetGrabIdempotencyKey()
                       if (sd.ticketTypes.length > 0) {
                         setSelectedTicket(sd.ticketTypes[0])
                       } else {
@@ -333,7 +360,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       selectedSession.ticketTypes.map((tt) => (
                         <button
                           key={tt.id}
-                          onClick={() => { setSelectedTicket(tt); setQuantity(1); setSelectedSeatIds([]) }}
+                          onClick={() => { setSelectedTicket(tt); setQuantity(1); setSelectedSeatIds([]); resetGrabIdempotencyKey() }}
                           className="cursor-pointer border outline-none px-5 py-3 rounded text-sm transition-colors min-w-[100px]"
                           style={{
                             backgroundColor: selectedTicket?.id === tt.id ? '#fff0f5' : '#fff',
@@ -368,7 +395,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                             <SeatCraftSelector
                               selectionModel={seatCraftSelectionModel}
                               selectedSeatIds={validSelectedSeatIds}
-                              onChange={setSelectedSeatIds}
+                              onChange={(ids) => { setSelectedSeatIds(ids); resetGrabIdempotencyKey() }}
                               maxSelectable={quantity}
                               focusTarget={seatCraftFocusTarget}
                             />
@@ -383,14 +410,14 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         <span className="text-[14px] text-[#666]">数量</span>
                         <div className="flex items-center border border-[#e5e5e5] rounded">
                           <button
-                            onClick={() => { setQuantity(Math.max(1, quantity - 1)); setSelectedSeatIds(ids => ids.slice(0, Math.max(1, quantity - 1))) }}
+                            onClick={() => { setQuantity(Math.max(1, quantity - 1)); setSelectedSeatIds(ids => ids.slice(0, Math.max(1, quantity - 1))); resetGrabIdempotencyKey() }}
                             className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
                           >
                             -
                           </button>
                           <span className="w-12 text-center text-[14px] text-[#111]">{quantity}</span>
                           <button
-                            onClick={() => setQuantity(Math.min(selectedTicket.remainStock, quantity + 1))}
+                            onClick={() => { setQuantity(Math.min(selectedTicket.remainStock, quantity + 1)); resetGrabIdempotencyKey() }}
                             className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
                           >
                             +
@@ -529,7 +556,10 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center"
                 style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-                onClick={() => setShowConfirm(false)}
+                onClick={() => {
+                  setShowConfirm(false)
+                  resetGrabIdempotencyKey()
+                }}
               >
                 <div
                   className="bg-white rounded-lg p-6"
@@ -582,7 +612,10 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
                   <div className="flex gap-3 justify-end">
                     <button
-                      onClick={() => setShowConfirm(false)}
+                      onClick={() => {
+                        setShowConfirm(false)
+                        resetGrabIdempotencyKey()
+                      }}
                       disabled={ordering}
                       className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
                     >

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { GRAB_STATUS, GrabStatus } from './grab-status';
-import type { CreatePendingGrabRequestInput, GrabRequestRecord } from './grab.types';
+import type { CreatePendingGrabRequestInput, FindActiveGrabIntentInput, GrabRequestRecord } from './grab.types';
 
 interface GrabRequestRow {
   id: string | number;
@@ -21,11 +21,16 @@ interface GrabRequestRow {
   updated_at: Date;
 }
 
+export function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
+}
+
 @Injectable()
 export class GrabRepository {
   constructor(private readonly database: DatabaseService) {}
 
   async createPending(input: CreatePendingGrabRequestInput): Promise<GrabRequestRecord> {
+    const normalizedSeatIds = [...input.seatIds].sort((a, b) => a - b);
     const result = await this.database.query<GrabRequestRow>(
       `insert into grab_request (
         request_id, idempotency_key, user_id, session_id, ticket_type_id,
@@ -39,7 +44,7 @@ export class GrabRepository {
         input.sessionId,
         input.ticketTypeId,
         input.quantity,
-        JSON.stringify(input.seatIds),
+        JSON.stringify(normalizedSeatIds),
         input.allocateRandom,
         GRAB_STATUS.PENDING,
         input.expireTime,
@@ -84,6 +89,33 @@ export class GrabRepository {
       [requestId, GRAB_STATUS.ORDER_CREATED, orderId],
     );
     return this.mapRow(result.rows[0]);
+  }
+
+  async findActiveByIntent(input: FindActiveGrabIntentInput): Promise<GrabRequestRecord | null> {
+    const normalizedSeatIds = [...input.seatIds].sort((a, b) => a - b);
+    const activeStatuses = [GRAB_STATUS.PENDING, GRAB_STATUS.ACCEPTED, GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.ORDER_CREATED];
+    const result = await this.database.query<GrabRequestRow>(
+      `select * from grab_request
+       where user_id = $1
+         and session_id = $2
+         and ticket_type_id = $3
+         and quantity = $4
+         and seat_ids = $5::jsonb
+         and allocate_random = $6
+         and status = any($7::varchar[])
+       order by created_at asc
+       limit 1`,
+      [
+        input.userId,
+        input.sessionId,
+        input.ticketTypeId,
+        input.quantity,
+        JSON.stringify(normalizedSeatIds),
+        input.allocateRandom,
+        activeStatuses,
+      ],
+    );
+    return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }
 
   async findExpiredInFlight(now: Date, limit: number): Promise<GrabRequestRecord[]> {
