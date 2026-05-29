@@ -9,3 +9,11 @@ artifacts/
 derby.log
 .idea/
 .vscode/
+# pnpm local cache
+frontend/.pnpm-store/
+
+# runtime private uploads
+runtime/private-uploads/
+
+# local dependency analysis output
+seata-dependency-baseline.txt
