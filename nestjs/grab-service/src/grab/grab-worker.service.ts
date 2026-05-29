@@ -7,7 +7,7 @@ import { GRAB_STATUS } from './grab-status';
 import type { GrabAttemptSnapshot, GrabRequestRecord, GrabTicketPreference } from './grab.types';
 import { OrderClientService } from './order-client.service';
 
-type AttemptOutcome = 'ORDER_CREATED' | 'SOLD_OUT' | 'LIMITED' | 'FAILED' | 'CANCELLED';
+type AttemptOutcome = 'ORDER_CREATED' | 'SOLD_OUT' | 'LIMITED' | 'FAILED' | 'CANCELLED' | 'PENDING_RECOVERY';
 
 @Injectable()
 export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -54,7 +54,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
   async processRequest(requestId: string, sessionId?: number): Promise<void> {
     const existing = await this.repository.findByRequestId(requestId);
     if (!existing) {
-      if (sessionId != null) await this.queueService.discardInflight(sessionId, requestId);
+      if (sessionId != null) await this.queueService.ackOrphanInflight(sessionId, requestId);
       return;
     }
 
@@ -64,18 +64,19 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    let shouldAck = true;
     try {
-      await this.processAttempts(record);
+      shouldAck = await this.processAttempts(record);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'grab processing failed';
       await this.repository.updateStatus(record.requestId, GRAB_STATUS.FAILED, message);
       this.logger.error(error);
     } finally {
-      await this.ackIfQueued(record);
+      if (shouldAck) await this.ackIfQueued(record);
     }
   }
 
-  private async processAttempts(record: GrabRequestRecord): Promise<void> {
+  private async processAttempts(record: GrabRequestRecord): Promise<boolean> {
     const preferences = this.preferencesFor(record);
     const effectivePreferences = preferences.length ? preferences : [{
       ticketTypeId: record.ticketTypeId,
@@ -95,18 +96,19 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
           currentAttemptIndex: index,
           attempts,
         });
-        if (!downgraded) return;
+        if (!downgraded) return true;
       }
 
       const outcome = await this.tryTicketType(record, preference, index, attempts);
-      if (outcome !== 'SOLD_OUT') return;
+      if (outcome !== 'SOLD_OUT') return outcome !== 'PENDING_RECOVERY';
 
       attempts = this.markAttempt(attempts, index, 'SOLD_OUT', 'ticket type sold out');
       if (index === effectivePreferences.length - 1) {
         await this.finishTerminalAttempt(record, GRAB_STATUS.SOLD_OUT, 'ticket type sold out', preference, index, attempts, 'SOLD_OUT');
-        return;
+        return true;
       }
     }
+    return true;
   }
 
   private async tryTicketType(
@@ -202,8 +204,8 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const order = await this.orderClient.createOrder(orderInput);
-      await this.markOrderCreated(record, preference, index, lockingAttempts, order.id);
-      return 'ORDER_CREATED';
+      const persisted = await this.markOrderCreated(record, preference, index, lockingAttempts, order.id);
+      return persisted ? 'ORDER_CREATED' : 'PENDING_RECOVERY';
     } catch (error) {
       const message = error instanceof Error ? error.message : 'order creation failed';
       if (this.isStockError(message)) {
@@ -224,16 +226,33 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     index: number,
     attempts: GrabAttemptSnapshot[],
     orderId: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    const orderAttempts = this.markAttempt(attempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)} order created`);
     try {
-      await this.repository.markOrderCreated(
+      const marked = await this.repository.markOrderCreated(
         record.requestId,
         orderId,
         preference.ticketTypeId,
-        this.markAttempt(attempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)} order created`),
+        orderAttempts,
       );
+      if (marked) return true;
     } catch (error) {
       this.logger.error(error);
+    }
+
+    try {
+      const existingOrder = await this.orderClient.findByGrabRequestId?.(record.requestId);
+      if (!existingOrder) return false;
+      const recovered = await this.repository.markOrderCreated(
+        record.requestId,
+        existingOrder.id,
+        preference.ticketTypeId,
+        orderAttempts,
+      );
+      return Boolean(recovered);
+    } catch (error) {
+      this.logger.error(error);
+      return false;
     }
   }
 

@@ -5,11 +5,21 @@ export interface EnqueueRequest {
   requestId: string;
   sessionId: number;
   userId: number;
+  ttlSeconds?: number;
 }
 
 export interface EnqueueResult {
   queueSeq: number;
   queueRank: number;
+}
+
+export interface QueueRequestMetadata {
+  requestId: string;
+  sessionId: number | null;
+  userId: number | null;
+  queueSeq: number | null;
+  status: string | null;
+  inflightAt: number | null;
 }
 
 @Injectable()
@@ -27,6 +37,10 @@ export class GrabQueueService {
         'queueSeq', tostring(queueSeq),
         'status', ARGV[4]
       )
+      local ttl = tonumber(ARGV[5])
+      if ttl and ttl > 0 then
+        redis.call('EXPIRE', KEYS[2], ttl)
+      end
       redis.call('RPUSH', KEYS[3], ARGV[1])
       redis.call('SADD', KEYS[4], ARGV[2])
       return queueSeq
@@ -35,7 +49,7 @@ export class GrabQueueService {
       await this.redis.eval(
         script,
         [this.queueSeqKey(request.sessionId), this.requestKey(request.requestId), this.queueKey(request.sessionId), this.activeSessionsKey()],
-        [request.requestId, sessionId, String(request.userId), 'QUEUED'],
+        [request.requestId, sessionId, String(request.userId), 'QUEUED', String(request.ttlSeconds ?? 0)],
       ),
     );
 
@@ -69,11 +83,12 @@ export class GrabQueueService {
       local requestId = redis.call('LPOP', KEYS[1])
       if requestId then
         redis.call('RPUSH', KEYS[2], requestId)
+        redis.call('HSET', KEYS[3] .. requestId, 'status', 'INFLIGHT', 'inflightAt', ARGV[1])
       end
       return requestId
     `;
 
-    return this.redis.eval(script, [this.queueKey(sessionId), this.inflightQueueKey(sessionId)], []);
+    return this.redis.eval(script, [this.queueKey(sessionId), this.inflightQueueKey(sessionId), this.requestKeyPlaceholder()], [String(Date.now())]);
   }
 
   async ackProcessed(sessionId: number, requestId: string, queueSeq: number): Promise<void> {
@@ -86,12 +101,34 @@ export class GrabQueueService {
       local newSeq = tonumber(ARGV[2])
       if newSeq > currentSeq then
         redis.call('SET', KEYS[2], ARGV[2])
+        redis.call('DEL', KEYS[3])
         return 1
       end
+      redis.call('DEL', KEYS[3])
       return 0
     `;
 
-    await this.redis.eval(script, [this.inflightQueueKey(sessionId), this.processedSeqKey(sessionId)], [requestId, String(queueSeq)]);
+    await this.redis.eval(script, [this.inflightQueueKey(sessionId), this.processedSeqKey(sessionId), this.requestKey(requestId)], [requestId, String(queueSeq)]);
+  }
+
+  async ackOrphanInflight(sessionId: number, requestId: string): Promise<void> {
+    const script = `
+      local removed = redis.call('LREM', KEYS[1], 1, ARGV[1])
+      if removed <= 0 then
+        return 0
+      end
+      local queueSeq = tonumber(redis.call('HGET', KEYS[3], 'queueSeq') or '0') or 0
+      if queueSeq > 0 then
+        local currentSeq = tonumber(redis.call('GET', KEYS[2]) or '0') or 0
+        if queueSeq > currentSeq then
+          redis.call('SET', KEYS[2], tostring(queueSeq))
+        end
+      end
+      redis.call('DEL', KEYS[3])
+      return 1
+    `;
+
+    await this.redis.eval(script, [this.inflightQueueKey(sessionId), this.processedSeqKey(sessionId), this.requestKey(requestId)], [requestId]);
   }
 
   async requeueInflight(sessionId: number, requestId: string): Promise<void> {
@@ -114,6 +151,24 @@ export class GrabQueueService {
       [this.inflightQueueKey(sessionId)],
       [requestId],
     );
+  }
+
+  async listInflightRequestIds(sessionId: number): Promise<string[]> {
+    return this.redis.lrange(this.inflightQueueKey(sessionId), 0, -1);
+  }
+
+  async getRequestMetadata(requestId: string): Promise<QueueRequestMetadata | null> {
+    const metadata = await this.redis.hgetall(this.requestKey(requestId));
+    if (!metadata.requestId) return null;
+
+    return {
+      requestId: metadata.requestId,
+      sessionId: this.parseNumber(metadata.sessionId),
+      userId: this.parseNumber(metadata.userId),
+      queueSeq: this.parseNumber(metadata.queueSeq),
+      status: metadata.status ?? null,
+      inflightAt: this.parseNumber(metadata.inflightAt),
+    };
   }
 
   async getActiveSessions(): Promise<number[]> {
@@ -157,7 +212,17 @@ export class GrabQueueService {
     return `grab:req:${requestId}`;
   }
 
+  private requestKeyPlaceholder(): string {
+    return 'grab:req:';
+  }
+
   private activeSessionsKey(): string {
     return 'grab:active-sessions';
+  }
+
+  private parseNumber(value: string | undefined): number | null {
+    if (value == null || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 }

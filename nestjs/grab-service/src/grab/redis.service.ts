@@ -61,6 +61,14 @@ export class RedisService implements OnModuleDestroy {
     return this.client.hset(key, values);
   }
 
+  async hgetall(key: string): Promise<Record<string, string>> {
+    return this.client.hgetall(key);
+  }
+
+  async lrange(key: string, start: number, stop: number): Promise<string[]> {
+    return this.client.lrange(key, start, stop);
+  }
+
   async del(keys: string[]): Promise<number> {
     if (keys.length === 0) return 0;
     return this.client.del(...keys);

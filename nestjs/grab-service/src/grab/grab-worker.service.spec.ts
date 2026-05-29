@@ -206,6 +206,7 @@ describe('GrabWorkerService', () => {
     };
     const orderClient: any = {
       createOrder: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', amount: 1960 }),
+      findByGrabRequestId: jest.fn().mockResolvedValue(null),
     };
     const queue: any = {
       ackProcessed: jest.fn(),
@@ -218,6 +219,38 @@ describe('GrabWorkerService', () => {
     expect(repository.markOrderCreated).toHaveBeenCalled();
     expect(admission.release).not.toHaveBeenCalled();
     expect(repository.updateStatus).not.toHaveBeenCalledWith('GRAB1', GRAB_STATUS.FAILED, 'database unavailable');
+    expect(queue.ackProcessed).not.toHaveBeenCalled();
+  });
+
+  it('recovers an existing order by grab request id when marking order-created initially fails', async () => {
+    const record = queuedRecord();
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn()
+        .mockRejectedValueOnce(new Error('database unavailable'))
+        .mockResolvedValueOnce({ ...record, progressStatus: GRAB_STATUS.ORDER_CREATED, orderId: 9001 }),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', amount: 1960 }),
+      findByGrabRequestId: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', status: 'PENDING', grabRequestId: 'GRAB1' }),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB1');
+    expect(repository.markOrderCreated).toHaveBeenCalledTimes(2);
+    expect(admission.release).not.toHaveBeenCalled();
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
 
@@ -251,7 +284,7 @@ describe('GrabWorkerService', () => {
     const queue: any = {
       getActiveSessions: jest.fn().mockResolvedValue([101]),
       dequeue: jest.fn().mockResolvedValue('GRAB-MISSING'),
-      discardInflight: jest.fn(),
+      ackOrphanInflight: jest.fn(),
       removeActiveSessionIfQueueEmpty: jest.fn(),
     };
     const service = new GrabWorkerService(repository, admission, orderClient, queue);
@@ -259,7 +292,7 @@ describe('GrabWorkerService', () => {
     await service.pollOnce();
 
     expect(repository.claimForProcessing).not.toHaveBeenCalled();
-    expect(queue.discardInflight).toHaveBeenCalledWith(101, 'GRAB-MISSING');
+    expect(queue.ackOrphanInflight).toHaveBeenCalledWith(101, 'GRAB-MISSING');
     expect(queue.removeActiveSessionIfQueueEmpty).toHaveBeenCalledWith(101);
   });
 

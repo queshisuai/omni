@@ -212,6 +212,42 @@ describe('GrabRepository', () => {
     expect(result.progressStatus).toBe(GRAB_STATUS.WAITING);
   });
 
+  it('expires active requests with a conditional status and no existing order', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...baseRow,
+        status: GRAB_STATUS.EXPIRED,
+        progress_status: GRAB_STATUS.EXPIRED,
+        fail_reason: 'grab request cancelled',
+        completed_at: new Date('2026-05-27T12:03:00.000Z'),
+      }],
+    });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.expireActiveRequest('GRAB202605270001', 'grab request cancelled', [GRAB_STATUS.LOCKING]);
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('progress_status = any($4::varchar[])');
+    expect(sql).toContain('order_id is null');
+    expect(params).toEqual([
+      'GRAB202605270001',
+      GRAB_STATUS.EXPIRED,
+      'grab request cancelled',
+      [GRAB_STATUS.LOCKING],
+    ]);
+    expect(result?.progressStatus).toBe(GRAB_STATUS.EXPIRED);
+    expect(result?.failReason).toBe('grab request cancelled');
+  });
+
+  it('does not expire requests when the conditional status no longer matches', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.expireActiveRequest('GRAB-ORDERED', 'cancelled', [GRAB_STATUS.LOCKING]);
+
+    expect(result).toBeNull();
+  });
+
   it('marks order created with matched ticket type and attempts snapshot', async () => {
     const attempts = [
       { ticketTypeId: 202, name: 'VIP', status: 'ORDER_CREATED' as const, message: '已创建订单' },

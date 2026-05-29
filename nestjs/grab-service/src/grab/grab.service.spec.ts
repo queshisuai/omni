@@ -83,6 +83,7 @@ describe('GrabService', () => {
       requestId: expect.stringMatching(/^GRAB/),
       sessionId: 101,
       userId: 2004,
+      ttlSeconds: 900,
     });
     expect(repository.createQueued).toHaveBeenCalledWith(expect.objectContaining({
       queueSeq: 12,
@@ -462,7 +463,7 @@ describe('GrabService', () => {
     };
     const repository: any = {
       findByRequestId: jest.fn().mockResolvedValue(record),
-      updateStatus: jest.fn().mockResolvedValue({
+      expireActiveRequest: jest.fn().mockResolvedValue({
         ...record,
         status: GRAB_STATUS.EXPIRED,
         progressStatus: GRAB_STATUS.EXPIRED,
@@ -475,7 +476,7 @@ describe('GrabService', () => {
     const result = await service.cancelRequest(2004, 'GRAB-QUEUED');
 
     expect(admission.release).not.toHaveBeenCalled();
-    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-QUEUED', GRAB_STATUS.EXPIRED, 'grab request cancelled');
+    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-QUEUED', 'grab request cancelled', [GRAB_STATUS.QUEUED]);
     expect(result).toMatchObject({ requestId: 'GRAB-QUEUED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'grab request cancelled' });
   });
 
@@ -595,7 +596,7 @@ describe('GrabService', () => {
     };
     const repository: any = {
       findByRequestId: jest.fn().mockResolvedValue(record),
-      updateStatus: jest.fn().mockResolvedValue({
+      expireActiveRequest: jest.fn().mockResolvedValue({
         ...record,
         status: GRAB_STATUS.EXPIRED,
         progressStatus: GRAB_STATUS.EXPIRED,
@@ -616,8 +617,46 @@ describe('GrabService', () => {
       seatIds: [],
       idempotencyKey: 'idem-locking',
     });
-    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-LOCKING', GRAB_STATUS.EXPIRED, 'grab request cancelled');
+    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-LOCKING', 'grab request cancelled', [GRAB_STATUS.LOCKING]);
     expect(result).toMatchObject({ requestId: 'GRAB-LOCKING', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'grab request cancelled' });
+  });
+
+  it('does not release redis holds when conditional cancellation loses the race', async () => {
+    const record = {
+      requestId: 'GRAB-RACE',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      seatIds: [],
+      allocateRandom: false,
+      idempotencyKey: 'idem-race',
+      status: GRAB_STATUS.LOCKING,
+      progressStatus: GRAB_STATUS.LOCKING,
+      currentTicketTypeId: 202,
+      orderId: null,
+      failReason: null,
+    };
+    const ordered = {
+      ...record,
+      status: GRAB_STATUS.ORDER_CREATED,
+      progressStatus: GRAB_STATUS.ORDER_CREATED,
+      orderId: 9001,
+    };
+    const repository: any = {
+      findByRequestId: jest.fn()
+        .mockResolvedValueOnce(record)
+        .mockResolvedValueOnce(ordered),
+      expireActiveRequest: jest.fn().mockResolvedValue(null),
+    };
+    const admission: any = { release: jest.fn() };
+    const service = createService({ repository, admission });
+
+    const result = await service.cancelRequest(2004, 'GRAB-RACE');
+
+    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-RACE', 'grab request cancelled', [GRAB_STATUS.LOCKING]);
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ requestId: 'GRAB-RACE', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001 });
   });
 
   it('does not cancel once order creation has started', async () => {

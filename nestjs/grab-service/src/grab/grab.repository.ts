@@ -175,6 +175,27 @@ export class GrabRepository {
     return this.mapRow(result.rows[0]);
   }
 
+  async expireActiveRequest(
+    requestId: string,
+    failReason: string,
+    allowedProgressStatuses: readonly GrabStatus[],
+  ): Promise<GrabRequestRecord | null> {
+    const result = await this.database.query<GrabRequestRow>(
+      `update grab_request
+       set status = $2,
+           progress_status = $2,
+           fail_reason = $3,
+           completed_at = coalesce(completed_at, now()),
+           updated_at = now()
+       where request_id = $1
+         and progress_status = any($4::varchar[])
+         and order_id is null
+       returning *`,
+      [requestId, GRAB_STATUS.EXPIRED, failReason, allowedProgressStatuses],
+    );
+    return result.rows[0] ? this.mapRow(result.rows[0]) : null;
+  }
+
   async updateProgress(requestId: string, input: UpdateGrabProgressInput): Promise<GrabRequestRecord | null> {
     const result = await this.database.query<GrabRequestRow>(
       `update grab_request

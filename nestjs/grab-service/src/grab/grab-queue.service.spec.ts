@@ -25,9 +25,10 @@ describe('GrabQueueService', () => {
     expect(script).toContain("redis.call('INCR', KEYS[1])");
     expect(script).toContain("redis.call('HSET', KEYS[2]");
     expect(script).toContain("redis.call('RPUSH', KEYS[3], ARGV[1])");
+    expect(script).toContain("redis.call('EXPIRE', KEYS[2], ttl)");
     expect(script).toContain("redis.call('SADD', KEYS[4], ARGV[2])");
     expect(keys).toEqual(['grab:queue:seq:101', 'grab:req:GRAB1', 'grab:queue:101', 'grab:active-sessions']);
-    expect(args).toEqual(['GRAB1', '101', '2004', 'QUEUED']);
+    expect(args).toEqual(['GRAB1', '101', '2004', 'QUEUED', '0']);
     expect(redis.incr).not.toHaveBeenCalled();
     expect(redis.rpush).not.toHaveBeenCalled();
     expect(redis.sadd).not.toHaveBeenCalled();
@@ -68,7 +69,8 @@ describe('GrabQueueService', () => {
     const [script, keys] = redis.eval.mock.calls[0];
     expect(script).toContain("redis.call('LPOP', KEYS[1])");
     expect(script).toContain("redis.call('RPUSH', KEYS[2], requestId)");
-    expect(keys).toEqual(['grab:queue:101', 'grab:queue:inflight:101']);
+    expect(script).toContain("redis.call('HSET', KEYS[3] .. requestId");
+    expect(keys).toEqual(['grab:queue:101', 'grab:queue:inflight:101', 'grab:req:']);
     expect(redis.lpop).not.toHaveBeenCalled();
   });
 
@@ -86,7 +88,8 @@ describe('GrabQueueService', () => {
     expect(script).toContain("redis.call('GET', KEYS[2])");
     expect(script).toContain('if newSeq > currentSeq then');
     expect(script).toContain("redis.call('SET', KEYS[2], ARGV[2])");
-    expect(keys).toEqual(['grab:queue:inflight:101', 'grab:queue:processed:101']);
+    expect(script).toContain("redis.call('DEL', KEYS[3])");
+    expect(keys).toEqual(['grab:queue:inflight:101', 'grab:queue:processed:101', 'grab:req:GRAB1']);
     expect(args).toEqual(['GRAB1', '18']);
   });
 
@@ -128,20 +131,46 @@ describe('GrabQueueService', () => {
     expect(args).toEqual(['GRAB1', '101']);
   });
 
-  it('discards orphan inflight request without advancing processed sequence', async () => {
+  it('acks orphan inflight request using the queued request metadata', async () => {
     const redis: any = {
       eval: jest.fn().mockResolvedValue(1),
     };
     const service = new GrabQueueService(redis);
 
-    await service.discardInflight(101, 'GRAB-MISSING');
+    await service.ackOrphanInflight(101, 'GRAB-MISSING');
 
     expect(redis.eval).toHaveBeenCalledTimes(1);
     const [script, keys, args] = redis.eval.mock.calls[0];
     expect(script).toContain("redis.call('LREM', KEYS[1], 1, ARGV[1])");
-    expect(script).not.toContain('processed');
-    expect(keys).toEqual(['grab:queue:inflight:101']);
+    expect(script).toContain("redis.call('HGET', KEYS[3], 'queueSeq')");
+    expect(script).toContain("redis.call('SET', KEYS[2], tostring(queueSeq))");
+    expect(script).toContain("redis.call('DEL', KEYS[3])");
+    expect(keys).toEqual(['grab:queue:inflight:101', 'grab:queue:processed:101', 'grab:req:GRAB-MISSING']);
     expect(args).toEqual(['GRAB-MISSING']);
+  });
+
+  it('reads inflight request metadata from redis', async () => {
+    const redis: any = {
+      hgetall: jest.fn().mockResolvedValue({
+        requestId: 'GRAB1',
+        sessionId: '101',
+        userId: '2004',
+        queueSeq: '12',
+        status: 'INFLIGHT',
+        inflightAt: '1780000000000',
+      }),
+    };
+    const service = new GrabQueueService(redis);
+
+    await expect(service.getRequestMetadata('GRAB1')).resolves.toEqual({
+      requestId: 'GRAB1',
+      sessionId: 101,
+      userId: 2004,
+      queueSeq: 12,
+      status: 'INFLIGHT',
+      inflightAt: 1780000000000,
+    });
+    expect(redis.hgetall).toHaveBeenCalledWith('grab:req:GRAB1');
   });
 
   it('removes active session only when the queue and inflight list are empty using an atomic Redis script', async () => {

@@ -1,5 +1,6 @@
 import { GrabController, GrabSessionController } from './grab.controller';
 import { GRAB_STATUS } from './grab-status';
+import { BadRequestException } from '@nestjs/common';
 
 describe('GrabController', () => {
   it('submits grab request using authenticated user id', async () => {
@@ -101,5 +102,16 @@ describe('GrabController', () => {
 
     expect(visibleStockService.getSessionVisibleStock).toHaveBeenCalledWith(101, [1, 2]);
     expect(result).toEqual({ code: 200, message: 'success', data: stockResponse });
+  });
+
+  it('rejects visible stock lookup when session id or ticket ids are invalid', async () => {
+    const visibleStockService: any = {
+      getSessionVisibleStock: jest.fn(),
+    };
+    const controller = new GrabSessionController(visibleStockService);
+
+    await expect(controller.stockVisible('0', '1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.stockVisible('101', '')).rejects.toBeInstanceOf(BadRequestException);
+    expect(visibleStockService.getSessionVisibleStock).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,7 @@ import { GrabAdmissionService } from './grab-admission.service';
 import { GrabQueueService } from './grab-queue.service';
 import { ACTIVE_ASYNC_PROGRESS_STATUSES, GrabRepository, isUniqueViolation } from './grab.repository';
 import { GRAB_STATUS } from './grab-status';
+import type { GrabStatus } from './grab-status';
 import type { GrabProgressResponse, GrabRequestRecord, GrabRequestResponse, GrabTicketPreference, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
 import { TicketClientService, TicketTypeVisibleInfo } from './ticket-client.service';
@@ -57,7 +58,12 @@ export class GrabService {
     });
     if (active) return this.toResponse(active);
 
-    const queued = await this.queueService.enqueue({ requestId, sessionId: dto.sessionId, userId });
+    const queued = await this.queueService.enqueue({
+      requestId,
+      sessionId: dto.sessionId,
+      userId,
+      ttlSeconds: this.requestTtlSeconds,
+    });
 
     let created: GrabRequestRecord;
     try {
@@ -129,6 +135,13 @@ export class GrabService {
     const hasCancelableProgress = CANCELABLE_PROGRESS_STATUSES.has(progressStatus);
     const hasLegacyCancelableStatus = !ACTIVE_ASYNC_PROGRESS_STATUS_SET.has(progressStatus) && record.status === GRAB_STATUS.ACCEPTED;
     if (!hasCancelableProgress && !hasLegacyCancelableStatus) return this.toResponse(record);
+    const expired = hasCancelableProgress
+      ? await this.repository.expireActiveRequest(requestId, 'grab request cancelled', [progressStatus as GrabStatus])
+      : await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, 'grab request cancelled');
+    if (!expired) {
+      const latest = await this.repository.findByRequestId(requestId);
+      return this.toResponse(latest ?? record);
+    }
     if (RELEASEABLE_PROGRESS_STATUSES.has(progressStatus) || (!hasCancelableProgress && hasLegacyCancelableStatus)) {
       await this.admissionService.release({
         requestId: record.requestId,
@@ -140,7 +153,7 @@ export class GrabService {
         idempotencyKey: record.idempotencyKey,
       });
     }
-    return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, 'grab request cancelled'));
+    return this.toResponse(expired);
   }
 
   private validateSubmitRequest(dto: SubmitGrabRequestDto): void {

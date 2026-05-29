@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthenticatedRequest } from '../auth/authenticated-request';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GrabService } from './grab.service';
@@ -52,10 +52,16 @@ export class GrabSessionController {
     @Query('ticketTypeIds') ticketTypeIds = '',
   ): Promise<ApiResult<SessionVisibleStockResponse>> {
     const parsedSessionId = Number(sessionId);
+    if (!Number.isInteger(parsedSessionId) || parsedSessionId <= 0) {
+      throw new BadRequestException('invalid session');
+    }
     const ids = ticketTypeIds
       .split(',')
       .map((ticketTypeId) => Number(ticketTypeId))
       .filter((ticketTypeId) => Number.isInteger(ticketTypeId) && ticketTypeId > 0);
+    if (ids.length === 0) {
+      throw new BadRequestException('ticketTypeIds is required');
+    }
     return success(await this.visibleStockService.getSessionVisibleStock(parsedSessionId, ids));
   }
 }
