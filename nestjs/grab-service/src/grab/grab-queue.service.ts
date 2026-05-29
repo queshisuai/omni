@@ -78,7 +78,10 @@ export class GrabQueueService {
 
   async ackProcessed(sessionId: number, requestId: string, queueSeq: number): Promise<void> {
     const script = `
-      redis.call('LREM', KEYS[1], 1, ARGV[1])
+      local removed = redis.call('LREM', KEYS[1], 1, ARGV[1])
+      if removed <= 0 then
+        return 0
+      end
       local currentSeq = tonumber(redis.call('GET', KEYS[2]) or '0') or 0
       local newSeq = tonumber(ARGV[2])
       if newSeq > currentSeq then

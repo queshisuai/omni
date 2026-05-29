@@ -90,6 +90,27 @@ describe('GrabQueueService', () => {
     expect(args).toEqual(['GRAB1', '18']);
   });
 
+  it('does not advance processed sequence when ack misses inflight request', async () => {
+    const redis: any = {
+      eval: jest.fn().mockResolvedValue(0),
+    };
+    const service = new GrabQueueService(redis);
+
+    await service.ackProcessed(101, 'GRAB1', 18);
+
+    const [script] = redis.eval.mock.calls[0];
+    expect(script).toContain("local removed = redis.call('LREM', KEYS[1], 1, ARGV[1])");
+    expect(script).toContain('if removed <= 0 then');
+
+    const lremIndex = script.indexOf("local removed = redis.call('LREM', KEYS[1], 1, ARGV[1])");
+    const guardIndex = script.indexOf('if removed <= 0 then');
+    const getIndex = script.indexOf("redis.call('GET', KEYS[2])");
+    const setIndex = script.indexOf("redis.call('SET', KEYS[2], ARGV[2])");
+    expect(lremIndex).toBeLessThan(guardIndex);
+    expect(guardIndex).toBeLessThan(getIndex);
+    expect(getIndex).toBeLessThan(setIndex);
+  });
+
   it('requeues inflight request to the front of the session queue atomically', async () => {
     const redis: any = {
       eval: jest.fn().mockResolvedValue(1),
