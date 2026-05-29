@@ -160,9 +160,32 @@ describe('GrabRepository', () => {
       202,
       0,
       JSON.stringify(attempts),
+      [
+        GRAB_STATUS.ORDER_CREATED,
+        GRAB_STATUS.SOLD_OUT,
+        GRAB_STATUS.LIMITED,
+        GRAB_STATUS.FAILED,
+        GRAB_STATUS.EXPIRED,
+      ],
     ]);
-    expect(result.progressStatus).toBe(GRAB_STATUS.WAITING);
-    expect(result.attemptsSnapshot).toEqual(attempts);
+    expect(result?.progressStatus).toBe(GRAB_STATUS.WAITING);
+    expect(result?.attemptsSnapshot).toEqual(attempts);
+  });
+
+  it('does not overwrite terminal progress when updating progress', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.updateProgress('GRAB-EXPIRED', {
+      status: GRAB_STATUS.ORDER_CREATING,
+      message: 'creating',
+      currentTicketTypeId: 202,
+      currentAttemptIndex: 0,
+      attempts: [],
+    });
+
+    expect(query.mock.calls[0][0]).toContain('progress_status <> all');
+    expect(result).toBeNull();
   });
 
   it('maps accepted status to waiting progress when updating status', async () => {
@@ -215,13 +238,24 @@ describe('GrabRepository', () => {
       9001,
       202,
       JSON.stringify(attempts),
+      GRAB_STATUS.ORDER_CREATING,
     ]);
-    expect(result.status).toBe(GRAB_STATUS.ORDER_CREATED);
-    expect(result.progressStatus).toBe(GRAB_STATUS.ORDER_CREATED);
-    expect(result.orderId).toBe(9001);
-    expect(result.matchedTicketTypeId).toBe(202);
-    expect(result.attemptsSnapshot).toEqual(attempts);
-    expect(result.failReason).toBeNull();
+    expect(result?.status).toBe(GRAB_STATUS.ORDER_CREATED);
+    expect(result?.progressStatus).toBe(GRAB_STATUS.ORDER_CREATED);
+    expect(result?.orderId).toBe(9001);
+    expect(result?.matchedTicketTypeId).toBe(202);
+    expect(result?.attemptsSnapshot).toEqual(attempts);
+    expect(result?.failReason).toBeNull();
+  });
+
+  it('does not mark order created after terminal progress', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.markOrderCreated('GRAB-EXPIRED', 9001, 203, []);
+
+    expect(query.mock.calls[0][0]).toContain('progress_status = $6');
+    expect(result).toBeNull();
   });
 
   it('falls back to original ticket type when legacy order creation omits matched ticket type', async () => {
@@ -247,8 +281,9 @@ describe('GrabRepository', () => {
       9001,
       null,
       JSON.stringify([]),
+      GRAB_STATUS.ORDER_CREATING,
     ]);
-    expect(result.matchedTicketTypeId).toBe(202);
+    expect(result?.matchedTicketTypeId).toBe(202);
   });
 
   it('claims queued or waiting requests for processing and returns null when none match', async () => {

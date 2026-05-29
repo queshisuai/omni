@@ -108,6 +108,14 @@ export class GrabQueueService {
     await this.redis.eval(script, [this.inflightQueueKey(sessionId), this.queueKey(sessionId), this.activeSessionsKey()], [requestId, String(sessionId)]);
   }
 
+  async discardInflight(sessionId: number, requestId: string): Promise<void> {
+    await this.redis.eval(
+      `return redis.call('LREM', KEYS[1], 1, ARGV[1])`,
+      [this.inflightQueueKey(sessionId)],
+      [requestId],
+    );
+  }
+
   async getActiveSessions(): Promise<number[]> {
     const sessions = await this.redis.smembers(this.activeSessionsKey());
 

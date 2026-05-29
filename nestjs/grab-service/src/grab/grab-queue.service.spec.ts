@@ -128,6 +128,22 @@ describe('GrabQueueService', () => {
     expect(args).toEqual(['GRAB1', '101']);
   });
 
+  it('discards orphan inflight request without advancing processed sequence', async () => {
+    const redis: any = {
+      eval: jest.fn().mockResolvedValue(1),
+    };
+    const service = new GrabQueueService(redis);
+
+    await service.discardInflight(101, 'GRAB-MISSING');
+
+    expect(redis.eval).toHaveBeenCalledTimes(1);
+    const [script, keys, args] = redis.eval.mock.calls[0];
+    expect(script).toContain("redis.call('LREM', KEYS[1], 1, ARGV[1])");
+    expect(script).not.toContain('processed');
+    expect(keys).toEqual(['grab:queue:inflight:101']);
+    expect(args).toEqual(['GRAB-MISSING']);
+  });
+
   it('removes active session only when the queue and inflight list are empty using an atomic Redis script', async () => {
     const redis: any = {
       eval: jest.fn().mockResolvedValue(1),

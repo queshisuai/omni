@@ -7,7 +7,7 @@ import { GRAB_STATUS } from './grab-status';
 import type { GrabAttemptSnapshot, GrabRequestRecord, GrabTicketPreference } from './grab.types';
 import { OrderClientService } from './order-client.service';
 
-type AttemptOutcome = 'ORDER_CREATED' | 'SOLD_OUT' | 'LIMITED' | 'FAILED';
+type AttemptOutcome = 'ORDER_CREATED' | 'SOLD_OUT' | 'LIMITED' | 'FAILED' | 'CANCELLED';
 
 @Injectable()
 export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -15,6 +15,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly requestTtlSeconds = 900;
   private readonly workerId = `grab-worker-${randomUUID()}`;
   private timer: NodeJS.Timeout | null = null;
+  private pollInProgress = false;
 
   constructor(
     private readonly repository: GrabRepository,
@@ -34,19 +35,28 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async pollOnce(): Promise<void> {
-    const sessionIds = await this.queueService.getActiveSessions();
-    for (const sessionId of sessionIds) {
-      const requestId = await this.queueService.dequeue(sessionId);
-      if (requestId) {
-        await this.processRequest(requestId);
+    if (this.pollInProgress) return;
+    this.pollInProgress = true;
+    try {
+      const sessionIds = await this.queueService.getActiveSessions();
+      for (const sessionId of sessionIds) {
+        const requestId = await this.queueService.dequeue(sessionId);
+        if (requestId) {
+          await this.processRequest(requestId, sessionId);
+        }
+        await this.queueService.removeActiveSessionIfQueueEmpty(sessionId);
       }
-      await this.queueService.removeActiveSessionIfQueueEmpty(sessionId);
+    } finally {
+      this.pollInProgress = false;
     }
   }
 
-  async processRequest(requestId: string): Promise<void> {
+  async processRequest(requestId: string, sessionId?: number): Promise<void> {
     const existing = await this.repository.findByRequestId(requestId);
-    if (!existing) return;
+    if (!existing) {
+      if (sessionId != null) await this.queueService.discardInflight(sessionId, requestId);
+      return;
+    }
 
     const record = await this.repository.claimForProcessing(requestId, this.workerId);
     if (!record) {
@@ -78,17 +88,18 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       const preference = effectivePreferences[index];
       if (index > 0) {
         const previous = effectivePreferences[index - 1];
-        await this.repository.updateProgress(record.requestId, {
+        const downgraded = await this.repository.updateProgress(record.requestId, {
           status: GRAB_STATUS.DOWNGRADING,
           message: `${this.ticketLabel(previous)} sold out, trying ${this.ticketLabel(preference)}`,
           currentTicketTypeId: preference.ticketTypeId,
           currentAttemptIndex: index,
           attempts,
         });
+        if (!downgraded) return;
       }
 
       const outcome = await this.tryTicketType(record, preference, index, attempts);
-      if (outcome === 'ORDER_CREATED' || outcome === 'LIMITED' || outcome === 'FAILED') return;
+      if (outcome !== 'SOLD_OUT') return;
 
       attempts = this.markAttempt(attempts, index, 'SOLD_OUT', 'ticket type sold out');
       if (index === effectivePreferences.length - 1) {
@@ -105,22 +116,24 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     attempts: GrabAttemptSnapshot[],
   ): Promise<AttemptOutcome> {
     const tryingAttempts = this.markAttempt(attempts, index, 'TRYING', `Trying ${this.ticketLabel(preference)}`);
-    await this.repository.updateProgress(record.requestId, {
+    const tryingRecord = await this.repository.updateProgress(record.requestId, {
       status: GRAB_STATUS.TRYING_TICKET_TYPE,
       message: `Trying ${this.ticketLabel(preference)}`,
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: tryingAttempts,
     });
+    if (!tryingRecord) return 'CANCELLED';
 
     const lockingAttempts = this.markAttempt(attempts, index, 'LOCKING', `Locking ${this.ticketLabel(preference)}`);
-    await this.repository.updateProgress(record.requestId, {
+    const lockingRecord = await this.repository.updateProgress(record.requestId, {
       status: GRAB_STATUS.LOCKING,
       message: `Locking ${this.ticketLabel(preference)}`,
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: lockingAttempts,
     });
+    if (!lockingRecord) return 'CANCELLED';
 
     const admission = await this.admissionService.admit({
       requestId: record.requestId,
@@ -161,55 +174,79 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       return 'FAILED';
     }
 
-    await this.repository.updateProgress(record.requestId, {
+    const orderCreatingRecord = await this.repository.updateProgress(record.requestId, {
       status: GRAB_STATUS.ORDER_CREATING,
       message: `${this.ticketLabel(preference)} locked, creating order`,
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: this.markAttempt(lockingAttempts, index, 'LOCKING', `${this.ticketLabel(preference)} locked`),
     });
+    if (!orderCreatingRecord) {
+      await this.releaseAdmission(record, preference);
+      return 'CANCELLED';
+    }
+
+    const orderInput = {
+      userId: record.userId,
+      sessionId: record.sessionId,
+      ticketTypeId: preference.ticketTypeId,
+      quantity: record.quantity,
+      seatIds: record.seatIds,
+      allocateRandom: record.allocateRandom,
+      authorizedMaxUnitPrice: preference.maxPrice,
+      grabRequestId: record.requestId,
+      requestedTicketTypeId: record.ticketTypeId,
+      matchedTicketTypeId: preference.ticketTypeId,
+      autoDowngraded: preference.ticketTypeId !== record.ticketTypeId,
+    };
 
     try {
-      const orderInput = {
-        userId: record.userId,
-        sessionId: record.sessionId,
-        ticketTypeId: preference.ticketTypeId,
-        quantity: record.quantity,
-        seatIds: record.seatIds,
-        allocateRandom: record.allocateRandom,
-        authorizedMaxUnitPrice: preference.maxPrice,
-        grabRequestId: record.requestId,
-        requestedTicketTypeId: record.ticketTypeId,
-        matchedTicketTypeId: preference.ticketTypeId,
-        autoDowngraded: preference.ticketTypeId !== record.ticketTypeId,
-      };
       const order = await this.orderClient.createOrder(orderInput);
-      await this.repository.markOrderCreated(
-        record.requestId,
-        order.id,
-        preference.ticketTypeId,
-        this.markAttempt(lockingAttempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)} order created`),
-      );
+      await this.markOrderCreated(record, preference, index, lockingAttempts, order.id);
       return 'ORDER_CREATED';
     } catch (error) {
-      await this.admissionService.release({
-        userId: record.userId,
-        sessionId: record.sessionId,
-        ticketTypeId: preference.ticketTypeId,
-        quantity: record.quantity,
-        seatIds: record.seatIds,
-        idempotencyKey: record.idempotencyKey,
-        restoreStock: true,
-      });
       const message = error instanceof Error ? error.message : 'order creation failed';
       if (this.isStockError(message)) {
+        await this.releaseAdmission(record, preference);
         return 'SOLD_OUT';
       }
+      await this.releaseAdmission(record, preference);
       const status = this.isLimitError(message) ? GRAB_STATUS.LIMITED : GRAB_STATUS.FAILED;
       const attemptStatus = status === GRAB_STATUS.LIMITED ? 'LIMITED' : 'FAILED';
       await this.finishTerminalAttempt(record, status, message, preference, index, lockingAttempts, attemptStatus);
       return status === GRAB_STATUS.LIMITED ? 'LIMITED' : 'FAILED';
     }
+  }
+
+  private async markOrderCreated(
+    record: GrabRequestRecord,
+    preference: GrabTicketPreference,
+    index: number,
+    attempts: GrabAttemptSnapshot[],
+    orderId: number,
+  ): Promise<void> {
+    try {
+      await this.repository.markOrderCreated(
+        record.requestId,
+        orderId,
+        preference.ticketTypeId,
+        this.markAttempt(attempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)} order created`),
+      );
+    } catch (error) {
+      this.logger.error(error);
+    }
+  }
+
+  private async releaseAdmission(record: GrabRequestRecord, preference: GrabTicketPreference): Promise<void> {
+    await this.admissionService.release({
+      userId: record.userId,
+      sessionId: record.sessionId,
+      ticketTypeId: preference.ticketTypeId,
+      quantity: record.quantity,
+      seatIds: record.seatIds,
+      idempotencyKey: record.idempotencyKey,
+      restoreStock: true,
+    });
   }
 
   private async finishTerminalAttempt(
@@ -221,13 +258,14 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     attempts: GrabAttemptSnapshot[],
     attemptStatus: GrabAttemptSnapshot['status'],
   ): Promise<void> {
-    await this.repository.updateProgress(record.requestId, {
+    const updated = await this.repository.updateProgress(record.requestId, {
       status,
       message,
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: this.markAttempt(attempts, index, attemptStatus, message),
     });
+    if (!updated) return;
     await this.repository.updateStatus(record.requestId, status, message);
   }
 

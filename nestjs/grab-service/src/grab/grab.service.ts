@@ -6,8 +6,15 @@ import { ACTIVE_ASYNC_PROGRESS_STATUSES, GrabRepository, isUniqueViolation } fro
 import { GRAB_STATUS } from './grab-status';
 import type { GrabProgressResponse, GrabRequestRecord, GrabRequestResponse, GrabTicketPreference, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
+import { TicketClientService, TicketTypeVisibleInfo } from './ticket-client.service';
 
 const ACTIVE_ASYNC_PROGRESS_STATUS_SET = new Set<string>(ACTIVE_ASYNC_PROGRESS_STATUSES);
+const CANCELABLE_PROGRESS_STATUSES = new Set<string>([
+  GRAB_STATUS.QUEUED,
+  GRAB_STATUS.WAITING,
+  GRAB_STATUS.TRYING_TICKET_TYPE,
+  GRAB_STATUS.LOCKING,
+]);
 const RELEASEABLE_PROGRESS_STATUSES = new Set(['LOCKING', 'ORDER_CREATING']);
 const TERMINAL_CANCEL_STATUSES = new Set<string>([
   GRAB_STATUS.ORDER_CREATED,
@@ -26,15 +33,16 @@ export class GrabService {
     private readonly admissionService: GrabAdmissionService,
     private readonly orderClient: OrderClientService,
     private readonly queueService: GrabQueueService,
+    private readonly ticketClient: TicketClientService,
   ) {}
 
   async submitRequest(userId: number, dto: SubmitGrabRequestDto): Promise<GrabRequestResponse> {
     this.validateSubmitRequest(dto);
-    const requestedTicketTypes = this.normalizePreferences(dto);
-    const firstPreference = requestedTicketTypes[0];
-
     const existing = await this.repository.findByUserAndIdempotency(userId, dto.idempotencyKey);
     if (existing) return this.toResponse(existing);
+
+    const requestedTicketTypes = await this.normalizePreferences(dto);
+    const firstPreference = requestedTicketTypes[0];
 
     const requestId = this.generateRequestId();
     const seatIds = [...(dto.seatIds ?? [])].sort((a, b) => a - b);
@@ -118,8 +126,8 @@ export class GrabService {
     if (TERMINAL_CANCEL_STATUSES.has(record.status)) return this.toResponse(record);
     if (record.orderId) return this.toResponse(record);
     const progressStatus = record.progressStatus;
-    const hasCancelableProgress = ACTIVE_ASYNC_PROGRESS_STATUS_SET.has(progressStatus);
-    const hasLegacyCancelableStatus = record.status === GRAB_STATUS.ACCEPTED || record.status === GRAB_STATUS.ORDER_CREATING;
+    const hasCancelableProgress = CANCELABLE_PROGRESS_STATUSES.has(progressStatus);
+    const hasLegacyCancelableStatus = !ACTIVE_ASYNC_PROGRESS_STATUS_SET.has(progressStatus) && record.status === GRAB_STATUS.ACCEPTED;
     if (!hasCancelableProgress && !hasLegacyCancelableStatus) return this.toResponse(record);
     if (RELEASEABLE_PROGRESS_STATUSES.has(progressStatus) || (!hasCancelableProgress && hasLegacyCancelableStatus)) {
       await this.admissionService.release(record);
@@ -134,7 +142,7 @@ export class GrabService {
     if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('invalid seat quantity');
   }
 
-  private normalizePreferences(dto: SubmitGrabRequestDto): GrabTicketPreference[] {
+  private async normalizePreferences(dto: SubmitGrabRequestDto): Promise<GrabTicketPreference[]> {
     const preferences = dto.ticketTypePreferences?.length
       ? dto.ticketTypePreferences
       : dto.ticketTypeId == null
@@ -143,25 +151,42 @@ export class GrabService {
 
     if (preferences.length === 0) throw new BadRequestException('ticket type is required');
 
-    const normalized = preferences.map((preference) => {
+    const requestedIds = preferences.map((preference) => {
       if (!Number.isInteger(preference.ticketTypeId) || preference.ticketTypeId <= 0) {
         throw new BadRequestException('invalid ticket type');
       }
 
-      return {
-        ticketTypeId: preference.ticketTypeId,
-        name: preference.name ?? null,
-        maxPrice: preference.maxPrice ?? null,
-      };
+      return preference.ticketTypeId;
     });
 
-    if (dto.seatIds?.length && normalized.length > 1) {
+    if (dto.seatIds?.length && requestedIds.length > 1) {
       throw new BadRequestException('seat selection does not support auto downgrade');
     }
 
-    if (!dto.allowAutoDowngrade) return [normalized[0]];
+    const metadata = await this.ticketClient.listVisibleTicketTypes(dto.sessionId, requestedIds);
+    const metadataById = new Map<number, TicketTypeVisibleInfo>(
+      metadata.map((ticket) => [ticket.ticketTypeId, ticket]),
+    );
+    const canonical = requestedIds.map((ticketTypeId) => {
+      const ticket = metadataById.get(ticketTypeId);
+      if (!ticket) throw new BadRequestException('ticket type is not available for this session');
+      return {
+        ticketTypeId,
+        name: ticket.name,
+        maxPrice: ticket.price,
+      };
+    });
 
-    return normalized;
+    if (!dto.allowAutoDowngrade) return [canonical[0]];
+
+    const requestedPrice = canonical[0].maxPrice;
+    for (const preference of canonical.slice(1)) {
+      if (preference.maxPrice > requestedPrice) {
+        throw new BadRequestException('auto downgrade cannot increase ticket price');
+      }
+    }
+
+    return canonical;
   }
 
   private generateRequestId(): string {

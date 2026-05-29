@@ -19,6 +19,14 @@ function queuedRecord(overrides: any = {}) {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describe('GrabWorkerService', () => {
   it('locks a single ticket type, creates an order, and acks the inflight queue item', async () => {
     const record = queuedRecord();
@@ -141,6 +149,116 @@ describe('GrabWorkerService', () => {
     expect(repository.markOrderCreated).not.toHaveBeenCalled();
     expect(repository.updateStatus).toHaveBeenCalledWith('GRAB1', GRAB_STATUS.FAILED, 'order service timeout');
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
+  });
+
+  it('does not create an order when a request is cancelled after admission succeeds', async () => {
+    const record = queuedRecord();
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn()
+        .mockResolvedValueOnce(record)
+        .mockResolvedValueOnce(record)
+        .mockResolvedValueOnce(null),
+      markOrderCreated: jest.fn(),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn(),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(orderClient.createOrder).not.toHaveBeenCalled();
+    expect(repository.markOrderCreated).not.toHaveBeenCalled();
+    expect(admission.release).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 1,
+      quantity: 2,
+      restoreStock: true,
+    }));
+    expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
+  });
+
+  it('does not release the redis hold when grab persistence fails after order creation succeeds', async () => {
+    const record = queuedRecord();
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn().mockRejectedValue(new Error('database unavailable')),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', amount: 1960 }),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(orderClient.createOrder).toHaveBeenCalled();
+    expect(repository.markOrderCreated).toHaveBeenCalled();
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(repository.updateStatus).not.toHaveBeenCalledWith('GRAB1', GRAB_STATUS.FAILED, 'database unavailable');
+    expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
+  });
+
+  it('does not run overlapping polls', async () => {
+    const activeSessions = deferred<number[]>();
+    const repository: any = {};
+    const admission: any = {};
+    const orderClient: any = {};
+    const queue: any = {
+      getActiveSessions: jest.fn().mockReturnValue(activeSessions.promise),
+      dequeue: jest.fn(),
+      removeActiveSessionIfQueueEmpty: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    const firstPoll = service.pollOnce();
+    const secondPoll = service.pollOnce();
+    activeSessions.resolve([]);
+    await Promise.all([firstPoll, secondPoll]);
+
+    expect(queue.getActiveSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards orphan inflight queue items when the database row is missing', async () => {
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(null),
+      claimForProcessing: jest.fn(),
+    };
+    const admission: any = {};
+    const orderClient: any = {};
+    const queue: any = {
+      getActiveSessions: jest.fn().mockResolvedValue([101]),
+      dequeue: jest.fn().mockResolvedValue('GRAB-MISSING'),
+      discardInflight: jest.fn(),
+      removeActiveSessionIfQueueEmpty: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.pollOnce();
+
+    expect(repository.claimForProcessing).not.toHaveBeenCalled();
+    expect(queue.discardInflight).toHaveBeenCalledWith(101, 'GRAB-MISSING');
+    expect(queue.removeActiveSessionIfQueueEmpty).toHaveBeenCalledWith(101);
   });
 
   it('downgrades to the next authorized ticket type after sold out', async () => {

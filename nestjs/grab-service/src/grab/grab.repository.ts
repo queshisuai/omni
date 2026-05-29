@@ -58,6 +58,14 @@ export const ACTIVE_ASYNC_PROGRESS_STATUSES = [
   GRAB_STATUS.ORDER_CREATING,
 ] as const;
 
+const TERMINAL_PROGRESS_STATUSES = [
+  GRAB_STATUS.ORDER_CREATED,
+  GRAB_STATUS.SOLD_OUT,
+  GRAB_STATUS.LIMITED,
+  GRAB_STATUS.FAILED,
+  GRAB_STATUS.EXPIRED,
+] as const;
+
 export function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
 }
@@ -167,7 +175,7 @@ export class GrabRepository {
     return this.mapRow(result.rows[0]);
   }
 
-  async updateProgress(requestId: string, input: UpdateGrabProgressInput): Promise<GrabRequestRecord> {
+  async updateProgress(requestId: string, input: UpdateGrabProgressInput): Promise<GrabRequestRecord | null> {
     const result = await this.database.query<GrabRequestRow>(
       `update grab_request
        set progress_status = $2,
@@ -178,6 +186,7 @@ export class GrabRepository {
            attempts_snapshot = $6::jsonb,
            updated_at = now()
        where request_id = $1
+         and progress_status <> all($7::varchar[])
        returning *`,
       [
         requestId,
@@ -186,9 +195,10 @@ export class GrabRepository {
         input.currentTicketTypeId,
         input.currentAttemptIndex,
         JSON.stringify(input.attempts),
+        TERMINAL_PROGRESS_STATUSES,
       ],
     );
-    return this.mapRow(result.rows[0]);
+    return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }
 
   async claimForProcessing(requestId: string, workerId: string): Promise<GrabRequestRecord | null> {
@@ -222,7 +232,8 @@ export class GrabRepository {
     orderId: number,
     matchedTicketTypeId: number | null = null,
     attempts: GrabAttemptSnapshot[] = [],
-  ): Promise<GrabRequestRecord> {
+    expectedProgressStatus: GrabStatus = GRAB_STATUS.ORDER_CREATING,
+  ): Promise<GrabRequestRecord | null> {
     const result = await this.database.query<GrabRequestRow>(
       `update grab_request
        set status = $2,
@@ -234,10 +245,11 @@ export class GrabRepository {
            fail_reason = null,
            updated_at = now()
        where request_id = $1
+         and progress_status = $6
        returning *`,
-      [requestId, GRAB_STATUS.ORDER_CREATED, orderId, matchedTicketTypeId, JSON.stringify(attempts)],
+      [requestId, GRAB_STATUS.ORDER_CREATED, orderId, matchedTicketTypeId, JSON.stringify(attempts), expectedProgressStatus],
     );
-    return this.mapRow(result.rows[0]);
+    return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }
 
   async findActiveByIntent(input: FindActiveGrabIntentInput): Promise<GrabRequestRecord | null> {

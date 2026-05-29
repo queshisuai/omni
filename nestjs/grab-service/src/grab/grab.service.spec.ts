@@ -7,12 +7,21 @@ function createService(overrides: {
   admission?: any;
   orderClient?: any;
   queue?: any;
+  ticketClient?: any;
 } = {}): GrabService {
   return new GrabService(
     overrides.repository ?? {},
     overrides.admission ?? { admit: jest.fn(), release: jest.fn() },
     overrides.orderClient ?? { createOrder: jest.fn() },
     overrides.queue ?? { enqueue: jest.fn(), calculateQueueRank: jest.fn() },
+    overrides.ticketClient ?? {
+      listVisibleTicketTypes: jest.fn((sessionId: number, ids: number[]) => Promise.resolve(ids.map((id) => ({
+        ticketTypeId: id,
+        name: `Ticket ${id}`,
+        price: id,
+        remainStock: null,
+      })))),
+    },
   );
 }
 
@@ -77,7 +86,7 @@ describe('GrabService', () => {
     });
     expect(repository.createQueued).toHaveBeenCalledWith(expect.objectContaining({
       queueSeq: 12,
-      requestedTicketTypes: [{ ticketTypeId: 202, name: null, maxPrice: null }],
+      requestedTicketTypes: [{ ticketTypeId: 202, name: 'Ticket 202', maxPrice: 202 }],
       allowAutoDowngrade: false,
       seatIds: [301, 302],
     }));
@@ -141,7 +150,10 @@ describe('GrabService', () => {
       enqueue: jest.fn().mockResolvedValue({ queueSeq: 13, queueRank: 5 }),
       calculateQueueRank: jest.fn(),
     };
-    const service = createService({ repository, queue });
+    const ticketClient: any = {
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 202, name: 'A', price: 100, remainStock: 1 }]),
+    };
+    const service = createService({ repository, queue, ticketClient });
 
     await service.submitRequest(2004, {
       sessionId: 101,
@@ -156,6 +168,94 @@ describe('GrabService', () => {
       requestedTicketTypes: [{ ticketTypeId: 202, name: 'A', maxPrice: 100 }],
       allowAutoDowngrade: false,
     }));
+  });
+
+  it('canonicalizes downgrade preferences from ticket metadata instead of trusting client prices', async () => {
+    const repository: any = {
+      findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
+      findActiveByIntent: jest.fn().mockResolvedValue(null),
+      createQueued: jest.fn().mockImplementation((input) => Promise.resolve({
+        requestId: input.requestId,
+        userId: 2004,
+        sessionId: 101,
+        ticketTypeId: 202,
+        quantity: 1,
+        seatIds: [],
+        allocateRandom: true,
+        idempotencyKey: 'idem-canonical',
+        status: GRAB_STATUS.QUEUED,
+        progressStatus: GRAB_STATUS.QUEUED,
+        progressMessage: null,
+        orderId: null,
+        failReason: null,
+        queueSeq: input.queueSeq,
+      })),
+    };
+    const queue: any = {
+      enqueue: jest.fn().mockResolvedValue({ queueSeq: 14, queueRank: 6 }),
+      calculateQueueRank: jest.fn(),
+    };
+    const ticketClient: any = {
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([
+        { ticketTypeId: 202, name: 'A档', price: 1280, remainStock: 1 },
+        { ticketTypeId: 203, name: 'B档', price: 980, remainStock: 1 },
+      ]),
+    };
+    const service = createService({ repository, queue, ticketClient });
+
+    await service.submitRequest(2004, {
+      sessionId: 101,
+      quantity: 1,
+      allocateRandom: true,
+      idempotencyKey: 'idem-canonical',
+      ticketTypePreferences: [
+        { ticketTypeId: 202, name: 'client A', maxPrice: 1 },
+        { ticketTypeId: 203, name: 'client B', maxPrice: 1 },
+      ],
+      allowAutoDowngrade: true,
+    });
+
+    expect(ticketClient.listVisibleTicketTypes).toHaveBeenCalledWith(101, [202, 203]);
+    expect(repository.createQueued).toHaveBeenCalledWith(expect.objectContaining({
+      requestedTicketTypes: [
+        { ticketTypeId: 202, name: 'A档', maxPrice: 1280 },
+        { ticketTypeId: 203, name: 'B档', maxPrice: 980 },
+      ],
+      allowAutoDowngrade: true,
+    }));
+  });
+
+  it('rejects downgrade preferences that increase actual ticket price', async () => {
+    const repository: any = {
+      findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
+      findActiveByIntent: jest.fn(),
+      createQueued: jest.fn(),
+    };
+    const queue: any = {
+      enqueue: jest.fn(),
+      calculateQueueRank: jest.fn(),
+    };
+    const ticketClient: any = {
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([
+        { ticketTypeId: 202, name: 'B档', price: 980, remainStock: 1 },
+        { ticketTypeId: 203, name: 'A档', price: 1280, remainStock: 1 },
+      ]),
+    };
+    const service = createService({ repository, queue, ticketClient });
+
+    await expect(service.submitRequest(2004, {
+      sessionId: 101,
+      quantity: 1,
+      allocateRandom: true,
+      idempotencyKey: 'idem-increase',
+      ticketTypePreferences: [
+        { ticketTypeId: 202, name: 'B档', maxPrice: 980 },
+        { ticketTypeId: 203, name: 'A档', maxPrice: 1280 },
+      ],
+      allowAutoDowngrade: true,
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(repository.createQueued).not.toHaveBeenCalled();
   });
 
   it('returns existing idempotent queued request without enqueueing again', async () => {
@@ -225,7 +325,13 @@ describe('GrabService', () => {
       enqueue: jest.fn(),
       calculateQueueRank: jest.fn().mockResolvedValue(3),
     };
-    const service = createService({ repository, queue });
+    const ticketClient: any = {
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([
+        { ticketTypeId: 202, name: 'A', price: 100, remainStock: 1 },
+        { ticketTypeId: 203, name: 'B', price: 80, remainStock: 1 },
+      ]),
+    };
+    const service = createService({ repository, queue, ticketClient });
 
     const result = await service.submitRequest(2004, {
       sessionId: 101,
@@ -503,5 +609,34 @@ describe('GrabService', () => {
     expect(admission.release).toHaveBeenCalledWith(record);
     expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-LOCKING', GRAB_STATUS.EXPIRED, 'grab request cancelled');
     expect(result).toMatchObject({ requestId: 'GRAB-LOCKING', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'grab request cancelled' });
+  });
+
+  it('does not cancel once order creation has started', async () => {
+    const record = {
+      requestId: 'GRAB-ORDER-CREATING',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      seatIds: [],
+      allocateRandom: false,
+      idempotencyKey: 'idem-order-creating',
+      status: GRAB_STATUS.ORDER_CREATING,
+      progressStatus: GRAB_STATUS.ORDER_CREATING,
+      orderId: null,
+      failReason: null,
+    };
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = { release: jest.fn() };
+    const service = createService({ repository, admission });
+
+    const result = await service.cancelRequest(2004, 'GRAB-ORDER-CREATING');
+
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(repository.updateStatus).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ requestId: 'GRAB-ORDER-CREATING', status: GRAB_STATUS.ORDER_CREATING, orderId: null, failReason: null });
   });
 });
