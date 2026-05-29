@@ -1,23 +1,36 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { GRAB_STATUS } from './grab-status';
 import { GrabService } from './grab.service';
 
+function createService(overrides: {
+  repository?: any;
+  admission?: any;
+  orderClient?: any;
+  queue?: any;
+} = {}): GrabService {
+  return new GrabService(
+    overrides.repository ?? {},
+    overrides.admission ?? { admit: jest.fn(), release: jest.fn() },
+    overrides.orderClient ?? { createOrder: jest.fn() },
+    overrides.queue ?? { enqueue: jest.fn(), calculateQueueRank: jest.fn() },
+  );
+}
 
 describe('GrabService', () => {
   it('generates unique request ids under high concurrency volume', () => {
-    const service = new GrabService({} as any, {} as any, {} as any);
+    const service = createService();
     const ids = Array.from({ length: 5000 }, () => service['generateRequestId']());
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.every((id) => /^GRAB[0-9a-f]{24}$/.test(id))).toBe(true);
   });
 
-  it('creates an order after redis admission succeeds', async () => {
+  it('enqueues a grab request and does not create an order during submit', async () => {
     const repository: any = {
       findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
       findActiveByIntent: jest.fn().mockResolvedValue(null),
-      createPending: jest.fn().mockResolvedValue({
-        requestId: 'GRAB202605270001',
+      createQueued: jest.fn().mockImplementation((input) => Promise.resolve({
+        requestId: input.requestId,
         userId: 2004,
         sessionId: 101,
         ticketTypeId: 202,
@@ -25,285 +38,203 @@ describe('GrabService', () => {
         seatIds: [301, 302],
         allocateRandom: false,
         idempotencyKey: 'idem-1',
-        status: GRAB_STATUS.PENDING,
+        status: GRAB_STATUS.QUEUED,
+        progressStatus: GRAB_STATUS.QUEUED,
+        progressMessage: 'queued',
         orderId: null,
         failReason: null,
-      }),
-      updateStatus: jest.fn().mockImplementation((requestId, status) => Promise.resolve({
-        requestId,
-        status,
-        userId: 2004,
-        sessionId: 101,
-        ticketTypeId: 202,
-        quantity: 2,
-        seatIds: [301, 302],
-        allocateRandom: false,
-        idempotencyKey: 'idem-1',
-        orderId: null,
-        failReason: null,
+        queueSeq: input.queueSeq,
       })),
-      markOrderCreated: jest.fn().mockResolvedValue({
-        requestId: 'GRAB202605270001',
-        status: GRAB_STATUS.ORDER_CREATED,
-        orderId: 9001,
-        failReason: null,
-      }),
     };
     const admission: any = {
-      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB202605270001' }),
+      admit: jest.fn(),
       release: jest.fn(),
     };
     const orderClient: any = {
-      createOrder: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', amount: 200 }),
+      createOrder: jest.fn(),
     };
-    const service = new GrabService(repository, admission, orderClient);
+    const queue: any = {
+      enqueue: jest.fn().mockResolvedValue({ queueSeq: 12, queueRank: 4 }),
+      calculateQueueRank: jest.fn(),
+    };
+    const service = createService({ repository, admission, orderClient, queue });
 
     const result = await service.submitRequest(2004, {
       sessionId: 101,
       ticketTypeId: 202,
       quantity: 2,
-      seatIds: [301, 302],
+      seatIds: [302, 301],
       allocateRandom: false,
       idempotencyKey: 'idem-1',
     });
 
-    expect(admission.admit).toHaveBeenCalled();
-    expect(orderClient.createOrder).toHaveBeenCalledWith({
-      userId: 2004,
+    expect(admission.admit).not.toHaveBeenCalled();
+    expect(orderClient.createOrder).not.toHaveBeenCalled();
+    expect(queue.enqueue).toHaveBeenCalledWith({
+      requestId: expect.stringMatching(/^GRAB/),
       sessionId: 101,
-      ticketTypeId: 202,
-      quantity: 2,
-      seatIds: [301, 302],
-      allocateRandom: false,
+      userId: 2004,
     });
-    expect(repository.markOrderCreated).toHaveBeenCalledWith('GRAB202605270001', 9001);
-    expect(result).toEqual({ requestId: 'GRAB202605270001', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null });
+    expect(repository.createQueued).toHaveBeenCalledWith(expect.objectContaining({
+      queueSeq: 12,
+      requestedTicketTypes: [{ ticketTypeId: 202, name: null, maxPrice: null }],
+      allowAutoDowngrade: false,
+      seatIds: [301, 302],
+    }));
+    expect(result).toEqual({
+      requestId: expect.stringMatching(/^GRAB/),
+      status: GRAB_STATUS.QUEUED,
+      orderId: null,
+      failReason: null,
+      queueSeq: 12,
+      queueRank: 4,
+      estimatedWaitSeconds: null,
+      message: 'queued',
+    });
   });
 
-  it('restores redis stock when order creation fails after accepted admission', async () => {
+  it('rejects auto downgrade when explicit seats are selected', async () => {
+    const service = createService({
+      repository: {
+        findByUserAndIdempotency: jest.fn(),
+        findActiveByIntent: jest.fn(),
+        createQueued: jest.fn(),
+      },
+      queue: { enqueue: jest.fn(), calculateQueueRank: jest.fn() },
+    });
+
+    await expect(service.submitRequest(2004, {
+      sessionId: 101,
+      quantity: 2,
+      seatIds: [301, 302],
+      idempotencyKey: 'idem-seats',
+      ticketTypePreferences: [
+        { ticketTypeId: 202, name: 'A', maxPrice: 100 },
+        { ticketTypeId: 203, name: 'B', maxPrice: 80 },
+      ],
+      allowAutoDowngrade: true,
+    })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('does not persist auto downgrade authorization when there is no later ticket type', async () => {
     const repository: any = {
       findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
       findActiveByIntent: jest.fn().mockResolvedValue(null),
-      createPending: jest.fn().mockResolvedValue({
-        requestId: 'GRAB202605270002',
+      createQueued: jest.fn().mockImplementation((input) => Promise.resolve({
+        requestId: input.requestId,
         userId: 2004,
         sessionId: 101,
         ticketTypeId: 202,
         quantity: 1,
         seatIds: [],
-        allocateRandom: false,
-        idempotencyKey: 'idem-2',
-        status: GRAB_STATUS.PENDING,
+        allocateRandom: true,
+        idempotencyKey: 'idem-single',
+        status: GRAB_STATUS.QUEUED,
+        progressStatus: GRAB_STATUS.QUEUED,
+        progressMessage: null,
         orderId: null,
         failReason: null,
-      }),
-      updateStatus: jest.fn().mockImplementation((requestId, status, failReason = null) => Promise.resolve({
-        requestId,
-        status,
-        orderId: null,
-        failReason,
+        queueSeq: input.queueSeq,
       })),
     };
-    const admission: any = {
-      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB202605270002' }),
-      release: jest.fn(),
+    const queue: any = {
+      enqueue: jest.fn().mockResolvedValue({ queueSeq: 13, queueRank: 5 }),
+      calculateQueueRank: jest.fn(),
     };
-    const orderClient: any = {
-      createOrder: jest.fn().mockRejectedValue(new Error('订单创建失败')),
-    };
-    const service = new GrabService(repository, admission, orderClient);
+    const service = createService({ repository, queue });
 
     await service.submitRequest(2004, {
       sessionId: 101,
-      ticketTypeId: 202,
       quantity: 1,
-      idempotencyKey: 'idem-2',
+      allocateRandom: true,
+      idempotencyKey: 'idem-single',
+      ticketTypePreferences: [{ ticketTypeId: 202, name: 'A', maxPrice: 100 }],
+      allowAutoDowngrade: true,
     });
 
-    expect(admission.release).toHaveBeenCalledWith({
-      userId: 2004,
-      sessionId: 101,
-      ticketTypeId: 202,
-      quantity: 1,
-      seatIds: [],
-      idempotencyKey: 'idem-2',
-      restoreStock: true,
-    });
+    expect(repository.createQueued).toHaveBeenCalledWith(expect.objectContaining({
+      requestedTicketTypes: [{ ticketTypeId: 202, name: 'A', maxPrice: 100 }],
+      allowAutoDowngrade: false,
+    }));
   });
 
-  it('restores redis stock and marks sold out when order creation reports stock failure after accepted admission', async () => {
-    const repository: any = {
-      findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
-      findActiveByIntent: jest.fn().mockResolvedValue(null),
-      createPending: jest.fn().mockResolvedValue({
-        requestId: 'GRAB202605270003',
-        userId: 2004,
-        sessionId: 101,
-        ticketTypeId: 202,
-        quantity: 2,
-        seatIds: [302, 301],
-        allocateRandom: false,
-        idempotencyKey: 'idem-stock',
-        status: GRAB_STATUS.PENDING,
-        orderId: null,
-        failReason: null,
-      }),
-      updateStatus: jest.fn().mockImplementation((requestId, status, failReason = null) => Promise.resolve({
-        requestId,
-        status,
-        orderId: null,
-        failReason,
-      })),
-    };
-    const admission: any = {
-      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB202605270003' }),
-      release: jest.fn(),
-    };
-    const orderClient: any = {
-      createOrder: jest.fn().mockRejectedValue(new Error('库存锁定失败')),
-    };
-    const service = new GrabService(repository, admission, orderClient);
-
-    const result = await service.submitRequest(2004, {
-      sessionId: 101,
-      ticketTypeId: 202,
-      quantity: 2,
-      seatIds: [302, 301],
-      idempotencyKey: 'idem-stock',
-    });
-
-    expect(admission.release).toHaveBeenCalledWith({
-      userId: 2004,
-      sessionId: 101,
-      ticketTypeId: 202,
-      quantity: 2,
-      seatIds: [301, 302],
-      idempotencyKey: 'idem-stock',
-      restoreStock: true,
-    });
-    expect(repository.updateStatus).toHaveBeenLastCalledWith('GRAB202605270003', GRAB_STATUS.SOLD_OUT, '库存锁定失败');
-    expect(result).toEqual({ requestId: 'GRAB202605270003', status: GRAB_STATUS.SOLD_OUT, orderId: null, failReason: '库存锁定失败' });
-  });
-
-  it('restores redis stock and clears all holds when order creation times out after accepted admission', async () => {
-    const repository: any = {
-      findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
-      findActiveByIntent: jest.fn().mockResolvedValue(null),
-      createPending: jest.fn().mockResolvedValue({
-        requestId: 'GRAB202605270004',
-        userId: 2004,
-        sessionId: 101,
-        ticketTypeId: 202,
-        quantity: 2,
-        seatIds: [401, 402],
-        allocateRandom: false,
-        idempotencyKey: 'idem-timeout',
-        status: GRAB_STATUS.PENDING,
-        orderId: null,
-        failReason: null,
-      }),
-      updateStatus: jest.fn().mockImplementation((requestId, status, failReason = null) => Promise.resolve({
-        requestId,
-        status,
-        orderId: null,
-        failReason,
-      })),
-    };
-    const admission: any = {
-      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB202605270004' }),
-      release: jest.fn(),
-    };
-    const orderClient: any = {
-      createOrder: jest.fn().mockRejectedValue(new Error('订单服务超时')),
-    };
-    const service = new GrabService(repository, admission, orderClient);
-
-    const result = await service.submitRequest(2004, {
-      sessionId: 101,
-      ticketTypeId: 202,
-      quantity: 2,
-      seatIds: [401, 402],
-      idempotencyKey: 'idem-timeout',
-    });
-
-    expect(admission.release).toHaveBeenCalledWith({
-      userId: 2004,
-      sessionId: 101,
-      ticketTypeId: 202,
-      quantity: 2,
-      seatIds: [401, 402],
-      idempotencyKey: 'idem-timeout',
-      restoreStock: true,
-    });
-    expect(repository.updateStatus).toHaveBeenLastCalledWith('GRAB202605270004', GRAB_STATUS.FAILED, '订单服务超时');
-    expect(result).toEqual({ requestId: 'GRAB202605270004', status: GRAB_STATUS.FAILED, orderId: null, failReason: '订单服务超时' });
-  });
-
-  it('marks request failed and does not create order when redis stock is uninitialized', async () => {
-    const repository: any = {
-      findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
-      findActiveByIntent: jest.fn().mockResolvedValue(null),
-      createPending: jest.fn().mockResolvedValue({
-        requestId: 'GRAB202605270003',
-        userId: 2004,
-        sessionId: 101,
-        ticketTypeId: 202,
-        quantity: 1,
-        seatIds: [],
-        allocateRandom: false,
-        idempotencyKey: 'idem-3',
-        status: GRAB_STATUS.PENDING,
-        orderId: null,
-        failReason: null,
-      }),
-      updateStatus: jest.fn().mockImplementation((requestId, status, failReason = null) => Promise.resolve({
-        requestId,
-        status,
-        orderId: null,
-        failReason,
-      })),
-    };
-    const admission: any = {
-      admit: jest.fn().mockResolvedValue({ outcome: 'STOCK_UNINITIALIZED', existingRequestId: null }),
-      release: jest.fn(),
-    };
-    const orderClient: any = { createOrder: jest.fn() };
-    const service = new GrabService(repository, admission, orderClient);
-
-    const result = await service.submitRequest(2004, {
-      sessionId: 101,
-      ticketTypeId: 202,
-      quantity: 1,
-      idempotencyKey: 'idem-3',
-    });
-
-    expect(orderClient.createOrder).not.toHaveBeenCalled();
-    expect(admission.release).not.toHaveBeenCalled();
-    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB202605270003', GRAB_STATUS.FAILED, '抢票库存未初始化');
-    expect(result).toEqual({ requestId: 'GRAB202605270003', status: GRAB_STATUS.FAILED, orderId: null, failReason: '抢票库存未初始化' });
-  });
-
-  it('returns existing active request for the same grab intent', async () => {
+  it('returns existing idempotent queued request without enqueueing again', async () => {
     const existing = {
       requestId: 'GRAB-EXISTING',
-      status: GRAB_STATUS.ORDER_CREATED,
-      orderId: 9001,
+      userId: 2004,
+      sessionId: 101,
+      status: GRAB_STATUS.QUEUED,
+      progressStatus: GRAB_STATUS.QUEUED,
+      progressMessage: 'waiting',
+      orderId: null,
       failReason: null,
+      queueSeq: 7,
+    };
+    const repository: any = {
+      findByUserAndIdempotency: jest.fn().mockResolvedValue(existing),
+      findActiveByIntent: jest.fn(),
+      createQueued: jest.fn(),
+    };
+    const queue: any = {
+      enqueue: jest.fn(),
+      calculateQueueRank: jest.fn().mockResolvedValue(2),
+    };
+    const service = createService({ repository, queue });
+
+    const result = await service.submitRequest(2004, {
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      idempotencyKey: 'idem-1',
+    });
+
+    expect(repository.findActiveByIntent).not.toHaveBeenCalled();
+    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(repository.createQueued).not.toHaveBeenCalled();
+    expect(queue.calculateQueueRank).toHaveBeenCalledWith(101, 7);
+    expect(result).toEqual({
+      requestId: 'GRAB-EXISTING',
+      status: GRAB_STATUS.QUEUED,
+      orderId: null,
+      failReason: null,
+      queueSeq: 7,
+      queueRank: 2,
+      estimatedWaitSeconds: null,
+      message: 'waiting',
+    });
+  });
+
+  it('returns existing active request for the same grab intent without enqueueing again', async () => {
+    const existing = {
+      requestId: 'GRAB-ACTIVE',
+      userId: 2004,
+      sessionId: 101,
+      status: GRAB_STATUS.QUEUED,
+      progressStatus: GRAB_STATUS.QUEUED,
+      progressMessage: 'queued',
+      orderId: null,
+      failReason: null,
+      queueSeq: 8,
     };
     const repository: any = {
       findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
       findActiveByIntent: jest.fn().mockResolvedValue(existing),
-      createPending: jest.fn(),
+      createQueued: jest.fn(),
     };
-    const admission: any = { admit: jest.fn() };
-    const orderClient: any = { createOrder: jest.fn() };
-    const service = new GrabService(repository, admission, orderClient);
+    const queue: any = {
+      enqueue: jest.fn(),
+      calculateQueueRank: jest.fn().mockResolvedValue(3),
+    };
+    const service = createService({ repository, queue });
 
     const result = await service.submitRequest(2004, {
       sessionId: 101,
-      ticketTypeId: 202,
+      ticketTypePreferences: [
+        { ticketTypeId: 202, name: 'A', maxPrice: 100 },
+        { ticketTypeId: 203, name: 'B', maxPrice: 80 },
+      ],
+      allowAutoDowngrade: true,
       quantity: 2,
-      seatIds: [302, 301],
       allocateRandom: false,
       idempotencyKey: 'new-key',
     });
@@ -313,38 +244,21 @@ describe('GrabService', () => {
       sessionId: 101,
       ticketTypeId: 202,
       quantity: 2,
-      seatIds: [301, 302],
+      seatIds: [],
       allocateRandom: false,
     });
-    expect(repository.createPending).not.toHaveBeenCalled();
-    expect(orderClient.createOrder).not.toHaveBeenCalled();
-    expect(result).toEqual(existing);
-  });
-
-  it('returns existing request when concurrent insert hits user idempotency unique constraint', async () => {
-    const existing = { requestId: 'GRAB-EXISTING', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null };
-    const uniqueError: any = new Error('duplicate key');
-    uniqueError.code = '23505';
-    const repository: any = {
-      findByUserAndIdempotency: jest.fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(existing),
-      findActiveByIntent: jest.fn().mockResolvedValue(null),
-      createPending: jest.fn().mockRejectedValue(uniqueError),
-    };
-    const admission: any = { admit: jest.fn() };
-    const orderClient: any = { createOrder: jest.fn() };
-    const service = new GrabService(repository, admission, orderClient);
-
-    const result = await service.submitRequest(2004, {
-      sessionId: 101,
-      ticketTypeId: 202,
-      quantity: 1,
-      idempotencyKey: 'idem-1',
+    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(repository.createQueued).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      requestId: 'GRAB-ACTIVE',
+      status: GRAB_STATUS.QUEUED,
+      orderId: null,
+      failReason: null,
+      queueSeq: 8,
+      queueRank: 3,
+      estimatedWaitSeconds: null,
+      message: 'queued',
     });
-
-    expect(admission.admit).not.toHaveBeenCalled();
-    expect(result).toEqual(existing);
   });
 
   it('does not release redis holds when cancelling a request that never entered redis admission', async () => {
@@ -359,21 +273,20 @@ describe('GrabService', () => {
       idempotencyKey: 'idem-failed',
       status: GRAB_STATUS.FAILED,
       orderId: null,
-      failReason: '抢票库存未初始化',
+      failReason: 'stock unavailable',
     };
     const repository: any = {
       findByRequestId: jest.fn().mockResolvedValue(record),
       updateStatus: jest.fn(),
     };
     const admission: any = { release: jest.fn() };
-    const orderClient: any = { createOrder: jest.fn() };
-    const service = new GrabService(repository, admission, orderClient);
+    const service = createService({ repository, admission });
 
     const result = await service.cancelRequest(2004, 'GRAB-FAILED');
 
     expect(admission.release).not.toHaveBeenCalled();
     expect(repository.updateStatus).not.toHaveBeenCalled();
-    expect(result).toEqual({ requestId: 'GRAB-FAILED', status: GRAB_STATUS.FAILED, orderId: null, failReason: '抢票库存未初始化' });
+    expect(result).toMatchObject({ requestId: 'GRAB-FAILED', status: GRAB_STATUS.FAILED, orderId: null, failReason: 'stock unavailable' });
   });
 
   it('rejects reading another user grab request', async () => {
@@ -386,9 +299,7 @@ describe('GrabService', () => {
         failReason: null,
       }),
     };
-    const admission: any = { release: jest.fn() };
-    const orderClient: any = { createOrder: jest.fn() };
-    const service = new GrabService(repository, admission, orderClient);
+    const service = createService({ repository });
 
     await expect(service.getRequest(2004, 'GRAB-OTHER')).rejects.toBeInstanceOf(ForbiddenException);
     expect(repository.findByRequestId).toHaveBeenCalledWith('GRAB-OTHER');
@@ -412,8 +323,7 @@ describe('GrabService', () => {
       updateStatus: jest.fn(),
     };
     const admission: any = { release: jest.fn() };
-    const orderClient: any = { createOrder: jest.fn() };
-    const service = new GrabService(repository, admission, orderClient);
+    const service = createService({ repository, admission });
 
     await expect(service.cancelRequest(2004, 'GRAB-OTHER')).rejects.toBeInstanceOf(ForbiddenException);
     expect(admission.release).not.toHaveBeenCalled();
@@ -439,14 +349,13 @@ describe('GrabService', () => {
       updateStatus: jest.fn(),
     };
     const admission: any = { release: jest.fn() };
-    const orderClient: any = { createOrder: jest.fn() };
-    const service = new GrabService(repository, admission, orderClient);
+    const service = createService({ repository, admission });
 
     const result = await service.cancelRequest(2004, 'GRAB-ORDERED');
 
     expect(admission.release).not.toHaveBeenCalled();
     expect(repository.updateStatus).not.toHaveBeenCalled();
-    expect(result).toEqual({ requestId: 'GRAB-ORDERED', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null });
+    expect(result).toMatchObject({ requestId: 'GRAB-ORDERED', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null });
   });
 
   it('expires accepted request and releases redis hold when cancelling an in-flight request', async () => {
@@ -468,17 +377,16 @@ describe('GrabService', () => {
       updateStatus: jest.fn().mockResolvedValue({
         ...record,
         status: GRAB_STATUS.EXPIRED,
-        failReason: '抢票请求已取消',
+        failReason: 'request cancelled',
       }),
     };
     const admission: any = { release: jest.fn() };
-    const orderClient: any = { createOrder: jest.fn() };
-    const service = new GrabService(repository, admission, orderClient);
+    const service = createService({ repository, admission });
 
     const result = await service.cancelRequest(2004, 'GRAB-ACCEPTED');
 
     expect(admission.release).toHaveBeenCalledWith(record);
-    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-ACCEPTED', GRAB_STATUS.EXPIRED, '抢票请求已取消');
-    expect(result).toEqual({ requestId: 'GRAB-ACCEPTED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: '抢票请求已取消' });
+    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-ACCEPTED', GRAB_STATUS.EXPIRED, expect.any(String));
+    expect(result).toMatchObject({ requestId: 'GRAB-ACCEPTED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'request cancelled' });
   });
 });

@@ -3,8 +3,18 @@ import { GRAB_STATUS } from './grab-status';
 
 describe('GrabController', () => {
   it('submits grab request using authenticated user id', async () => {
+    const queuedResponse = {
+      requestId: 'GRAB1',
+      status: GRAB_STATUS.QUEUED,
+      orderId: null,
+      failReason: null,
+      queueSeq: 10,
+      queueRank: 3,
+      estimatedWaitSeconds: null,
+      message: 'queued',
+    };
     const service: any = {
-      submitRequest: jest.fn().mockResolvedValue({ requestId: 'GRAB1', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null }),
+      submitRequest: jest.fn().mockResolvedValue(queuedResponse),
     };
     const controller = new GrabController(service);
 
@@ -21,12 +31,22 @@ describe('GrabController', () => {
       quantity: 1,
       idempotencyKey: 'idem-1',
     });
-    expect(result).toEqual({ code: 200, message: 'success', data: { requestId: 'GRAB1', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null } });
+    expect(result).toEqual({ code: 200, message: 'success', data: queuedResponse });
   });
 
   it('ignores body userId and always uses authenticated user id', async () => {
+    const queuedResponse = {
+      requestId: 'GRAB2',
+      status: GRAB_STATUS.QUEUED,
+      orderId: null,
+      failReason: null,
+      queueSeq: 11,
+      queueRank: 4,
+      estimatedWaitSeconds: null,
+      message: 'queued',
+    };
     const service: any = {
-      submitRequest: jest.fn().mockResolvedValue({ requestId: 'GRAB2', status: GRAB_STATUS.ORDER_CREATED, orderId: 9002, failReason: null }),
+      submitRequest: jest.fn().mockResolvedValue(queuedResponse),
     };
     const controller = new GrabController(service);
 
@@ -46,6 +66,6 @@ describe('GrabController', () => {
       idempotencyKey: 'idem-body-user',
     });
     expect(service.submitRequest).not.toHaveBeenCalledWith(9999, expect.anything());
-    expect(result).toEqual({ code: 200, message: 'success', data: { requestId: 'GRAB2', status: GRAB_STATUS.ORDER_CREATED, orderId: 9002, failReason: null } });
+    expect(result).toEqual({ code: 200, message: 'success', data: queuedResponse });
   });
 });

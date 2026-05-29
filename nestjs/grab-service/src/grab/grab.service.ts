@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { GrabAdmissionService } from './grab-admission.service';
+import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository, isUniqueViolation } from './grab.repository';
 import { GRAB_STATUS } from './grab-status';
-import type { GrabRequestRecord, GrabRequestResponse, SubmitGrabRequestDto } from './grab.types';
+import type { GrabRequestRecord, GrabRequestResponse, GrabTicketPreference, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
 
 @Injectable()
@@ -14,10 +15,14 @@ export class GrabService {
     private readonly repository: GrabRepository,
     private readonly admissionService: GrabAdmissionService,
     private readonly orderClient: OrderClientService,
+    private readonly queueService: GrabQueueService,
   ) {}
 
   async submitRequest(userId: number, dto: SubmitGrabRequestDto): Promise<GrabRequestResponse> {
     this.validateSubmitRequest(dto);
+    const requestedTicketTypes = this.normalizePreferences(dto);
+    const firstPreference = requestedTicketTypes[0];
+
     const existing = await this.repository.findByUserAndIdempotency(userId, dto.idempotencyKey);
     if (existing) return this.toResponse(existing);
 
@@ -27,25 +32,30 @@ export class GrabService {
     const active = await this.repository.findActiveByIntent({
       userId,
       sessionId: dto.sessionId,
-      ticketTypeId: dto.ticketTypeId,
+      ticketTypeId: firstPreference.ticketTypeId,
       quantity: dto.quantity,
       seatIds,
       allocateRandom,
     });
     if (active) return this.toResponse(active);
 
+    const queued = await this.queueService.enqueue({ requestId, sessionId: dto.sessionId, userId });
+
     let created: GrabRequestRecord;
     try {
-      created = await this.repository.createPending({
+      created = await this.repository.createQueued({
         requestId,
         idempotencyKey: dto.idempotencyKey,
         userId,
         sessionId: dto.sessionId,
-        ticketTypeId: dto.ticketTypeId,
+        ticketTypeId: firstPreference.ticketTypeId,
         quantity: dto.quantity,
         seatIds,
         allocateRandom,
         expireTime: new Date(Date.now() + this.requestTtlSeconds * 1000),
+        queueSeq: queued.queueSeq,
+        requestedTicketTypes,
+        allowAutoDowngrade: Boolean(dto.allowAutoDowngrade) && requestedTicketTypes.length > 1,
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -55,58 +65,7 @@ export class GrabService {
       throw error;
     }
 
-    const admission = await this.admissionService.admit({
-      requestId: created.requestId,
-      userId,
-      sessionId: dto.sessionId,
-      ticketTypeId: dto.ticketTypeId,
-      quantity: dto.quantity,
-      seatIds,
-      idempotencyKey: dto.idempotencyKey,
-      ttlSeconds: this.requestTtlSeconds,
-    });
-
-    if (admission.outcome === 'IDEMPOTENT' && admission.existingRequestId) {
-      const record = await this.repository.findByRequestId(admission.existingRequestId);
-      return record ? this.toResponse(record) : this.toResponse(created);
-    }
-    if (admission.outcome === 'SOLD_OUT') {
-      return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.SOLD_OUT, '库存不足'));
-    }
-    if (admission.outcome === 'LIMITED') {
-      return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.LIMITED, '请勿重复抢票'));
-    }
-    if (admission.outcome === 'STOCK_UNINITIALIZED') {
-      return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.FAILED, '抢票库存未初始化'));
-    }
-
-    await this.repository.updateStatus(created.requestId, GRAB_STATUS.ACCEPTED);
-    await this.repository.updateStatus(created.requestId, GRAB_STATUS.ORDER_CREATING);
-
-    try {
-      const order = await this.orderClient.createOrder({
-        userId,
-        sessionId: dto.sessionId,
-        ticketTypeId: dto.ticketTypeId,
-        quantity: dto.quantity,
-        seatIds,
-        allocateRandom,
-      });
-      return this.toResponse(await this.repository.markOrderCreated(created.requestId, order.id));
-    } catch (error) {
-      await this.admissionService.release({
-        userId,
-        sessionId: dto.sessionId,
-        ticketTypeId: dto.ticketTypeId,
-        quantity: dto.quantity,
-        seatIds,
-        idempotencyKey: dto.idempotencyKey,
-        restoreStock: true,
-      });
-      const message = error instanceof Error ? error.message : '订单创建失败';
-      const status = message.includes('库存') ? GRAB_STATUS.SOLD_OUT : message.includes('限购') ? GRAB_STATUS.LIMITED : GRAB_STATUS.FAILED;
-      return this.toResponse(await this.repository.updateStatus(created.requestId, status, message));
-    }
+    return this.toResponse(created, queued.queueRank);
   }
 
   async getRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {
@@ -128,22 +87,65 @@ export class GrabService {
 
   private validateSubmitRequest(dto: SubmitGrabRequestDto): void {
     if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('场次不正确');
-    if (!Number.isInteger(dto.ticketTypeId) || dto.ticketTypeId <= 0) throw new BadRequestException('票档不正确');
     if (!Number.isInteger(dto.quantity) || dto.quantity <= 0) throw new BadRequestException('数量不正确');
     if (!dto.idempotencyKey?.trim()) throw new BadRequestException('幂等键不能为空');
     if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('座位数量不正确');
+  }
+
+  private normalizePreferences(dto: SubmitGrabRequestDto): GrabTicketPreference[] {
+    const preferences = dto.ticketTypePreferences?.length
+      ? dto.ticketTypePreferences
+      : dto.ticketTypeId == null
+        ? []
+        : [{ ticketTypeId: dto.ticketTypeId }];
+
+    if (preferences.length === 0) throw new BadRequestException('票档不能为空');
+
+    const normalized = preferences.map((preference) => {
+      if (!Number.isInteger(preference.ticketTypeId) || preference.ticketTypeId <= 0) {
+        throw new BadRequestException('票档不能为空');
+      }
+
+      return {
+        ticketTypeId: preference.ticketTypeId,
+        name: preference.name ?? null,
+        maxPrice: preference.maxPrice ?? null,
+      };
+    });
+
+    if (dto.seatIds?.length && normalized.length > 1) {
+      throw new BadRequestException('选座请求不支持自动降级');
+    }
+
+    if (!dto.allowAutoDowngrade) return [normalized[0]];
+
+    return normalized;
   }
 
   private generateRequestId(): string {
     return `GRAB${randomBytes(12).toString('hex')}`;
   }
 
-  private toResponse(record: Pick<GrabRequestRecord, 'requestId' | 'status' | 'orderId' | 'failReason'>): GrabRequestResponse {
+  private async toResponse(
+    record: Pick<GrabRequestRecord, 'requestId' | 'status' | 'orderId' | 'failReason'> &
+      Partial<Pick<GrabRequestRecord, 'sessionId' | 'progressStatus' | 'progressMessage' | 'queueSeq'>>,
+    queueRank?: number | null,
+  ): Promise<GrabRequestResponse> {
+    const rank = queueRank ?? (
+      record.queueSeq != null && record.sessionId != null
+        ? await this.queueService.calculateQueueRank(record.sessionId, record.queueSeq)
+        : null
+    );
+
     return {
       requestId: record.requestId,
-      status: record.status,
+      status: record.progressStatus ?? record.status,
       orderId: record.orderId,
       failReason: record.failReason,
+      queueSeq: record.queueSeq ?? null,
+      queueRank: rank,
+      estimatedWaitSeconds: null,
+      message: record.progressMessage ?? null,
     };
   }
 }
