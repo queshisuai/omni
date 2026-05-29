@@ -30,15 +30,24 @@ describe('GrabQueueService', () => {
     expect(result).toEqual({ queueSeq: 12, queueRank: 4 });
   });
 
-  it('does not move processed sequence backwards', async () => {
+  it('marks processed sequence with an atomic monotonic Redis script', async () => {
     const redis: any = {
-      get: jest.fn().mockResolvedValue('20'),
+      eval: jest.fn().mockResolvedValue(0),
+      get: jest.fn(),
       set: jest.fn(),
     };
     const service = new GrabQueueService(redis);
 
     await service.markProcessed(101, 18);
 
+    expect(redis.eval).toHaveBeenCalledTimes(1);
+    const [script, keys, args] = redis.eval.mock.calls[0];
+    expect(script).toContain("redis.call('GET', KEYS[1])");
+    expect(script).toContain('if newSeq > currentSeq then');
+    expect(script).toContain("redis.call('SET', KEYS[1], ARGV[1])");
+    expect(keys).toEqual(['grab:queue:processed:101']);
+    expect(args).toEqual(['18']);
+    expect(redis.get).not.toHaveBeenCalled();
     expect(redis.set).not.toHaveBeenCalled();
   });
 

@@ -42,13 +42,17 @@ export class GrabQueueService {
   }
 
   async markProcessed(sessionId: number, queueSeq: number): Promise<void> {
-    const key = this.processedSeqKey(sessionId);
-    const current = await this.redis.get(key);
-    const currentSeq = current ? Number(current) : 0;
+    const script = `
+      local currentSeq = tonumber(redis.call('GET', KEYS[1]) or '0') or 0
+      local newSeq = tonumber(ARGV[1])
+      if newSeq > currentSeq then
+        redis.call('SET', KEYS[1], ARGV[1])
+        return 1
+      end
+      return 0
+    `;
 
-    if (queueSeq > currentSeq) {
-      await this.redis.set(key, String(queueSeq));
-    }
+    await this.redis.eval(script, [this.processedSeqKey(sessionId)], [String(queueSeq)]);
   }
 
   async dequeue(sessionId: number): Promise<string | null> {
