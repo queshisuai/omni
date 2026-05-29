@@ -52,6 +52,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [visibleStock, setVisibleStock] = useState<SessionVisibleStockResult | null>(null)
   const seatMapRequestIdRef = useRef(0)
   const progressPaymentOrderIdRef = useRef<number | null>(null)
+  const hydratedGrabRequestRef = useRef<string | null>(null)
   const loadDetailRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
 
@@ -93,6 +94,18 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const currentProgressStock = grabProgress?.currentTicketTypeId != null && visibleStock
     ? visibleStock.ticketTypes.find(ticket => ticket.ticketTypeId === grabProgress.currentTicketTypeId)
     : null
+  const getActiveGrabStorageKey = () => {
+    const user = getUser()
+    return user ? `grab:active-request:${user.userId}:${id}` : null
+  }
+  const rememberActiveGrabRequest = (requestId: string) => {
+    const key = getActiveGrabStorageKey()
+    if (key) window.localStorage.setItem(key, requestId)
+  }
+  const forgetActiveGrabRequest = () => {
+    const key = getActiveGrabStorageKey()
+    if (key) window.localStorage.removeItem(key)
+  }
 
   const loadDetail = async () => {
     setLoading(true)
@@ -243,6 +256,37 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
   }, [showsSeatCraftSelection, allowAutoDowngrade])
 
+  useEffect(() => {
+    if (!detail || grabProgress?.requestId) return
+    const key = getActiveGrabStorageKey()
+    const requestId = key ? window.localStorage.getItem(key) : null
+    if (!requestId || hydratedGrabRequestRef.current === requestId) return
+
+    hydratedGrabRequestRef.current = requestId
+    getGrabProgress(requestId)
+      .then((progress) => {
+        const belongsToActivity = detail.sessions.some((session) => session.session.id === progress.sessionId)
+        if (!belongsToActivity) {
+          forgetActiveGrabRequest()
+          return
+        }
+        setGrabProgress(progress)
+        setGrabProgressOpen(true)
+      })
+      .catch(() => {
+        forgetActiveGrabRequest()
+      })
+  }, [detail, grabProgress?.requestId])
+
+  useEffect(() => {
+    if (!grabProgress?.requestId) return
+    if (TERMINAL_GRAB_STATUSES.has(grabProgress.status)) {
+      forgetActiveGrabRequest()
+      return
+    }
+    rememberActiveGrabRequest(grabProgress.requestId)
+  }, [grabProgress?.requestId, grabProgress?.status])
+
   const handleBuy = () => {
     if (!isAuthenticated()) {
       router.push(`/login?ru=/activity/${id}`)
@@ -360,6 +404,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         updateTime: new Date().toISOString(),
       })
       progressPaymentOrderIdRef.current = null
+      rememberActiveGrabRequest(grab.requestId)
       setGrabProgressOpen(true)
       setShowConfirm(false)
     } catch (err: unknown) {
