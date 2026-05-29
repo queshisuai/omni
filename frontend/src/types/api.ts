@@ -863,6 +863,8 @@ export interface TicketTypeEntity {
   price: number
   totalStock: number
   remainStock: number
+  seatBlockId?: number | null
+  ticketGroupKey?: string | null
   status: number
 }
 

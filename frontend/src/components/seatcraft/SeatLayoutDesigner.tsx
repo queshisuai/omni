@@ -373,7 +373,7 @@ export function SeatLayoutDesigner({ layout, onChange, activeBlockKeys: controll
               const seatNo = seat.col + 1
               const existingOverrides = block.overrides ?? []
               const overrideIndex = existingOverrides.findIndex(o => o.rowNo === rowNo && o.seatNo === seatNo)
-              let nextOverrides = [...existingOverrides]
+              const nextOverrides = [...existingOverrides]
               if (overrideIndex >= 0) {
                 const current = nextOverrides[overrideIndex]
                 if (current.status === 'hidden' || current.status === 'deleted') {

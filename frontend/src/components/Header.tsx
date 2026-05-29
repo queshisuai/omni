@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Search, Download, MapPin, ChevronDown, User, Menu } from "lucide-react";
 import { getUser, isAuthenticated, logout } from "@/lib/auth";
@@ -68,7 +69,7 @@ export function Header() {
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)]">
       <div className="max-w-[1200px] mx-auto flex items-center h-[72px] px-5 gap-6">
         {/* Logo */}
-        <a href="/" className="flex-shrink-0 flex items-center gap-2">
+        <Link href="/" className="flex-shrink-0 flex items-center gap-2">
           <div className="h-[40px] w-[40px] flex items-center justify-center bg-transparent">
             <img
               src="/logo.svg"
@@ -77,7 +78,7 @@ export function Header() {
             />
           </div>
           <span className="text-xl font-bold text-[#ff1268] tracking-wider">万象</span>
-        </a>
+        </Link>
 
         {/* City Selector */}
         <div className="relative flex-shrink-0 h-full flex items-center" onMouseLeave={() => setShowCityDropdown(false)}>
@@ -159,22 +160,22 @@ export function Header() {
 
         {/* Nav Links */}
         <nav className="flex items-center gap-6 ml-2">
-          <a
+          <Link
             href="/"
             className={`text-[16px] font-medium transition-colors ${
               pathname === '/' ? 'text-[#ff1268]' : 'text-[#111] hover:text-[#ff1268]'
             }`}
           >
             首页
-          </a>
-          <a
+          </Link>
+          <Link
             href="/search"
             className={`text-[16px] font-medium transition-colors ${
               pathname.startsWith('/search') ? 'text-[#ff1268]' : 'text-[#111] hover:text-[#ff1268]'
             }`}
           >
             分类
-          </a>
+          </Link>
         </nav>
 
         {/* Spacer */}

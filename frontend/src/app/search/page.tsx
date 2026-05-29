@@ -334,7 +334,7 @@ function SearchContent() {
       {/* 结果计数 */}
       <div className="text-[13px] text-gray-500 mb-6 font-medium tracking-wide">
         {keyword ? (
-          <>搜索 "<span className="text-[#ff1268]">{keyword}</span>" 共 <span className="text-[#ff1268] mx-1">{displayTotal}</span> 个商品</>
+          <>搜索 “<span className="text-[#ff1268]">{keyword}</span>” 共 <span className="text-[#ff1268] mx-1">{displayTotal}</span> 个商品</>
         ) : (
           <>共 <span className="text-[#ff1268] mx-1">{displayTotal}</span> 个商品</>
         )}

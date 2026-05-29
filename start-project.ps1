@@ -63,6 +63,14 @@ try {
     Write-Host "[npm] using npm instead of pnpm" -ForegroundColor Yellow
 }
 
+$defaultJwtSecret = "omni-local-jwt-secret-must-be-at-least-32-bytes"
+if ([string]::IsNullOrWhiteSpace($env:JWT_SECRET)) {
+    $env:JWT_SECRET = $defaultJwtSecret
+}
+if ([string]::IsNullOrWhiteSpace($env:INTERNAL_API_TOKEN)) {
+    $env:INTERNAL_API_TOKEN = "omni-local-internal-token"
+}
+
 if ($UseDockerInfra) {
     Write-Step "Starting Docker Infrastructure..."
     & (Join-Path $projectRoot "scripts\start-infra.ps1")
@@ -163,13 +171,15 @@ if (-not $SkipJava) {
     )
 
     $uploadRoot = Join-Path $projectRoot "runtime\uploads"
+    $internalApiToken = $env:INTERNAL_API_TOKEN
+    $jwtSecret = $env:JWT_SECRET
 
     foreach ($svc in $javaServices) {
         $fullPath = Join-Path $projectRoot $svc.Path
         Write-Host "Starting $($svc.Name) on port $($svc.Port)..." -ForegroundColor Cyan
         $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.arguments=`"--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot`""
         if (-not $UseSharedDatabase -and $svc.Database) {
-            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=omni-local-internal-token --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot`""
+            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=$internalApiToken --jwt.secret=$jwtSecret --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot`""
         }
         Start-Service-InBackground -Name $svc.Name -Command $command -WorkDir $fullPath
         Start-Sleep -Seconds 5
@@ -182,7 +192,7 @@ if (-not $SkipFrontend) {
     Write-Step "Starting Grab Service..."
 
     $grabPath = Join-Path $projectRoot "nestjs\grab-service"
-    $grabCommand = "cd $grabPath; `$env:GRAB_SERVICE_PORT='3001'; `$env:GRAB_DB_HOST='localhost'; `$env:GRAB_DB_PORT='5432'; `$env:GRAB_DB_NAME='omni_grab'; `$env:GRAB_DB_USER='postgres'; `$env:GRAB_DB_PASSWORD='123456'; `$env:ORDER_SERVICE_URL='http://localhost:8088'; `$env:JWT_SECRET='$env:JWT_SECRET'; npm run start:dev"
+    $grabCommand = "cd $grabPath; `$env:GRAB_SERVICE_PORT='3001'; `$env:GRAB_DB_HOST='localhost'; `$env:GRAB_DB_PORT='5432'; `$env:GRAB_DB_NAME='omni_grab'; `$env:GRAB_DB_USER='postgres'; `$env:GRAB_DB_PASSWORD='123456'; `$env:ORDER_SERVICE_URL='http://localhost:8088'; `$env:INTERNAL_API_TOKEN='$env:INTERNAL_API_TOKEN'; `$env:JWT_SECRET='$env:JWT_SECRET'; npm run start:dev"
     Start-Service-InBackground -Name "grab-service" -Command $grabCommand -WorkDir $grabPath
     Write-Host "`n[Info] Grab service access through gateway /api/grab" -ForegroundColor Yellow
 }

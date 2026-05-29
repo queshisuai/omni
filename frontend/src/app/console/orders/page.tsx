@@ -4,27 +4,84 @@ import { useEffect, useMemo, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { listConsoleOrders } from '@/lib/api'
 import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
-import type { OrderEntity } from '@/types/api'
+import {
+  CONSOLE_ORDER_STATUS_LABELS,
+  CONSOLE_ORDER_STATUS_TABS,
+  countConsoleOrdersByStatus,
+  filterConsoleOrdersByStatus,
+  paginateConsoleOrders,
+  type ConsoleOrderStatusFilter,
+  getConsoleOrderScopeCopy,
+} from '@/lib/console-orders'
+import type { OrderEntity, UserRole } from '@/types/api'
 
 export default function ConsoleOrdersPage() {
   const [orders, setOrders] = useState<OrderEntity[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState<ConsoleOrderStatusFilter>('all')
+  const [userRole, setUserRole] = useState<UserRole | null>(() => {
+    if (typeof window === 'undefined') return null
+    return getUser()?.role ?? null
+  })
 
   useEffect(() => {
     const u = getUser()
-    if (!u) return
-    listConsoleOrders(u.userId, { paidOnly: false }).then(setOrders).catch(() => {}).finally(() => setLoading(false))
+    if (!u) {
+      setLoading(false)
+      return
+    }
+    setUserRole(u.role ?? null)
+    listConsoleOrders({ paidOnly: false }).then(setOrders).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
-  const statusLabels: Record<number, string> = { 1: '待支付', 2: '已支付', 3: '已取消', 4: '已退款' }
-  const pageOrders = useMemo(() => orders.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [orders, page])
+  const statusCounts = useMemo(() => countConsoleOrdersByStatus(orders), [orders])
+  const filteredOrders = useMemo(
+    () => filterConsoleOrdersByStatus(orders, statusFilter),
+    [orders, statusFilter],
+  )
+  const { currentPage, pageOrders } = useMemo(
+    () => paginateConsoleOrders(filteredOrders, page, DEFAULT_PAGE_SIZE),
+    [filteredOrders, page],
+  )
+
+  const getStatusCount = (value: ConsoleOrderStatusFilter) => {
+    if (value === 'all') return statusCounts.all
+    if (value === 2) return statusCounts.paid
+    if (value === 4) return statusCounts.refunded
+    return statusCounts.cancelled
+  }
 
   return (
     <div>
       <h1 className="text-[22px] font-bold text-[#1a1a2e] mb-5">订单查看</h1>
-      <div className="text-[13px] text-[#666] bg-[#e3f2fd] border border-[#bbdefb] rounded-lg p-3 mb-4">
-        此处按后台权限展示订单：平台管理员查看全部活动订单，主办方仅查看自己活动订单；用户侧回收站隐藏不影响这里。
+      <div className="text-[13px] text-[#35506b] bg-[#e3f2fd] border border-[#bbdefb] rounded-lg p-3 mb-4">
+        <div className="font-medium text-[#1f3f5b]">{getConsoleOrderScopeCopy(userRole)}</div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {CONSOLE_ORDER_STATUS_TABS.map(tab => {
+          const active = statusFilter === tab.value
+
+          return (
+            <button
+              key={String(tab.value)}
+              type="button"
+              onClick={() => {
+                setStatusFilter(tab.value)
+                setPage(1)
+              }}
+              className={`h-9 rounded-lg border px-3 text-[13px] transition ${
+                active
+                  ? 'border-[#ff1268] bg-[#fff1f6] text-[#ff1268]'
+                  : 'border-[#e5e5e5] bg-white text-[#666] hover:border-[#ff1268] hover:text-[#ff1268]'
+              }`}
+            >
+              {tab.label}
+              <span className="ml-1 text-[12px] opacity-75">{getStatusCount(tab.value)}</span>
+            </button>
+          )
+        })}
       </div>
 
       {loading ? (
@@ -32,6 +89,10 @@ export default function ConsoleOrdersPage() {
       ) : orders.length === 0 ? (
         <div className="text-center text-[#999] py-20 bg-white rounded-xl border border-[#e5e5e5] text-[14px]">
           暂无订单
+        </div>
+      ) : filteredOrders.length === 0 ? (
+        <div className="text-center text-[#999] py-20 bg-white rounded-xl border border-[#e5e5e5] text-[14px]">
+          当前状态暂无订单
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-[#e5e5e5] overflow-hidden">
@@ -60,7 +121,7 @@ export default function ConsoleOrdersPage() {
                       o.status === 1 ? 'bg-[#fff8e1] text-[#f59e0b]' :
                       o.status === 2 ? 'bg-[#f0fff4] text-[#22c55e]' :
                       'bg-[#f5f5f5] text-[#999]'
-                    }`}>{statusLabels[o.status] || '-'}</span>
+                    }`}>{CONSOLE_ORDER_STATUS_LABELS[o.status] || '-'}</span>
                   </td>
                   <td className="p-3 text-[#999]">{o.createTime?.substring(0, 10)}</td>
                 </tr>
@@ -68,7 +129,7 @@ export default function ConsoleOrdersPage() {
             </tbody>
           </table>
           <div className="px-4 pb-4">
-            <Pagination page={page} total={orders.length} loading={loading} onChange={setPage} />
+            <Pagination page={currentPage} total={filteredOrders.length} loading={loading} onChange={setPage} />
           </div>
         </div>
       )}

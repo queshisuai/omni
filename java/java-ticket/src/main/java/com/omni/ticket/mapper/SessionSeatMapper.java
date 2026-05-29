@@ -91,9 +91,12 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
     Boolean selectSessionSellable(@Param("sessionId") Long sessionId);
 
     @Select({"<script>",
-            "SELECT COALESCE(seat_label, row_no::TEXT || '-' || seat_no::TEXT) FROM session_seat WHERE id IN",
+            "SELECT CONCAT_WS(' ', NULLIF(sb.name, ''), COALESCE(ss.seat_label, ss.row_no::TEXT || '-' || ss.seat_no::TEXT)) ",
+            "FROM session_seat ss ",
+            "LEFT JOIN seat_block sb ON sb.id = ss.seat_block_id ",
+            "WHERE ss.id IN",
             "<foreach collection='seatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
-            "ORDER BY id",
+            "ORDER BY ss.id",
             "</script>"})
     List<String> selectSeatLabelsByIds(@Param("seatIds") List<Long> seatIds);
 }

@@ -19,6 +19,7 @@ import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.dto.ArtistUpdateRequest;
 import com.omni.ticket.dto.AssetUploadResponse;
+import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.dto.PrivateAssetDownload;
 import com.omni.ticket.dto.PrivateAssetResponse;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
@@ -50,6 +51,7 @@ import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivityRiskResponseService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
+import com.omni.ticket.service.OrderAdminQueryService;
 import com.omni.ticket.service.VenueDefaultLayoutService;
 import com.omni.ticket.service.SeatTemplateService;
 import com.omni.ticket.service.SessionAdminService;
@@ -141,6 +143,8 @@ class AdminControllerTest {
     private SessionSeatLayoutService sessionSeatLayoutService;
     @Mock
     private TourStationService tourStationService;
+    @Mock
+    private OrderAdminQueryService orderAdminQueryService;
     @Mock
     private SessionSeatProtectionService sessionSeatProtectionService;
     @Mock
@@ -1622,8 +1626,32 @@ class AdminControllerTest {
         verify(stationConfigVersionService, never()).listReviews(any(), any());
     }
 
+    @Test
+    void listAdminOrdersUsesTokenSubjectInsteadOfQueryUserId() {
+        AdminController controller = controller();
+        List<OrderInfoResponse> orders = List.of(new OrderInfoResponse());
+        when(orderAdminQueryService.listOrders(2002L, false)).thenReturn(orders);
+
+        Result<List<OrderInfoResponse>> result = controller.listAdminOrders(adminToken(), 9999L, false);
+
+        assertEquals(200, result.getCode());
+        assertEquals(orders, result.getData());
+        verify(orderAdminQueryService).listOrders(2002L, false);
+        verify(orderAdminQueryService, never()).listOrders(eq(9999L), any());
+    }
+
+    @Test
+    void listAdminOrdersRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<List<OrderInfoResponse>> result = controller.listAdminOrders(null, 2002L, false);
+
+        assertEquals(401, result.getCode());
+        verify(orderAdminQueryService, never()).listOrders(anyLong(), any());
+    }
+
     private AdminController controller() {
-        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, null, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService, privateAssetService, seatCraftLayoutVersionService, activityDraftService, stationConfigVersionService);
+        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, orderAdminQueryService, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService, privateAssetService, seatCraftLayoutVersionService, activityDraftService, stationConfigVersionService);
     }
 
     private StationConfigVersionRequest stationConfigRequest(Long userId) {

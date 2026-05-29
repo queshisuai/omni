@@ -427,7 +427,7 @@ export function SeatCanvas({
       if (drag.corner.includes('s')) heightDelta = localDy
       if (drag.corner.includes('n')) heightDelta = -localDy
 
-      let updates: Partial<SeatBlockDraft> = {}
+      const updates: Partial<SeatBlockDraft> = {}
 
       if (b.blockType === 'arcBlock') {
         if (drag.corner === 'se' || drag.corner === 'sw') {
@@ -438,7 +438,7 @@ export function SeatCanvas({
       }
 
       let sX = 0, sY = 0, w = 0, h = 0
-      let sSpacing = b.seatSpacing || 24, rSpacing = b.rowSpacing || 24
+      const sSpacing = b.seatSpacing || 24, rSpacing = b.rowSpacing || 24
 
       if (b.blockType === 'standingBlock') {
         w = b.width || 180; h = b.height || 90
@@ -454,27 +454,27 @@ export function SeatCanvas({
       let newW = w, newH = h
 
       if (b.blockType === 'standingBlock') {
-        let newWidth = Math.max(20, (b.width || 180) + widthDelta)
-        let newHeight = Math.max(20, (b.height || 90) + heightDelta)
+        const newWidth = Math.max(20, (b.width || 180) + widthDelta)
+        const newHeight = Math.max(20, (b.height || 90) + heightDelta)
         if (drag.corner.includes('w')) bx_temp = b.x - (newWidth - (b.width || 180))
         if (drag.corner.includes('n')) by_temp = b.y - (newHeight - (b.height || 90))
         updates.width = newWidth; updates.height = newHeight
         newW = newWidth; newH = newHeight
       } else {
-        let colDelta = Math.round(widthDelta / sSpacing)
-        let rowDelta = Math.round(heightDelta / rSpacing)
-        let newCols = Math.max(1, (b.cols || 1) + colDelta)
-        let newRows = Math.max(1, (b.rows || 1) + rowDelta)
+        const colDelta = Math.round(widthDelta / sSpacing)
+        const rowDelta = Math.round(heightDelta / rSpacing)
+        const newCols = Math.max(1, (b.cols || 1) + colDelta)
+        const newRows = Math.max(1, (b.rows || 1) + rowDelta)
         if (drag.corner.includes('w')) bx_temp = b.x - (newCols - (b.cols || 1)) * sSpacing
         if (drag.corner.includes('n')) by_temp = b.y - (newRows - (b.rows || 1)) * rSpacing
         updates.cols = newCols; updates.rows = newRows
         newW = (newCols - 1) * sSpacing; newH = (newRows - 1) * rSpacing
       }
 
-      let newSx = drag.corner.includes('e') ? 0 : newW
-      let newSy = drag.corner.includes('s') ? 0 : newH
-      let cx_temp = bx_temp + newW / 2
-      let cy_temp = by_temp + newH / 2
+      const newSx = drag.corner.includes('e') ? 0 : newW
+      const newSy = drag.corner.includes('s') ? 0 : newH
+      const cx_temp = bx_temp + newW / 2
+      const cy_temp = by_temp + newH / 2
 
       const vTemp = rotatePoint(bx_temp + newSx, by_temp + newSy, cx_temp, cy_temp, rot)
 
@@ -808,8 +808,8 @@ function renderBlock({
     minY = Math.min(...seats.map(s => s.y))
     maxY = Math.max(...seats.map(s => s.y))
   }
-  let w = maxX - minX + 40
-  let h = maxY - minY + 40
+  const w = maxX - minX + 40
+  const h = maxY - minY + 40
   let cx = minX - 20 + w / 2
   let cy = minY - 20 + h / 2
 

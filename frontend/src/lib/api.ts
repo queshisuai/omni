@@ -489,8 +489,8 @@ export async function getAdminSummary(userId: number) {
   return request<import('@/types/api').AdminSummaryVO>(`/api/ticket/admin/summary?userId=${userId}`)
 }
 
-export async function listConsoleOrders(userId: number, params: { paidOnly?: boolean } = {}) {
-  const searchParams = new URLSearchParams({ userId: String(userId) })
+export async function listConsoleOrders(params: { paidOnly?: boolean } = {}) {
+  const searchParams = new URLSearchParams()
   if (params.paidOnly !== undefined) searchParams.set('paidOnly', String(params.paidOnly))
   return request<import('@/types/api').OrderEntity[]>(`/api/ticket/admin/orders?${searchParams.toString()}`)
 }

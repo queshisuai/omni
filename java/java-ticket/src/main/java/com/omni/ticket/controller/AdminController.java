@@ -641,9 +641,14 @@ public class AdminController {
     }
 
     @GetMapping("/orders")
-    public Result<List<OrderInfoResponse>> listAdminOrders(@RequestParam Long userId,
+    public Result<List<OrderInfoResponse>> listAdminOrders(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                                           @RequestParam(required = false) Long userId,
                                                            @RequestParam(defaultValue = "false") Boolean paidOnly) {
-        return Result.success(orderAdminQueryService.listOrders(userId, paidOnly));
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(orderAdminQueryService.listOrders(operatorId, paidOnly));
     }
 
     @PostMapping("/tours/draft")

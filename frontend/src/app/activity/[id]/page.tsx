@@ -8,6 +8,7 @@ import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelec
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { getActivityDetail, submitGrabRequest, getGrabRequest, createAlipayQrPay, getSeatMap } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
+import { buildSeatAllocationPayload } from '@/lib/purchase-intent'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import type { ActivityDetailVO, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, TicketTypeEntity } from '@/types/api'
 
@@ -39,7 +40,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     if (!seatMap?.layout || selectedTicket?.id == null) return null
     return buildZoomTargetFromTicketGroup(seatMap.layout, selectedTicket.id)
   }, [seatMap?.layout, selectedTicket?.id])
-  const showsSeatCraftSelection = seatMap?.layout && (seatMap.layout.blockLayout?.blocks?.length || seatMap.layout.blocks?.length) && seatCraftSelectionModel
+  const showsSeatCraftSelection = Boolean(seatMap?.layout && (seatMap.layout.blockLayout?.blocks?.length || seatMap.layout.blocks?.length) && seatCraftSelectionModel)
   const availableSeatIdSet = useMemo(() => {
     if (!seatMap) return null
     const ids = seatCraftSelectionModel?.availableSeatIds
@@ -187,14 +188,19 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const resetGrabIdempotencyKey = () => setGrabIdempotency(null)
 
   const buildGrabIntent = (userId: number) => {
-    const seatPart = validSelectedSeatIds.slice().sort((a, b) => a - b).join(',')
+    const allocation = buildSeatAllocationPayload({
+      ticket: selectedTicket,
+      seatSelectionVisible: showsSeatCraftSelection,
+      selectedSeatIds: validSelectedSeatIds,
+    })
+    const seatPart = allocation.seatIds.slice().sort((a, b) => a - b).join(',')
     return [
       userId,
       selectedSession?.session.id ?? 0,
       selectedTicket?.id ?? 0,
       quantity,
       seatPart,
-      Boolean(showsSeatCraftSelection && validSelectedSeatIds.length === 0),
+      allocation.allocateRandom,
     ].join(':')
   }
 
@@ -214,7 +220,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setOrdering(true)
     setOrderError('')
     try {
-      const seatIds = Boolean(showsSeatCraftSelection) ? validSelectedSeatIds : []
+      const allocation = buildSeatAllocationPayload({
+        ticket: selectedTicket,
+        seatSelectionVisible: showsSeatCraftSelection,
+        selectedSeatIds: validSelectedSeatIds,
+      })
       if (showsSeatCraftSelection && validSelectedSeatIds.length !== quantity) {
         setOrderError('请选择对应数量的座位')
         return
@@ -223,9 +233,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       const grab = await submitGrabRequest({
         sessionId: selectedSession.session.id,
         ticketTypeId: selectedTicket.id,
-        seatIds,
+        seatIds: allocation.seatIds,
         quantity,
-        allocateRandom: Boolean(showsSeatCraftSelection && seatIds.length === 0),
+        allocateRandom: allocation.allocateRandom,
         idempotencyKey,
       })
       const result = grab.status === 'ORDER_CREATED' ? grab : await waitForGrabResult(grab.requestId)
@@ -386,7 +396,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       <div className="mb-5">
                         {seatMapPublished && seatMapLoading ? (
                           <div className="rounded-lg border border-[#e5e5e5] p-6 text-center text-[13px] text-[#999]">正在加载座位图...</div>
-                        ) : seatMapPublished && showsSeatCraftSelection ? (
+                        ) : seatMapPublished && showsSeatCraftSelection && seatCraftSelectionModel ? (
                           <div>
                             <div className="mb-3 flex items-center justify-between">
                               <div className="text-[14px] text-[#666]">已选 {validSelectedSeatIds.length} / {quantity} 座</div>

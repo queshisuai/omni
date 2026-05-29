@@ -111,7 +111,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       ORDER_SERVICE_URL: http://host.docker.internal:8088
-      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-test-internal-token}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-omni-local-internal-token}
+      JWT_SECRET: ${JWT_SECRET:-omni-local-jwt-secret-must-be-at-least-32-bytes}
     ports:
       - "3001:3001"
     volumes:
@@ -125,6 +126,7 @@ services:
     working_dir: /app
     environment:
       WATCHPACK_POLLING: "true"
+      API_PROXY_TARGET: http://host.docker.internal:8088
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     ports:
       - "3000:3000"
