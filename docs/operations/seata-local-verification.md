@@ -85,3 +85,39 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.
 - order AT 分支: PASS，日志包含 `resourceId=jdbc:postgresql://localhost:5432/omni_order`，并成功注册分支。
 - 全局提交: PASS，ticket/order 分支均 commit 成功，日志包含 `Committing global transaction is successfully done`。
 - Feign XID 拦截器: 未新增。默认 `spring-cloud-starter-alibaba-seata` XID 传播已通过本次真实链路验证。
+
+## 2026-05-29 Task 9 全量验证记录
+
+### 自动验证结果
+
+- compile: PASS，`mvn -f "java\pom.xml" -pl java-order,java-ticket,java-payment -am -DskipTests compile` 构建成功。
+- `dependency:tree` io.seata: PASS，`java-order`、`java-ticket`、`java-payment` 均包含 `spring-cloud-starter-alibaba-seata`，并解析到 `seata-spring-boot-starter:1.6.1`。
+- `dependency:tree` Spring Boot / Spring Cloud: PASS，依赖树检查成功。
+- Maven 回归: PASS，`PaymentSeataConfirmationTest`、`OrderSeataCancelRefundTest`、`RefundServiceBoundaryTest`、`AlipayServiceTest`、`OrderSeatServiceTest`、`OrderSeataCreateOrderTest`、`OrderSeataPostgresqlIdStrategyTest`、`TicketSalesInternalSeataTest`、`TicketSalesInternalControllerTest` 共 `39 tests, 0 failures, 0 errors`。
+- microservice boundary: PASS，`scripts/verify-microservice-boundaries.ps1` 通过，`45 tests, 0 failures, 0 errors`，并输出 `All microservice boundary checks passed.`。
+
+### Docker / Nacos / Seata 状态
+
+- Docker Compose: PASS，`postgres`、`redis`、`nacos`、`seata-server` 均为 healthy。
+- Seata image: PASS，`seata-server` 使用 `seataio/seata-server:1.6.1`。
+- Nacos Seata 注册: PASS，`SEATA_GROUP@@seata-server = 10.142.195.38:8091`，`healthy:true`。
+
+### Seata Client 注册证据
+
+- `java-order` TM/RM: PASS，Seata Server 日志显示 `TM register success` 与 `RM register success`，RM `resourceId` 为 `jdbc:postgresql://localhost:5432/omni_order`。
+- `java-ticket` TM/RM: PASS，Seata Server 日志显示 `TM register success` 与 `RM register success`，RM `resourceId` 为 `jdbc:postgresql://localhost:5432/omni_ticket_split`。
+- `java-payment` TM/RM: PASS，临时启动验证期间 Seata Server 日志显示 `TM register success` 与 `RM register success`，RM `resourceId` 为 `jdbc:postgresql://localhost:5432/omni_payment`。
+
+### XID / AT 分支证据
+
+- `order -> ticket` 真实链路已有 XID，Seata Server 日志显示 `Begin new global transaction applicationId: java-order`，事务名为 `omni-create-order`。
+- ticket/order 两个 `resourceId` 都注册 AT 分支，日志包含 `jdbc:postgresql://localhost:5432/omni_ticket_split` 与 `jdbc:postgresql://localhost:5432/omni_order` 的 `Register branch successfully`。
+- 全局提交成功证据: PASS，日志包含 ticket/order 分支提交成功以及 `Committing global transaction is successfully done`。
+- 全局回滚样例: PASS，日志包含 `Rollback branch transaction successfully` 与 `Rollback global transaction successfully`。
+
+### 保守边界
+
+- `payment -> order -> ticket` 未调用真实支付宝外部渠道；Task 9 仅验证内部事务代码路径、测试与 Seata client 注册证据。
+- 取消/退款未盲调真实接口，避免破坏业务数据。
+- 取消/退款通过 `OrderSeataCancelRefundTest`、`TicketSalesInternalSeataTest`、`RefundServiceBoundaryTest` 和 `scripts/verify-microservice-boundaries.ps1` 验证。
+- `RefundService.approve` / `RefundService.directRefund` 仍保持支付宝外部退款补偿边界，不由 Seata AT 回滚。
