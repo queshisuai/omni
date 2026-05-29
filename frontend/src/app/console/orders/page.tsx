@@ -15,6 +15,19 @@ import {
 } from '@/lib/console-orders'
 import type { OrderEntity, UserRole } from '@/types/api'
 
+type GrabOrderMetadata = {
+  grabRequestId?: number | null
+  requestedTicketTypeId?: number | null
+  matchedTicketTypeId?: number | null
+  autoDowngraded?: boolean | null
+}
+
+type OrderWithGrabMetadata = OrderEntity & GrabOrderMetadata
+
+function getTicketTypeLabel(order: OrderWithGrabMetadata) {
+  return order.ticketName || `票档 ${order.matchedTicketTypeId ?? order.ticketTypeId}`
+}
+
 export default function ConsoleOrdersPage() {
   const [orders, setOrders] = useState<OrderEntity[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,11 +121,28 @@ export default function ConsoleOrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {pageOrders.map(o => (
+              {pageOrders.map(order => {
+                const o = order as OrderWithGrabMetadata
+                const requestedTicketTypeId = o.requestedTicketTypeId ?? o.ticketTypeId
+                const matchedTicketTypeId = o.matchedTicketTypeId ?? o.ticketTypeId
+                const showTicketRoute = o.autoDowngraded && requestedTicketTypeId !== matchedTicketTypeId
+
+                return (
                 <tr key={o.id} className="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
                   <td className="p-3 font-medium text-[#333]">{o.orderNo}</td>
                   <td className="p-3 text-[#333] max-w-[260px]">
                     <div className="font-medium line-clamp-2">{o.activityName || '未知活动'}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-[#777]">
+                      <span>{getTicketTypeLabel(o)}</span>
+                      {showTicketRoute && (
+                        <span className="text-[#999]">#{requestedTicketTypeId} → #{matchedTicketTypeId}</span>
+                      )}
+                      {o.autoDowngraded && (
+                        <span className="inline-flex items-center rounded border border-[#ffb3ca] bg-[#fff7fa] px-1.5 py-0.5 text-[11px] font-medium text-[#ff1268]">
+                          降级成功
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="p-3 text-[#ff1268] font-medium">¥{o.amount}</td>
                   <td className="p-3 text-[#666]">{o.quantity}张</td>
@@ -125,7 +155,8 @@ export default function ConsoleOrdersPage() {
                   </td>
                   <td className="p-3 text-[#999]">{o.createTime?.substring(0, 10)}</td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
           <div className="px-4 pb-4">
