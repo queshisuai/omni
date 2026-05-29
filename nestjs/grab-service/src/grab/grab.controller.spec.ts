@@ -1,4 +1,4 @@
-import { GrabController } from './grab.controller';
+import { GrabController, GrabSessionController } from './grab.controller';
 import { GRAB_STATUS } from './grab-status';
 
 describe('GrabController', () => {
@@ -84,5 +84,22 @@ describe('GrabController', () => {
 
     expect(service.getProgress).toHaveBeenCalledWith(2004, 'GRAB1');
     expect(result).toEqual({ code: 200, message: 'success', data: progressResponse });
+  });
+
+  it('routes visible stock lookup with parsed ticket ids', async () => {
+    const stockResponse = {
+      sessionId: 101,
+      ticketTypes: [{ ticketTypeId: 1, name: 'A', visibleStock: 87, level: 'AVAILABLE' }],
+      snapshotTime: '2026-05-29T12:00:00.000Z',
+    };
+    const visibleStockService: any = {
+      getSessionVisibleStock: jest.fn().mockResolvedValue(stockResponse),
+    };
+    const controller = new GrabSessionController(visibleStockService);
+
+    const result = await controller.stockVisible('101', '1,2,bad,0');
+
+    expect(visibleStockService.getSessionVisibleStock).toHaveBeenCalledWith(101, [1, 2]);
+    expect(result).toEqual({ code: 200, message: 'success', data: stockResponse });
   });
 });

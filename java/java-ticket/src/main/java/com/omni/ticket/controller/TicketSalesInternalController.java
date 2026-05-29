@@ -4,6 +4,8 @@ import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
 import com.omni.ticket.config.TicketSentinelConfig;
+import com.omni.ticket.dto.TicketTypeVisibleResponse;
+import com.omni.ticket.dto.TicketTypesVisibleRequest;
 import com.omni.ticket.dto.TicketSalesLockRequest;
 import com.omni.ticket.dto.TicketSalesOrderRequest;
 import com.omni.ticket.dto.TicketSalesQuoteRequest;
@@ -17,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/ticket/internal/sales")
@@ -37,6 +41,15 @@ public class TicketSalesInternalController {
             return Result.fail(403, "无权限");
         }
         return Result.success(service.quote(request));
+    }
+
+    @PostMapping("/ticket-types-visible")
+    public Result<List<TicketTypeVisibleResponse>> ticketTypesVisible(@RequestBody TicketTypesVisibleRequest request,
+                                                                       @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "forbidden");
+        }
+        return Result.success(service.listVisibleTicketTypes(request));
     }
 
     @PostMapping("/lock-stock")

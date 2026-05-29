@@ -2,6 +2,8 @@ package com.omni.ticket.service;
 
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.TicketTypeVisibleResponse;
+import com.omni.ticket.dto.TicketTypesVisibleRequest;
 import com.omni.ticket.dto.TicketSalesLockRequest;
 import com.omni.ticket.dto.TicketSalesOrderRequest;
 import com.omni.ticket.dto.TicketSalesQuoteRequest;
@@ -27,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 public class TicketSalesInternalService {
@@ -91,6 +94,25 @@ public class TicketSalesInternalService {
             response.setSeatLabels(String.join(", ", sessionSeatMapper.selectSeatLabelsByIds(request.getSeatIds())));
         }
         return response;
+    }
+
+    public List<TicketTypeVisibleResponse> listVisibleTicketTypes(TicketTypesVisibleRequest request) {
+        if (request == null || request.getSessionId() == null || request.getTicketTypeIds() == null || request.getTicketTypeIds().isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket type parameters are required");
+        }
+        List<TicketType> ticketTypes = ticketTypeMapper.selectBatchIds(request.getTicketTypeIds());
+        return ticketTypes.stream()
+                .filter(ticketType -> request.getSessionId().equals(ticketType.getSessionId()))
+                .filter(ticketType -> Integer.valueOf(1).equals(ticketType.getStatus()))
+                .map(ticketType -> {
+                    TicketTypeVisibleResponse response = new TicketTypeVisibleResponse();
+                    response.setTicketTypeId(ticketType.getId());
+                    response.setName(ticketType.getName());
+                    response.setPrice(ticketType.getPrice());
+                    response.setRemainStock(ticketType.getRemainStock());
+                    return response;
+                })
+                .collect(Collectors.toList());
     }
 
     @Transactional(rollbackFor = Exception.class)
