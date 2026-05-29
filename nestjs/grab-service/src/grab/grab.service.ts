@@ -4,7 +4,7 @@ import { GrabAdmissionService } from './grab-admission.service';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository, isUniqueViolation } from './grab.repository';
 import { GRAB_STATUS } from './grab-status';
-import type { GrabRequestRecord, GrabRequestResponse, GrabTicketPreference, SubmitGrabRequestDto } from './grab.types';
+import type { GrabProgressResponse, GrabRequestRecord, GrabRequestResponse, GrabTicketPreference, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
 
 @Injectable()
@@ -70,26 +70,52 @@ export class GrabService {
 
   async getRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {
     const record = await this.repository.findByRequestId(requestId);
-    if (!record) throw new NotFoundException('抢票请求不存在');
-    if (record.userId !== userId) throw new ForbiddenException('不能查看他人的抢票请求');
+    if (!record) throw new NotFoundException('grab request not found');
+    if (record.userId !== userId) throw new ForbiddenException('cannot view another user grab request');
     return this.toResponse(record);
+  }
+
+  async getProgress(userId: number, requestId: string): Promise<GrabProgressResponse> {
+    const record = await this.repository.findByRequestId(requestId);
+    if (!record) throw new NotFoundException('grab request not found');
+    if (record.userId !== userId) throw new ForbiddenException('cannot view another user grab request');
+    const queueRank = record.queueSeq == null ? null : await this.queueService.calculateQueueRank(record.sessionId, record.queueSeq);
+
+    return {
+      requestId: record.requestId,
+      sessionId: record.sessionId,
+      status: record.progressStatus,
+      orderId: record.orderId,
+      failReason: record.failReason,
+      queueSeq: record.queueSeq,
+      queueRank,
+      estimatedWaitSeconds: null,
+      currentTicketTypeId: record.currentTicketTypeId,
+      currentAttemptIndex: record.currentAttemptIndex,
+      requestedTicketTypes: record.requestedTicketTypes,
+      attempts: record.attemptsSnapshot,
+      visibleStock: null,
+      message: record.progressMessage,
+      matchedTicketTypeId: record.matchedTicketTypeId,
+      updateTime: record.updatedAt.toISOString(),
+    };
   }
 
   async cancelRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {
     const record = await this.repository.findByRequestId(requestId);
-    if (!record) throw new NotFoundException('抢票请求不存在');
-    if (record.userId !== userId) throw new ForbiddenException('不能取消他人的抢票请求');
+    if (!record) throw new NotFoundException('grab request not found');
+    if (record.userId !== userId) throw new ForbiddenException('cannot cancel another user grab request');
     if (record.orderId) return this.toResponse(record);
     if (record.status !== GRAB_STATUS.ACCEPTED && record.status !== GRAB_STATUS.ORDER_CREATING) return this.toResponse(record);
     await this.admissionService.release(record);
-    return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, '抢票请求已取消'));
+    return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, 'grab request cancelled'));
   }
 
   private validateSubmitRequest(dto: SubmitGrabRequestDto): void {
-    if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('场次不正确');
-    if (!Number.isInteger(dto.quantity) || dto.quantity <= 0) throw new BadRequestException('数量不正确');
-    if (!dto.idempotencyKey?.trim()) throw new BadRequestException('幂等键不能为空');
-    if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('座位数量不正确');
+    if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('invalid session');
+    if (!Number.isInteger(dto.quantity) || dto.quantity <= 0) throw new BadRequestException('invalid quantity');
+    if (!dto.idempotencyKey?.trim()) throw new BadRequestException('idempotency key is required');
+    if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('invalid seat quantity');
   }
 
   private normalizePreferences(dto: SubmitGrabRequestDto): GrabTicketPreference[] {
@@ -99,11 +125,11 @@ export class GrabService {
         ? []
         : [{ ticketTypeId: dto.ticketTypeId }];
 
-    if (preferences.length === 0) throw new BadRequestException('票档不能为空');
+    if (preferences.length === 0) throw new BadRequestException('ticket type is required');
 
     const normalized = preferences.map((preference) => {
       if (!Number.isInteger(preference.ticketTypeId) || preference.ticketTypeId <= 0) {
-        throw new BadRequestException('票档不能为空');
+        throw new BadRequestException('invalid ticket type');
       }
 
       return {
@@ -114,7 +140,7 @@ export class GrabService {
     });
 
     if (dto.seatIds?.length && normalized.length > 1) {
-      throw new BadRequestException('选座请求不支持自动降级');
+      throw new BadRequestException('seat selection does not support auto downgrade');
     }
 
     if (!dto.allowAutoDowngrade) return [normalized[0]];

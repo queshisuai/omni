@@ -261,6 +261,56 @@ describe('GrabService', () => {
     });
   });
 
+  it('returns progress with queue rank for the owner', async () => {
+    const record: any = {
+      requestId: 'GRAB-PROGRESS',
+      userId: 2004,
+      sessionId: 101,
+      status: GRAB_STATUS.WAITING,
+      progressStatus: GRAB_STATUS.WAITING,
+      progressMessage: 'waiting',
+      orderId: null,
+      failReason: null,
+      queueSeq: 10,
+      currentTicketTypeId: 202,
+      currentAttemptIndex: 0,
+      requestedTicketTypes: [{ ticketTypeId: 202, name: 'A', maxPrice: 100 }],
+      attemptsSnapshot: [{ ticketTypeId: 202, name: 'A', status: 'PENDING', message: 'pending' }],
+      matchedTicketTypeId: null,
+      updatedAt: new Date('2026-05-29T12:00:00.000Z'),
+    };
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+    };
+    const queue: any = {
+      calculateQueueRank: jest.fn().mockResolvedValue(3),
+    };
+    const service = createService({ repository, queue });
+
+    const result = await service.getProgress(2004, 'GRAB-PROGRESS');
+
+    expect(repository.findByRequestId).toHaveBeenCalledWith('GRAB-PROGRESS');
+    expect(queue.calculateQueueRank).toHaveBeenCalledWith(101, 10);
+    expect(result).toEqual({
+      requestId: 'GRAB-PROGRESS',
+      sessionId: 101,
+      status: GRAB_STATUS.WAITING,
+      orderId: null,
+      failReason: null,
+      queueSeq: 10,
+      queueRank: 3,
+      estimatedWaitSeconds: null,
+      currentTicketTypeId: 202,
+      currentAttemptIndex: 0,
+      requestedTicketTypes: [{ ticketTypeId: 202, name: 'A', maxPrice: 100 }],
+      attempts: [{ ticketTypeId: 202, name: 'A', status: 'PENDING', message: 'pending' }],
+      visibleStock: null,
+      message: 'waiting',
+      matchedTicketTypeId: null,
+      updateTime: '2026-05-29T12:00:00.000Z',
+    });
+  });
+
   it('does not release redis holds when cancelling a request that never entered redis admission', async () => {
     const record = {
       requestId: 'GRAB-FAILED',

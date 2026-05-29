@@ -68,4 +68,21 @@ describe('GrabController', () => {
     expect(service.submitRequest).not.toHaveBeenCalledWith(9999, expect.anything());
     expect(result).toEqual({ code: 200, message: 'success', data: queuedResponse });
   });
+
+  it('routes progress lookups through the authenticated user id', async () => {
+    const progressResponse = {
+      requestId: 'GRAB1',
+      status: GRAB_STATUS.WAITING,
+      queueRank: 3,
+    };
+    const service: any = {
+      getProgress: jest.fn().mockResolvedValue(progressResponse),
+    };
+    const controller = new GrabController(service);
+
+    const result = await controller.progress({ user: { userId: 2004 } } as any, 'GRAB1');
+
+    expect(service.getProgress).toHaveBeenCalledWith(2004, 'GRAB1');
+    expect(result).toEqual({ code: 200, message: 'success', data: progressResponse });
+  });
 });

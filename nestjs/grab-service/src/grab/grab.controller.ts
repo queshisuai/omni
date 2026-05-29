@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/comm
 import { AuthenticatedRequest } from '../auth/authenticated-request';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GrabService } from './grab.service';
-import type { GrabRequestResponse, SubmitGrabRequestDto } from './grab.types';
+import type { GrabProgressResponse, GrabRequestResponse, SubmitGrabRequestDto } from './grab.types';
 
 interface ApiResult<T> {
   code: number;
@@ -27,6 +27,11 @@ export class GrabController {
   @Get(':requestId')
   async get(@Req() request: AuthenticatedRequest, @Param('requestId') requestId: string): Promise<ApiResult<GrabRequestResponse>> {
     return success(await this.grabService.getRequest(request.user.userId, requestId));
+  }
+
+  @Get(':requestId/progress')
+  async progress(@Req() request: AuthenticatedRequest, @Param('requestId') requestId: string): Promise<ApiResult<GrabProgressResponse>> {
+    return success(await this.grabService.getProgress(request.user.userId, requestId));
   }
 
   @Post(':requestId/cancel')
