@@ -65,7 +65,44 @@ export class GrabQueueService {
   }
 
   async dequeue(sessionId: number): Promise<string | null> {
-    return this.redis.lpop(this.queueKey(sessionId));
+    const script = `
+      local requestId = redis.call('LPOP', KEYS[1])
+      if requestId then
+        redis.call('RPUSH', KEYS[2], requestId)
+      end
+      return requestId
+    `;
+
+    return this.redis.eval(script, [this.queueKey(sessionId), this.inflightQueueKey(sessionId)], []);
+  }
+
+  async ackProcessed(sessionId: number, requestId: string, queueSeq: number): Promise<void> {
+    const script = `
+      redis.call('LREM', KEYS[1], 1, ARGV[1])
+      local currentSeq = tonumber(redis.call('GET', KEYS[2]) or '0') or 0
+      local newSeq = tonumber(ARGV[2])
+      if newSeq > currentSeq then
+        redis.call('SET', KEYS[2], ARGV[2])
+        return 1
+      end
+      return 0
+    `;
+
+    await this.redis.eval(script, [this.inflightQueueKey(sessionId), this.processedSeqKey(sessionId)], [requestId, String(queueSeq)]);
+  }
+
+  async requeueInflight(sessionId: number, requestId: string): Promise<void> {
+    const script = `
+      local removed = redis.call('LREM', KEYS[1], 1, ARGV[1])
+      if removed > 0 then
+        redis.call('LPUSH', KEYS[2], ARGV[1])
+        redis.call('SADD', KEYS[3], ARGV[2])
+        return 1
+      end
+      return 0
+    `;
+
+    await this.redis.eval(script, [this.inflightQueueKey(sessionId), this.queueKey(sessionId), this.activeSessionsKey()], [requestId, String(sessionId)]);
   }
 
   async getActiveSessions(): Promise<number[]> {
@@ -80,13 +117,13 @@ export class GrabQueueService {
 
   async removeActiveSessionIfQueueEmpty(sessionId: number): Promise<void> {
     const script = `
-      if redis.call('LLEN', KEYS[1]) == 0 then
-        return redis.call('SREM', KEYS[2], ARGV[1])
+      if redis.call('LLEN', KEYS[1]) == 0 and redis.call('LLEN', KEYS[2]) == 0 then
+        return redis.call('SREM', KEYS[3], ARGV[1])
       end
       return 0
     `;
 
-    await this.redis.eval(script, [this.queueKey(sessionId), this.activeSessionsKey()], [String(sessionId)]);
+    await this.redis.eval(script, [this.queueKey(sessionId), this.inflightQueueKey(sessionId), this.activeSessionsKey()], [String(sessionId)]);
   }
 
   private queueSeqKey(sessionId: number): string {
@@ -95,6 +132,10 @@ export class GrabQueueService {
 
   private queueKey(sessionId: number): string {
     return `grab:queue:${sessionId}`;
+  }
+
+  private inflightQueueKey(sessionId: number): string {
+    return `grab:queue:inflight:${sessionId}`;
   }
 
   private processedSeqKey(sessionId: number): string {

@@ -56,17 +56,58 @@ describe('GrabQueueService', () => {
     expect(redis.set).not.toHaveBeenCalled();
   });
 
-  it('dequeues from the session FIFO queue', async () => {
+  it('dequeues into inflight using an atomic Redis script', async () => {
     const redis: any = {
-      lpop: jest.fn().mockResolvedValue('GRAB1'),
+      eval: jest.fn().mockResolvedValue('GRAB1'),
+      lpop: jest.fn(),
     };
     const service = new GrabQueueService(redis);
 
     await expect(service.dequeue(101)).resolves.toBe('GRAB1');
-    expect(redis.lpop).toHaveBeenCalledWith('grab:queue:101');
+    expect(redis.eval).toHaveBeenCalledTimes(1);
+    const [script, keys] = redis.eval.mock.calls[0];
+    expect(script).toContain("redis.call('LPOP', KEYS[1])");
+    expect(script).toContain("redis.call('RPUSH', KEYS[2], requestId)");
+    expect(keys).toEqual(['grab:queue:101', 'grab:queue:inflight:101']);
+    expect(redis.lpop).not.toHaveBeenCalled();
   });
 
-  it('removes active session only when the queue is empty using an atomic Redis script', async () => {
+  it('acks processed inflight request and advances processed sequence atomically', async () => {
+    const redis: any = {
+      eval: jest.fn().mockResolvedValue(1),
+    };
+    const service = new GrabQueueService(redis);
+
+    await service.ackProcessed(101, 'GRAB1', 18);
+
+    expect(redis.eval).toHaveBeenCalledTimes(1);
+    const [script, keys, args] = redis.eval.mock.calls[0];
+    expect(script).toContain("redis.call('LREM', KEYS[1], 1, ARGV[1])");
+    expect(script).toContain("redis.call('GET', KEYS[2])");
+    expect(script).toContain('if newSeq > currentSeq then');
+    expect(script).toContain("redis.call('SET', KEYS[2], ARGV[2])");
+    expect(keys).toEqual(['grab:queue:inflight:101', 'grab:queue:processed:101']);
+    expect(args).toEqual(['GRAB1', '18']);
+  });
+
+  it('requeues inflight request to the front of the session queue atomically', async () => {
+    const redis: any = {
+      eval: jest.fn().mockResolvedValue(1),
+    };
+    const service = new GrabQueueService(redis);
+
+    await service.requeueInflight(101, 'GRAB1');
+
+    expect(redis.eval).toHaveBeenCalledTimes(1);
+    const [script, keys, args] = redis.eval.mock.calls[0];
+    expect(script).toContain("redis.call('LREM', KEYS[1], 1, ARGV[1])");
+    expect(script).toContain("redis.call('LPUSH', KEYS[2], ARGV[1])");
+    expect(script).toContain("redis.call('SADD', KEYS[3], ARGV[2])");
+    expect(keys).toEqual(['grab:queue:inflight:101', 'grab:queue:101', 'grab:active-sessions']);
+    expect(args).toEqual(['GRAB1', '101']);
+  });
+
+  it('removes active session only when the queue and inflight list are empty using an atomic Redis script', async () => {
     const redis: any = {
       eval: jest.fn().mockResolvedValue(1),
       srem: jest.fn(),
@@ -78,8 +119,9 @@ describe('GrabQueueService', () => {
     expect(redis.eval).toHaveBeenCalledTimes(1);
     const [script, keys, args] = redis.eval.mock.calls[0];
     expect(script).toContain("redis.call('LLEN', KEYS[1]) == 0");
-    expect(script).toContain("redis.call('SREM', KEYS[2], ARGV[1])");
-    expect(keys).toEqual(['grab:queue:101', 'grab:active-sessions']);
+    expect(script).toContain("redis.call('LLEN', KEYS[2]) == 0");
+    expect(script).toContain("redis.call('SREM', KEYS[3], ARGV[1])");
+    expect(keys).toEqual(['grab:queue:101', 'grab:queue:inflight:101', 'grab:active-sessions']);
     expect(args).toEqual(['101']);
     expect(redis.srem).not.toHaveBeenCalled();
   });
