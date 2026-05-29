@@ -14,6 +14,15 @@ import type { OrderEntity, QrPayResponse, RefundOptionsVO, RefundRequestVO, Refu
 
 type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled' | 'trash'
 
+type GrabOrderMetadata = {
+  grabRequestId?: number | null
+  requestedTicketTypeId?: number | null
+  matchedTicketTypeId?: number | null
+  autoDowngraded?: boolean | null
+}
+
+type OrderWithGrabMetadata = OrderEntity & GrabOrderMetadata
+
 const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> = {
   1: { label: '待支付', color: '#ff1268', bg: '#fff0f5' },
   2: { label: '已支付', color: '#52c41a', bg: '#f6ffed' },
@@ -31,7 +40,7 @@ const REFUND_STATUS_MAP: Record<RefundStatus, { label: string; color: string }> 
 
 const ACTIVE_REFUND_STATUSES = new Set<RefundStatus>([0, 1, 4])
 
-interface EnrichedOrder extends OrderEntity {
+interface EnrichedOrder extends OrderWithGrabMetadata {
   activityName: string
   activityPoster: string
   activityId: number | null
@@ -44,6 +53,9 @@ interface EnrichedOrder extends OrderEntity {
 
 function enrichOrders(orders: OrderEntity[]): EnrichedOrder[] {
   return orders.map((order) => {
+    const grabOrder = order as OrderWithGrabMetadata
+    const fallbackTicketTypeId = grabOrder.matchedTicketTypeId ?? order.ticketTypeId
+
     return {
       ...order,
       activityName: order.activityName || '未知活动',
@@ -51,7 +63,7 @@ function enrichOrders(orders: OrderEntity[]): EnrichedOrder[] {
       activityId: order.activityId ?? null,
       venueName: order.venueName || '未知场馆',
       sessionTime: order.sessionTime || '',
-      ticketName: order.ticketName || '未知票档',
+      ticketName: order.ticketName || `票档 ${fallbackTicketTypeId}`,
       unitPrice: order.unitPrice || order.amount / order.quantity,
       seatLabels: order.seatLabels || '座位信息生成中',
     }
@@ -466,6 +478,11 @@ export default function OrdersPage() {
                       </div>
                       <div className="text-[14px] text-gray-500 mt-1 flex items-center gap-3">
                         <span className="font-medium text-gray-700">{order.ticketName || '未知票档'}</span>
+                        {order.autoDowngraded && (
+                          <span className="inline-flex items-center rounded border border-[#ffb3ca] bg-[#fff7fa] px-1.5 py-0.5 text-[11px] font-medium text-[#ff1268]">
+                            降级成功
+                          </span>
+                        )}
                         <span>×{order.quantity}张</span>
                       </div>
                       <div className="text-[13px] text-gray-400 mt-2 bg-gray-50 rounded-lg p-2.5 border border-gray-100">
