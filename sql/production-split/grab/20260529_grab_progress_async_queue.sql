@@ -7,13 +7,37 @@ alter table grab_request
     add column if not exists current_ticket_type_id bigint,
     add column if not exists current_attempt_index integer not null default 0,
     add column if not exists matched_ticket_type_id bigint,
-    add column if not exists progress_status varchar(32) not null default 'QUEUED',
+    add column if not exists progress_status varchar(32),
     add column if not exists progress_message varchar(512),
     add column if not exists attempts_snapshot jsonb not null default '[]'::jsonb,
     add column if not exists worker_claimed_at timestamptz,
     add column if not exists worker_id varchar(128),
     add column if not exists processing_started_at timestamptz,
     add column if not exists completed_at timestamptz;
+
+update grab_request
+set progress_status = case status
+    when 'PENDING' then 'QUEUED'
+    when 'ACCEPTED' then 'WAITING'
+    when 'QUEUED' then 'QUEUED'
+    when 'WAITING' then 'WAITING'
+    when 'TRYING_TICKET_TYPE' then 'TRYING_TICKET_TYPE'
+    when 'LOCKING' then 'LOCKING'
+    when 'ORDER_CREATING' then 'ORDER_CREATING'
+    when 'ORDER_CREATED' then 'ORDER_CREATED'
+    when 'SOLD_OUT' then 'SOLD_OUT'
+    when 'DOWNGRADING' then 'DOWNGRADING'
+    when 'LIMITED' then 'LIMITED'
+    when 'FAILED' then 'FAILED'
+    when 'EXPIRED' then 'EXPIRED'
+    else 'QUEUED'
+end
+where progress_status is null
+   or (queue_seq is null and progress_status = 'QUEUED' and status <> 'QUEUED');
+
+alter table grab_request
+    alter column progress_status set default 'QUEUED',
+    alter column progress_status set not null;
 
 do $$
 begin

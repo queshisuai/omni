@@ -8,6 +8,7 @@ import type { GrabAttemptSnapshot, GrabRequestRecord, GrabTicketPreference } fro
 import { OrderClientService } from './order-client.service';
 
 type AttemptOutcome = 'ORDER_CREATED' | 'SOLD_OUT' | 'LIMITED' | 'FAILED' | 'CANCELLED' | 'PENDING_RECOVERY';
+type OrderLookupRecovery = 'RECOVERED' | 'MISSING' | 'UNKNOWN';
 
 @Injectable()
 export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -212,11 +213,19 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         await this.releaseAdmission(record, preference);
         return 'SOLD_OUT';
       }
+      if (this.isLimitError(message)) {
+        await this.releaseAdmission(record, preference);
+        await this.finishTerminalAttempt(record, GRAB_STATUS.LIMITED, message, preference, index, lockingAttempts, 'LIMITED');
+        return 'LIMITED';
+      }
+
+      const recovery = await this.recoverOrderByLookup(record, preference, index, lockingAttempts);
+      if (recovery === 'RECOVERED') return 'ORDER_CREATED';
+      if (recovery === 'UNKNOWN') return 'PENDING_RECOVERY';
+
       await this.releaseAdmission(record, preference);
-      const status = this.isLimitError(message) ? GRAB_STATUS.LIMITED : GRAB_STATUS.FAILED;
-      const attemptStatus = status === GRAB_STATUS.LIMITED ? 'LIMITED' : 'FAILED';
-      await this.finishTerminalAttempt(record, status, message, preference, index, lockingAttempts, attemptStatus);
-      return status === GRAB_STATUS.LIMITED ? 'LIMITED' : 'FAILED';
+      await this.finishTerminalAttempt(record, GRAB_STATUS.FAILED, message, preference, index, lockingAttempts, 'FAILED');
+      return 'FAILED';
     }
   }
 
@@ -240,19 +249,28 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(error);
     }
 
+    return await this.recoverOrderByLookup(record, preference, index, attempts) === 'RECOVERED';
+  }
+
+  private async recoverOrderByLookup(
+    record: GrabRequestRecord,
+    preference: GrabTicketPreference,
+    index: number,
+    attempts: GrabAttemptSnapshot[],
+  ): Promise<OrderLookupRecovery> {
     try {
-      const existingOrder = await this.orderClient.findByGrabRequestId?.(record.requestId);
-      if (!existingOrder) return false;
+      const existingOrder = await this.orderClient.findByGrabRequestId(record.requestId);
+      if (!existingOrder) return 'MISSING';
       const recovered = await this.repository.markOrderCreated(
         record.requestId,
         existingOrder.id,
         preference.ticketTypeId,
-        orderAttempts,
+        this.markAttempt(attempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)} order created`),
       );
-      return Boolean(recovered);
+      return recovered ? 'RECOVERED' : 'UNKNOWN';
     } catch (error) {
       this.logger.error(error);
-      return false;
+      return 'UNKNOWN';
     }
   }
 

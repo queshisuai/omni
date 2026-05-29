@@ -49,7 +49,7 @@ export class GrabQueueService {
       await this.redis.eval(
         script,
         [this.queueSeqKey(request.sessionId), this.requestKey(request.requestId), this.queueKey(request.sessionId), this.activeSessionsKey()],
-        [request.requestId, sessionId, String(request.userId), 'QUEUED', String(request.ttlSeconds ?? 0)],
+        [request.requestId, sessionId, String(request.userId), 'QUEUED', String(this.metadataTtlSeconds(request.ttlSeconds))],
       ),
     );
 
@@ -218,6 +218,11 @@ export class GrabQueueService {
 
   private activeSessionsKey(): string {
     return 'grab:active-sessions';
+  }
+
+  private metadataTtlSeconds(requestTtlSeconds: number | undefined): number {
+    if (!requestTtlSeconds || requestTtlSeconds <= 0) return 0;
+    return Math.max(requestTtlSeconds * 2, requestTtlSeconds + 300);
   }
 
   private parseNumber(value: string | undefined): number | null {

@@ -114,7 +114,7 @@ describe('GrabWorkerService', () => {
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
 
-  it('releases the redis hold when order creation fails after admission succeeds', async () => {
+  it('releases the redis hold when order creation fails and lookup confirms no order exists', async () => {
     const record = queuedRecord();
     const repository: any = {
       findByRequestId: jest.fn().mockResolvedValue(record),
@@ -129,6 +129,7 @@ describe('GrabWorkerService', () => {
     };
     const orderClient: any = {
       createOrder: jest.fn().mockRejectedValue(new Error('order service timeout')),
+      findByGrabRequestId: jest.fn().mockResolvedValue(null),
     };
     const queue: any = {
       ackProcessed: jest.fn(),
@@ -137,6 +138,7 @@ describe('GrabWorkerService', () => {
 
     await service.processRequest('GRAB1');
 
+    expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB1');
     expect(admission.release).toHaveBeenCalledWith({
       requestId: 'GRAB1',
       userId: 2004,
@@ -149,6 +151,68 @@ describe('GrabWorkerService', () => {
     });
     expect(repository.markOrderCreated).not.toHaveBeenCalled();
     expect(repository.updateStatus).toHaveBeenCalledWith('GRAB1', GRAB_STATUS.FAILED, 'order service timeout');
+    expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
+  });
+
+  it('preserves the redis hold and inflight queue item when order creation outcome is unknown', async () => {
+    const record = queuedRecord();
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn(),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockRejectedValue(new Error('order service timeout')),
+      findByGrabRequestId: jest.fn().mockRejectedValue(new Error('order lookup unavailable')),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB1');
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(repository.updateStatus).not.toHaveBeenCalled();
+    expect(queue.ackProcessed).not.toHaveBeenCalled();
+  });
+
+  it('recovers a created order after an ambiguous order creation error', async () => {
+    const record = queuedRecord();
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn().mockResolvedValue({ ...record, progressStatus: GRAB_STATUS.ORDER_CREATED, orderId: 9001 }),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockRejectedValue(new Error('socket hang up')),
+      findByGrabRequestId: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', status: 'PENDING', grabRequestId: 'GRAB1' }),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(repository.markOrderCreated).toHaveBeenCalledWith('GRAB1', 9001, 1, expect.arrayContaining([
+      expect.objectContaining({ ticketTypeId: 1, status: 'ORDER_CREATED' }),
+    ]));
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(repository.updateStatus).not.toHaveBeenCalled();
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
 
