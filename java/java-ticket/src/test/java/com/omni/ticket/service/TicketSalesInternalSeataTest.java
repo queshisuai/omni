@@ -1,6 +1,7 @@
 package com.omni.ticket.service;
 
 import com.omni.ticket.dto.TicketSalesLockRequest;
+import com.omni.ticket.dto.TicketSalesOrderRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,16 @@ class TicketSalesInternalSeataTest {
     @Test
     void lockSeatsHasTransactionalRollbackForException() throws Exception {
         Method method = TicketSalesInternalService.class.getMethod("lockSeats", TicketSalesLockRequest.class);
+
+        Transactional annotation = method.getAnnotation(Transactional.class);
+
+        assertNotNull(annotation);
+        assertTrue(Arrays.asList(annotation.rollbackFor()).contains(Exception.class));
+    }
+
+    @Test
+    void confirmSoldHasTransactionalRollbackForException() throws Exception {
+        Method method = TicketSalesInternalService.class.getMethod("confirmSold", TicketSalesOrderRequest.class);
 
         Transactional annotation = method.getAnnotation(Transactional.class);
 

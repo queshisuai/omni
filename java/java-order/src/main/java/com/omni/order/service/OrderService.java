@@ -153,7 +153,7 @@ public class OrderService {
         return order;
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Order markPaid(Long id) {
         Order order = orderMapper.selectById(id);
         if (order == null) {

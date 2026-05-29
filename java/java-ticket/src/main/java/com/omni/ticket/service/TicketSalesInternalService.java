@@ -156,6 +156,7 @@ public class TicketSalesInternalService {
         }
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public void confirmSold(TicketSalesOrderRequest request) {
         if (request.getSeatIds() != null && !request.getSeatIds().isEmpty()) {
             for (Long seatId : request.getSeatIds()) {

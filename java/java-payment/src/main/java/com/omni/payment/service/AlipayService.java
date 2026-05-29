@@ -37,7 +37,6 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -64,6 +63,7 @@ public class AlipayService {
     private final AlipayProperties alipayProperties;
     private final OrderClient orderClient;
     private final PaymentMapper paymentMapper;
+    private final PaymentConfirmationService paymentConfirmationService;
     private final String internalApiToken;
     private final Supplier<AlipayClient> alipayClientFactory;
 
@@ -71,8 +71,9 @@ public class AlipayService {
     public AlipayService(AlipayProperties alipayProperties,
                           OrderClient orderClient,
                           PaymentMapper paymentMapper,
+                          PaymentConfirmationService paymentConfirmationService,
                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
-        this(alipayProperties, orderClient, paymentMapper, internalApiToken, null);
+        this(alipayProperties, orderClient, paymentMapper, internalApiToken, null, paymentConfirmationService);
     }
 
     public AlipayService(AlipayProperties alipayProperties,
@@ -80,9 +81,20 @@ public class AlipayService {
                           PaymentMapper paymentMapper,
                           String internalApiToken,
                           Supplier<AlipayClient> alipayClientFactory) {
+        this(alipayProperties, orderClient, paymentMapper, internalApiToken, alipayClientFactory,
+                new PaymentConfirmationService(orderClient, paymentMapper, internalApiToken));
+    }
+
+    public AlipayService(AlipayProperties alipayProperties,
+                          OrderClient orderClient,
+                          PaymentMapper paymentMapper,
+                          String internalApiToken,
+                          Supplier<AlipayClient> alipayClientFactory,
+                          PaymentConfirmationService paymentConfirmationService) {
         this.alipayProperties = alipayProperties;
         this.orderClient = orderClient;
         this.paymentMapper = paymentMapper;
+        this.paymentConfirmationService = paymentConfirmationService;
         this.internalApiToken = internalApiToken;
         this.alipayClientFactory = alipayClientFactory;
     }
@@ -298,7 +310,7 @@ public class AlipayService {
                 return false;
             }
             try {
-                markOrderPaid(payment.getOrderId());
+                completePayment(payment, tradeNo, buyerId, toMapString(params), toMapString(params));
                 return true;
             } catch (RuntimeException e) {
                 log.warn("支付宝通知幂等确认订单支付失败: outTradeNo={}, orderId={}", outTradeNo, payment.getOrderId(), e);
@@ -424,32 +436,7 @@ public class AlipayService {
     }
 
     private void completePayment(Payment payment, String tradeNo, String buyerId, String rawNotify, String callbackData) {
-        if (PaymentService.STATUS_SUCCESS == payment.getStatus()) {
-            if (!StringUtils.hasText(tradeNo) || !tradeNo.equals(payment.getTradeNo())) {
-                throw new BusinessException(ResultCode.CONFLICT, "支付流水交易号不一致");
-            }
-            markOrderPaid(payment.getOrderId());
-            return;
-        }
-
-        markOrderPaid(payment.getOrderId());
-
-        payment.setStatus(PaymentService.STATUS_SUCCESS);
-        payment.setTradeNo(tradeNo);
-        payment.setBuyerId(buyerId);
-        payment.setNotifyTime(LocalDateTime.now());
-        payment.setRawNotify(rawNotify);
-        payment.setCallbackData(callbackData);
-        payment.setPayTime(LocalDateTime.now());
-        paymentMapper.updateById(payment);
-    }
-
-    private void markOrderPaid(Long orderId) {
-        String token = requireInternalApiToken();
-        Result<OrderInfoResponse> result = callOrderClient(() -> orderClient.markPaid(orderId, token));
-        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "更新订单支付状态失败");
-        }
+        paymentConfirmationService.confirmPayment(payment, tradeNo, buyerId, rawNotify, callbackData);
     }
 
     private OrderInfoResponse getOrderOrThrow(Long orderId) {
