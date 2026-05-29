@@ -76,9 +76,9 @@ services:
       seata-config-init:
         condition: service_completed_successfully
     environment:
-      SEATA_IP: 172.20.10.2
-      SEATA_PORT: 8091
-    command: ["-h", "172.20.10.2", "-p", "8091"]
+      SEATA_IP: ${SEATA_ADVERTISE_HOST:-127.0.0.1}
+      SEATA_PORT: ${SEATA_ADVERTISE_PORT:-8091}
+    command: ["-h", "${SEATA_ADVERTISE_HOST:-127.0.0.1}", "-p", "${SEATA_ADVERTISE_PORT:-8091}"]
     ports:
       - "8091:8091"
       - "7091:7091"

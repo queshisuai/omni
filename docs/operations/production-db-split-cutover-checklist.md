@@ -28,6 +28,16 @@
 - [ ] 检查 sequence 当前值不小于主键最大值。
 - [ ] 检查目标库不存在 cross-owner FK。
 
+## Seata 检查
+
+- [ ] Seata Server 使用固定版本镜像，不使用 latest。
+- [ ] 生产 Seata Server 不使用 file store。
+- [ ] Seata Server 元数据库与业务库分离。
+- [ ] `omni_order`、`omni_ticket_split`、`omni_payment` 已执行 PostgreSQL undo_log DDL。
+- [ ] order/ticket/payment 已使用同一 `omni_tx_group`。
+- [ ] 已验证 XID 在 `order -> ticket` 和 `payment -> order -> ticket` 传播。
+- [ ] 已验证失败回滚链路。
+
 ## 配置和启动
 
 - [ ] 设置五个服务的 `SPRING_PROFILES_ACTIVE=prod-split`。
