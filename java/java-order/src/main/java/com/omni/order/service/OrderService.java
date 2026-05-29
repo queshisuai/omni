@@ -229,6 +229,8 @@ public class OrderService {
         return order;
     }
 
+    @GlobalTransactional(name = "omni-mark-refunded", rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class)
     public Order markRefunded(Long id) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
@@ -241,7 +243,7 @@ public class OrderService {
             order.setStatus(STATUS_REFUNDED);
             order.setUpdateTime(LocalDateTime.now());
             orderMapper.updateById(order);
-            refundTickets(order);
+            refundTicketsStrict(order);
             return order;
         }
         throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许退款");
@@ -276,7 +278,8 @@ public class OrderService {
         return getRefundOptions(orderId);
     }
 
-    @Transactional
+    @GlobalTransactional(name = "omni-mark-partial-refunded", rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class)
     public Order markPartialRefunded(Long orderId, MarkPartialRefundedRequest request) {
         Order order = orderMapper.selectByIdForUpdate(orderId);
         if (order == null) {
@@ -527,7 +530,8 @@ public class OrderService {
         return order;
     }
 
-    @Transactional
+    @GlobalTransactional(name = "omni-cancel-order", rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class)
     public void cancelOrder(Long id) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
@@ -538,7 +542,7 @@ public class OrderService {
         }
         assertPendingOrderSafeToCancel(order);
         cancelPendingOrderOrThrow(order);
-        releaseLockedResources(order);
+        releaseLockedResourcesStrict(order);
         log.info("订单已取消: orderNo={}", order.getOrderNo());
     }
 
@@ -589,7 +593,7 @@ public class OrderService {
             try {
                 assertPendingOrderSafeToCancel(order);
                 cancelPendingOrderOrThrow(order);
-                releaseLockedResources(order);
+                releaseLockedResourcesBestEffort(order);
                 released++;
             } catch (BusinessException e) {
                 log.warn("过期待支付订单释放前确认支付状态失败，跳过释放: orderId={}, orderNo={}, message={}", order.getId(), order.getOrderNo(), e.getMessage());
@@ -753,7 +757,15 @@ public class OrderService {
         }
     }
 
-    private void releaseLockedResources(Order order) {
+    private void releaseLockedResourcesBestEffort(Order order) {
+        releaseLockedResources(order, false);
+    }
+
+    private void releaseLockedResourcesStrict(Order order) {
+        releaseLockedResources(order, true);
+    }
+
+    private void releaseLockedResources(Order order, boolean strict) {
         if (orderSeatMapper == null || order == null || order.getId() == null) {
             return;
         }
@@ -785,6 +797,9 @@ public class OrderService {
             }
         } else {
             log.warn("释放票务资源失败: orderId={}", order.getId());
+            if (strict) {
+                throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
+            }
         }
     }
 
@@ -807,7 +822,7 @@ public class OrderService {
         orderSeatMapper.updateById(orderSeat);
     }
 
-    private void refundTickets(Order order) {
+    private void refundTicketsStrict(Order order) {
         if (orderSeatMapper == null || order == null || order.getId() == null) {
             return;
         }
@@ -833,6 +848,7 @@ public class OrderService {
         Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.refund(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             log.warn("退款恢复票务资源失败: orderId={}", order.getId());
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
         }
     }
 

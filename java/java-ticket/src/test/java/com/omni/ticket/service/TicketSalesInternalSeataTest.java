@@ -42,4 +42,24 @@ class TicketSalesInternalSeataTest {
         assertNotNull(annotation);
         assertTrue(Arrays.asList(annotation.rollbackFor()).contains(Exception.class));
     }
+
+    @Test
+    void releaseHasTransactionalRollbackForException() throws Exception {
+        Method method = TicketSalesInternalService.class.getMethod("release", TicketSalesOrderRequest.class);
+
+        Transactional annotation = method.getAnnotation(Transactional.class);
+
+        assertNotNull(annotation);
+        assertTrue(Arrays.asList(annotation.rollbackFor()).contains(Exception.class));
+    }
+
+    @Test
+    void refundHasTransactionalRollbackForException() throws Exception {
+        Method method = TicketSalesInternalService.class.getMethod("refund", TicketSalesOrderRequest.class);
+
+        Transactional annotation = method.getAnnotation(Transactional.class);
+
+        assertNotNull(annotation);
+        assertTrue(Arrays.asList(annotation.rollbackFor()).contains(Exception.class));
+    }
 }

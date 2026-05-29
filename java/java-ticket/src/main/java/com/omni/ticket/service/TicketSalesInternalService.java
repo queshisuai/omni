@@ -165,6 +165,7 @@ public class TicketSalesInternalService {
         }
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public void release(TicketSalesOrderRequest request) {
         if (request.getSeatIds() != null && !request.getSeatIds().isEmpty()) {
             for (Long seatId : request.getSeatIds()) {
@@ -175,6 +176,7 @@ public class TicketSalesInternalService {
         }
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public void refund(TicketSalesOrderRequest request) {
         if (request.getSeatIds() != null && !request.getSeatIds().isEmpty()) {
             boolean canResell = canResellRefundedSeats(request.getSessionId(), request.getTicketTypeId());
