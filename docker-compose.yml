@@ -90,8 +90,53 @@ services:
       timeout: 5s
       retries: 30
 
+  grab-service:
+    image: node:20-alpine
+    container_name: omni-grab-service
+    working_dir: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      GRAB_SERVICE_PORT: 3001
+      GRAB_DB_HOST: postgres
+      GRAB_DB_PORT: 5432
+      GRAB_DB_NAME: omni_grab
+      GRAB_DB_USER: postgres
+      GRAB_DB_PASSWORD: "123456"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ORDER_SERVICE_URL: http://host.docker.internal:8088
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-test-internal-token}
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./nestjs/grab-service:/app
+      - grab-node-modules:/app/node_modules
+    command: ["sh", "-c", "npm ci && npm run start:dev"]
+
+  frontend:
+    image: node:24-alpine
+    container_name: omni-frontend
+    working_dir: /app
+    environment:
+      WATCHPACK_POLLING: "true"
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+      - frontend-next-cache:/app/.next
+    command: ["sh", "-c", "corepack enable && pnpm install && pnpm dev --hostname 0.0.0.0"]
+
 volumes:
   omni-postgres-data:
   omni-redis-data:
   omni-nacos-data:
   omni-nacos-logs:
+  frontend-node-modules:
+  frontend-next-cache:
+  grab-node-modules:
