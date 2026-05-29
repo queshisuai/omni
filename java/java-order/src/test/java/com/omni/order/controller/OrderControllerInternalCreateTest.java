@@ -152,4 +152,44 @@ class OrderControllerInternalCreateTest {
         assertNull(result.getData());
         verify(orderService, never()).markPaid(any());
     }
+
+    @Test
+    void internalLookupByGrabRequestRejectsMissingToken() {
+        Result<com.omni.order.dto.OrderListItemResponse> result =
+                controller.getInternalOrderByGrabRequest("GRAB-20260530-1", null);
+
+        assertEquals(403, result.getCode());
+        assertEquals("无权限", result.getMessage());
+        assertNull(result.getData());
+        verify(orderService, never()).findOrderByGrabRequestId(any());
+    }
+
+    @Test
+    void internalLookupByGrabRequestReturnsOrderWhenTokenValid() {
+        com.omni.order.dto.OrderListItemResponse order = new com.omni.order.dto.OrderListItemResponse();
+        order.setId(14L);
+        order.setOrderNo("DM20260530120000ABCDEF");
+        order.setStatus(1);
+        order.setGrabRequestId("GRAB-20260530-1");
+        when(orderService.findOrderByGrabRequestId("GRAB-20260530-1")).thenReturn(order);
+
+        Result<com.omni.order.dto.OrderListItemResponse> result =
+                controller.getInternalOrderByGrabRequest("GRAB-20260530-1", "test-internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals(order, result.getData());
+        verify(orderService).findOrderByGrabRequestId("GRAB-20260530-1");
+    }
+
+    @Test
+    void internalLookupByGrabRequestReturnsNullWhenNotFound() {
+        when(orderService.findOrderByGrabRequestId("GRAB-20260530-missing")).thenReturn(null);
+
+        Result<com.omni.order.dto.OrderListItemResponse> result =
+                controller.getInternalOrderByGrabRequest("GRAB-20260530-missing", "test-internal-token");
+
+        assertEquals(200, result.getCode());
+        assertNull(result.getData());
+        verify(orderService).findOrderByGrabRequestId("GRAB-20260530-missing");
+    }
 }

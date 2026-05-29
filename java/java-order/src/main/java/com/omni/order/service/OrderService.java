@@ -532,6 +532,13 @@ public class OrderService {
         return order;
     }
 
+    public OrderListItemResponse findOrderByGrabRequestId(String grabRequestId) {
+        if (!StringUtils.hasText(grabRequestId)) {
+            return null;
+        }
+        return orderMapper.selectOrderListItemByGrabRequestId(grabRequestId);
+    }
+
     @GlobalTransactional(name = "omni-cancel-order", rollbackFor = Exception.class)
     @Transactional(rollbackFor = Exception.class)
     public void cancelOrder(Long id) {

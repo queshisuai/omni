@@ -7,3 +7,7 @@ alter table order_snapshot
 
 create index if not exists idx_order_snapshot_grab_request_id
     on order_snapshot(grab_request_id);
+
+create unique index if not exists uk_order_snapshot_grab_request_id
+    on order_snapshot(grab_request_id)
+    where grab_request_id is not null;

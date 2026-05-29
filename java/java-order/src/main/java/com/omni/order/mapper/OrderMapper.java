@@ -61,6 +61,10 @@ public interface OrderMapper extends BaseMapper<Order> {
     @Select("SELECT " + ORDER_LIST_COLUMNS + ORDER_LIST_JOINS + "WHERE o.id = #{id} LIMIT 1")
     OrderListItemResponse selectOrderListItemById(@Param("id") Long id);
 
+    @Select("SELECT " + ORDER_LIST_COLUMNS + ORDER_LIST_JOINS +
+            "WHERE os.grab_request_id = #{grabRequestId} LIMIT 1")
+    OrderListItemResponse selectOrderListItemByGrabRequestId(@Param("grabRequestId") String grabRequestId);
+
     @Update("UPDATE \"order\" SET status = #{nextStatus}, update_time = CURRENT_TIMESTAMP WHERE id = #{id} AND status = #{expectedStatus}")
     int updateStatusIfCurrent(@Param("id") Long id,
                               @Param("expectedStatus") Integer expectedStatus,

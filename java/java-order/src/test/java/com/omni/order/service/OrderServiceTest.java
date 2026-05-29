@@ -9,6 +9,7 @@ import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.TicketSalesLockRequest;
 import com.omni.order.dto.TicketSalesQuoteResponse;
 import com.omni.order.entity.Order;
@@ -32,6 +33,7 @@ import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRule;
 import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -177,6 +179,32 @@ class OrderServiceTest {
         assertEquals(1L, snapshotCaptor.getValue().getRequestedTicketTypeId());
         assertEquals(2L, snapshotCaptor.getValue().getMatchedTicketTypeId());
         assertEquals(Boolean.TRUE, snapshotCaptor.getValue().getAutoDowngraded());
+    }
+
+    @Test
+    void findOrderByGrabRequestIdReturnsOrderSummary() {
+        OrderListItemResponse order = new OrderListItemResponse();
+        order.setId(14L);
+        order.setOrderNo("DM20260530120000ABCDEF");
+        order.setStatus(1);
+        order.setGrabRequestId("GRAB-20260530-1");
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-20260530-1")).thenReturn(order);
+
+        OrderListItemResponse result = service.findOrderByGrabRequestId("GRAB-20260530-1");
+
+        assertEquals(14L, result.getId());
+        assertEquals("DM20260530120000ABCDEF", result.getOrderNo());
+        assertEquals(1, result.getStatus());
+        assertEquals("GRAB-20260530-1", result.getGrabRequestId());
+    }
+
+    @Test
+    void findOrderByGrabRequestIdReturnsNullWhenMissing() {
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-20260530-missing")).thenReturn(null);
+
+        OrderListItemResponse result = service.findOrderByGrabRequestId("GRAB-20260530-missing");
+
+        assertNull(result);
     }
 
     @Test
