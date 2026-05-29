@@ -50,6 +50,14 @@ interface UpdateGrabProgressInput {
   attempts: GrabAttemptSnapshot[];
 }
 
+export const ACTIVE_ASYNC_PROGRESS_STATUSES = [
+  GRAB_STATUS.QUEUED,
+  GRAB_STATUS.WAITING,
+  GRAB_STATUS.TRYING_TICKET_TYPE,
+  GRAB_STATUS.LOCKING,
+  GRAB_STATUS.ORDER_CREATING,
+] as const;
+
 export function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
 }
@@ -271,11 +279,11 @@ export class GrabRepository {
   async findExpiredInFlight(now: Date, limit: number): Promise<GrabRequestRecord[]> {
     const result = await this.database.query<GrabRequestRow>(
       `select * from grab_request
-       where status in ($1, $2)
-         and expire_time < $3
+       where progress_status = any($1::varchar[])
+         and expire_time < $2
        order by expire_time asc
-       limit $4`,
-      [GRAB_STATUS.ACCEPTED, GRAB_STATUS.ORDER_CREATING, now, limit],
+       limit $3`,
+      [ACTIVE_ASYNC_PROGRESS_STATUSES, now, limit],
     );
     return result.rows.map((row) => this.mapRow(row));
   }

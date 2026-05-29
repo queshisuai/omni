@@ -2,10 +2,20 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { randomBytes } from 'crypto';
 import { GrabAdmissionService } from './grab-admission.service';
 import { GrabQueueService } from './grab-queue.service';
-import { GrabRepository, isUniqueViolation } from './grab.repository';
+import { ACTIVE_ASYNC_PROGRESS_STATUSES, GrabRepository, isUniqueViolation } from './grab.repository';
 import { GRAB_STATUS } from './grab-status';
 import type { GrabProgressResponse, GrabRequestRecord, GrabRequestResponse, GrabTicketPreference, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
+
+const ACTIVE_ASYNC_PROGRESS_STATUS_SET = new Set<string>(ACTIVE_ASYNC_PROGRESS_STATUSES);
+const RELEASEABLE_PROGRESS_STATUSES = new Set(['LOCKING', 'ORDER_CREATING']);
+const TERMINAL_CANCEL_STATUSES = new Set<string>([
+  GRAB_STATUS.ORDER_CREATED,
+  GRAB_STATUS.SOLD_OUT,
+  GRAB_STATUS.LIMITED,
+  GRAB_STATUS.FAILED,
+  GRAB_STATUS.EXPIRED,
+]);
 
 @Injectable()
 export class GrabService {
@@ -105,9 +115,15 @@ export class GrabService {
     const record = await this.repository.findByRequestId(requestId);
     if (!record) throw new NotFoundException('grab request not found');
     if (record.userId !== userId) throw new ForbiddenException('cannot cancel another user grab request');
+    if (TERMINAL_CANCEL_STATUSES.has(record.status)) return this.toResponse(record);
     if (record.orderId) return this.toResponse(record);
-    if (record.status !== GRAB_STATUS.ACCEPTED && record.status !== GRAB_STATUS.ORDER_CREATING) return this.toResponse(record);
-    await this.admissionService.release(record);
+    const progressStatus = record.progressStatus;
+    const hasCancelableProgress = ACTIVE_ASYNC_PROGRESS_STATUS_SET.has(progressStatus);
+    const hasLegacyCancelableStatus = record.status === GRAB_STATUS.ACCEPTED || record.status === GRAB_STATUS.ORDER_CREATING;
+    if (!hasCancelableProgress && !hasLegacyCancelableStatus) return this.toResponse(record);
+    if (RELEASEABLE_PROGRESS_STATUSES.has(progressStatus) || (!hasCancelableProgress && hasLegacyCancelableStatus)) {
+      await this.admissionService.release(record);
+    }
     return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, 'grab request cancelled'));
   }
 
