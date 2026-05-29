@@ -144,11 +144,12 @@ public class OrderService {
         int quantity = requirePositiveQuantity(request.getQuantity());
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), null, quantity);
+        validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote);
         validatePerUserLimit(request.getUserId(), quote, quantity);
         Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity, quote.getUnitPrice());
         lockStockForOrder(order);
         orderMapper.insert(order);
-        writeSnapshot(order, quote);
+        writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(), request.getMatchedTicketTypeId(), request.getAutoDowngraded());
         log.info("订单创建成功: orderNo={}, userId={}, amount={}", order.getOrderNo(), request.getUserId(), order.getAmount());
         return order;
     }
@@ -188,6 +189,7 @@ public class OrderService {
         int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
+        validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote);
         validatePerUserLimit(request.getUserId(), quote, quantity);
         TicketSalesLockRequest lockRequest = new TicketSalesLockRequest();
         lockRequest.setOrderId(0L);
@@ -209,7 +211,7 @@ public class OrderService {
                 quantity,
                 quote.getUnitPrice());
         orderMapper.insert(order);
-        writeSnapshot(order, quote);
+        writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(), request.getMatchedTicketTypeId(), request.getAutoDowngraded());
         if (lockedSeatIds != null && !lockedSeatIds.isEmpty() && orderSeatMapper != null) {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime expireTime = now.plusMinutes(15);
@@ -602,7 +604,12 @@ public class OrderService {
         return released;
     }
 
-    private void writeSnapshot(Order order, TicketSalesQuoteResponse quote) {
+    private void writeSnapshot(Order order,
+                               TicketSalesQuoteResponse quote,
+                               String grabRequestId,
+                               Long requestedTicketTypeId,
+                               Long matchedTicketTypeId,
+                               Boolean autoDowngraded) {
         if (orderSnapshotMapper == null || order == null || quote == null) {
             return;
         }
@@ -621,6 +628,10 @@ public class OrderService {
         snapshot.setUnitPrice(quote.getUnitPrice());
         snapshot.setQuantity(order.getQuantity());
         snapshot.setSeatLabels(quote.getSeatLabels());
+        snapshot.setGrabRequestId(grabRequestId);
+        snapshot.setRequestedTicketTypeId(requestedTicketTypeId);
+        snapshot.setMatchedTicketTypeId(matchedTicketTypeId);
+        snapshot.setAutoDowngraded(Boolean.TRUE.equals(autoDowngraded));
         LocalDateTime now = LocalDateTime.now();
         snapshot.setCreateTime(now);
         snapshot.setUpdateTime(now);
@@ -660,6 +671,15 @@ public class OrderService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "购买数量不正确");
         }
         return quantity;
+    }
+
+    private void validateAuthorizedPrice(BigDecimal authorizedMaxUnitPrice, TicketSalesQuoteResponse quote) {
+        if (authorizedMaxUnitPrice == null || quote == null || quote.getUnitPrice() == null) {
+            return;
+        }
+        if (quote.getUnitPrice().compareTo(authorizedMaxUnitPrice) > 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket price exceeds authorized price");
+        }
     }
 
     private TicketSalesQuoteResponse quoteTickets(Long sessionId, Long ticketTypeId, List<Long> seatIds, int quantity) {

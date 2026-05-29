@@ -12,12 +12,15 @@ import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.TicketSalesLockRequest;
 import com.omni.order.dto.TicketSalesQuoteResponse;
 import com.omni.order.entity.Order;
+import com.omni.order.entity.OrderSnapshot;
 import com.omni.order.mapper.OrderMapper;
 import com.omni.order.mapper.OrderSeatMapper;
+import com.omni.order.mapper.OrderSnapshotMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -30,6 +33,7 @@ import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -47,6 +51,9 @@ class OrderServiceTest {
     private OrderSeatMapper orderSeatMapper;
 
     @Mock
+    private OrderSnapshotMapper orderSnapshotMapper;
+
+    @Mock
     private PaymentInternalClient paymentInternalClient;
 
     @Mock
@@ -59,7 +66,7 @@ class OrderServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new OrderService(orderMapper, orderSeatMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient);
+        service = new OrderService(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient);
     }
 
     @AfterEach
@@ -117,6 +124,59 @@ class OrderServiceTest {
 
         assertEquals("超过本活动个人限购数量", ex.getMessage());
         verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createOrderRejectsWhenQuotePriceExceedsAuthorizedMax() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(1);
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("980.00"));
+
+        TicketSalesQuoteResponse quote = quoteWithoutLimit(1);
+        quote.setTicketTypeId(1L);
+        quote.setUnitPrice(new BigDecimal("1280.00"));
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        assertTrue(exception.getMessage().contains("authorized price"));
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void createOrderWritesGrabSnapshotFields() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(2L);
+        request.setQuantity(1);
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("980.00"));
+        request.setGrabRequestId("GRAB1");
+        request.setRequestedTicketTypeId(1L);
+        request.setMatchedTicketTypeId(2L);
+        request.setAutoDowngraded(true);
+
+        TicketSalesQuoteResponse quote = quoteWithoutLimit(1);
+        quote.setTicketTypeId(2L);
+        quote.setUnitPrice(new BigDecimal("980.00"));
+        quote.setTicketName("B");
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), anyString())).thenReturn(Result.success());
+
+        service.createOrder(request);
+
+        ArgumentCaptor<OrderSnapshot> snapshotCaptor = ArgumentCaptor.forClass(OrderSnapshot.class);
+        verify(orderSnapshotMapper).insert(snapshotCaptor.capture());
+        assertEquals("GRAB1", snapshotCaptor.getValue().getGrabRequestId());
+        assertEquals(1L, snapshotCaptor.getValue().getRequestedTicketTypeId());
+        assertEquals(2L, snapshotCaptor.getValue().getMatchedTicketTypeId());
+        assertEquals(Boolean.TRUE, snapshotCaptor.getValue().getAutoDowngraded());
     }
 
     @Test

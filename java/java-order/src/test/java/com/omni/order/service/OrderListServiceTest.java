@@ -54,6 +54,27 @@ class OrderListServiceTest {
     }
 
     @Test
+    void listOrderItemsReturnsGrabMatchedTicketSnapshot() {
+        OrderMapper orderMapper = mock(OrderMapper.class);
+        OrderListItemResponse item = new OrderListItemResponse();
+        item.setId(10L);
+        item.setGrabRequestId("GRAB1");
+        item.setRequestedTicketTypeId(1L);
+        item.setMatchedTicketTypeId(2L);
+        item.setAutoDowngraded(true);
+        when(orderMapper.selectVisibleOrderListItems(2004L)).thenReturn(Collections.singletonList(item));
+
+        OrderService service = new OrderService(orderMapper);
+
+        OrderListItemResponse result = service.listOrderItems(2004L).get(0);
+
+        assertEquals("GRAB1", result.getGrabRequestId());
+        assertEquals(1L, result.getRequestedTicketTypeId());
+        assertEquals(2L, result.getMatchedTicketTypeId());
+        assertEquals(Boolean.TRUE, result.getAutoDowngraded());
+    }
+
+    @Test
     void listOrderItemsExcludesTrashOrders() {
         OrderMapper orderMapper = mock(OrderMapper.class);
         when(orderMapper.selectVisibleOrderListItems(2004L)).thenReturn(List.of(new OrderListItemResponse()));
