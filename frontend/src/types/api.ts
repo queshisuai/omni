@@ -91,6 +91,11 @@ export type OrganizerStatus = 0 | 1 | 2 | 3
 export type SubjectType = 'personal' | 'enterprise'
 
 export type GrabStatus =
+  | 'QUEUED'
+  | 'WAITING'
+  | 'TRYING_TICKET_TYPE'
+  | 'LOCKING'
+  | 'DOWNGRADING'
   | 'PENDING'
   | 'ACCEPTED'
   | 'ORDER_CREATING'
@@ -100,13 +105,21 @@ export type GrabStatus =
   | 'FAILED'
   | 'EXPIRED'
 
+export interface TicketTypePreferencePayload {
+  ticketTypeId: number
+  name?: string
+  maxPrice?: number
+}
+
 export interface SubmitGrabRequestPayload {
   sessionId: number
-  ticketTypeId: number
+  ticketTypeId?: number
   quantity: number
   seatIds?: number[]
   allocateRandom?: boolean
   idempotencyKey: string
+  ticketTypePreferences?: TicketTypePreferencePayload[]
+  allowAutoDowngrade?: boolean
 }
 
 export interface GrabRequestResult {
@@ -114,6 +127,56 @@ export interface GrabRequestResult {
   status: GrabStatus
   orderId: number | null
   failReason: string | null
+  queueSeq?: number | null
+  queueRank?: number | null
+  estimatedWaitSeconds?: number | null
+  message?: string | null
+}
+
+export interface GrabTicketPreference {
+  ticketTypeId: number
+  name: string | null
+  maxPrice: number | null
+}
+
+export interface GrabAttemptProgress {
+  ticketTypeId: number
+  name: string | null
+  status: 'PENDING' | 'TRYING' | 'LOCKING' | 'SOLD_OUT' | 'LIMITED' | 'FAILED' | 'ORDER_CREATED'
+  message: string
+}
+
+export interface VisibleStockSnapshot {
+  ticketTypeId: number
+  visibleStock: number | null
+  level: 'AVAILABLE' | 'LOW' | 'HOT' | 'SOLD_OUT' | 'UNKNOWN'
+  snapshotTime?: string
+}
+
+export interface GrabProgressResult extends GrabRequestResult {
+  sessionId: number
+  queueSeq: number | null
+  queueRank: number | null
+  estimatedWaitSeconds: number | null
+  currentTicketTypeId: number | null
+  currentAttemptIndex: number
+  requestedTicketTypes: GrabTicketPreference[]
+  attempts: GrabAttemptProgress[]
+  visibleStock: VisibleStockSnapshot | null
+  message: string | null
+  matchedTicketTypeId: number | null
+  updateTime: string
+}
+
+export interface SessionVisibleStockResult {
+  sessionId: number
+  ticketTypes: Array<{
+    ticketTypeId: number
+    name: string
+    visibleStock: number | null
+    level: VisibleStockSnapshot['level']
+  }>
+  snapshotTime: string
 }
 
 export interface OrganizerApplicationVO {
@@ -933,6 +996,10 @@ export interface OrderEntity {
   ticketName?: string | null
   unitPrice?: number | null
   seatLabels?: string | null
+  grabRequestId?: string | null
+  requestedTicketTypeId?: number | null
+  matchedTicketTypeId?: number | null
+  autoDowngraded?: boolean | null
 }
 
 export interface PagePayResponse {
