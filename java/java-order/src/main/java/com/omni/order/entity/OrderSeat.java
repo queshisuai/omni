@@ -1,14 +1,17 @@
 package com.omni.order.entity;
 
+import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.KeySequence;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
 
 @TableName("order_seat")
+@KeySequence(value = "order_seat_id_seq", dbType = DbType.POSTGRE_SQL)
 public class OrderSeat {
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.INPUT)
     private Long id;
     private Long orderId;
     private Long sessionSeatId;

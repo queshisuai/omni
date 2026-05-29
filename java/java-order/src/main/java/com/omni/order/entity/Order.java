@@ -1,6 +1,8 @@
 package com.omni.order.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.DbType;
+import com.baomidou.mybatisplus.annotation.KeySequence;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -11,9 +13,10 @@ import java.time.LocalDateTime;
  * 订单
  */
 @TableName("\"order\"")
+@KeySequence(value = "order_id_seq", dbType = DbType.POSTGRE_SQL)
 public class Order {
 
-    @TableId(type = IdType.AUTO)
+    @TableId(type = IdType.INPUT)
     private Long id;
     private String orderNo;
     private Long userId;

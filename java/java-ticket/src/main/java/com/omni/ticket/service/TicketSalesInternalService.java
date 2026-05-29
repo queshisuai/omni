@@ -21,6 +21,7 @@ import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -92,6 +93,7 @@ public class TicketSalesInternalService {
         return response;
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public void lockStock(TicketSalesLockRequest request) {
         int quantity = requirePositiveQuantity(request.getQuantity());
         int updated = ticketTypeMapper.decreaseRemainStockIfEnough(request.getTicketTypeId(), quantity);
@@ -100,6 +102,7 @@ public class TicketSalesInternalService {
         }
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public TicketSalesSeatLockResponse lockSeats(TicketSalesLockRequest request) {
         List<Long> seatIds = request.getSeatIds();
         if ((seatIds == null || seatIds.isEmpty()) && Boolean.TRUE.equals(request.getAllocateRandom())) {

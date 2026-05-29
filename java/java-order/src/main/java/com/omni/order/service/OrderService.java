@@ -33,6 +33,7 @@ import com.omni.order.entity.OrderSnapshot;
 import com.omni.order.mapper.OrderMapper;
 import com.omni.order.mapper.OrderSeatMapper;
 import com.omni.order.mapper.OrderSnapshotMapper;
+import io.seata.spring.annotation.GlobalTransactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -137,6 +138,8 @@ public class OrderService {
         this(orderMapper, orderSeatMapper, null, paymentInternalClient, ticketSalesInternalClient, null, "test-internal-token");
     }
 
+    @GlobalTransactional(name = "omni-create-order", rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class)
     public Order createOrder(CreateOrderRequest request) {
         int quantity = requirePositiveQuantity(request.getQuantity());
         validateUserExists(request.getUserId());
@@ -178,6 +181,8 @@ public class OrderService {
         return order;
     }
 
+    @GlobalTransactional(name = "omni-create-order-with-seats", rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class)
     public Order createOrderWithSeats(LockSeatsRequest request) {
         boolean hasSeatIds = request.getSeatIds() != null && !request.getSeatIds().isEmpty();
         int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
