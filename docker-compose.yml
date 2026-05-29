@@ -52,6 +52,44 @@ services:
       timeout: 5s
       retries: 30
 
+  seata-config-init:
+    image: curlimages/curl:8.8.0
+    container_name: omni-seata-config-init
+    depends_on:
+      nacos:
+        condition: service_healthy
+    volumes:
+      - ./docker/seata:/seata-config:ro
+    environment:
+      NACOS_ADDR: nacos:8848
+      SEATA_CONFIG_DATA_ID: seataServer.properties
+      SEATA_CONFIG_GROUP: SEATA_GROUP
+    command: ["/bin/sh", "/seata-config/import-config.sh"]
+    restart: "no"
+
+  seata-server:
+    image: seataio/seata-server:1.6.1
+    container_name: omni-seata
+    depends_on:
+      nacos:
+        condition: service_healthy
+      seata-config-init:
+        condition: service_completed_successfully
+    environment:
+      SEATA_IP: 172.20.10.2
+      SEATA_PORT: 8091
+    command: ["-h", "172.20.10.2", "-p", "8091"]
+    ports:
+      - "8091:8091"
+      - "7091:7091"
+    volumes:
+      - ./docker/seata/application.yml:/seata-server/resources/application.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/localhost/8091' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
 volumes:
   omni-postgres-data:
   omni-redis-data:
