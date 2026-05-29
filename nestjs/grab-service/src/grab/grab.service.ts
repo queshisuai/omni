@@ -1,10 +1,20 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { GrabAdmissionService } from './grab-admission.service';
-import { GrabRepository, isUniqueViolation } from './grab.repository';
+import { ACTIVE_ASYNC_PROGRESS_STATUSES, GrabRepository, isUniqueViolation } from './grab.repository';
 import { GRAB_STATUS } from './grab-status';
 import type { GrabRequestRecord, GrabRequestResponse, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
+
+const ACTIVE_ASYNC_PROGRESS_STATUS_SET = new Set<string>(ACTIVE_ASYNC_PROGRESS_STATUSES);
+const RELEASEABLE_PROGRESS_STATUSES = new Set(['LOCKING', 'ORDER_CREATING']);
+const TERMINAL_CANCEL_STATUSES = new Set<string>([
+  GRAB_STATUS.ORDER_CREATED,
+  GRAB_STATUS.SOLD_OUT,
+  GRAB_STATUS.LIMITED,
+  GRAB_STATUS.FAILED,
+  GRAB_STATUS.EXPIRED,
+]);
 
 @Injectable()
 export class GrabService {
@@ -120,10 +130,17 @@ export class GrabService {
     const record = await this.repository.findByRequestId(requestId);
     if (!record) throw new NotFoundException('抢票请求不存在');
     if (record.userId !== userId) throw new ForbiddenException('不能取消他人的抢票请求');
+    if (TERMINAL_CANCEL_STATUSES.has(record.status)) return this.toResponse(record);
     if (record.orderId) return this.toResponse(record);
-    if (record.status !== GRAB_STATUS.ACCEPTED && record.status !== GRAB_STATUS.ORDER_CREATING) return this.toResponse(record);
-    await this.admissionService.release(record);
-    return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, '抢票请求已取消'));
+    const progressStatus = (record as GrabRequestRecordWithProgress).progressStatus;
+    const hasAsyncProgress = Boolean(progressStatus);
+    const hasCancelableProgress = progressStatus ? ACTIVE_ASYNC_PROGRESS_STATUS_SET.has(progressStatus) : false;
+    const hasLegacyCancelableStatus = !hasAsyncProgress && (record.status === GRAB_STATUS.ACCEPTED || record.status === GRAB_STATUS.ORDER_CREATING);
+    if (!hasCancelableProgress && !hasLegacyCancelableStatus) return this.toResponse(record);
+    if ((progressStatus && RELEASEABLE_PROGRESS_STATUSES.has(progressStatus)) || hasLegacyCancelableStatus) {
+      await this.admissionService.release(record);
+    }
+    return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, 'grab request cancelled'));
   }
 
   private validateSubmitRequest(dto: SubmitGrabRequestDto): void {
@@ -146,4 +163,8 @@ export class GrabService {
       failReason: record.failReason,
     };
   }
+}
+
+interface GrabRequestRecordWithProgress {
+  progressStatus?: string | null;
 }

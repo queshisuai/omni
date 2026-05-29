@@ -14,12 +14,15 @@ interface GrabRequestRow {
   seat_ids: number[] | string;
   allocate_random: boolean;
   status: GrabStatus;
+  progress_status?: string | null;
   order_id: string | number | null;
   fail_reason: string | null;
   expire_time: Date;
   created_at: Date;
   updated_at: Date;
 }
+
+export const ACTIVE_ASYNC_PROGRESS_STATUSES = ['QUEUED', 'WAITING', 'TRYING_TICKET_TYPE', 'LOCKING', 'ORDER_CREATING'] as const;
 
 export function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
@@ -121,11 +124,11 @@ export class GrabRepository {
   async findExpiredInFlight(now: Date, limit: number): Promise<GrabRequestRecord[]> {
     const result = await this.database.query<GrabRequestRow>(
       `select * from grab_request
-       where status in ($1, $2)
-         and expire_time < $3
+       where progress_status = any($1::varchar[])
+         and expire_time < $2
        order by expire_time asc
-       limit $4`,
-      [GRAB_STATUS.ACCEPTED, GRAB_STATUS.ORDER_CREATING, now, limit],
+       limit $3`,
+      [ACTIVE_ASYNC_PROGRESS_STATUSES, now, limit],
     );
     return result.rows.map((row) => this.mapRow(row));
   }
@@ -143,11 +146,12 @@ export class GrabRepository {
       seatIds,
       allocateRandom: row.allocate_random,
       status: row.status,
+      progressStatus: row.progress_status ?? null,
       orderId: row.order_id == null ? null : Number(row.order_id),
       failReason: row.fail_reason,
       expireTime: row.expire_time,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-    };
+    } as GrabRequestRecord & { progressStatus: string | null };
   }
 }

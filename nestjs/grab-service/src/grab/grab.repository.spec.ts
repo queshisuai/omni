@@ -98,4 +98,42 @@ describe('GrabRepository', () => {
     expect(result?.requestId).toBe('GRAB1');
     expect(result?.orderId).toBe(9001);
   });
+
+  it('finds expired in-flight requests by async progress status ordered by expiry', async () => {
+    const now = new Date('2026-05-27T12:15:00.000Z');
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        id: 1,
+        request_id: 'GRAB-QUEUED',
+        idempotency_key: 'idem-queued',
+        user_id: 2004,
+        session_id: 101,
+        ticket_type_id: 202,
+        quantity: 1,
+        seat_ids: '[]',
+        allocate_random: false,
+        status: GRAB_STATUS.ACCEPTED,
+        progress_status: 'QUEUED',
+        order_id: null,
+        fail_reason: null,
+        expire_time: new Date('2026-05-27T12:00:00.000Z'),
+        created_at: new Date('2026-05-27T11:50:00.000Z'),
+        updated_at: new Date('2026-05-27T11:50:00.000Z'),
+      }],
+    });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.findExpiredInFlight(now, 100);
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('progress_status = any');
+    expect(sql).toContain('order by expire_time asc');
+    expect(sql).toContain('limit $3');
+    expect(params).toEqual([
+      ['QUEUED', 'WAITING', 'TRYING_TICKET_TYPE', 'LOCKING', 'ORDER_CREATING'],
+      now,
+      100,
+    ]);
+    expect((result[0] as any).progressStatus).toBe('QUEUED');
+  });
 });

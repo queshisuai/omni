@@ -376,6 +376,70 @@ describe('GrabService', () => {
     expect(result).toEqual({ requestId: 'GRAB-FAILED', status: GRAB_STATUS.FAILED, orderId: null, failReason: '抢票库存未初始化' });
   });
 
+  it('cancels queued async progress without releasing redis holds', async () => {
+    const record = {
+      requestId: 'GRAB-QUEUED',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      seatIds: [],
+      allocateRandom: false,
+      idempotencyKey: 'idem-queued',
+      status: GRAB_STATUS.ACCEPTED,
+      progressStatus: 'QUEUED',
+      orderId: null,
+      failReason: null,
+    };
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn().mockResolvedValue({
+        ...record,
+        status: GRAB_STATUS.EXPIRED,
+        failReason: 'grab request cancelled',
+      }),
+    };
+    const admission: any = { release: jest.fn() };
+    const orderClient: any = { createOrder: jest.fn() };
+    const service = new GrabService(repository, admission, orderClient);
+
+    const result = await service.cancelRequest(2004, 'GRAB-QUEUED');
+
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-QUEUED', GRAB_STATUS.EXPIRED, 'grab request cancelled');
+    expect(result).toEqual({ requestId: 'GRAB-QUEUED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'grab request cancelled' });
+  });
+
+  it('does not cancel already expired requests', async () => {
+    const record = {
+      requestId: 'GRAB-EXPIRED',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      seatIds: [],
+      allocateRandom: false,
+      idempotencyKey: 'idem-expired',
+      status: GRAB_STATUS.EXPIRED,
+      progressStatus: 'QUEUED',
+      orderId: null,
+      failReason: 'previous expiry',
+    };
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = { release: jest.fn() };
+    const orderClient: any = { createOrder: jest.fn() };
+    const service = new GrabService(repository, admission, orderClient);
+
+    const result = await service.cancelRequest(2004, 'GRAB-EXPIRED');
+
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(repository.updateStatus).not.toHaveBeenCalled();
+    expect(result).toEqual({ requestId: 'GRAB-EXPIRED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'previous expiry' });
+  });
+
   it('rejects reading another user grab request', async () => {
     const repository: any = {
       findByRequestId: jest.fn().mockResolvedValue({
@@ -449,17 +513,18 @@ describe('GrabService', () => {
     expect(result).toEqual({ requestId: 'GRAB-ORDERED', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null });
   });
 
-  it('expires accepted request and releases redis hold when cancelling an in-flight request', async () => {
+  it('expires locking request and releases redis hold when cancelling an in-flight request that may hold stock', async () => {
     const record = {
-      requestId: 'GRAB-ACCEPTED',
+      requestId: 'GRAB-LOCKING',
       userId: 2004,
       sessionId: 101,
       ticketTypeId: 202,
       quantity: 1,
       seatIds: [],
       allocateRandom: false,
-      idempotencyKey: 'idem-accepted',
+      idempotencyKey: 'idem-locking',
       status: GRAB_STATUS.ACCEPTED,
+      progressStatus: 'LOCKING',
       orderId: null,
       failReason: null,
     };
@@ -468,17 +533,17 @@ describe('GrabService', () => {
       updateStatus: jest.fn().mockResolvedValue({
         ...record,
         status: GRAB_STATUS.EXPIRED,
-        failReason: '抢票请求已取消',
+        failReason: 'grab request cancelled',
       }),
     };
     const admission: any = { release: jest.fn() };
     const orderClient: any = { createOrder: jest.fn() };
     const service = new GrabService(repository, admission, orderClient);
 
-    const result = await service.cancelRequest(2004, 'GRAB-ACCEPTED');
+    const result = await service.cancelRequest(2004, 'GRAB-LOCKING');
 
     expect(admission.release).toHaveBeenCalledWith(record);
-    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-ACCEPTED', GRAB_STATUS.EXPIRED, '抢票请求已取消');
-    expect(result).toEqual({ requestId: 'GRAB-ACCEPTED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: '抢票请求已取消' });
+    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-LOCKING', GRAB_STATUS.EXPIRED, 'grab request cancelled');
+    expect(result).toEqual({ requestId: 'GRAB-LOCKING', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'grab request cancelled' });
   });
 });
