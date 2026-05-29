@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { RedisService } from './redis.service';
 
-interface EnqueueRequest {
+export interface EnqueueRequest {
   requestId: string;
   sessionId: number;
   userId: number;
 }
 
-interface EnqueueResult {
+export interface EnqueueResult {
   queueSeq: number;
   queueRank: number;
 }
@@ -18,17 +18,26 @@ export class GrabQueueService {
 
   async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
     const sessionId = String(request.sessionId);
-    const queueSeq = await this.redis.incr(this.queueSeqKey(request.sessionId));
-
-    await this.redis.rpush(this.queueKey(request.sessionId), request.requestId);
-    await this.redis.sadd(this.activeSessionsKey(), sessionId);
-    await this.redis.hset(this.requestKey(request.requestId), {
-      requestId: request.requestId,
-      sessionId,
-      userId: String(request.userId),
-      queueSeq: String(queueSeq),
-      status: 'QUEUED',
-    });
+    const script = `
+      local queueSeq = redis.call('INCR', KEYS[1])
+      redis.call('HSET', KEYS[2],
+        'requestId', ARGV[1],
+        'sessionId', ARGV[2],
+        'userId', ARGV[3],
+        'queueSeq', tostring(queueSeq),
+        'status', ARGV[4]
+      )
+      redis.call('RPUSH', KEYS[3], ARGV[1])
+      redis.call('SADD', KEYS[4], ARGV[2])
+      return queueSeq
+    `;
+    const queueSeq = Number(
+      await this.redis.eval(
+        script,
+        [this.queueSeqKey(request.sessionId), this.requestKey(request.requestId), this.queueKey(request.sessionId), this.activeSessionsKey()],
+        [request.requestId, sessionId, String(request.userId), 'QUEUED'],
+      ),
+    );
 
     const queueRank = await this.calculateQueueRank(request.sessionId, queueSeq);
     return { queueSeq, queueRank };
@@ -66,7 +75,18 @@ export class GrabQueueService {
   }
 
   async removeActiveSession(sessionId: number): Promise<void> {
-    await this.redis.srem(this.activeSessionsKey(), String(sessionId));
+    await this.removeActiveSessionIfQueueEmpty(sessionId);
+  }
+
+  async removeActiveSessionIfQueueEmpty(sessionId: number): Promise<void> {
+    const script = `
+      if redis.call('LLEN', KEYS[1]) == 0 then
+        return redis.call('SREM', KEYS[2], ARGV[1])
+      end
+      return 0
+    `;
+
+    await this.redis.eval(script, [this.queueKey(sessionId), this.activeSessionsKey()], [String(sessionId)]);
   }
 
   private queueSeqKey(sessionId: number): string {
