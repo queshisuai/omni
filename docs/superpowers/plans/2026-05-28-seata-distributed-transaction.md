@@ -287,7 +287,7 @@ transport.threadFactory.bossThreadSize=1
 transport.threadFactory.workerThreadSize=default
 transport.shutdown.wait=3
 service.vgroupMapping.omni_tx_group=default
-service.default.grouplist=172.20.10.2:8091
+service.default.grouplist=${SEATA_ADVERTISE_HOST}:${SEATA_ADVERTISE_PORT}
 service.enableDegrade=false
 service.disableGlobalTransaction=false
 client.rm.asyncCommitBufferLimit=10000
@@ -333,6 +333,21 @@ NACOS_ADDR="${NACOS_ADDR:-nacos:8848}"
 DATA_ID="${SEATA_CONFIG_DATA_ID:-seataServer.properties}"
 GROUP="${SEATA_CONFIG_GROUP:-SEATA_GROUP}"
 CONFIG_FILE="/seata-config/seataServer.properties"
+SEATA_ADVERTISE_HOST="${SEATA_ADVERTISE_HOST:-127.0.0.1}"
+SEATA_ADVERTISE_PORT="${SEATA_ADVERTISE_PORT:-8091}"
+RENDERED_CONFIG="/tmp/seataServer.properties"
+
+case "${SEATA_ADVERTISE_HOST}" in
+  ""|127.*|localhost|0.0.0.0|::1)
+    echo "SEATA_ADVERTISE_HOST must be a host-reachable non-loopback IPv4 address, got '${SEATA_ADVERTISE_HOST}'" >&2
+    exit 1
+    ;;
+esac
+
+sed \
+  -e "s|\${SEATA_ADVERTISE_HOST}|${SEATA_ADVERTISE_HOST}|g" \
+  -e "s|\${SEATA_ADVERTISE_PORT}|${SEATA_ADVERTISE_PORT}|g" \
+  "${CONFIG_FILE}" > "${RENDERED_CONFIG}"
 
 until curl -fsS "http://${NACOS_ADDR}/nacos/" >/dev/null; do
   echo "waiting for nacos at ${NACOS_ADDR}"
@@ -343,7 +358,7 @@ curl -fsS -X POST "http://${NACOS_ADDR}/nacos/v1/cs/configs" \
   --data-urlencode "dataId=${DATA_ID}" \
   --data-urlencode "group=${GROUP}" \
   --data-urlencode "type=properties" \
-  --data-urlencode "content@${CONFIG_FILE}"
+  --data-urlencode "content@${RENDERED_CONFIG}"
 
 echo "published ${DATA_ID} to ${GROUP}"
 ```
@@ -365,6 +380,8 @@ Add services after `nacos`:
       NACOS_ADDR: nacos:8848
       SEATA_CONFIG_DATA_ID: seataServer.properties
       SEATA_CONFIG_GROUP: SEATA_GROUP
+      SEATA_ADVERTISE_HOST: ${SEATA_ADVERTISE_HOST:-127.0.0.1}
+      SEATA_ADVERTISE_PORT: ${SEATA_ADVERTISE_PORT:-8091}
     command: ["/bin/sh", "/seata-config/import-config.sh"]
     restart: "no"
 
@@ -377,9 +394,9 @@ Add services after `nacos`:
       seata-config-init:
         condition: service_completed_successfully
     environment:
-      SEATA_IP: 172.20.10.2
-      SEATA_PORT: 8091
-    command: ["-h", "172.20.10.2", "-p", "8091"]
+      SEATA_IP: ${SEATA_ADVERTISE_HOST}
+      SEATA_PORT: ${SEATA_ADVERTISE_PORT:-8091}
+    command: ["-h", "${SEATA_ADVERTISE_HOST}", "-p", "${SEATA_ADVERTISE_PORT:-8091}"]
     # 本地 Java 服务运行在宿主机时，Seata 注册地址必须对宿主机可达。
     # Seata 1.6.1 不接受 127.0.0.1 作为注册 IP，使用宿主机默认路由对应的非回环 IPv4。
     # 如果未来 Java 服务也容器化运行，再改为容器网络可访问地址。
@@ -684,7 +701,7 @@ Create `docs/operations/seata-local-verification.md`:
 - 镜像验证：`docker pull hello-world` 已成功
 - Seata Server 镜像：`seataio/seata-server:1.6.1`
 - 本地 Java 服务运行位置：宿主机
-- 本地 Seata Server 注册地址：`172.20.10.2:8091`，应使用宿主机默认路由对应的非回环 IPv4。
+- 本地 Seata Server 注册地址：通过 `SEATA_ADVERTISE_HOST` 设置为宿主机可达的非回环 IPv4，不能使用 `127.0.0.1`。
 
 ## 启动
 

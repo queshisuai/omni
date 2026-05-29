@@ -119,7 +119,8 @@
 - 依赖 `nacos` 启动。
 - 使用 Nacos 作为注册中心。
 - 使用 Nacos 作为配置中心。
-- 本地默认 Java 服务运行在宿主机，因此 Seata Server 注册到 Nacos 的地址必须是宿主机可访问地址。Seata 1.6.1 不接受 `127.0.0.1` 作为注册 IP，本机应使用默认路由对应的非回环 IPv4，例如当前环境的 `172.20.10.2:8091`，不能注册为容器网络名 `seata-server:8091`。
+- 本地默认 Java 服务运行在宿主机，因此 Seata Server 注册到 Nacos 的地址必须是宿主机可访问地址。Seata 1.6.1 不接受 `127.0.0.1` 作为注册 IP，本机应通过 `SEATA_ADVERTISE_HOST` 设置为宿主机可达的非回环 IPv4，例如当前验证环境的 `10.142.195.38:8091`，不能注册为容器网络名 `seata-server:8091`。
+- `seata-config-init` 应把同一个 `SEATA_ADVERTISE_HOST` 写入 Nacos 配置；未设置或设置为回环地址时应失败，而不是静默发布不可达地址。
 - 如果未来 Java 服务也容器化运行，再把注册地址调整为容器网络内可访问的服务名或容器 IP。
 - 暴露 Seata 默认通信端口 `8091`。
 - 如镜像版本提供控制台，则暴露控制台端口 `7091`。
@@ -174,7 +175,7 @@ Seata Server 启动配置必须放在仓库内，不能依赖本机绝对路径�
 - `seata.registry.nacos.server-addr=${NACOS_HOST:localhost}:${NACOS_PORT:8848}`
 - `seata.registry.nacos.group=SEATA_GROUP`
 - `seata.registry.nacos.application=seata-server`
-- 本地宿主机运行 Java 服务时，Seata Server 在 Nacos 中的可访问地址应为宿主机默认路由对应的非回环 IPv4，例如当前环境的 `172.20.10.2:8091`。
+- 本地宿主机运行 Java 服务时，Seata Server 在 Nacos 中的可访问地址应通过 `SEATA_ADVERTISE_HOST` 设置为宿主机可达的非回环 IPv4，例如当前验证环境的 `10.142.195.38:8091`。
 - 全容器化运行时，再将 Seata Server 注册地址调整为容器网络可访问地址。
 - `seata.config.type=nacos`
 - `seata.config.nacos.server-addr=${NACOS_HOST:localhost}:${NACOS_PORT:8848}`

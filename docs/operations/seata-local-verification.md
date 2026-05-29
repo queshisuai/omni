@@ -8,7 +8,7 @@
   - `https://docker.m.daocloud.io/`
 - Seata Server 镜像：`seataio/seata-server:1.6.1`
 - 本地 Java 服务运行位置：宿主机
-- 本地 Seata Server 注册地址：`172.20.10.2:8091`
+- 本地 Seata Server 注册地址：通过 `SEATA_ADVERTISE_HOST` 设置为宿主机可达的非回环 IPv4，本次验证为 `10.142.195.38:8091`
 
 ## 启动
 
@@ -16,6 +16,16 @@
 docker compose up -d postgres redis nacos seata-config-init seata-server
 powershell -ExecutionPolicy Bypass -File start-project.ps1
 ```
+
+宿主机运行 Java 服务时，先设置 Seata 对 Nacos 暴露的地址：
+
+```powershell
+$env:SEATA_ADVERTISE_HOST='<宿主机可达的非回环IPv4>'
+$env:SEATA_ADVERTISE_PORT='8091'
+docker compose up -d --force-recreate seata-config-init seata-server
+```
+
+注意：Seata Server 1.6.1 不接受 `127.0.0.1` 作为注册 IP。若未设置 `SEATA_ADVERTISE_HOST` 或设置为回环地址，`seata-config-init` 会失败，避免向 Nacos 写入宿主机 Java 不可达的地址。
 
 可选预拉取：
 
@@ -48,7 +58,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.
 - `docker compose ps`: PASS，`postgres`、`redis`、`nacos`、`seata-server`、`grab-service`、`frontend` 均运行，`seata-server` 为 healthy。
 - Seata image: PASS，使用 `seataio/seata-server:1.6.1`，未使用 `latest`。
 - Nacos Seata 配置: PASS，`SEATA_GROUP/seataServer.properties` 存在，包含 `service.vgroupMapping.omni_tx_group=default`。
-- Seata Server Nacos 注册: PASS，`SEATA_GROUP@@seata-server` 健康实例 `172.20.10.2:8091`。
+- Seata Server Nacos 注册: PASS，`SEATA_GROUP@@seata-server` 健康实例为宿主机可达的非回环 IPv4。
 - `undo_log` SQL 资产: PASS，已新增 production-split、docker-init、local-schema 脚本。
 - `powershell -ExecutionPolicy Bypass -File scripts/check-production-split-sql.ps1`: PASS。
 - `powershell -ExecutionPolicy Bypass -File scripts/check-local-schema-sql.ps1`: PASS。
@@ -63,3 +73,15 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.
 - `java-ticket` 客户端证据: PASS，日志包含 `RegisterTMRequest{applicationId='java-ticket', transactionServiceGroup='omni_tx_group'}`、`register TM success`、`RM will register :jdbc:postgresql://localhost:5432/omni_ticket_split`、`register RM success`。
 - `java-payment` 客户端证据: PASS，日志包含 `RegisterTMRequest{applicationId='java-payment', transactionServiceGroup='omni_tx_group'}`、`register TM success`、`RM will register :jdbc:postgresql://localhost:5432/omni_payment`、`register RM success`。
 - 当前 IDE 中早先启动的 `order/ticket/payment` 进程: 需要重启后才会加载本次新编译的 Seata 配置和依赖；本记录的客户端验收基于临时启动副本。
+
+## 2026-05-29 Task 6 XID 传播验证记录
+
+- `docker compose ps`: PASS，`postgres`、`redis`、`nacos`、`seata-server`、`grab-service`、`frontend` 均运行，`seata-server` 为 healthy。
+- Nacos Seata 注册查询: PASS，`SEATA_GROUP@@seata-server` 返回 `10.142.195.38:8091`，宿主机 Java 客户端可达。
+- `java-order` 与 `java-ticket` 端口: PASS，`8083` 和 `8082` 处于监听状态。
+- `POST http://localhost:8083/api/order/internal/create`: PASS，返回成功订单 `DM2026052915461620D5E7`。
+- XID 传播: PASS，Seata Server 日志显示全局事务 `omni-create-order` 使用同一 XID `10.142.195.38:8091:5179924382839844869`。
+- ticket AT 分支: PASS，日志包含 `resourceId=jdbc:postgresql://localhost:5432/omni_ticket_split`，并成功注册分支。
+- order AT 分支: PASS，日志包含 `resourceId=jdbc:postgresql://localhost:5432/omni_order`，并成功注册分支。
+- 全局提交: PASS，ticket/order 分支均 commit 成功，日志包含 `Committing global transaction is successfully done`。
+- Feign XID 拦截器: 未新增。默认 `spring-cloud-starter-alibaba-seata` XID 传播已通过本次真实链路验证。

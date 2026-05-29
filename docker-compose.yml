@@ -64,6 +64,8 @@ services:
       NACOS_ADDR: nacos:8848
       SEATA_CONFIG_DATA_ID: seataServer.properties
       SEATA_CONFIG_GROUP: SEATA_GROUP
+      SEATA_ADVERTISE_HOST: ${SEATA_ADVERTISE_HOST:-127.0.0.1}
+      SEATA_ADVERTISE_PORT: ${SEATA_ADVERTISE_PORT:-8091}
     command: ["/bin/sh", "/seata-config/import-config.sh"]
     restart: "no"
 
