@@ -219,11 +219,14 @@ describe('GrabRepository', () => {
     const result = await repository.claimForProcessing('GRAB202605270001', 'worker-1');
     const none = await repository.claimForProcessing('GRAB404', 'worker-1');
 
-    expect(query.mock.calls[0][0]).toContain('progress_status in ($3, $4)');
-    expect(query.mock.calls[0][0]).toContain('status = $5');
+    expect(query.mock.calls[0][0]).toContain('status in ($3, $4)');
+    expect(query.mock.calls[0][0]).toContain('progress_status in ($5, $6)');
+    expect(query.mock.calls[0][0]).toContain('status = $7');
     expect(query.mock.calls[0][1]).toEqual([
       'GRAB202605270001',
       'worker-1',
+      GRAB_STATUS.QUEUED,
+      GRAB_STATUS.WAITING,
       GRAB_STATUS.QUEUED,
       GRAB_STATUS.WAITING,
       GRAB_STATUS.WAITING,

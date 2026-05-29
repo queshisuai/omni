@@ -188,13 +188,22 @@ export class GrabRepository {
        set worker_id = $2,
            worker_claimed_at = now(),
            processing_started_at = now(),
-           progress_status = $5,
-           status = $5,
+           progress_status = $7,
+           status = $7,
            updated_at = now()
        where request_id = $1
-         and progress_status in ($3, $4)
+         and status in ($3, $4)
+         and progress_status in ($5, $6)
        returning *`,
-      [requestId, workerId, GRAB_STATUS.QUEUED, GRAB_STATUS.WAITING, GRAB_STATUS.WAITING],
+      [
+        requestId,
+        workerId,
+        GRAB_STATUS.QUEUED,
+        GRAB_STATUS.WAITING,
+        GRAB_STATUS.QUEUED,
+        GRAB_STATUS.WAITING,
+        GRAB_STATUS.WAITING,
+      ],
     );
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }
