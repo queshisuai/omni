@@ -77,7 +77,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const buildTicketTypePreferences = () => {
     if (!selectedSession || !selectedTicket) return []
     const sorted = selectedSession.ticketTypes
-      .filter(ticket => ticket.id === selectedTicket.id || (allowAutoDowngrade && ticket.price <= selectedTicket.price))
+      .filter(ticket => ticket.id === selectedTicket.id || (allowAutoDowngrade && !showsSeatCraftSelection && ticket.price <= selectedTicket.price))
       .sort((a, b) => {
         if (a.id === selectedTicket.id) return -1
         if (b.id === selectedTicket.id) return 1
@@ -235,6 +235,12 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         setOrderError(err instanceof Error ? err.message : '支付创建失败')
       })
   }, [grabProgressOpen, grabProgress?.status, grabProgress?.orderId])
+
+  useEffect(() => {
+    if (showsSeatCraftSelection && allowAutoDowngrade) {
+      setAllowAutoDowngrade(false)
+    }
+  }, [showsSeatCraftSelection, allowAutoDowngrade])
 
   const handleBuy = () => {
     if (!isAuthenticated()) {
@@ -461,6 +467,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                     key={sd.session.id}
                     onClick={() => {
                       setSelectedSession(sd)
+                      setAllowAutoDowngrade(false)
                       resetGrabIdempotencyKey()
                       if (sd.ticketTypes.length > 0) {
                         setSelectedTicket(sd.ticketTypes[0])
@@ -498,7 +505,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         return (
                           <button
                             key={tt.id}
-                            onClick={() => { setSelectedTicket(tt); setQuantity(1); setSelectedSeatIds([]); resetGrabIdempotencyKey() }}
+                            onClick={() => { setSelectedTicket(tt); setQuantity(1); setSelectedSeatIds([]); setAllowAutoDowngrade(false); resetGrabIdempotencyKey() }}
                             className="cursor-pointer border outline-none px-5 py-3 rounded text-sm transition-colors min-w-[100px]"
                             style={{
                               backgroundColor: selectedTicket?.id === tt.id ? '#fff0f5' : '#fff',
@@ -511,9 +518,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                               ¥{tt.price}
                             </div>
                             <div className="text-xs text-[#999] mt-0.5">
-                              {stockHint
-                                ? stockHint.visibleStock == null ? '库存变化较快' : stockHint.visibleStock > 0 ? `剩余约 ${stockHint.visibleStock} 张` : '已售罄'
-                                : tt.remainStock == null ? '待生成库存' : tt.remainStock > 0 ? `剩余约 ${tt.remainStock} 张` : '售罄'}
+                              {stockHint?.visibleStock == null
+                                ? '库存变化较快'
+                                : stockHint.visibleStock > 0 ? `剩余约 ${stockHint.visibleStock} 张` : '当前可见库存紧张'}
                             </div>
                           </button>
                         )

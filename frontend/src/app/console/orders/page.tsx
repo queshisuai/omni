@@ -15,16 +15,7 @@ import {
 } from '@/lib/console-orders'
 import type { OrderEntity, UserRole } from '@/types/api'
 
-type GrabOrderMetadata = {
-  grabRequestId?: number | null
-  requestedTicketTypeId?: number | null
-  matchedTicketTypeId?: number | null
-  autoDowngraded?: boolean | null
-}
-
-type OrderWithGrabMetadata = OrderEntity & GrabOrderMetadata
-
-function getTicketTypeLabel(order: OrderWithGrabMetadata) {
+function getTicketTypeLabel(order: OrderEntity) {
   return order.ticketName || `票档 ${order.matchedTicketTypeId ?? order.ticketTypeId}`
 }
 
@@ -121,8 +112,7 @@ export default function ConsoleOrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {pageOrders.map(order => {
-                const o = order as OrderWithGrabMetadata
+              {pageOrders.map(o => {
                 const requestedTicketTypeId = o.requestedTicketTypeId ?? o.ticketTypeId
                 const matchedTicketTypeId = o.matchedTicketTypeId ?? o.ticketTypeId
                 const showTicketRoute = o.autoDowngraded && requestedTicketTypeId !== matchedTicketTypeId
