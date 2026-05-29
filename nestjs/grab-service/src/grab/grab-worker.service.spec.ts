@@ -142,4 +142,93 @@ describe('GrabWorkerService', () => {
     expect(repository.updateStatus).toHaveBeenCalledWith('GRAB1', GRAB_STATUS.FAILED, 'order service timeout');
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
+
+  it('downgrades to the next authorized ticket type after sold out', async () => {
+    const record = queuedRecord({
+      ticketTypeId: 1,
+      requestedTicketTypes: [
+        { ticketTypeId: 1, name: 'A', maxPrice: 1280 },
+        { ticketTypeId: 2, name: 'B', maxPrice: 980 },
+      ],
+      allowAutoDowngrade: true,
+      attemptsSnapshot: [
+        { ticketTypeId: 1, name: 'A', status: 'PENDING', message: 'pending' },
+        { ticketTypeId: 2, name: 'B', status: 'PENDING', message: 'pending' },
+      ],
+    });
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn().mockResolvedValue({ ...record, orderId: 9002, matchedTicketTypeId: 2 }),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn()
+        .mockResolvedValueOnce({ outcome: 'SOLD_OUT', existingRequestId: null })
+        .mockResolvedValueOnce({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockResolvedValue({ id: 9002, orderNo: 'O2', amount: 1960 }),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(admission.admit).toHaveBeenNthCalledWith(1, expect.objectContaining({ ticketTypeId: 1 }));
+    expect(admission.admit).toHaveBeenNthCalledWith(2, expect.objectContaining({ ticketTypeId: 2 }));
+    expect(orderClient.createOrder).toHaveBeenCalledWith(expect.objectContaining({
+      ticketTypeId: 2,
+      authorizedMaxUnitPrice: 980,
+      matchedTicketTypeId: 2,
+      autoDowngraded: true,
+    }));
+    expect(repository.markOrderCreated).toHaveBeenCalledWith('GRAB1', 9002, 2, expect.arrayContaining([
+      expect.objectContaining({ ticketTypeId: 1, status: 'SOLD_OUT' }),
+      expect.objectContaining({ ticketTypeId: 2, status: 'ORDER_CREATED' }),
+    ]));
+    expect(repository.updateProgress).toHaveBeenCalledWith('GRAB1', expect.objectContaining({
+      status: GRAB_STATUS.DOWNGRADING,
+      message: 'A sold out, trying B',
+    }));
+    expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
+  });
+
+  it('marks sold out when downgrade is not authorized', async () => {
+    const record = queuedRecord({
+      requestedTicketTypes: [
+        { ticketTypeId: 1, name: 'A', maxPrice: 1280 },
+        { ticketTypeId: 2, name: 'B', maxPrice: 980 },
+      ],
+      allowAutoDowngrade: false,
+    });
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn().mockResolvedValue({ ...record, progressStatus: GRAB_STATUS.SOLD_OUT }),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'SOLD_OUT', existingRequestId: null }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn(),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(admission.admit).toHaveBeenCalledTimes(1);
+    expect(orderClient.createOrder).not.toHaveBeenCalled();
+    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB1', GRAB_STATUS.SOLD_OUT, 'ticket type sold out');
+    expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
+  });
 });
