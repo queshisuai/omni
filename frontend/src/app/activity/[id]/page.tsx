@@ -99,6 +99,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setError('')
     setSelectedSession(null)
     setSelectedTicket(null)
+    setAllowAutoDowngrade(false)
     try {
       const data = await getActivityDetail(Number(id))
       setDetail(data)
