@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { GRAB_STATUS, GrabStatus } from './grab-status';
-import type { CreatePendingGrabRequestInput, FindActiveGrabIntentInput, GrabRequestRecord } from './grab.types';
+import type {
+  CreatePendingGrabRequestInput,
+  FindActiveGrabIntentInput,
+  GrabAttemptSnapshot,
+  GrabRequestRecord,
+  GrabTicketPreference,
+} from './grab.types';
 
 interface GrabRequestRow {
   id: string | number;
@@ -14,8 +20,22 @@ interface GrabRequestRow {
   seat_ids: number[] | string;
   allocate_random: boolean;
   status: GrabStatus;
+  progress_status?: GrabStatus | null;
+  progress_message?: string | null;
   order_id: string | number | null;
   fail_reason: string | null;
+  request_type?: 'NORMAL_GRAB' | 'TEAM_GRAB' | 'WAITLIST_OFFER' | null;
+  queue_seq?: string | number | null;
+  requested_ticket_types?: GrabTicketPreference[] | string | null;
+  allow_auto_downgrade?: boolean | null;
+  current_ticket_type_id?: string | number | null;
+  current_attempt_index?: number | null;
+  matched_ticket_type_id?: string | number | null;
+  attempts_snapshot?: GrabAttemptSnapshot[] | string | null;
+  worker_id?: string | null;
+  worker_claimed_at?: Date | null;
+  processing_started_at?: Date | null;
+  completed_at?: Date | null;
   expire_time: Date;
   created_at: Date;
   updated_at: Date;
@@ -131,7 +151,7 @@ export class GrabRepository {
   }
 
   private mapRow(row: GrabRequestRow): GrabRequestRecord {
-    const seatIds = Array.isArray(row.seat_ids) ? row.seat_ids : JSON.parse(row.seat_ids || '[]');
+    const seatIds = this.parseJsonArray<number>(row.seat_ids);
     return {
       id: Number(row.id),
       requestId: row.request_id,
@@ -143,11 +163,31 @@ export class GrabRepository {
       seatIds,
       allocateRandom: row.allocate_random,
       status: row.status,
+      progressStatus: row.progress_status ?? row.status,
+      progressMessage: row.progress_message ?? null,
       orderId: row.order_id == null ? null : Number(row.order_id),
       failReason: row.fail_reason,
+      requestType: row.request_type ?? 'NORMAL_GRAB',
+      queueSeq: row.queue_seq == null ? null : Number(row.queue_seq),
+      requestedTicketTypes: this.parseJsonArray<GrabTicketPreference>(row.requested_ticket_types),
+      allowAutoDowngrade: row.allow_auto_downgrade ?? false,
+      currentTicketTypeId: row.current_ticket_type_id == null ? null : Number(row.current_ticket_type_id),
+      currentAttemptIndex: row.current_attempt_index ?? 0,
+      matchedTicketTypeId: row.matched_ticket_type_id == null ? null : Number(row.matched_ticket_type_id),
+      attemptsSnapshot: this.parseJsonArray<GrabAttemptSnapshot>(row.attempts_snapshot),
+      workerId: row.worker_id ?? null,
+      workerClaimedAt: row.worker_claimed_at ?? null,
+      processingStartedAt: row.processing_started_at ?? null,
+      completedAt: row.completed_at ?? null,
       expireTime: row.expire_time,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+
+  private parseJsonArray<T>(value: T[] | string | null | undefined): T[] {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string' && value.trim()) return JSON.parse(value) as T[];
+    return [];
   }
 }

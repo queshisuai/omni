@@ -46,6 +46,19 @@ create table if not exists grab_request (
         'LIMITED',
         'FAILED',
         'EXPIRED'
+    )),
+    constraint chk_grab_request_progress_status check (progress_status in (
+        'QUEUED',
+        'WAITING',
+        'TRYING_TICKET_TYPE',
+        'LOCKING',
+        'ORDER_CREATING',
+        'ORDER_CREATED',
+        'SOLD_OUT',
+        'DOWNGRADING',
+        'LIMITED',
+        'FAILED',
+        'EXPIRED'
     ))
 );
 
