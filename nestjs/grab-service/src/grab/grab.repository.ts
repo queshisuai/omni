@@ -148,12 +148,13 @@ export class GrabRepository {
   }
 
   async updateStatus(requestId: string, status: GrabStatus, failReason: string | null = null): Promise<GrabRequestRecord> {
+    const progressStatus = this.toProgressStatus(status);
     const result = await this.database.query<GrabRequestRow>(
       `update grab_request
-       set status = $2, fail_reason = $3, updated_at = now()
+       set status = $2, progress_status = $4, fail_reason = $3, updated_at = now()
        where request_id = $1
        returning *`,
-      [requestId, status, failReason],
+      [requestId, status, failReason, progressStatus],
     );
     return this.mapRow(result.rows[0]);
   }
@@ -219,7 +220,7 @@ export class GrabRepository {
        set status = $2,
            progress_status = $2,
            order_id = $3,
-           matched_ticket_type_id = $4,
+           matched_ticket_type_id = coalesce($4, ticket_type_id),
            attempts_snapshot = $5::jsonb,
            completed_at = now(),
            fail_reason = null,
@@ -233,7 +234,17 @@ export class GrabRepository {
 
   async findActiveByIntent(input: FindActiveGrabIntentInput): Promise<GrabRequestRecord | null> {
     const normalizedSeatIds = [...input.seatIds].sort((a, b) => a - b);
-    const activeStatuses = [GRAB_STATUS.PENDING, GRAB_STATUS.ACCEPTED, GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.ORDER_CREATED];
+    const activeStatuses = [
+      GRAB_STATUS.QUEUED,
+      GRAB_STATUS.WAITING,
+      GRAB_STATUS.TRYING_TICKET_TYPE,
+      GRAB_STATUS.LOCKING,
+      GRAB_STATUS.PENDING,
+      GRAB_STATUS.ACCEPTED,
+      GRAB_STATUS.ORDER_CREATING,
+      GRAB_STATUS.ORDER_CREATED,
+      GRAB_STATUS.DOWNGRADING,
+    ];
     const result = await this.database.query<GrabRequestRow>(
       `select * from grab_request
        where user_id = $1
@@ -268,6 +279,12 @@ export class GrabRepository {
       [GRAB_STATUS.ACCEPTED, GRAB_STATUS.ORDER_CREATING, now, limit],
     );
     return result.rows.map((row) => this.mapRow(row));
+  }
+
+  private toProgressStatus(status: GrabStatus): GrabStatus {
+    if (status === GRAB_STATUS.PENDING) return GRAB_STATUS.QUEUED;
+    if (status === GRAB_STATUS.ACCEPTED) return GRAB_STATUS.WAITING;
+    return status;
   }
 
   private mapRow(row: GrabRequestRow): GrabRequestRecord {

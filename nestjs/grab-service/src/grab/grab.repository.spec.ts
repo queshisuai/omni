@@ -165,6 +165,30 @@ describe('GrabRepository', () => {
     expect(result.attemptsSnapshot).toEqual(attempts);
   });
 
+  it('maps accepted status to waiting progress when updating status', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...baseRow,
+        status: GRAB_STATUS.ACCEPTED,
+        progress_status: GRAB_STATUS.WAITING,
+        fail_reason: null,
+      }],
+    });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.updateStatus('GRAB202605270001', GRAB_STATUS.ACCEPTED);
+
+    expect(query.mock.calls[0][0]).toContain('progress_status = $4');
+    expect(query.mock.calls[0][1]).toEqual([
+      'GRAB202605270001',
+      GRAB_STATUS.ACCEPTED,
+      null,
+      GRAB_STATUS.WAITING,
+    ]);
+    expect(result.status).toBe(GRAB_STATUS.ACCEPTED);
+    expect(result.progressStatus).toBe(GRAB_STATUS.WAITING);
+  });
+
   it('marks order created with matched ticket type and attempts snapshot', async () => {
     const attempts = [
       { ticketTypeId: 202, name: 'VIP', status: 'ORDER_CREATED' as const, message: '已创建订单' },
@@ -198,6 +222,33 @@ describe('GrabRepository', () => {
     expect(result.matchedTicketTypeId).toBe(202);
     expect(result.attemptsSnapshot).toEqual(attempts);
     expect(result.failReason).toBeNull();
+  });
+
+  it('falls back to original ticket type when legacy order creation omits matched ticket type', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...baseRow,
+        status: GRAB_STATUS.ORDER_CREATED,
+        progress_status: GRAB_STATUS.ORDER_CREATED,
+        order_id: '9001',
+        matched_ticket_type_id: '202',
+        attempts_snapshot: JSON.stringify([]),
+        completed_at: new Date('2026-05-27T12:03:00.000Z'),
+      }],
+    });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.markOrderCreated('GRAB202605270001', 9001);
+
+    expect(query.mock.calls[0][0]).toContain('matched_ticket_type_id = coalesce($4, ticket_type_id)');
+    expect(query.mock.calls[0][1]).toEqual([
+      'GRAB202605270001',
+      GRAB_STATUS.ORDER_CREATED,
+      9001,
+      null,
+      JSON.stringify([]),
+    ]);
+    expect(result.matchedTicketTypeId).toBe(202);
   });
 
   it('claims queued or waiting requests for processing and returns null when none match', async () => {
@@ -268,15 +319,32 @@ describe('GrabRepository', () => {
       allocateRandom: false,
     });
 
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('status = any'), [
+    expect(query).toHaveBeenCalledWith(expect.stringContaining('status = any'), expect.any(Array));
+    expect(query.mock.calls[0][1].slice(0, 6)).toEqual([
       2004,
       101,
       202,
       2,
       JSON.stringify([301, 302]),
       false,
-      [GRAB_STATUS.PENDING, GRAB_STATUS.ACCEPTED, GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.ORDER_CREATED],
     ]);
+    expect(query.mock.calls[0][1][6]).toEqual([
+      GRAB_STATUS.QUEUED,
+      GRAB_STATUS.WAITING,
+      GRAB_STATUS.TRYING_TICKET_TYPE,
+      GRAB_STATUS.LOCKING,
+      GRAB_STATUS.PENDING,
+      GRAB_STATUS.ACCEPTED,
+      GRAB_STATUS.ORDER_CREATING,
+      GRAB_STATUS.ORDER_CREATED,
+      GRAB_STATUS.DOWNGRADING,
+    ]);
+    expect(query.mock.calls[0][1][6]).not.toEqual(expect.arrayContaining([
+      GRAB_STATUS.SOLD_OUT,
+      GRAB_STATUS.LIMITED,
+      GRAB_STATUS.FAILED,
+      GRAB_STATUS.EXPIRED,
+    ]));
     expect(result?.requestId).toBe('GRAB1');
     expect(result?.orderId).toBe(9001);
   });
