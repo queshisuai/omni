@@ -7,6 +7,7 @@ import { GrabController } from './grab.controller';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository } from './grab.repository';
 import { GrabService } from './grab.service';
+import { GrabWorkerService } from './grab-worker.service';
 import { OrderClientService } from './order-client.service';
 import { RedisService } from './redis.service';
 
@@ -19,6 +20,7 @@ import { RedisService } from './redis.service';
     GrabAdmissionService,
     GrabCompensationService,
     GrabQueueService,
+    GrabWorkerService,
     OrderClientService,
     RedisService,
   ],
