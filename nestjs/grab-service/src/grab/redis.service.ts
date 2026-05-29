@@ -37,6 +37,30 @@ export class RedisService implements OnModuleDestroy {
     return this.client.incrby(key, amount);
   }
 
+  async rpush(key: string, value: string): Promise<number> {
+    return this.client.rpush(key, value);
+  }
+
+  async lpop(key: string): Promise<string | null> {
+    return this.client.lpop(key);
+  }
+
+  async sadd(key: string, value: string): Promise<number> {
+    return this.client.sadd(key, value);
+  }
+
+  async smembers(key: string): Promise<string[]> {
+    return this.client.smembers(key);
+  }
+
+  async srem(key: string, value: string): Promise<number> {
+    return this.client.srem(key, value);
+  }
+
+  async hset(key: string, values: Record<string, string>): Promise<number> {
+    return this.client.hset(key, values);
+  }
+
   async del(keys: string[]): Promise<number> {
     if (keys.length === 0) return 0;
     return this.client.del(...keys);
