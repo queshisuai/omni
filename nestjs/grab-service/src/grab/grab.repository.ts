@@ -242,7 +242,6 @@ export class GrabRepository {
       GRAB_STATUS.PENDING,
       GRAB_STATUS.ACCEPTED,
       GRAB_STATUS.ORDER_CREATING,
-      GRAB_STATUS.ORDER_CREATED,
       GRAB_STATUS.DOWNGRADING,
     ];
     const result = await this.database.query<GrabRequestRow>(

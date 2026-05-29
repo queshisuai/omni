@@ -336,10 +336,10 @@ describe('GrabRepository', () => {
       GRAB_STATUS.PENDING,
       GRAB_STATUS.ACCEPTED,
       GRAB_STATUS.ORDER_CREATING,
-      GRAB_STATUS.ORDER_CREATED,
       GRAB_STATUS.DOWNGRADING,
     ]);
     expect(query.mock.calls[0][1][6]).not.toEqual(expect.arrayContaining([
+      GRAB_STATUS.ORDER_CREATED,
       GRAB_STATUS.SOLD_OUT,
       GRAB_STATUS.LIMITED,
       GRAB_STATUS.FAILED,
