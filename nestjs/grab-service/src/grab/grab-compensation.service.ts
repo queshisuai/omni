@@ -26,7 +26,15 @@ export class GrabCompensationService implements OnModuleInit {
     for (const request of expiredRequests) {
       const progressStatus = (request as GrabRequestRecordWithProgress).progressStatus;
       if (!request.orderId && RELEASEABLE_PROGRESS_STATUSES.has(progressStatus)) {
-        await this.admissionService.release(request);
+        await this.admissionService.release({
+          requestId: request.requestId,
+          userId: request.userId,
+          sessionId: request.sessionId,
+          ticketTypeId: request.currentTicketTypeId ?? request.ticketTypeId,
+          quantity: request.quantity,
+          seatIds: request.seatIds,
+          idempotencyKey: request.idempotencyKey,
+        });
       }
       await this.repository.updateStatus(request.requestId, GRAB_STATUS.EXPIRED, '抢票请求已超时');
     }

@@ -589,6 +589,7 @@ describe('GrabService', () => {
       idempotencyKey: 'idem-locking',
       status: GRAB_STATUS.ACCEPTED,
       progressStatus: 'LOCKING',
+      currentTicketTypeId: 203,
       orderId: null,
       failReason: null,
     };
@@ -606,7 +607,15 @@ describe('GrabService', () => {
 
     const result = await service.cancelRequest(2004, 'GRAB-LOCKING');
 
-    expect(admission.release).toHaveBeenCalledWith(record);
+    expect(admission.release).toHaveBeenCalledWith({
+      requestId: 'GRAB-LOCKING',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 203,
+      quantity: 1,
+      seatIds: [],
+      idempotencyKey: 'idem-locking',
+    });
     expect(repository.updateStatus).toHaveBeenCalledWith('GRAB-LOCKING', GRAB_STATUS.EXPIRED, 'grab request cancelled');
     expect(result).toMatchObject({ requestId: 'GRAB-LOCKING', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'grab request cancelled' });
   });

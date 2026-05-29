@@ -58,10 +58,11 @@ describe('GrabAdmissionService', () => {
   });
 
   it('restores stock and clears hold when releasing an accepted admission', async () => {
-    const redis = { incrBy: jest.fn(), del: jest.fn().mockResolvedValue(2) };
+    const redis = { eval: jest.fn().mockResolvedValue(1), incrBy: jest.fn(), del: jest.fn() };
     const service = new GrabAdmissionService(redis as any);
 
     await service.release({
+      requestId: 'GRAB202605270001',
       userId: 2004,
       sessionId: 101,
       ticketTypeId: 202,
@@ -70,11 +71,33 @@ describe('GrabAdmissionService', () => {
       idempotencyKey: 'idem-1',
     });
 
-    expect(redis.incrBy).toHaveBeenCalledWith('grab:stock:101:202', 1);
-    expect(redis.del).toHaveBeenCalledWith([
+    expect(redis.eval).toHaveBeenCalledWith(expect.stringContaining('idempotentHolder ~= requestId'), [
+      'grab:stock:101:202',
       'grab:idempotency:2004:idem-1',
       'grab:user-hold:2004:101:202',
       'grab:seat-hold:301',
-    ]);
+    ], ['GRAB202605270001', '1', 'true']);
+    const script = redis.eval.mock.calls[0][0];
+    expect(script.indexOf('idempotentHolder ~= requestId')).toBeLessThan(script.indexOf("redis.call('INCRBY', KEYS[1], quantity)"));
+    expect(redis.incrBy).not.toHaveBeenCalled();
+    expect(redis.del).not.toHaveBeenCalled();
+  });
+
+  it('can clear a matching hold without restoring stock', async () => {
+    const redis = { eval: jest.fn().mockResolvedValue(1) };
+    const service = new GrabAdmissionService(redis as any);
+
+    await service.release({
+      requestId: 'GRAB202605270001',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      seatIds: [],
+      idempotencyKey: 'idem-1',
+      restoreStock: false,
+    });
+
+    expect(redis.eval.mock.calls[0][2]).toEqual(['GRAB202605270001', '1', 'false']);
   });
 });

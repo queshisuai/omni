@@ -19,6 +19,11 @@ export interface AdmissionResult {
   existingRequestId: string | null;
 }
 
+export type ReleaseInput = Pick<AdmitInput, 'userId' | 'sessionId' | 'ticketTypeId' | 'quantity' | 'seatIds' | 'idempotencyKey'> & {
+  requestId?: string;
+  restoreStock?: boolean;
+};
+
 @Injectable()
 export class GrabAdmissionService {
   private readonly ADMISSION_SCRIPT = `
@@ -84,18 +89,45 @@ export class GrabAdmissionService {
     return { outcome, existingRequestId: existingRequestId || null };
   }
 
-  async release(input: Pick<AdmitInput, 'userId' | 'sessionId' | 'ticketTypeId' | 'quantity' | 'seatIds' | 'idempotencyKey'> & { restoreStock?: boolean }): Promise<void> {
-    if (input.restoreStock !== false) {
-      await this.redisService.incrBy(this.stockKey(input.sessionId, input.ticketTypeId), input.quantity);
-    }
-    await this.redisService.del([
-      this.idempotencyKey(input.userId, input.idempotencyKey),
-      this.userHoldKey(input.userId, input.sessionId, input.ticketTypeId),
-      ...input.seatIds.map((seatId) => this.seatHoldKey(seatId)),
+  async release(input: ReleaseInput): Promise<void> {
+    const script = `
+      local requestId = ARGV[1]
+      local quantity = tonumber(ARGV[2])
+      local restoreStock = ARGV[3]
+
+      if requestId ~= '' then
+        local idempotentHolder = redis.call('GET', KEYS[2])
+        if idempotentHolder ~= requestId then
+          return 0
+        end
+        local userHolder = redis.call('GET', KEYS[3])
+        if userHolder and userHolder ~= requestId then
+          return 0
+        end
+      end
+
+      if restoreStock ~= 'false' then
+        redis.call('INCRBY', KEYS[1], quantity)
+      end
+      redis.call('DEL', KEYS[2], KEYS[3])
+
+      for i = 4, #KEYS do
+        if requestId == '' or redis.call('GET', KEYS[i]) == requestId then
+          redis.call('DEL', KEYS[i])
+        end
+      end
+
+      return 1
+    `;
+
+    await this.redisService.eval(script, this.buildKeys(input), [
+      input.requestId ?? '',
+      String(input.quantity),
+      input.restoreStock === false ? 'false' : 'true',
     ]);
   }
 
-  private buildKeys(input: AdmitInput): string[] {
+  private buildKeys(input: Pick<AdmitInput, 'userId' | 'sessionId' | 'ticketTypeId' | 'seatIds' | 'idempotencyKey'>): string[] {
     return [
       this.stockKey(input.sessionId, input.ticketTypeId),
       this.idempotencyKey(input.userId, input.idempotencyKey),

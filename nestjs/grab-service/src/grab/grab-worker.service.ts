@@ -239,6 +239,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
 
   private async releaseAdmission(record: GrabRequestRecord, preference: GrabTicketPreference): Promise<void> {
     await this.admissionService.release({
+      requestId: record.requestId,
       userId: record.userId,
       sessionId: record.sessionId,
       ticketTypeId: preference.ticketTypeId,

@@ -55,12 +55,20 @@ describe('GrabCompensationService', () => {
   });
 
   it.each(['LOCKING', 'ORDER_CREATING'])('expires %s requests and releases redis holds when no order exists', async (progressStatus) => {
-    const expired = buildExpiredRequest({ requestId: `GRAB-${progressStatus}`, progressStatus });
+    const expired = buildExpiredRequest({ requestId: `GRAB-${progressStatus}`, progressStatus, currentTicketTypeId: 203 });
     const { repository, admission, service } = buildService([expired]);
 
     await service.sweepExpiredRequests();
 
-    expect(admission.release).toHaveBeenCalledWith(expired);
+    expect(admission.release).toHaveBeenCalledWith({
+      requestId: `GRAB-${progressStatus}`,
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 203,
+      quantity: 2,
+      seatIds: [301, 302],
+      idempotencyKey: 'idem-1',
+    });
     expect(repository.updateStatus).toHaveBeenCalledWith(`GRAB-${progressStatus}`, GRAB_STATUS.EXPIRED, EXPIRED_MESSAGE);
   });
 

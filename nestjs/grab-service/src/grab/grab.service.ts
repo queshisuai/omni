@@ -130,7 +130,15 @@ export class GrabService {
     const hasLegacyCancelableStatus = !ACTIVE_ASYNC_PROGRESS_STATUS_SET.has(progressStatus) && record.status === GRAB_STATUS.ACCEPTED;
     if (!hasCancelableProgress && !hasLegacyCancelableStatus) return this.toResponse(record);
     if (RELEASEABLE_PROGRESS_STATUSES.has(progressStatus) || (!hasCancelableProgress && hasLegacyCancelableStatus)) {
-      await this.admissionService.release(record);
+      await this.admissionService.release({
+        requestId: record.requestId,
+        userId: record.userId,
+        sessionId: record.sessionId,
+        ticketTypeId: record.currentTicketTypeId ?? record.ticketTypeId,
+        quantity: record.quantity,
+        seatIds: record.seatIds,
+        idempotencyKey: record.idempotencyKey,
+      });
     }
     return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, 'grab request cancelled'));
   }

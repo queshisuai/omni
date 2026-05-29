@@ -138,6 +138,7 @@ describe('GrabWorkerService', () => {
     await service.processRequest('GRAB1');
 
     expect(admission.release).toHaveBeenCalledWith({
+      requestId: 'GRAB1',
       userId: 2004,
       sessionId: 101,
       ticketTypeId: 1,
@@ -180,6 +181,7 @@ describe('GrabWorkerService', () => {
     expect(orderClient.createOrder).not.toHaveBeenCalled();
     expect(repository.markOrderCreated).not.toHaveBeenCalled();
     expect(admission.release).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: 'GRAB1',
       userId: 2004,
       sessionId: 101,
       ticketTypeId: 1,
