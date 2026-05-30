@@ -470,6 +470,8 @@ describe('TeamGrabRepository', () => {
         session_id: '20',
         payer_user_id: '100',
         queue_seq: '11',
+        grab_status: 'QUEUED',
+        grab_progress_status: 'QUEUED',
         expire_time: expireTime,
       }],
     });
@@ -484,8 +486,12 @@ describe('TeamGrabRepository', () => {
     expect(sql).toContain("r.status = 'pending'");
     expect(sql).toContain('r.order_id is null');
     expect(sql).toContain('jsonb_array_length');
+    expect(sql).toContain('g.status as grab_status');
+    expect(sql).toContain('g.progress_status as grab_progress_status');
     expect(sql).toContain("g.status = 'queued'");
     expect(sql).toContain("g.progress_status = 'queued'");
+    expect(sql).toContain("g.status in ('expired', 'failed'");
+    expect(sql).toContain("g.progress_status in ('expired', 'failed'");
     expect(sql).toContain("t.status = 'grabbing'");
     expect(sql).toContain('g.queue_seq is not null');
     expect(sql).toContain('interval');
@@ -497,6 +503,8 @@ describe('TeamGrabRepository', () => {
       sessionId: 20,
       payerUserId: 100,
       queueSeq: 11,
+      grabStatus: 'QUEUED',
+      grabProgressStatus: 'QUEUED',
       expireTime,
     }]);
   });

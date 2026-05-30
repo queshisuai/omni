@@ -54,7 +54,7 @@ export class GrabQueueService {
       if ttl and ttl > 0 then
         redis.call('EXPIRE', KEYS[1], ttl)
       end
-      if metadataExists == 1 or queued or inflight then
+      if queued or inflight then
         redis.call('SADD', KEYS[3], ARGV[2])
         return 0
       end

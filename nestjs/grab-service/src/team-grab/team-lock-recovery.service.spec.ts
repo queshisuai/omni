@@ -151,6 +151,116 @@ describe('TeamLockRecoveryService', () => {
     expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
   });
 
+  it('fails unpublished team grabs when the matching grab request is already expired', async () => {
+    const expiredGrabUnpublished = {
+      ...unpublishedTeamGrab,
+      grabStatus: GRAB_STATUS.EXPIRED,
+      grabProgressStatus: GRAB_STATUS.EXPIRED,
+      expireTime: new Date(Date.now() + 3_600_000),
+    };
+    const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([expiredGrabUnpublished]),
+      findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([]),
+      markTeamFailed: jest.fn().mockResolvedValue(true),
+    };
+    const grabRepository = {
+      expireActiveRequest: jest.fn(),
+      findByRequestId: jest.fn(),
+    };
+    const orderClient = {
+      findByGrabRequestId: jest.fn(),
+    };
+    const ticketClient = {
+      releaseTeamSeatLock: jest.fn(),
+    };
+    const queueService = {
+      publishReserved: jest.fn(),
+      removeQueuedRequest: jest.fn().mockResolvedValue(undefined),
+    };
+    const notificationClient = {
+      sendFailed: jest.fn(),
+    };
+    const service = new TeamLockRecoveryService(
+      repository as any,
+      grabRepository as any,
+      orderClient as any,
+      ticketClient as any,
+      queueService as any,
+      notificationClient as any,
+    );
+
+    await service.recoverStaleLocks();
+
+    expect(queueService.publishReserved).not.toHaveBeenCalled();
+    expect(grabRepository.expireActiveRequest).not.toHaveBeenCalled();
+    expect(grabRepository.findByRequestId).not.toHaveBeenCalled();
+    expect(repository.markTeamFailed).toHaveBeenCalledWith(
+      7,
+      'TEAM-GRAB-1',
+      'team grab request expired before queue publish',
+    );
+    expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
+  });
+
+  it('fails unpublished team grabs when queued expiration loses a race to terminal grab compensation', async () => {
+    const expiredUnpublished = {
+      ...unpublishedTeamGrab,
+      grabStatus: GRAB_STATUS.QUEUED,
+      grabProgressStatus: GRAB_STATUS.QUEUED,
+      expireTime: new Date(Date.now() - 1_000),
+    };
+    const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([expiredUnpublished]),
+      findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([]),
+      markTeamFailed: jest.fn().mockResolvedValue(true),
+    };
+    const grabRepository = {
+      expireActiveRequest: jest.fn().mockResolvedValue(null),
+      findByRequestId: jest.fn().mockResolvedValue({
+        requestId: 'GRAB-1',
+        status: GRAB_STATUS.EXPIRED,
+        progressStatus: GRAB_STATUS.EXPIRED,
+      }),
+    };
+    const orderClient = {
+      findByGrabRequestId: jest.fn(),
+    };
+    const ticketClient = {
+      releaseTeamSeatLock: jest.fn(),
+    };
+    const queueService = {
+      publishReserved: jest.fn(),
+      removeQueuedRequest: jest.fn().mockResolvedValue(undefined),
+    };
+    const notificationClient = {
+      sendFailed: jest.fn(),
+    };
+    const service = new TeamLockRecoveryService(
+      repository as any,
+      grabRepository as any,
+      orderClient as any,
+      ticketClient as any,
+      queueService as any,
+      notificationClient as any,
+    );
+
+    await service.recoverStaleLocks();
+
+    expect(queueService.publishReserved).not.toHaveBeenCalled();
+    expect(grabRepository.expireActiveRequest).toHaveBeenCalledWith(
+      'GRAB-1',
+      'team grab request expired before queue publish',
+      [GRAB_STATUS.QUEUED],
+    );
+    expect(grabRepository.findByRequestId).toHaveBeenCalledWith('GRAB-1');
+    expect(repository.markTeamFailed).toHaveBeenCalledWith(
+      7,
+      'TEAM-GRAB-1',
+      'team grab request expired before queue publish',
+    );
+    expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
+  });
+
   it('claims stale missing-order recovery first without releasing locked seats', async () => {
     const repository = {
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),

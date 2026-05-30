@@ -2,7 +2,8 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { GrabRepository } from '../grab/grab.repository';
 import { GrabQueueService } from '../grab/grab-queue.service';
 import { OrderClientService } from '../grab/order-client.service';
-import { GRAB_STATUS } from '../grab/grab-status';
+import { GRAB_STATUS, isTerminalGrabStatus } from '../grab/grab-status';
+import type { GrabStatus } from '../grab/grab-status';
 import { TicketClientService } from '../grab/ticket-client.service';
 import { NotificationClientService } from './notification-client.service';
 import {
@@ -75,24 +76,23 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
 
   private async recoverUnpublishedQueuedTeamGrab(teamGrab: StaleUnpublishedTeamGrabRequestRecord): Promise<void> {
     const ttlSeconds = Math.ceil((teamGrab.expireTime.getTime() - Date.now()) / 1000);
+    if (this.isTerminalGrab(teamGrab.grabStatus, teamGrab.grabProgressStatus)) {
+      await this.failUnpublishedQueuedTeamGrab(teamGrab);
+      return;
+    }
+
     if (ttlSeconds <= 0) {
       const expired = await this.grabRepository.expireActiveRequest(
         teamGrab.grabRequestId,
         UNPUBLISHED_QUEUE_EXPIRED_MESSAGE,
         [GRAB_STATUS.QUEUED],
       );
-      if (!expired) return;
+      if (!expired) {
+        const currentGrab = await this.grabRepository.findByRequestId(teamGrab.grabRequestId);
+        if (!currentGrab || !this.isTerminalGrab(currentGrab.status, currentGrab.progressStatus)) return;
+      }
 
-      const transitioned = await this.repository.markTeamFailed(
-        teamGrab.teamId,
-        teamGrab.teamGrabRequestId,
-        UNPUBLISHED_QUEUE_EXPIRED_MESSAGE,
-      );
-      if (!transitioned) return;
-
-      await this.queueService
-        .removeQueuedRequest(teamGrab.sessionId, teamGrab.grabRequestId)
-        .catch((error) => this.logger.warn(error));
+      await this.failUnpublishedQueuedTeamGrab(teamGrab);
       return;
     }
 
@@ -103,6 +103,27 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
       queueSeq: teamGrab.queueSeq,
       ttlSeconds,
     });
+  }
+
+  private async failUnpublishedQueuedTeamGrab(teamGrab: StaleUnpublishedTeamGrabRequestRecord): Promise<void> {
+    const transitioned = await this.repository.markTeamFailed(
+      teamGrab.teamId,
+      teamGrab.teamGrabRequestId,
+      UNPUBLISHED_QUEUE_EXPIRED_MESSAGE,
+    );
+    if (!transitioned) return;
+
+    await this.queueService
+      .removeQueuedRequest(teamGrab.sessionId, teamGrab.grabRequestId)
+      .catch((error) => this.logger.warn(error));
+  }
+
+  private isTerminalGrab(status: GrabStatus | null | undefined, progressStatus: GrabStatus | null | undefined): boolean {
+    return this.isKnownTerminalGrabStatus(status) || this.isKnownTerminalGrabStatus(progressStatus);
+  }
+
+  private isKnownTerminalGrabStatus(status: GrabStatus | null | undefined): boolean {
+    return status != null && isTerminalGrabStatus(status);
   }
 
   private async recoverTeamGrab(teamGrab: TeamGrabRequestRecord): Promise<void> {

@@ -71,7 +71,7 @@ describe('GrabQueueService', () => {
     expect(args).toEqual(['GRAB1', '101', '2004', '12', 'QUEUED', '1800']);
   });
 
-  it('publishes a reserved request idempotently when retrying or metadata already exists', async () => {
+  it('publishes a reserved request idempotently only when the request is queued or inflight', async () => {
     const redis: any = {
       eval: jest.fn().mockResolvedValue(0),
     };
@@ -89,10 +89,15 @@ describe('GrabQueueService', () => {
     expect(script).toContain("local metadataExists = redis.call('EXISTS', KEYS[1])");
     expect(script).toContain("local queued = redis.call('LPOS', KEYS[2], ARGV[1])");
     expect(script).toContain("local inflight = redis.call('LPOS', KEYS[4], ARGV[1])");
-    expect(script).toContain('if metadataExists == 1 or queued or inflight then');
     const hsetIndex = script.indexOf("redis.call('HSET', KEYS[1]");
-    const duplicateGuardIndex = script.indexOf('if metadataExists == 1 or queued or inflight then');
+    const duplicateGuardMatch = script.match(/\n\s*if\s+([^\n]+)\s+then\s*\n\s*redis\.call\('SADD', KEYS\[3], ARGV\[2]\)\s*\n\s*return 0/);
+    expect(duplicateGuardMatch).not.toBeNull();
+    const duplicateGuardExpression = duplicateGuardMatch?.[1] ?? '';
+    const duplicateGuardIndex = duplicateGuardMatch?.index ?? -1;
     const rpushIndex = script.indexOf("redis.call('RPUSH', KEYS[2], ARGV[1])");
+    expect(duplicateGuardExpression).toContain('queued');
+    expect(duplicateGuardExpression).toContain('inflight');
+    expect(duplicateGuardExpression).not.toContain('metadataExists');
     expect(duplicateGuardIndex).toBeGreaterThan(-1);
     expect(hsetIndex).toBeLessThan(duplicateGuardIndex);
     expect(duplicateGuardIndex).toBeLessThan(rpushIndex);

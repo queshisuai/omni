@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable 
 import { DatabaseService } from '../database/database.service';
 import type { DatabaseQueryClient } from '../database/database.service';
 import { GRAB_STATUS } from '../grab/grab-status';
+import type { GrabStatus } from '../grab/grab-status';
 import type { GrabAttemptSnapshot } from '../grab/grab.types';
 import type {
   BeginTeamGrabInput,
@@ -80,6 +81,8 @@ interface StaleUnpublishedTeamGrabRequestRow {
   session_id: string | number;
   payer_user_id: string | number;
   queue_seq: string | number;
+  grab_status: GrabStatus;
+  grab_progress_status: GrabStatus;
   expire_time: Date;
 }
 
@@ -584,6 +587,8 @@ export class TeamGrabRepository {
          r.session_id,
          r.payer_user_id,
          g.queue_seq,
+         g.status as grab_status,
+         g.progress_status as grab_progress_status,
          g.expire_time
        from team_grab_request r
        join grab_request g on g.request_id = r.grab_request_id
@@ -591,8 +596,11 @@ export class TeamGrabRepository {
        where r.status = 'PENDING'
          and r.order_id is null
          and jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) = 0
-         and g.status = 'QUEUED'
-         and g.progress_status = 'QUEUED'
+         and (
+           (g.status = 'QUEUED' and g.progress_status = 'QUEUED')
+           or g.status in ('EXPIRED', 'FAILED', 'SOLD_OUT', 'LIMITED', 'PENDING_RECOVERY')
+           or g.progress_status in ('EXPIRED', 'FAILED', 'SOLD_OUT', 'LIMITED', 'PENDING_RECOVERY')
+         )
          and g.request_type = 'TEAM_GRAB'
          and g.order_id is null
          and g.queue_seq is not null
@@ -1087,6 +1095,8 @@ export class TeamGrabRepository {
       sessionId: Number(row.session_id),
       payerUserId: Number(row.payer_user_id),
       queueSeq: Number(row.queue_seq),
+      grabStatus: row.grab_status,
+      grabProgressStatus: row.grab_progress_status,
       expireTime: row.expire_time,
     };
   }

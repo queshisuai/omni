@@ -1,4 +1,5 @@
 import type { GrabTicketPreference } from '../grab/grab.types';
+import type { GrabStatus } from '../grab/grab-status';
 
 export type TeamStatus = 'DRAFT' | 'READY' | 'GRABBING' | 'LOCKED' | 'PAID' | 'FAILED' | 'CANCELLED' | 'EXPIRED';
 export type TeamMemberRole = 'LEADER' | 'MEMBER';
@@ -84,6 +85,8 @@ export interface StaleUnpublishedTeamGrabRequestRecord {
   sessionId: number;
   payerUserId: number;
   queueSeq: number;
+  grabStatus: GrabStatus;
+  grabProgressStatus: GrabStatus;
   expireTime: Date;
 }
 
