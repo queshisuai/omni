@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS order_snapshot (
     unit_price NUMERIC(10, 2),
     quantity INTEGER,
     seat_labels TEXT,
+    seat_selection_mode VARCHAR(32),
     grab_request_id VARCHAR(64),
     requested_ticket_type_id BIGINT,
     matched_ticket_type_id BIGINT,
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS order_snapshot (
 
 ALTER TABLE IF EXISTS order_snapshot
     ADD COLUMN IF NOT EXISTS grab_request_id VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS seat_selection_mode VARCHAR(32),
     ADD COLUMN IF NOT EXISTS requested_ticket_type_id BIGINT,
     ADD COLUMN IF NOT EXISTS matched_ticket_type_id BIGINT,
     ADD COLUMN IF NOT EXISTS auto_downgraded BOOLEAN NOT NULL DEFAULT FALSE,
@@ -70,6 +72,7 @@ INSERT INTO order_snapshot (
     unit_price,
     quantity,
     seat_labels,
+    seat_selection_mode,
     create_time,
     update_time
 )
@@ -88,6 +91,7 @@ SELECT
     COALESCE(tt.price, CASE WHEN o.quantity IS NOT NULL AND o.quantity > 0 THEN o.amount / o.quantity ELSE NULL END) AS unit_price,
     o.quantity AS quantity,
     seat_snapshot.seat_labels AS seat_labels,
+    'NONE' AS seat_selection_mode,
     CURRENT_TIMESTAMP AS create_time,
     CURRENT_TIMESTAMP AS update_time
 FROM "order" o
@@ -116,4 +120,5 @@ ON CONFLICT (order_id) DO UPDATE SET
     unit_price = EXCLUDED.unit_price,
     quantity = EXCLUDED.quantity,
     seat_labels = EXCLUDED.seat_labels,
+    seat_selection_mode = COALESCE(order_snapshot.seat_selection_mode, EXCLUDED.seat_selection_mode),
     update_time = CURRENT_TIMESTAMP;

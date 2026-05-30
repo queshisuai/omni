@@ -272,6 +272,7 @@ CREATE TABLE order_snapshot (
     unit_price NUMERIC(10, 2),
     quantity INTEGER,
     seat_labels TEXT,
+    seat_selection_mode VARCHAR(32),
     grab_request_id VARCHAR(64),
     requested_ticket_type_id BIGINT,
     matched_ticket_type_id BIGINT,

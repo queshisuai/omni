@@ -73,6 +73,10 @@ public class OrderService {
     private static final int ORDER_SEAT_SOLD = 2;
     private static final int ORDER_SEAT_REFUNDED = 3;
     private static final int ORDER_SEAT_RELEASED = 4;
+    private static final String SEAT_SELECTION_NONE = "NONE";
+    private static final String SEAT_SELECTION_EXPLICIT = "EXPLICIT";
+    private static final String SEAT_SELECTION_RANDOM = "RANDOM";
+    private static final String SEAT_SELECTION_TEAM = "TEAM";
 
     private final OrderMapper orderMapper;
     private final OrderSeatMapper orderSeatMapper;
@@ -155,7 +159,8 @@ public class OrderService {
         Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity, quote.getUnitPrice());
         lockStockForOrder(order);
         orderMapper.insert(order);
-        writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(), request.getMatchedTicketTypeId(), request.getAutoDowngraded());
+        writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(),
+                request.getMatchedTicketTypeId(), request.getAutoDowngraded(), SEAT_SELECTION_NONE);
         log.info("订单创建成功: orderNo={}, userId={}, amount={}", order.getOrderNo(), request.getUserId(), order.getAmount());
         return order;
     }
@@ -193,7 +198,8 @@ public class OrderService {
     public Order createOrderWithSeats(LockSeatsRequest request) {
         boolean hasSeatIds = request.getSeatIds() != null && !request.getSeatIds().isEmpty();
         int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
-        Order existingGrabOrder = resolveExistingNormalGrabOrder(request, quantity);
+        String seatSelectionMode = hasSeatIds ? SEAT_SELECTION_EXPLICIT : SEAT_SELECTION_RANDOM;
+        Order existingGrabOrder = resolveExistingNormalGrabOrder(request, quantity, seatSelectionMode);
         if (existingGrabOrder != null) {
             return existingGrabOrder;
         }
@@ -221,7 +227,8 @@ public class OrderService {
                 quantity,
                 quote.getUnitPrice());
         orderMapper.insert(order);
-        writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(), request.getMatchedTicketTypeId(), request.getAutoDowngraded());
+        writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(),
+                request.getMatchedTicketTypeId(), request.getAutoDowngraded(), seatSelectionMode);
         if (lockedSeatIds != null && !lockedSeatIds.isEmpty() && orderSeatMapper != null) {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime expireTime = now.plusMinutes(15);
@@ -292,7 +299,7 @@ public class OrderService {
 
         quote.setSeatLabels(String.join(", ", payload.seatLabelsById.values()));
         writeSnapshot(order, quote, request.getGrabRequestId(), null, request.getTicketTypeId(), false,
-                request.getTeamId(), request.getTeamGrabRequestId(), true);
+                SEAT_SELECTION_TEAM, request.getTeamId(), request.getTeamGrabRequestId(), true);
         return order;
     }
 
@@ -705,9 +712,10 @@ public class OrderService {
                                String grabRequestId,
                                Long requestedTicketTypeId,
                                Long matchedTicketTypeId,
-                               Boolean autoDowngraded) {
+                               Boolean autoDowngraded,
+                               String seatSelectionMode) {
         writeSnapshot(order, quote, grabRequestId, requestedTicketTypeId, matchedTicketTypeId, autoDowngraded,
-                null, null, false);
+                seatSelectionMode, null, null, false);
     }
 
     private void writeSnapshot(Order order,
@@ -716,6 +724,7 @@ public class OrderService {
                                Long requestedTicketTypeId,
                                Long matchedTicketTypeId,
                                Boolean autoDowngraded,
+                               String seatSelectionMode,
                                Long teamId,
                                String teamGrabRequestId,
                                Boolean teamOrder) {
@@ -744,6 +753,7 @@ public class OrderService {
         snapshot.setTeamId(teamId);
         snapshot.setTeamGrabRequestId(teamGrabRequestId);
         snapshot.setTeamOrder(Boolean.TRUE.equals(teamOrder));
+        snapshot.setSeatSelectionMode(seatSelectionMode);
         LocalDateTime now = LocalDateTime.now();
         snapshot.setCreateTime(now);
         snapshot.setUpdateTime(now);
@@ -852,16 +862,18 @@ public class OrderService {
                 request.getTicketTypeId(),
                 quantity,
                 request.getGrabRequestId(),
+                SEAT_SELECTION_NONE,
                 null);
     }
 
-    private Order resolveExistingNormalGrabOrder(LockSeatsRequest request, int quantity) {
+    private Order resolveExistingNormalGrabOrder(LockSeatsRequest request, int quantity, String seatSelectionMode) {
         return resolveExistingNormalGrabOrder(
                 request.getUserId(),
                 request.getSessionId(),
                 request.getTicketTypeId(),
                 quantity,
                 request.getGrabRequestId(),
+                seatSelectionMode,
                 request.getSeatIds());
     }
 
@@ -870,12 +882,17 @@ public class OrderService {
                                                  Long ticketTypeId,
                                                  int quantity,
                                                  String grabRequestId,
+                                                 String seatSelectionMode,
                                                  List<Long> requestedSeatIds) {
         if (!StringUtils.hasText(grabRequestId)) {
             return null;
         }
         orderMapper.acquireAdvisoryTransactionLock("grab-order:" + grabRequestId);
         OrderListItemResponse existingOrder = orderMapper.selectOrderListItemByGrabRequestId(grabRequestId);
+        OrderListItemResponse existingTeamGrabOrder = orderMapper.selectTeamOrderListItemByTeamGrabRequestId(grabRequestId);
+        if (existingTeamGrabOrder != null) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request collides with a team grab request");
+        }
         if (existingOrder == null) {
             return null;
         }
@@ -886,7 +903,7 @@ public class OrderService {
                 || !grabRequestId.equals(existingOrder.getGrabRequestId())) {
             throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
         }
-        validateExistingNormalOrderSeats(requestedSeatIds, existingOrder);
+        validateExistingNormalOrderSeats(seatSelectionMode, requestedSeatIds, existingOrder);
         return loadExistingOrder(existingOrder);
     }
 
@@ -919,12 +936,17 @@ public class OrderService {
 
     private boolean sameTeamOrderPayload(CreateTeamOrderRequest request, OrderListItemResponse existingOrder) {
         if (!Boolean.TRUE.equals(existingOrder.getTeamOrder())
+                || !teamSeatSelectionModeMatches(existingOrder)
                 || !Objects.equals(request.getTeamGrabRequestId(), existingOrder.getTeamGrabRequestId())
                 || !Objects.equals(request.getGrabRequestId(), existingOrder.getGrabRequestId())
                 || !sameOrderPayload(existingOrder, request.getUserId(), request.getSessionId(), request.getTicketTypeId(), request.getQuantity())) {
             return false;
         }
         return request.getTeamId() == null || Objects.equals(request.getTeamId(), existingOrder.getTeamId());
+    }
+
+    private boolean teamSeatSelectionModeMatches(OrderListItemResponse existingOrder) {
+        return SEAT_SELECTION_TEAM.equals(existingOrder.getSeatSelectionMode()) || existingOrder.getSeatSelectionMode() == null;
     }
 
     private boolean sameOrderPayload(OrderListItemResponse existingOrder,
@@ -938,9 +960,17 @@ public class OrderService {
                 && Objects.equals(quantity, existingOrder.getQuantity());
     }
 
-    private void validateExistingNormalOrderSeats(List<Long> requestedSeatIds, OrderListItemResponse existingOrder) {
-        if (requestedSeatIds == null || requestedSeatIds.isEmpty()) {
+    private void validateExistingNormalOrderSeats(String seatSelectionMode,
+                                                  List<Long> requestedSeatIds,
+                                                  OrderListItemResponse existingOrder) {
+        if (!Objects.equals(seatSelectionMode, existingOrder.getSeatSelectionMode())) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+        }
+        if (SEAT_SELECTION_NONE.equals(seatSelectionMode) || SEAT_SELECTION_RANDOM.equals(seatSelectionMode)) {
             return;
+        }
+        if (requestedSeatIds == null || requestedSeatIds.isEmpty()) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
         }
         Set<Long> requested = new HashSet<>(requestedSeatIds);
         if (requested.size() != requestedSeatIds.size()) {

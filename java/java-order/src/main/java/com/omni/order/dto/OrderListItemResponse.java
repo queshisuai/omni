@@ -32,6 +32,7 @@ public class OrderListItemResponse {
     private Long teamId;
     private String teamGrabRequestId;
     private Boolean teamOrder;
+    private String seatSelectionMode;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -89,4 +90,6 @@ public class OrderListItemResponse {
     public void setTeamGrabRequestId(String teamGrabRequestId) { this.teamGrabRequestId = teamGrabRequestId; }
     public Boolean getTeamOrder() { return teamOrder; }
     public void setTeamOrder(Boolean teamOrder) { this.teamOrder = teamOrder; }
+    public String getSeatSelectionMode() { return seatSelectionMode; }
+    public void setSeatSelectionMode(String seatSelectionMode) { this.seatSelectionMode = seatSelectionMode; }
 }

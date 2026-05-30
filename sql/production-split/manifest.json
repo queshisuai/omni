@@ -26,7 +26,8 @@
         "order/001_same_owner_constraints.sql",
         "order/20260528_seata_undo_log.sql",
         "order/20260529_grab_order_snapshot.sql",
-        "order/20260530_team_order_snapshot.sql"
+        "order/20260530_team_order_snapshot.sql",
+        "order/20260530_order_seat_selection_mode.sql"
       ]
     },
     {

@@ -36,6 +36,7 @@ public class OrderSnapshot {
     private Long teamId;
     private String teamGrabRequestId;
     private Boolean teamOrder;
+    private String seatSelectionMode;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -83,6 +84,8 @@ public class OrderSnapshot {
     public void setTeamGrabRequestId(String teamGrabRequestId) { this.teamGrabRequestId = teamGrabRequestId; }
     public Boolean getTeamOrder() { return teamOrder; }
     public void setTeamOrder(Boolean teamOrder) { this.teamOrder = teamOrder; }
+    public String getSeatSelectionMode() { return seatSelectionMode; }
+    public void setSeatSelectionMode(String seatSelectionMode) { this.seatSelectionMode = seatSelectionMode; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getUpdateTime() { return updateTime; }
