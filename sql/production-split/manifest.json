@@ -46,7 +46,8 @@
       "migrations": [
         "grab/001_create_grab_request.sql",
         "grab/20260529_grab_progress_async_queue.sql",
-        "grab/20260530_grab_pending_recovery_status.sql"
+        "grab/20260530_grab_pending_recovery_status.sql",
+        "grab/20260530_team_grab.sql"
       ]
     }
   ]
