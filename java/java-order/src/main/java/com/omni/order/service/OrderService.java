@@ -217,8 +217,12 @@ public class OrderService {
         lockRequest.setAllocateRandom(!hasSeatIds);
         TicketSalesSeatLockResponse lockResponse = lockSeats(lockRequest);
         List<Long> lockedSeatIds = lockResponse.getLockedSeatIds() != null ? lockResponse.getLockedSeatIds() : request.getSeatIds();
-        if (!hasSeatIds && lockResponse.getSeatLabels() != null) {
+        Map<Long, String> lockedSeatLabelsById = buildSeatLabelMap(lockedSeatIds, lockResponse.getSeatLabels(),
+                "ticket seat lock labels do not match locked seats");
+        if (!lockedSeatLabelsById.isEmpty()) {
             quote.setSeatLabels(String.join(", ", lockResponse.getSeatLabels()));
+        } else {
+            quote.setSeatLabels(null);
         }
         Order order = buildPendingOrder(
                 request.getUserId(),
@@ -239,6 +243,7 @@ public class OrderService {
                 orderSeat.setSessionId(request.getSessionId());
                 orderSeat.setTicketTypeId(request.getTicketTypeId());
                 orderSeat.setStatus(1);
+                orderSeat.setSeatLabel(lockedSeatLabelsById.get(seatId));
                 orderSeat.setLockExpireTime(expireTime);
                 orderSeat.setCreateTime(now);
                 orderSeat.setUpdateTime(now);
@@ -280,7 +285,7 @@ public class OrderService {
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), payload.seatIds, payload.quantity);
         validateTeamAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote);
         validatePerUserLimit(request.getUserId(), quote, payload.quantity);
-        validateTeamSeatLock(request, payload.seatIds);
+        validateTeamSeatLock(request, payload);
 
         Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), payload.quantity, quote.getUnitPrice());
         orderMapper.insert(order);
@@ -1204,12 +1209,12 @@ public class OrderService {
         return result.getData();
     }
 
-    private void validateTeamSeatLock(CreateTeamOrderRequest request, List<Long> seatIds) {
+    private void validateTeamSeatLock(CreateTeamOrderRequest request, TeamOrderSeatPayload payload) {
         String token = requireInternalApiToken("ticket sales internal token is not configured");
         TicketSalesLockRequest validationRequest = new TicketSalesLockRequest();
         validationRequest.setSessionId(request.getSessionId());
         validationRequest.setTicketTypeId(request.getTicketTypeId());
-        validationRequest.setSeatIds(seatIds);
+        validationRequest.setSeatIds(payload.seatIds);
         validationRequest.setLockRequestId(request.getTeamGrabRequestId());
         Result<TicketSalesSeatLockResponse> result = callTicketSales(
                 () -> ticketSalesInternalClient.validateTeamSeatLock(validationRequest, token));
@@ -1217,8 +1222,14 @@ public class OrderService {
             throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "ticket service did not respond");
         }
         TicketSalesSeatLockResponse response = result.getData();
-        if (!Boolean.TRUE.equals(response.getValid()) || !sameSeatIds(seatIds, validatedSeatIds(response))) {
+        List<Long> validatedSeatIds = validatedSeatIds(response);
+        if (!Boolean.TRUE.equals(response.getValid()) || !sameSeatIds(payload.seatIds, validatedSeatIds)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock does not belong to request");
+        }
+        Map<Long, String> validatedLabelsById = buildRequiredSeatLabelMap(validatedSeatIds, response.getSeatLabels(),
+                "team seat lock labels do not match validated seats");
+        if (!payload.seatLabelsById.equals(validatedLabelsById)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock labels do not belong to request");
         }
     }
 
@@ -1227,6 +1238,24 @@ public class OrderService {
             return response.getSeatIds();
         }
         return response.getLockedSeatIds();
+    }
+
+    private Map<Long, String> buildSeatLabelMap(List<Long> seatIds, List<String> seatLabels, String mismatchMessage) {
+        if (seatLabels == null || seatLabels.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return buildRequiredSeatLabelMap(seatIds, seatLabels, mismatchMessage);
+    }
+
+    private Map<Long, String> buildRequiredSeatLabelMap(List<Long> seatIds, List<String> seatLabels, String mismatchMessage) {
+        if (seatIds == null || seatLabels == null || seatIds.size() != seatLabels.size()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, mismatchMessage);
+        }
+        Map<Long, String> labelsById = new LinkedHashMap<>();
+        for (int i = 0; i < seatIds.size(); i++) {
+            labelsById.put(seatIds.get(i), seatLabels.get(i));
+        }
+        return labelsById;
     }
 
     private boolean sameSeatIds(List<Long> expected, List<Long> actual) {

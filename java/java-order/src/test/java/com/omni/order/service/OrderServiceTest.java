@@ -1340,6 +1340,26 @@ class OrderServiceTest {
     }
 
     @Test
+    void createTeamOrderRejectsWhenTicketLockLabelDiffersFromRequestBeforeInsert() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        TicketSalesSeatLockResponse invalid = new TicketSalesSeatLockResponse();
+        invalid.setValid(true);
+        invalid.setLockedSeatIds(List.of(301L, 302L));
+        invalid.setSeatLabels(List.of("ticket-label-1", "A-2"));
+
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
+        when(ticketSalesInternalClient.validateTeamSeatLock(any(), anyString())).thenReturn(Result.success(invalid));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        assertEquals(ResultCode.BAD_REQUEST.getCode(), ex.getCode());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSeatMapper, never()).insert(any(OrderSeat.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
     void createTeamOrderStoresOrderOwnedSeatLabels() {
         CreateTeamOrderRequest request = teamOrderRequest();
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
@@ -1468,6 +1488,60 @@ class OrderServiceTest {
         inOrder.verify(ticketSalesInternalClient).quote(any(), anyString());
         inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("order-limit:2004:100");
         inOrder.verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
+    }
+
+    @Test
+    void createOrderWithSeatsStoresLockedSeatLabels() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setSeatIds(List.of(301L, 302L));
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+
+        TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
+        lockResponse.setLockedSeatIds(List.of(301L, 302L));
+        lockResponse.setSeatLabels(List.of("A-1", "A-2"));
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
+        when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        doAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(83L);
+            return 1;
+        }).when(orderMapper).insert(any(Order.class));
+
+        service.createOrderWithSeats(request);
+
+        ArgumentCaptor<OrderSeat> seatCaptor = ArgumentCaptor.forClass(OrderSeat.class);
+        verify(orderSeatMapper, org.mockito.Mockito.times(2)).insert(seatCaptor.capture());
+        assertEquals(List.of("A-1", "A-2"), seatCaptor.getAllValues().stream()
+                .map(OrderSeat::getSeatLabel)
+                .collect(java.util.stream.Collectors.toList()));
+    }
+
+    @Test
+    void createOrderWithSeatsRejectsLockLabelCountMismatchBeforeInsert() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setSeatIds(List.of(301L, 302L));
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+
+        TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
+        lockResponse.setLockedSeatIds(List.of(301L, 302L));
+        lockResponse.setSeatLabels(List.of("A-1"));
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
+        when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
+
+        assertEquals(ResultCode.BAD_REQUEST.getCode(), ex.getCode());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSeatMapper, never()).insert(any(OrderSeat.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
     }
 
     @Test
@@ -1600,7 +1674,7 @@ class OrderServiceTest {
         TicketSalesSeatLockResponse response = new TicketSalesSeatLockResponse();
         response.setValid(true);
         response.setLockedSeatIds(List.of(301L, 302L));
-        response.setSeatLabels(List.of("ticket-label-1", "ticket-label-2"));
+        response.setSeatLabels(List.of("A-1", "A-2"));
         return response;
     }
 

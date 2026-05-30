@@ -146,7 +146,7 @@ ON CONFLICT (order_id) DO UPDATE SET
     ticket_name = EXCLUDED.ticket_name,
     unit_price = EXCLUDED.unit_price,
     quantity = EXCLUDED.quantity,
-    seat_labels = EXCLUDED.seat_labels,
+    seat_labels = COALESCE(EXCLUDED.seat_labels, order_snapshot.seat_labels),
     seat_selection_mode = COALESCE(
         order_snapshot.seat_selection_mode,
         CASE
