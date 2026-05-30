@@ -38,6 +38,7 @@ function buildService(expiredRequests: Array<Record<string, unknown>>, overrides
       failReason,
     })),
     markOrderCreated: jest.fn(),
+    findPendingRecovery: jest.fn().mockResolvedValue([]),
     findByRequestId: jest.fn(),
   };
   const admission: any = overrides.admission ?? { release: jest.fn() };
@@ -103,6 +104,7 @@ describe('GrabCompensationService', () => {
         expireActiveRequest: jest.fn().mockResolvedValue(null),
         findByRequestId: jest.fn(),
         markOrderCreated: jest.fn(),
+        findPendingRecovery: jest.fn().mockResolvedValue([]),
       },
     });
 
@@ -168,6 +170,7 @@ describe('GrabCompensationService', () => {
     };
     const repository: any = {
       findExpiredInFlight: jest.fn().mockResolvedValue([]),
+      findPendingRecovery: jest.fn().mockResolvedValue([]),
       findByRequestId: jest.fn().mockResolvedValue(null),
     };
     const { service } = buildService([], { repository, queue });
@@ -195,6 +198,7 @@ describe('GrabCompensationService', () => {
     };
     const repository: any = {
       findExpiredInFlight: jest.fn().mockResolvedValue([]),
+      findPendingRecovery: jest.fn().mockResolvedValue([]),
       findByRequestId: jest.fn().mockResolvedValue(record),
     };
     const { service } = buildService([], { repository, queue });
@@ -202,5 +206,37 @@ describe('GrabCompensationService', () => {
     await service.sweepExpiredRequests();
 
     expect(queue.requeueInflight).toHaveBeenCalledWith(101, 'GRAB-STALE');
+  });
+
+  it('recovers pending recovery requests when an order later becomes visible', async () => {
+    const pending = buildExpiredRequest({
+      requestId: 'GRAB-PENDING-RECOVERY',
+      progressStatus: GRAB_STATUS.PENDING_RECOVERY,
+      currentTicketTypeId: 203,
+      attemptsSnapshot: [{ ticketTypeId: 203, name: 'B', status: 'LOCKING', message: 'order confirmation pending' }],
+      expireTime: new Date(Date.now() + 60_000),
+    });
+    const { repository, orderClient, queue, service } = buildService([], {
+      repository: {
+        findExpiredInFlight: jest.fn().mockResolvedValue([]),
+        findPendingRecovery: jest.fn().mockResolvedValue([pending]),
+        findByRequestId: jest.fn(),
+        markOrderCreated: jest.fn().mockResolvedValue({ ...pending, orderId: 9001, progressStatus: GRAB_STATUS.ORDER_CREATED }),
+      },
+      orderClient: { findByGrabRequestId: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', status: 'PENDING', grabRequestId: 'GRAB-PENDING-RECOVERY' }) },
+    });
+
+    await service.sweepExpiredRequests();
+
+    expect(repository.findPendingRecovery).toHaveBeenCalledWith(100);
+    expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB-PENDING-RECOVERY');
+    expect(repository.markOrderCreated).toHaveBeenCalledWith(
+      'GRAB-PENDING-RECOVERY',
+      9001,
+      203,
+      [expect.objectContaining({ ticketTypeId: 203, status: 'ORDER_CREATED' })],
+      GRAB_STATUS.PENDING_RECOVERY,
+    );
+    expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB-PENDING-RECOVERY', 12);
   });
 });

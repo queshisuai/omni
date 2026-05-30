@@ -50,6 +50,8 @@ interface UpdateGrabProgressInput {
   attempts: GrabAttemptSnapshot[];
 }
 
+type MarkPendingRecoveryInput = Omit<UpdateGrabProgressInput, 'status'>;
+
 export const ACTIVE_ASYNC_PROGRESS_STATUSES = [
   GRAB_STATUS.QUEUED,
   GRAB_STATUS.WAITING,
@@ -63,8 +65,11 @@ const TERMINAL_PROGRESS_STATUSES = [
   GRAB_STATUS.SOLD_OUT,
   GRAB_STATUS.LIMITED,
   GRAB_STATUS.FAILED,
+  GRAB_STATUS.PENDING_RECOVERY,
   GRAB_STATUS.EXPIRED,
 ] as const;
+
+const WORKER_LEASE_STALE_SECONDS = 30;
 
 export function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
@@ -227,22 +232,63 @@ export class GrabRepository {
       `update grab_request
        set worker_id = $2,
            worker_claimed_at = now(),
-           processing_started_at = now(),
+           processing_started_at = coalesce(processing_started_at, now()),
            progress_status = $7,
            status = $7,
            updated_at = now()
        where request_id = $1
-         and status in ($3, $4)
-         and progress_status in ($5, $6)
+         and order_id is null
+         and expire_time > now()
+         and (
+           (status = $3 and progress_status = $4)
+           or (
+             status = $5
+             and progress_status = $6
+             and (
+               worker_claimed_at is null
+               or worker_claimed_at < now() - ($8::int * interval '1 second')
+             )
+           )
+         )
        returning *`,
       [
         requestId,
         workerId,
         GRAB_STATUS.QUEUED,
-        GRAB_STATUS.WAITING,
         GRAB_STATUS.QUEUED,
         GRAB_STATUS.WAITING,
         GRAB_STATUS.WAITING,
+        GRAB_STATUS.WAITING,
+        WORKER_LEASE_STALE_SECONDS,
+      ],
+    );
+    return result.rows[0] ? this.mapRow(result.rows[0]) : null;
+  }
+
+  async markPendingRecovery(requestId: string, input: MarkPendingRecoveryInput): Promise<GrabRequestRecord | null> {
+    const result = await this.database.query<GrabRequestRow>(
+      `update grab_request
+       set status = $2,
+           progress_status = $2,
+           progress_message = $3,
+           fail_reason = $3,
+           current_ticket_type_id = $4,
+           current_attempt_index = $5,
+           attempts_snapshot = $6::jsonb,
+           completed_at = coalesce(completed_at, now()),
+           updated_at = now()
+       where request_id = $1
+         and progress_status = any($7::varchar[])
+         and order_id is null
+       returning *`,
+      [
+        requestId,
+        GRAB_STATUS.PENDING_RECOVERY,
+        input.message,
+        input.currentTicketTypeId,
+        input.currentAttemptIndex,
+        JSON.stringify(input.attempts),
+        [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.LOCKING],
       ],
     );
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
@@ -317,6 +363,18 @@ export class GrabRepository {
        order by expire_time asc
        limit $3`,
       [ACTIVE_ASYNC_PROGRESS_STATUSES, now, limit],
+    );
+    return result.rows.map((row) => this.mapRow(row));
+  }
+
+  async findPendingRecovery(limit: number): Promise<GrabRequestRecord[]> {
+    const result = await this.database.query<GrabRequestRow>(
+      `select * from grab_request
+       where progress_status = $1
+         and order_id is null
+       order by updated_at asc
+       limit $2`,
+      [GRAB_STATUS.PENDING_RECOVERY, limit],
     );
     return result.rows.map((row) => this.mapRow(row));
   }

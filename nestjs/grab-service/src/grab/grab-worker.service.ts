@@ -3,11 +3,12 @@ import { randomUUID } from 'crypto';
 import { GrabAdmissionService } from './grab-admission.service';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository } from './grab.repository';
-import { GRAB_STATUS } from './grab-status';
+import { GRAB_STATUS, isTerminalGrabStatus } from './grab-status';
 import type { GrabAttemptSnapshot, GrabRequestRecord, GrabTicketPreference } from './grab.types';
 import { OrderClientService } from './order-client.service';
 
 type AttemptOutcome = 'ORDER_CREATED' | 'SOLD_OUT' | 'LIMITED' | 'FAILED' | 'CANCELLED' | 'PENDING_RECOVERY';
+type IdempotentAdmissionOutcome = AttemptOutcome | 'CONTINUE';
 type OrderLookupRecovery = 'RECOVERED' | 'MISSING' | 'UNKNOWN';
 
 @Injectable()
@@ -61,7 +62,15 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
 
     const record = await this.repository.claimForProcessing(requestId, this.workerId);
     if (!record) {
-      await this.ackIfQueued(existing);
+      if (existing.expireTime <= new Date()) {
+        await this.repository.expireActiveRequest(requestId, 'grab request expired before processing', [existing.progressStatus]);
+        await this.ackIfQueued(existing);
+        return;
+      }
+      if (isTerminalGrabStatus(existing.progressStatus) || existing.orderId) {
+        await this.ackIfQueued(existing);
+        return;
+      }
       return;
     }
 
@@ -101,7 +110,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       }
 
       const outcome = await this.tryTicketType(record, preference, index, attempts);
-      if (outcome !== 'SOLD_OUT') return outcome !== 'PENDING_RECOVERY';
+      if (outcome !== 'SOLD_OUT') return true;
 
       attempts = this.markAttempt(attempts, index, 'SOLD_OUT', 'ticket type sold out');
       if (index === effectivePreferences.length - 1) {
@@ -176,6 +185,16 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       );
       return 'FAILED';
     }
+    if (admission.outcome === 'IDEMPOTENT') {
+      const idempotentOutcome = await this.handleIdempotentAdmission(
+        record,
+        preference,
+        index,
+        lockingAttempts,
+        admission.existingRequestId,
+      );
+      if (idempotentOutcome !== 'CONTINUE') return idempotentOutcome;
+    }
 
     const orderCreatingRecord = await this.repository.updateProgress(record.requestId, {
       status: GRAB_STATUS.ORDER_CREATING,
@@ -206,7 +225,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     try {
       const order = await this.orderClient.createOrder(orderInput);
       const persisted = await this.markOrderCreated(record, preference, index, lockingAttempts, order.id);
-      return persisted ? 'ORDER_CREATED' : 'PENDING_RECOVERY';
+      return persisted ? 'ORDER_CREATED' : await this.markPendingRecovery(record, preference, index, lockingAttempts);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'order creation failed';
       if (this.isStockError(message)) {
@@ -221,12 +240,38 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
 
       const recovery = await this.recoverOrderByLookup(record, preference, index, lockingAttempts);
       if (recovery === 'RECOVERED') return 'ORDER_CREATED';
-      if (recovery === 'UNKNOWN') return 'PENDING_RECOVERY';
+      if (recovery === 'UNKNOWN') return await this.markPendingRecovery(record, preference, index, lockingAttempts);
 
       await this.releaseAdmission(record, preference);
       await this.finishTerminalAttempt(record, GRAB_STATUS.FAILED, message, preference, index, lockingAttempts, 'FAILED');
       return 'FAILED';
     }
+  }
+
+  private async handleIdempotentAdmission(
+    record: GrabRequestRecord,
+    preference: GrabTicketPreference,
+    index: number,
+    attempts: GrabAttemptSnapshot[],
+    existingRequestId: string | null,
+  ): Promise<IdempotentAdmissionOutcome> {
+    if (existingRequestId !== record.requestId) {
+      await this.finishTerminalAttempt(
+        record,
+        GRAB_STATUS.FAILED,
+        'idempotency hold belongs to another request',
+        preference,
+        index,
+        attempts,
+        'FAILED',
+      );
+      return 'FAILED';
+    }
+
+    const recovery = await this.recoverOrderByLookup(record, preference, index, attempts);
+    if (recovery === 'RECOVERED') return 'ORDER_CREATED';
+    if (recovery === 'UNKNOWN') return await this.markPendingRecovery(record, preference, index, attempts);
+    return 'CONTINUE';
   }
 
   private async markOrderCreated(
@@ -272,6 +317,21 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(error);
       return 'UNKNOWN';
     }
+  }
+
+  private async markPendingRecovery(
+    record: GrabRequestRecord,
+    preference: GrabTicketPreference,
+    index: number,
+    attempts: GrabAttemptSnapshot[],
+  ): Promise<AttemptOutcome> {
+    await this.repository.markPendingRecovery(record.requestId, {
+      message: 'order confirmation pending',
+      currentTicketTypeId: preference.ticketTypeId,
+      currentAttemptIndex: index,
+      attempts: this.markAttempt(attempts, index, 'LOCKING', 'order confirmation pending'),
+    });
+    return 'PENDING_RECOVERY';
   }
 
   private async releaseAdmission(record: GrabRequestRecord, preference: GrabTicketPreference): Promise<void> {

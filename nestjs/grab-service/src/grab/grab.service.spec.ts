@@ -8,6 +8,7 @@ function createService(overrides: {
   orderClient?: any;
   queue?: any;
   ticketClient?: any;
+  visibleStock?: any;
 } = {}): GrabService {
   return new GrabService(
     overrides.repository ?? {},
@@ -22,6 +23,7 @@ function createService(overrides: {
         remainStock: null,
       })))),
     },
+    overrides.visibleStock ?? { getSessionVisibleStock: jest.fn() },
   );
 }
 
@@ -169,6 +171,31 @@ describe('GrabService', () => {
       requestedTicketTypes: [{ ticketTypeId: 202, name: 'A', maxPrice: 100 }],
       allowAutoDowngrade: false,
     }));
+  });
+
+  it('cleans up the redis queue item when database creation fails after enqueue', async () => {
+    const repository: any = {
+      findByUserAndIdempotency: jest.fn().mockResolvedValue(null),
+      findActiveByIntent: jest.fn().mockResolvedValue(null),
+      createQueued: jest.fn().mockRejectedValue(new Error('database unavailable')),
+    };
+    const queue: any = {
+      enqueue: jest.fn().mockResolvedValue({ queueSeq: 12, queueRank: 4 }),
+      removeQueuedRequest: jest.fn(),
+      calculateQueueRank: jest.fn(),
+    };
+    const service = createService({ repository, queue });
+
+    await expect(service.submitRequest(2004, {
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      allocateRandom: true,
+      idempotencyKey: 'idem-db-fail',
+    })).rejects.toThrow('database unavailable');
+
+    const generatedRequestId = repository.createQueued.mock.calls[0][0].requestId;
+    expect(queue.removeQueuedRequest).toHaveBeenCalledWith(101, generatedRequestId);
   });
 
   it('canonicalizes downgrade preferences from ticket metadata instead of trusting client prices', async () => {
@@ -478,6 +505,50 @@ describe('GrabService', () => {
     expect(admission.release).not.toHaveBeenCalled();
     expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-QUEUED', 'grab request cancelled', [GRAB_STATUS.QUEUED]);
     expect(result).toMatchObject({ requestId: 'GRAB-QUEUED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'grab request cancelled' });
+  });
+
+  it('returns current ticket visible stock in progress when available', async () => {
+    const record: any = {
+      requestId: 'GRAB-PROGRESS',
+      userId: 2004,
+      sessionId: 101,
+      status: GRAB_STATUS.LOCKING,
+      progressStatus: GRAB_STATUS.LOCKING,
+      progressMessage: 'locking',
+      orderId: null,
+      failReason: null,
+      queueSeq: 10,
+      currentTicketTypeId: 202,
+      currentAttemptIndex: 0,
+      requestedTicketTypes: [{ ticketTypeId: 202, name: 'A', maxPrice: 100 }],
+      attemptsSnapshot: [{ ticketTypeId: 202, name: 'A', status: 'LOCKING', message: 'locking' }],
+      matchedTicketTypeId: null,
+      updatedAt: new Date('2026-05-29T12:00:00.000Z'),
+    };
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+    };
+    const queue: any = {
+      calculateQueueRank: jest.fn().mockResolvedValue(3),
+    };
+    const visibleStock: any = {
+      getSessionVisibleStock: jest.fn().mockResolvedValue({
+        sessionId: 101,
+        ticketTypes: [{ ticketTypeId: 202, name: 'A', visibleStock: 87, level: 'AVAILABLE' }],
+        snapshotTime: '2026-05-29T12:00:01.000Z',
+      }),
+    };
+    const service = createService({ repository, queue, visibleStock });
+
+    const result = await service.getProgress(2004, 'GRAB-PROGRESS');
+
+    expect(visibleStock.getSessionVisibleStock).toHaveBeenCalledWith(101, [202]);
+    expect(result.visibleStock).toEqual({
+      ticketTypeId: 202,
+      visibleStock: 87,
+      level: 'AVAILABLE',
+      snapshotTime: '2026-05-29T12:00:01.000Z',
+    });
   });
 
   it('does not cancel already expired requests', async () => {

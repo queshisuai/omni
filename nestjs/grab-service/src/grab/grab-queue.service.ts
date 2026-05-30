@@ -111,6 +111,24 @@ export class GrabQueueService {
     await this.redis.eval(script, [this.inflightQueueKey(sessionId), this.processedSeqKey(sessionId), this.requestKey(requestId)], [requestId, String(queueSeq)]);
   }
 
+  async removeQueuedRequest(sessionId: number, requestId: string): Promise<void> {
+    const script = `
+      redis.call('LREM', KEYS[1], 0, ARGV[1])
+      redis.call('LREM', KEYS[2], 0, ARGV[1])
+      redis.call('DEL', KEYS[3])
+      if redis.call('LLEN', KEYS[1]) == 0 and redis.call('LLEN', KEYS[2]) == 0 then
+        redis.call('SREM', KEYS[4], ARGV[2])
+      end
+      return 1
+    `;
+
+    await this.redis.eval(
+      script,
+      [this.queueKey(sessionId), this.inflightQueueKey(sessionId), this.requestKey(requestId), this.activeSessionsKey()],
+      [requestId, String(sessionId)],
+    );
+  }
+
   async ackOrphanInflight(sessionId: number, requestId: string): Promise<void> {
     const script = `
       local removed = redis.call('LREM', KEYS[1], 1, ARGV[1])

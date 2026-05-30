@@ -12,7 +12,7 @@ import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchase
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import type { ActivityDetailVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity } from '@/types/api'
 
-const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'EXPIRED'])
+const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
 const GRAB_STATUS_LABELS: Record<string, string> = {
   QUEUED: '排队中',
   WAITING: '等待处理',
@@ -22,6 +22,7 @@ const GRAB_STATUS_LABELS: Record<string, string> = {
   ORDER_CREATED: '已生成订单',
   SOLD_OUT: '已售罄',
   DOWNGRADING: '正在尝试后续票档',
+  PENDING_RECOVERY: '订单确认中',
   FAILED: '抢票失败',
   LIMITED: '限购失败',
   EXPIRED: '已结束',
@@ -318,7 +319,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
   useEffect(() => {
     if (!grabProgress?.requestId) return
-    if (TERMINAL_GRAB_STATUSES.has(grabProgress.status) && grabProgress.status !== 'ORDER_CREATED') {
+    if (TERMINAL_GRAB_STATUSES.has(grabProgress.status) && grabProgress.status !== 'ORDER_CREATED' && grabProgress.status !== 'PENDING_RECOVERY') {
       forgetActiveGrabRequest()
       return
     }
@@ -1032,6 +1033,15 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                           查看订单
                         </button>
                       </>
+                    )}
+                    {grabProgress.status === 'PENDING_RECOVERY' && (
+                      <button
+                        type="button"
+                        onClick={goToOrdersFromProgress}
+                        className="cursor-pointer rounded border border-[#ddd] bg-white px-4 py-2 text-[14px] text-[#666] outline-none"
+                      >
+                        查看订单
+                      </button>
                     )}
                     {(grabProgress.status === 'SOLD_OUT' || grabProgress.status === 'FAILED' || grabProgress.status === 'LIMITED') && (
                       <button

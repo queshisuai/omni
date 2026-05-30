@@ -165,6 +165,7 @@ describe('GrabRepository', () => {
         GRAB_STATUS.SOLD_OUT,
         GRAB_STATUS.LIMITED,
         GRAB_STATUS.FAILED,
+        GRAB_STATUS.PENDING_RECOVERY,
         GRAB_STATUS.EXPIRED,
       ],
     ]);
@@ -322,7 +323,7 @@ describe('GrabRepository', () => {
     expect(result?.matchedTicketTypeId).toBe(202);
   });
 
-  it('claims queued or waiting requests for processing and returns null when none match', async () => {
+  it('claims only unexpired queued requests or stale waiting leases for processing', async () => {
     const claimedAt = new Date('2026-05-27T12:01:00.000Z');
     const query = jest.fn()
       .mockResolvedValueOnce({
@@ -341,22 +342,64 @@ describe('GrabRepository', () => {
     const result = await repository.claimForProcessing('GRAB202605270001', 'worker-1');
     const none = await repository.claimForProcessing('GRAB404', 'worker-1');
 
-    expect(query.mock.calls[0][0]).toContain('status in ($3, $4)');
-    expect(query.mock.calls[0][0]).toContain('progress_status in ($5, $6)');
+    expect(query.mock.calls[0][0]).toContain('expire_time > now()');
+    expect(query.mock.calls[0][0]).toContain('order_id is null');
+    expect(query.mock.calls[0][0]).toContain('worker_claimed_at is null');
+    expect(query.mock.calls[0][0]).toContain("interval '1 second'");
     expect(query.mock.calls[0][0]).toContain('status = $7');
     expect(query.mock.calls[0][1]).toEqual([
       'GRAB202605270001',
       'worker-1',
       GRAB_STATUS.QUEUED,
-      GRAB_STATUS.WAITING,
       GRAB_STATUS.QUEUED,
       GRAB_STATUS.WAITING,
       GRAB_STATUS.WAITING,
+      GRAB_STATUS.WAITING,
+      30,
     ]);
     expect(result?.workerId).toBe('worker-1');
     expect(result?.status).toBe(GRAB_STATUS.WAITING);
     expect(result?.progressStatus).toBe(GRAB_STATUS.WAITING);
     expect(none).toBeNull();
+  });
+
+  it('marks ambiguous order creation outcomes as pending recovery', async () => {
+    const attempts = [
+      { ticketTypeId: 202, name: 'VIP', status: 'LOCKING' as const, message: 'locked' },
+    ];
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...baseRow,
+        status: GRAB_STATUS.PENDING_RECOVERY,
+        progress_status: GRAB_STATUS.PENDING_RECOVERY,
+        progress_message: 'order confirmation pending',
+        fail_reason: 'order confirmation pending',
+        attempts_snapshot: JSON.stringify(attempts),
+        completed_at: new Date('2026-05-27T12:03:00.000Z'),
+      }],
+    });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.markPendingRecovery('GRAB202605270001', {
+      message: 'order confirmation pending',
+      currentTicketTypeId: 202,
+      currentAttemptIndex: 0,
+      attempts,
+    });
+
+    expect(query.mock.calls[0][0]).toContain('progress_status = any($7::varchar[])');
+    expect(query.mock.calls[0][0]).toContain('completed_at = coalesce');
+    expect(query.mock.calls[0][1]).toEqual([
+      'GRAB202605270001',
+      GRAB_STATUS.PENDING_RECOVERY,
+      'order confirmation pending',
+      202,
+      0,
+      JSON.stringify(attempts),
+      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.LOCKING],
+    ]);
+    expect(result?.progressStatus).toBe(GRAB_STATUS.PENDING_RECOVERY);
+    expect(result?.failReason).toBe('order confirmation pending');
   });
 
   it('finds active request by normalized grab intent', async () => {
@@ -414,6 +457,7 @@ describe('GrabRepository', () => {
       GRAB_STATUS.SOLD_OUT,
       GRAB_STATUS.LIMITED,
       GRAB_STATUS.FAILED,
+      GRAB_STATUS.PENDING_RECOVERY,
       GRAB_STATUS.EXPIRED,
     ]));
     expect(result?.requestId).toBe('GRAB1');
@@ -456,5 +500,26 @@ describe('GrabRepository', () => {
       100,
     ]);
     expect((result[0] as any).progressStatus).toBe('QUEUED');
+  });
+
+  it('finds pending recovery requests for order lookup compensation', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...baseRow,
+        status: GRAB_STATUS.PENDING_RECOVERY,
+        progress_status: GRAB_STATUS.PENDING_RECOVERY,
+        updated_at: new Date('2026-05-27T12:01:00.000Z'),
+      }],
+    });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.findPendingRecovery(50);
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('progress_status = $1');
+    expect(sql).toContain('order by updated_at asc');
+    expect(sql).toContain('limit $2');
+    expect(params).toEqual([GRAB_STATUS.PENDING_RECOVERY, 50]);
+    expect(result[0].progressStatus).toBe(GRAB_STATUS.PENDING_RECOVERY);
   });
 });

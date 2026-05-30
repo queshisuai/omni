@@ -93,6 +93,22 @@ describe('GrabQueueService', () => {
     expect(args).toEqual(['GRAB1', '18']);
   });
 
+  it('removes a queued request and metadata after enqueue succeeds but database insert fails', async () => {
+    const redis = { eval: jest.fn().mockResolvedValue(1) };
+    const service = new GrabQueueService(redis as any);
+
+    await service.removeQueuedRequest(101, 'GRAB-ORPHAN');
+
+    expect(redis.eval).toHaveBeenCalledWith(expect.stringContaining('LREM'), [
+      'grab:queue:101',
+      'grab:queue:inflight:101',
+      'grab:req:GRAB-ORPHAN',
+      'grab:active-sessions',
+    ], ['GRAB-ORPHAN', '101']);
+    expect(redis.eval.mock.calls[0][0]).toContain('DEL');
+    expect(redis.eval.mock.calls[0][0]).toContain('SREM');
+  });
+
   it('does not advance processed sequence when ack misses inflight request', async () => {
     const redis: any = {
       eval: jest.fn().mockResolvedValue(0),

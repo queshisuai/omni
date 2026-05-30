@@ -35,6 +35,13 @@ export class GrabCompensationService implements OnModuleInit {
     for (const request of expiredRequests) {
       await this.expireRequest(request);
     }
+    const pendingRecoveryRequests = await this.repository.findPendingRecovery(100);
+    for (const request of pendingRecoveryRequests) {
+      const recovery = await this.recoverCreatedOrder(request);
+      if (recovery === 'RECOVERED') {
+        await this.ackRecord(request, null);
+      }
+    }
     await this.sweepStaleInflight();
   }
 

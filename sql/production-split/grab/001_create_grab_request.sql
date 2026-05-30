@@ -43,6 +43,7 @@ create table if not exists grab_request (
         'ORDER_CREATED',
         'SOLD_OUT',
         'DOWNGRADING',
+        'PENDING_RECOVERY',
         'LIMITED',
         'FAILED',
         'EXPIRED'
@@ -56,6 +57,7 @@ create table if not exists grab_request (
         'ORDER_CREATED',
         'SOLD_OUT',
         'DOWNGRADING',
+        'PENDING_RECOVERY',
         'LIMITED',
         'FAILED',
         'EXPIRED'

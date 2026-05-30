@@ -101,6 +101,7 @@ export type GrabStatus =
   | 'ORDER_CREATING'
   | 'ORDER_CREATED'
   | 'SOLD_OUT'
+  | 'PENDING_RECOVERY'
   | 'LIMITED'
   | 'FAILED'
   | 'EXPIRED'

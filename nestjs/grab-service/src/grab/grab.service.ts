@@ -8,6 +8,7 @@ import type { GrabStatus } from './grab-status';
 import type { GrabProgressResponse, GrabRequestRecord, GrabRequestResponse, GrabTicketPreference, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
 import { TicketClientService, TicketTypeVisibleInfo } from './ticket-client.service';
+import { VisibleStockService } from './visible-stock.service';
 
 const ACTIVE_ASYNC_PROGRESS_STATUS_SET = new Set<string>(ACTIVE_ASYNC_PROGRESS_STATUSES);
 const CANCELABLE_PROGRESS_STATUSES = new Set<string>([
@@ -35,6 +36,7 @@ export class GrabService {
     private readonly orderClient: OrderClientService,
     private readonly queueService: GrabQueueService,
     private readonly ticketClient: TicketClientService,
+    private readonly visibleStockService: VisibleStockService,
   ) {}
 
   async submitRequest(userId: number, dto: SubmitGrabRequestDto): Promise<GrabRequestResponse> {
@@ -82,6 +84,7 @@ export class GrabService {
         allowAutoDowngrade: Boolean(dto.allowAutoDowngrade) && requestedTicketTypes.length > 1,
       });
     } catch (error) {
+      await this.queueService.removeQueuedRequest(dto.sessionId, requestId);
       if (isUniqueViolation(error)) {
         const record = await this.repository.findByUserAndIdempotency(userId, dto.idempotencyKey);
         if (record) return this.toResponse(record);
@@ -104,6 +107,7 @@ export class GrabService {
     if (!record) throw new NotFoundException('grab request not found');
     if (record.userId !== userId) throw new ForbiddenException('cannot view another user grab request');
     const queueRank = record.queueSeq == null ? null : await this.queueService.calculateQueueRank(record.sessionId, record.queueSeq);
+    const visibleStock = await this.resolveProgressVisibleStock(record);
 
     return {
       requestId: record.requestId,
@@ -118,7 +122,7 @@ export class GrabService {
       currentAttemptIndex: record.currentAttemptIndex,
       requestedTicketTypes: record.requestedTicketTypes,
       attempts: record.attemptsSnapshot,
-      visibleStock: null,
+      visibleStock,
       message: record.progressMessage,
       matchedTicketTypeId: record.matchedTicketTypeId,
       updateTime: record.updatedAt.toISOString(),
@@ -212,6 +216,24 @@ export class GrabService {
 
   private generateRequestId(): string {
     return `GRAB${randomBytes(12).toString('hex')}`;
+  }
+
+  private async resolveProgressVisibleStock(record: GrabRequestRecord) {
+    const ticketTypeId = record.currentTicketTypeId ?? record.requestedTicketTypes[record.currentAttemptIndex]?.ticketTypeId ?? record.ticketTypeId;
+    if (!ticketTypeId) return null;
+    try {
+      const snapshot = await this.visibleStockService.getSessionVisibleStock(record.sessionId, [ticketTypeId]);
+      const ticket = snapshot.ticketTypes.find((item) => item.ticketTypeId === ticketTypeId);
+      if (!ticket) return null;
+      return {
+        ticketTypeId: ticket.ticketTypeId,
+        visibleStock: ticket.visibleStock,
+        level: ticket.level,
+        snapshotTime: snapshot.snapshotTime,
+      };
+    } catch {
+      return null;
+    }
   }
 
   private async toResponse(

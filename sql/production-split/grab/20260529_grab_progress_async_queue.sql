@@ -27,6 +27,7 @@ set progress_status = case status
     when 'ORDER_CREATED' then 'ORDER_CREATED'
     when 'SOLD_OUT' then 'SOLD_OUT'
     when 'DOWNGRADING' then 'DOWNGRADING'
+    when 'PENDING_RECOVERY' then 'PENDING_RECOVERY'
     when 'LIMITED' then 'LIMITED'
     when 'FAILED' then 'FAILED'
     when 'EXPIRED' then 'EXPIRED'
@@ -72,6 +73,7 @@ alter table grab_request
         'ORDER_CREATED',
         'SOLD_OUT',
         'DOWNGRADING',
+        'PENDING_RECOVERY',
         'LIMITED',
         'FAILED',
         'EXPIRED'
@@ -85,6 +87,7 @@ alter table grab_request
         'ORDER_CREATED',
         'SOLD_OUT',
         'DOWNGRADING',
+        'PENDING_RECOVERY',
         'LIMITED',
         'FAILED',
         'EXPIRED'
