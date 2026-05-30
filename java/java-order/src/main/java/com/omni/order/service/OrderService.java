@@ -862,6 +862,7 @@ public class OrderService {
                 request.getTicketTypeId(),
                 quantity,
                 request.getGrabRequestId(),
+                request.getAuthorizedMaxUnitPrice(),
                 SEAT_SELECTION_NONE,
                 null);
     }
@@ -873,6 +874,7 @@ public class OrderService {
                 request.getTicketTypeId(),
                 quantity,
                 request.getGrabRequestId(),
+                request.getAuthorizedMaxUnitPrice(),
                 seatSelectionMode,
                 request.getSeatIds());
     }
@@ -882,6 +884,7 @@ public class OrderService {
                                                  Long ticketTypeId,
                                                  int quantity,
                                                  String grabRequestId,
+                                                 BigDecimal authorizedMaxUnitPrice,
                                                  String seatSelectionMode,
                                                  List<Long> requestedSeatIds) {
         if (!StringUtils.hasText(grabRequestId)) {
@@ -903,8 +906,9 @@ public class OrderService {
                 || !grabRequestId.equals(existingOrder.getGrabRequestId())) {
             throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
         }
+        Order loadedOrder = validateExistingNormalOrderAuthorizedPrice(authorizedMaxUnitPrice, existingOrder);
         validateExistingNormalOrderSeats(seatSelectionMode, requestedSeatIds, existingOrder);
-        return loadExistingOrder(existingOrder);
+        return loadedOrder != null ? loadedOrder : loadExistingOrder(existingOrder);
     }
 
     private void validateTeamAuthorizedPrice(BigDecimal authorizedMaxUnitPrice, TicketSalesQuoteResponse quote) {
@@ -963,7 +967,12 @@ public class OrderService {
     private void validateExistingNormalOrderSeats(String seatSelectionMode,
                                                   List<Long> requestedSeatIds,
                                                   OrderListItemResponse existingOrder) {
-        if (!Objects.equals(seatSelectionMode, existingOrder.getSeatSelectionMode())) {
+        String existingMode = existingOrder.getSeatSelectionMode();
+        if (existingMode == null) {
+            validateNullExistingNormalOrderSeatMode(seatSelectionMode, requestedSeatIds, existingOrder);
+            return;
+        }
+        if (!Objects.equals(seatSelectionMode, existingMode)) {
             throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
         }
         if (SEAT_SELECTION_NONE.equals(seatSelectionMode) || SEAT_SELECTION_RANDOM.equals(seatSelectionMode)) {
@@ -977,6 +986,33 @@ public class OrderService {
             throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
         }
         List<OrderSeat> existingSeats = orderSeatMapper.selectLockedAndSoldSeatsByOrderId(existingOrder.getId());
+        Set<Long> existing = toSessionSeatIdSet(existingSeats);
+        if (existing.size() != existingSeatsSize(existingSeats) || !existing.equals(requested)) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+        }
+    }
+
+    private void validateNullExistingNormalOrderSeatMode(String seatSelectionMode,
+                                                         List<Long> requestedSeatIds,
+                                                         OrderListItemResponse existingOrder) {
+        List<OrderSeat> existingSeats = orderSeatMapper.selectLockedAndSoldSeatsByOrderId(existingOrder.getId());
+        if (SEAT_SELECTION_RANDOM.equals(seatSelectionMode)) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+        }
+        if (SEAT_SELECTION_NONE.equals(seatSelectionMode)) {
+            if (existingSeatsSize(existingSeats) != 0) {
+                throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            }
+            return;
+        }
+        if (!SEAT_SELECTION_EXPLICIT.equals(seatSelectionMode)
+                || requestedSeatIds == null || requestedSeatIds.isEmpty()) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+        }
+        Set<Long> requested = new HashSet<>(requestedSeatIds);
+        if (requested.size() != requestedSeatIds.size()) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+        }
         Set<Long> existing = toSessionSeatIdSet(existingSeats);
         if (existing.size() != existingSeatsSize(existingSeats) || !existing.equals(requested)) {
             throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
@@ -1008,6 +1044,33 @@ public class OrderService {
         if (authorizedMaxUnitPrice.compareTo(existingUnitPrice) < 0) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "ticket price exceeds authorized price");
         }
+    }
+
+    private Order validateExistingNormalOrderAuthorizedPrice(BigDecimal authorizedMaxUnitPrice,
+                                                             OrderListItemResponse existingOrder) {
+        if (authorizedMaxUnitPrice == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "authorized price is required for grab order");
+        }
+        BigDecimal existingUnitPrice = existingOrder.getUnitPrice();
+        Order loadedOrder = null;
+        if (existingUnitPrice == null) {
+            loadedOrder = loadExistingOrder(existingOrder);
+            existingUnitPrice = deriveUnitPriceFromOrder(loadedOrder);
+        }
+        if (existingUnitPrice == null) {
+            throw new BusinessException(ResultCode.CONFLICT, "existing order price is inconsistent");
+        }
+        if (authorizedMaxUnitPrice.compareTo(existingUnitPrice) < 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket price exceeds authorized price");
+        }
+        return loadedOrder;
+    }
+
+    private BigDecimal deriveUnitPriceFromOrder(Order order) {
+        if (order == null || order.getAmount() == null || order.getQuantity() == null || order.getQuantity() <= 0) {
+            return null;
+        }
+        return order.getAmount().divide(BigDecimal.valueOf(order.getQuantity()), 2, RoundingMode.HALF_UP);
     }
 
     private Set<Long> toSessionSeatIdSet(List<OrderSeat> seats) {

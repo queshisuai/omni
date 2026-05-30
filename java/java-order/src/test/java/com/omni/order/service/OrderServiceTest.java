@@ -205,13 +205,15 @@ class OrderServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1L);
         request.setQuantity(1);
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
         request.setGrabRequestId("GRAB-NORMAL-1");
 
         Order existing = new Order();
         existing.setId(81L);
         existing.setOrderNo("DM-existing-normal");
-        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NORMAL-1"))
-                .thenReturn(teamOrderItem(81L, null, "GRAB-NORMAL-1", false));
+        OrderListItemResponse existingItem = teamOrderItem(81L, null, "GRAB-NORMAL-1", false);
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NORMAL-1")).thenReturn(existingItem);
         when(orderMapper.selectById(81L)).thenReturn(existing);
 
         Order result = service.createOrder(request);
@@ -225,6 +227,78 @@ class OrderServiceTest {
         verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
         verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void duplicateGrabCreateOrderRejectsMissingAuthorizedMaxBeforeTicketOrInsertSideEffects() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(1);
+        request.setGrabRequestId("GRAB-NORMAL-MISSING-AUTH-RETRY");
+
+        OrderListItemResponse existingItem = teamOrderItem(181L, null, "GRAB-NORMAL-MISSING-AUTH-RETRY", false);
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NORMAL-MISSING-AUTH-RETRY")).thenReturn(existingItem);
+
+        assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void duplicateGrabCreateOrderRejectsAuthorizedMaxBelowExistingUnitPriceBeforeTicketOrInsertSideEffects() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(1);
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("99.99"));
+        request.setGrabRequestId("GRAB-NORMAL-LOW-AUTH-RETRY");
+
+        OrderListItemResponse existingItem = teamOrderItem(182L, null, "GRAB-NORMAL-LOW-AUTH-RETRY", false);
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NORMAL-LOW-AUTH-RETRY")).thenReturn(existingItem);
+
+        assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void duplicateGrabCreateOrderDerivesExistingUnitPriceFromOrderAmountWhenSnapshotPriceMissing() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(1);
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setGrabRequestId("GRAB-NORMAL-DERIVE-PRICE");
+
+        Order existing = new Order();
+        existing.setId(193L);
+        existing.setQuantity(1);
+        existing.setAmount(new BigDecimal("100.00"));
+        OrderListItemResponse existingItem = teamOrderItem(193L, null, "GRAB-NORMAL-DERIVE-PRICE", false);
+        existingItem.setUnitPrice(null);
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NORMAL-DERIVE-PRICE")).thenReturn(existingItem);
+        when(orderMapper.selectById(193L)).thenReturn(existing);
+
+        Order result = service.createOrder(request);
+
+        assertEquals(existing, result);
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
     }
 
     @Test
@@ -316,6 +390,7 @@ class OrderServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1L);
         request.setSeatIds(List.of(301L));
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
         request.setGrabRequestId("GRAB-SEAT-NORMAL-1");
 
         Order existing = new Order();
@@ -323,6 +398,7 @@ class OrderServiceTest {
         existing.setOrderNo("DM-existing-seat-normal");
         OrderListItemResponse existingItem = teamOrderItem(82L, null, "GRAB-SEAT-NORMAL-1", null);
         existingItem.setSeatSelectionMode("EXPLICIT");
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
         when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-SEAT-NORMAL-1")).thenReturn(existingItem);
         when(orderSeatMapper.selectLockedAndSoldSeatsByOrderId(82L))
                 .thenReturn(List.of(orderSeat(82L, 301L, null)));
@@ -339,6 +415,137 @@ class OrderServiceTest {
         verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
         verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void duplicateGrabCreateOrderWithSeatsRejectsMissingAuthorizedMaxBeforeTicketOrInsertSideEffects() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setSeatIds(List.of(301L));
+        request.setGrabRequestId("GRAB-SEAT-MISSING-AUTH-RETRY");
+
+        OrderListItemResponse existingItem = teamOrderItem(183L, null, "GRAB-SEAT-MISSING-AUTH-RETRY", false);
+        existingItem.setSeatSelectionMode("EXPLICIT");
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-SEAT-MISSING-AUTH-RETRY")).thenReturn(existingItem);
+
+        assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(orderSeatMapper, never()).selectLockedAndSoldSeatsByOrderId(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSeatMapper, never()).insert(any(OrderSeat.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void duplicateGrabCreateOrderWithSeatsRejectsAuthorizedMaxBelowExistingUnitPriceBeforeTicketOrInsertSideEffects() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setSeatIds(List.of(301L));
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("99.99"));
+        request.setGrabRequestId("GRAB-SEAT-LOW-AUTH-RETRY");
+
+        OrderListItemResponse existingItem = teamOrderItem(189L, null, "GRAB-SEAT-LOW-AUTH-RETRY", false);
+        existingItem.setSeatSelectionMode("EXPLICIT");
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-SEAT-LOW-AUTH-RETRY")).thenReturn(existingItem);
+
+        assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(orderSeatMapper, never()).selectLockedAndSoldSeatsByOrderId(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSeatMapper, never()).insert(any(OrderSeat.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void createOrderReturnsExistingForNullModeNoSeatsWhenRequestedNone() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(1);
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setGrabRequestId("GRAB-NULL-MODE-NONE");
+
+        Order existing = new Order();
+        existing.setId(190L);
+        OrderListItemResponse existingItem = teamOrderItem(190L, null, "GRAB-NULL-MODE-NONE", false);
+        existingItem.setSeatSelectionMode(null);
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NULL-MODE-NONE")).thenReturn(existingItem);
+        when(orderSeatMapper.selectLockedAndSoldSeatsByOrderId(190L)).thenReturn(List.of());
+        when(orderMapper.selectById(190L)).thenReturn(existing);
+
+        Order result = service.createOrder(request);
+
+        assertEquals(existing, result);
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createOrderWithSeatsReturnsExistingForNullModeMatchingExplicitSeats() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setSeatIds(List.of(301L));
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setGrabRequestId("GRAB-NULL-MODE-EXPLICIT");
+
+        Order existing = new Order();
+        existing.setId(191L);
+        OrderListItemResponse existingItem = teamOrderItem(191L, null, "GRAB-NULL-MODE-EXPLICIT", false);
+        existingItem.setSeatSelectionMode(null);
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NULL-MODE-EXPLICIT")).thenReturn(existingItem);
+        when(orderSeatMapper.selectLockedAndSoldSeatsByOrderId(191L))
+                .thenReturn(List.of(orderSeat(191L, 301L, null)));
+        when(orderMapper.selectById(191L)).thenReturn(existing);
+
+        Order result = service.createOrderWithSeats(request);
+
+        assertEquals(existing, result);
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createOrderWithSeatsRejectsNullModeRandomRetryWithExistingSeats() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(1);
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setGrabRequestId("GRAB-NULL-MODE-RANDOM");
+
+        OrderListItemResponse existingItem = teamOrderItem(192L, null, "GRAB-NULL-MODE-RANDOM", false);
+        existingItem.setSeatSelectionMode(null);
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NULL-MODE-RANDOM")).thenReturn(existingItem);
+        when(orderSeatMapper.selectLockedAndSoldSeatsByOrderId(192L))
+                .thenReturn(List.of(orderSeat(192L, 301L, null)));
+
+        assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
     }
 
     @Test
@@ -397,11 +604,13 @@ class OrderServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1L);
         request.setQuantity(1);
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
         request.setGrabRequestId("GRAB-RANDOM-OMITTED-SEATS");
         Order existing = new Order();
         existing.setId(187L);
         OrderListItemResponse existingItem = teamOrderItem(187L, null, "GRAB-RANDOM-OMITTED-SEATS", false);
         existingItem.setSeatSelectionMode("RANDOM");
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
         when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-RANDOM-OMITTED-SEATS")).thenReturn(existingItem);
         when(orderMapper.selectById(187L)).thenReturn(existing);
 
@@ -446,9 +655,11 @@ class OrderServiceTest {
         request.setSessionId(101L);
         request.setTicketTypeId(1L);
         request.setSeatIds(List.of(302L));
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
         request.setGrabRequestId("GRAB-SEAT-ID-MISMATCH");
         OrderListItemResponse existingItem = teamOrderItem(89L, null, "GRAB-SEAT-ID-MISMATCH", false);
         existingItem.setSeatSelectionMode("EXPLICIT");
+        existingItem.setUnitPrice(new BigDecimal("100.00"));
         when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-SEAT-ID-MISMATCH")).thenReturn(existingItem);
         when(orderSeatMapper.selectLockedAndSoldSeatsByOrderId(89L))
                 .thenReturn(List.of(orderSeat(89L, 301L, null)));

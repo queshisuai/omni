@@ -295,4 +295,18 @@ if ($teamSeatLockContent -notmatch $teamSeatLockIndexPattern) {
     exit 1
 }
 
+$seatSelectionModeSql = Join-Path -Path $splitRoot -ChildPath "order/20260530_order_seat_selection_mode.sql"
+if (-not (Test-Path -LiteralPath $seatSelectionModeSql)) {
+    Write-Host "FAIL missing order seat selection mode production SQL: $seatSelectionModeSql"
+    exit 1
+}
+$seatSelectionModeContent = (Get-Content -Raw -LiteralPath $seatSelectionModeSql).ToLower()
+$hasSeatSelectionUpdate = $seatSelectionModeContent -match '(?is)update\s+order_snapshot\s+\w+\s+set\s+seat_selection_mode\s*=\s*case'
+$hasTeamOrderInference = $seatSelectionModeContent -match "team_order"
+$hasOrderSeatInference = $seatSelectionModeContent -match "(?is)exists\s*\(\s*select\s+1\s+from\s+order_seat"
+if (-not $hasSeatSelectionUpdate -or -not $hasTeamOrderInference -or -not $hasOrderSeatInference) {
+    Write-Host "FAIL order seat selection mode SQL must backfill from team_order and order_seat: $seatSelectionModeSql"
+    exit 1
+}
+
 Write-Host "PASS production split SQL safety check"

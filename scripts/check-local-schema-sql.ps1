@@ -45,6 +45,14 @@ if ($sharedOrderSnapshotContent -match "(?is)\bJOIN\s+session_seat\b") {
     exit 1
 }
 
+$hasSharedSeatSelectionInsert = $sharedOrderSnapshotContent -match "(?is)seat_selection_mode.*case.*has_order_seats.*'EXPLICIT'"
+$hasSharedSeatSelectionUpdate = $sharedOrderSnapshotContent -match "(?is)UPDATE\s+order_snapshot\s+\w+\s+SET\s+seat_selection_mode\s*=\s*CASE"
+$hasSharedOrderSeatInference = $sharedOrderSnapshotContent -match "(?is)EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+order_seat"
+if (-not $hasSharedSeatSelectionInsert -or -not $hasSharedSeatSelectionUpdate -or -not $hasSharedOrderSeatInference) {
+    Write-Host "FAIL shared order snapshot SQL must backfill seat_selection_mode from team_order and order_seat"
+    exit 1
+}
+
 $forbiddenPatterns = @(
     "DROP\s+TABLE",
     "DROP\s+COLUMN",
