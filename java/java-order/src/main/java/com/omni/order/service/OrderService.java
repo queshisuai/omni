@@ -144,7 +144,7 @@ public class OrderService {
     @Transactional(rollbackFor = Exception.class)
     public Order createOrder(CreateOrderRequest request) {
         int quantity = requirePositiveQuantity(request.getQuantity());
-        Order existingGrabOrder = resolveExistingNormalGrabOrder(request.getGrabRequestId());
+        Order existingGrabOrder = resolveExistingNormalGrabOrder(request, quantity);
         if (existingGrabOrder != null) {
             return existingGrabOrder;
         }
@@ -193,7 +193,7 @@ public class OrderService {
     public Order createOrderWithSeats(LockSeatsRequest request) {
         boolean hasSeatIds = request.getSeatIds() != null && !request.getSeatIds().isEmpty();
         int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
-        Order existingGrabOrder = resolveExistingNormalGrabOrder(request.getGrabRequestId());
+        Order existingGrabOrder = resolveExistingNormalGrabOrder(request, quantity);
         if (existingGrabOrder != null) {
             return existingGrabOrder;
         }
@@ -838,7 +838,29 @@ public class OrderService {
         }
     }
 
-    private Order resolveExistingNormalGrabOrder(String grabRequestId) {
+    private Order resolveExistingNormalGrabOrder(CreateOrderRequest request, int quantity) {
+        return resolveExistingNormalGrabOrder(
+                request.getUserId(),
+                request.getSessionId(),
+                request.getTicketTypeId(),
+                quantity,
+                request.getGrabRequestId());
+    }
+
+    private Order resolveExistingNormalGrabOrder(LockSeatsRequest request, int quantity) {
+        return resolveExistingNormalGrabOrder(
+                request.getUserId(),
+                request.getSessionId(),
+                request.getTicketTypeId(),
+                quantity,
+                request.getGrabRequestId());
+    }
+
+    private Order resolveExistingNormalGrabOrder(Long userId,
+                                                 Long sessionId,
+                                                 Long ticketTypeId,
+                                                 int quantity,
+                                                 String grabRequestId) {
         if (!StringUtils.hasText(grabRequestId)) {
             return null;
         }
@@ -849,6 +871,10 @@ public class OrderService {
         }
         if (Boolean.TRUE.equals(existingOrder.getTeamOrder())) {
             throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a team order");
+        }
+        if (!sameOrderPayload(existingOrder, userId, sessionId, ticketTypeId, quantity)
+                || !grabRequestId.equals(existingOrder.getGrabRequestId())) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
         }
         return loadExistingOrder(existingOrder);
     }
@@ -861,17 +887,36 @@ public class OrderService {
     }
 
     private void validateTeamOrderRetryMatchesGrabRequest(CreateTeamOrderRequest request, OrderListItemResponse existingOrder) {
-        if (StringUtils.hasText(request.getGrabRequestId())
-                && !request.getGrabRequestId().equals(existingOrder.getGrabRequestId())) {
+        if (!sameTeamOrderPayload(request, existingOrder)) {
             throw new BusinessException(ResultCode.CONFLICT, "team order retry conflicts with grab request");
         }
     }
 
     private void validateGrabRetryMatchesTeamRequest(CreateTeamOrderRequest request, OrderListItemResponse existingOrder) {
-        if (!Boolean.TRUE.equals(existingOrder.getTeamOrder())
-                || !request.getTeamGrabRequestId().equals(existingOrder.getTeamGrabRequestId())) {
+        if (!sameTeamOrderPayload(request, existingOrder)) {
             throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order");
         }
+    }
+
+    private boolean sameTeamOrderPayload(CreateTeamOrderRequest request, OrderListItemResponse existingOrder) {
+        if (!Boolean.TRUE.equals(existingOrder.getTeamOrder())
+                || !Objects.equals(request.getTeamGrabRequestId(), existingOrder.getTeamGrabRequestId())
+                || !Objects.equals(request.getGrabRequestId(), existingOrder.getGrabRequestId())
+                || !sameOrderPayload(existingOrder, request.getUserId(), request.getSessionId(), request.getTicketTypeId(), request.getQuantity())) {
+            return false;
+        }
+        return request.getTeamId() == null || Objects.equals(request.getTeamId(), existingOrder.getTeamId());
+    }
+
+    private boolean sameOrderPayload(OrderListItemResponse existingOrder,
+                                     Long userId,
+                                     Long sessionId,
+                                     Long ticketTypeId,
+                                     Integer quantity) {
+        return Objects.equals(userId, existingOrder.getUserId())
+                && Objects.equals(sessionId, existingOrder.getSessionId())
+                && Objects.equals(ticketTypeId, existingOrder.getTicketTypeId())
+                && Objects.equals(quantity, existingOrder.getQuantity());
     }
 
     private Order loadExistingOrder(OrderListItemResponse existingOrder) {

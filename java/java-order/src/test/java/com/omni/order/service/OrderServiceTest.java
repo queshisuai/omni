@@ -228,6 +228,63 @@ class OrderServiceTest {
     }
 
     @Test
+    void createOrderRejectsGrabRetryForDifferentUserBeforeLoadOrTicketSideEffects() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(3005L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(1);
+        request.setGrabRequestId("GRAB-NORMAL-USER-MISMATCH");
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NORMAL-USER-MISMATCH"))
+                .thenReturn(teamOrderItem(84L, null, "GRAB-NORMAL-USER-MISMATCH", false));
+
+        assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createOrderRejectsGrabRetryForDifferentSessionBeforeLoadOrTicketSideEffects() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(202L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(1);
+        request.setGrabRequestId("GRAB-NORMAL-SESSION-MISMATCH");
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NORMAL-SESSION-MISMATCH"))
+                .thenReturn(teamOrderItem(85L, null, "GRAB-NORMAL-SESSION-MISMATCH", false));
+
+        assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createOrderRejectsGrabRetryForDifferentQuantityBeforeLoadOrTicketSideEffects() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(2);
+        request.setGrabRequestId("GRAB-NORMAL-QUANTITY-MISMATCH");
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-NORMAL-QUANTITY-MISMATCH"))
+                .thenReturn(teamOrderItem(86L, null, "GRAB-NORMAL-QUANTITY-MISMATCH", false));
+
+        assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
     void duplicateGrabCreateOrderWithSeatsReturnsExistingOrderWithoutTicketOrInsertSideEffects() {
         LockSeatsRequest request = new LockSeatsRequest();
         request.setUserId(2004L);
@@ -254,6 +311,44 @@ class OrderServiceTest {
         verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
         verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void createOrderWithSeatsRejectsGrabRetryForDifferentUserBeforeLoadOrTicketSideEffects() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(3005L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setSeatIds(List.of(301L));
+        request.setGrabRequestId("GRAB-SEAT-USER-MISMATCH");
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-SEAT-USER-MISMATCH"))
+                .thenReturn(teamOrderItem(87L, null, "GRAB-SEAT-USER-MISMATCH", false));
+
+        assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createOrderWithSeatsRejectsGrabRetryForDifferentSeatQuantityBeforeLoadOrTicketSideEffects() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setSeatIds(List.of(301L, 302L));
+        request.setGrabRequestId("GRAB-SEAT-QUANTITY-MISMATCH");
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-SEAT-QUANTITY-MISMATCH"))
+                .thenReturn(teamOrderItem(88L, null, "GRAB-SEAT-QUANTITY-MISMATCH", false));
+
+        assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
     }
 
     @Test
@@ -443,6 +538,82 @@ class OrderServiceTest {
 
         verify(orderMapper, never()).selectById(any());
         verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createTeamOrderRejectsExistingTeamOrderForDifferentUserBeforeLoadOrTicketSideEffects() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        OrderListItemResponse existing = teamOrderItem(95L, "TEAM-GRAB-1", "GRAB-LEADER-1", true);
+        existing.setUserId(3005L);
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(existing);
+
+        assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).validateTeamSeatLock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createTeamOrderRejectsExistingTeamOrderForDifferentSessionBeforeLoadOrTicketSideEffects() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        OrderListItemResponse existing = teamOrderItem(96L, "TEAM-GRAB-1", "GRAB-LEADER-1", true);
+        existing.setSessionId(202L);
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(existing);
+
+        assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).validateTeamSeatLock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createTeamOrderRejectsExistingTeamOrderForDifferentQuantityBeforeLoadOrTicketSideEffects() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        OrderListItemResponse existing = teamOrderItem(97L, "TEAM-GRAB-1", "GRAB-LEADER-1", true);
+        existing.setQuantity(1);
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(existing);
+
+        assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).validateTeamSeatLock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createTeamOrderRejectsExistingTeamOrderForDifferentTeamBeforeLoadOrTicketSideEffects() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        OrderListItemResponse existing = teamOrderItem(98L, "TEAM-GRAB-1", "GRAB-LEADER-1", true);
+        existing.setTeamId(8002L);
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(existing);
+
+        assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).validateTeamSeatLock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createTeamOrderRejectsExistingGrabOrderForDifferentUserBeforeLoadOrTicketSideEffects() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        OrderListItemResponse existing = teamOrderItem(99L, "TEAM-GRAB-1", "GRAB-LEADER-1", true);
+        existing.setUserId(3005L);
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(null);
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-LEADER-1")).thenReturn(existing);
+
+        assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).validateTeamSeatLock(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
     }
 
@@ -744,6 +915,13 @@ class OrderServiceTest {
         item.setTeamGrabRequestId(teamGrabRequestId);
         item.setGrabRequestId(grabRequestId);
         item.setTeamOrder(teamOrder);
+        item.setUserId(2004L);
+        item.setSessionId(101L);
+        item.setTicketTypeId(1L);
+        item.setQuantity(Boolean.TRUE.equals(teamOrder) ? 2 : 1);
+        if (Boolean.TRUE.equals(teamOrder)) {
+            item.setTeamId(7001L);
+        }
         return item;
     }
 
