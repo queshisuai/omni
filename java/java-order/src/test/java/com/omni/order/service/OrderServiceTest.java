@@ -1496,12 +1496,12 @@ class OrderServiceTest {
         request.setUserId(2004L);
         request.setSessionId(10L);
         request.setTicketTypeId(20L);
-        request.setSeatIds(List.of(301L, 302L));
+        request.setSeatIds(List.of(302L, 301L));
         request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
 
         TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
-        lockResponse.setLockedSeatIds(List.of(301L, 302L));
-        lockResponse.setSeatLabels(List.of("A-1", "A-2"));
+        lockResponse.setLockedSeatIds(List.of(302L, 301L));
+        lockResponse.setSeatLabels(List.of("A-2", "A-1"));
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
         when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
@@ -1515,7 +1515,10 @@ class OrderServiceTest {
 
         ArgumentCaptor<OrderSeat> seatCaptor = ArgumentCaptor.forClass(OrderSeat.class);
         verify(orderSeatMapper, org.mockito.Mockito.times(2)).insert(seatCaptor.capture());
-        assertEquals(List.of("A-1", "A-2"), seatCaptor.getAllValues().stream()
+        assertEquals(List.of(302L, 301L), seatCaptor.getAllValues().stream()
+                .map(OrderSeat::getSessionSeatId)
+                .collect(java.util.stream.Collectors.toList()));
+        assertEquals(List.of("A-2", "A-1"), seatCaptor.getAllValues().stream()
                 .map(OrderSeat::getSeatLabel)
                 .collect(java.util.stream.Collectors.toList()));
     }

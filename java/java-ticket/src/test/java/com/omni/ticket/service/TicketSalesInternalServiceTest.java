@@ -174,10 +174,13 @@ class TicketSalesInternalServiceTest {
         TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
         when(sessionSeatMapper.lockSeat(eq(501L), eq(3001L), eq(4001L), any())).thenReturn(1);
         when(sessionSeatMapper.lockSeat(eq(502L), eq(3001L), eq(4001L), any())).thenReturn(1);
+        when(sessionSeatMapper.selectSeatLabelsByIds(List.of(502L, 501L))).thenReturn(List.of("A-2", "A-1"));
 
-        TicketSalesSeatLockResponse response = service.lockSeats(lockRequest(List.of(501L, 502L), 2));
+        TicketSalesSeatLockResponse response = service.lockSeats(lockRequest(List.of(502L, 501L), 2));
 
-        assertEquals(List.of(501L, 502L), response.getLockedSeatIds());
+        assertEquals(List.of(502L, 501L), response.getLockedSeatIds());
+        assertEquals(List.of("A-2", "A-1"), response.getSeatLabels());
+        verify(sessionSeatMapper).selectSeatLabelsByIds(List.of(502L, 501L));
     }
 
     @Test

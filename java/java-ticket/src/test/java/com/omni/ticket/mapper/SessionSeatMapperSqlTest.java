@@ -49,6 +49,16 @@ class SessionSeatMapperSqlTest {
     }
 
     @Test
+    void selectSeatLabelsByIdsPreservesInputSeatIdOrder() throws Exception {
+        String sql = annotationSql(SessionSeatMapper.class.getDeclaredMethod("selectSeatLabelsByIds", List.class)).toLowerCase();
+
+        assertFalse(sql.contains("order by ss.id"), sql);
+        assertTrue(sql.contains("array_position"), sql);
+        assertTrue(sql.contains("array["), sql);
+        assertTrue(sql.contains("::bigint[]"), sql);
+    }
+
+    @Test
     void teamSeatLockSelectUsesSkipLockedAndLifecycleSqlClearsOwner() throws Exception {
         String selectSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "selectAvailableForTeamLock", Long.class, Long.class, Integer.class)).toLowerCase();

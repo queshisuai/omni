@@ -162,7 +162,9 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
             "LEFT JOIN seat_block sb ON sb.id = ss.seat_block_id ",
             "WHERE ss.id IN",
             "<foreach collection='seatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
-            "ORDER BY ss.id",
+            "ORDER BY array_position(ARRAY[",
+            "<foreach collection='seatIds' item='id' separator=','>#{id}</foreach>",
+            "]::bigint[], ss.id)",
             "</script>"})
     List<String> selectSeatLabelsByIds(@Param("seatIds") List<Long> seatIds);
 }
