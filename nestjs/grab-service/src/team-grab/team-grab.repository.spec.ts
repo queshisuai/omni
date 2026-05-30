@@ -134,7 +134,9 @@ describe('TeamGrabRepository', () => {
 
     expect(query.mock.calls[0][0]).toContain("status in ('JOINED', 'CONFIRMED')");
     expect(query.mock.calls[0][0]).toContain("t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')");
-    expect(query.mock.calls[0][0]).toContain('returning *');
+    expect(query.mock.calls[0][0].toLowerCase()).toContain('with locked_team as');
+    expect(query.mock.calls[0][0].toLowerCase()).toContain('for update');
+    expect(query.mock.calls[0][0]).toContain('returning ticket_team_member.*');
     expect(query.mock.calls[0][1]).toEqual([1, 200]);
     expect(result?.status).toBe('LEFT');
   });
@@ -184,8 +186,13 @@ describe('TeamGrabRepository', () => {
 
     const result = await repository.refreshTeamReadiness(1);
 
+    const sql = query.mock.calls[0][0];
     expect(query.mock.calls[0][0]).toContain('confirmed_members.count');
     expect(query.mock.calls[0][0]).toContain('between 2 and 6');
+    expect(sql).toContain('leader_member');
+    expect(sql).toContain("m.role = 'LEADER'");
+    expect(sql).toContain('m.user_id = t.leader_user_id');
+    expect(sql).toContain('leader_member.confirmed');
     expect(query.mock.calls[0][0]).toContain("t.status in ('DRAFT', 'FAILED', 'EXPIRED', 'READY')");
     expect(query.mock.calls[0][1]).toEqual([1]);
     expect(result?.status).toBe('READY');

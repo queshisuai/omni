@@ -215,16 +215,20 @@ export class TeamGrabRepository {
 
   async leaveMember(teamId: number, userId: number): Promise<TicketTeamMemberRecord | null> {
     const result = await this.database.query<TicketTeamMemberRow>(
-      `update ticket_team_member
+      `with locked_team as (
+         select t.id
+         from ticket_team t
+         where t.id = $1 and t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
+         for update
+       )
+       update ticket_team_member
        set status = 'LEFT', update_time = now()
-       where team_id = $1
-         and user_id = $2
-         and status in ('JOINED', 'CONFIRMED')
-         and exists (
-           select 1 from ticket_team t
-           where t.id = $1 and t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
-         )
-       returning *`,
+       from locked_team
+       where ticket_team_member.team_id = locked_team.id
+         and ticket_team_member.team_id = $1
+         and ticket_team_member.user_id = $2
+         and ticket_team_member.status in ('JOINED', 'CONFIRMED')
+       returning ticket_team_member.*`,
       [teamId, userId],
     );
     return result.rows[0] ? this.mapMemberRow(result.rows[0]) : null;
@@ -307,16 +311,33 @@ export class TeamGrabRepository {
 
   async refreshTeamReadiness(teamId: number): Promise<TicketTeamRecord | null> {
     const result = await this.database.query<TicketTeamRow>(
-      `with confirmed_members as (
+      `with team_row as (
+         select t.id, t.leader_user_id
+         from ticket_team t
+         where t.id = $1
+       ),
+       confirmed_members as (
          select count(*)::int as count
          from ticket_team_member m
          where m.team_id = $1 and m.status = 'CONFIRMED'
+       ),
+       leader_member as (
+         select exists (
+           select 1
+           from ticket_team_member m
+           join team_row t on t.id = m.team_id
+           where m.team_id = $1
+             and m.user_id = t.leader_user_id
+             and m.role = 'LEADER'
+             and m.status = 'CONFIRMED'
+         ) as confirmed
        )
        update ticket_team t
        set size = confirmed_members.count,
            status = case
              when t.status in ('DRAFT', 'FAILED', 'EXPIRED', 'READY')
                and t.strategy <> 'FALLBACK'
+               and leader_member.confirmed
                and confirmed_members.count between 2 and 6
                then 'READY'
              when t.status = 'READY'
@@ -324,7 +345,7 @@ export class TeamGrabRepository {
              else t.status
            end,
            update_time = now()
-       from confirmed_members
+       from confirmed_members, leader_member
        where t.id = $1
        returning t.*`,
       [teamId],

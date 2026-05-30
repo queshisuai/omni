@@ -223,6 +223,23 @@ describe('TeamGrabService', () => {
     expect(repository.leaveMember).not.toHaveBeenCalled();
   });
 
+  it('allows a non-leader member to leave a joinable team and refreshes readiness', async () => {
+    const refreshed = team({ status: 'DRAFT', size: 1 });
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(team({ leaderUserId: 100, status: 'READY' })),
+      findMember: jest.fn().mockResolvedValue(member({ userId: 200, status: 'CONFIRMED' })),
+      leaveMember: jest.fn().mockResolvedValue(member({ userId: 200, status: 'LEFT' })),
+      refreshTeamReadiness: jest.fn().mockResolvedValue(refreshed),
+    };
+    const service = createService(repository);
+
+    const result = await service.leaveTeam(1, 200);
+
+    expect(repository.leaveMember).toHaveBeenCalledWith(1, 200);
+    expect(repository.refreshTeamReadiness).toHaveBeenCalledWith(1);
+    expect(result).toBe(refreshed);
+  });
+
   it('deduplicates fallbacks and rejects stricter fallback strategies', async () => {
     const repository: any = {
       findTeamById: jest.fn().mockResolvedValue(team({ leaderUserId: 100 })),
