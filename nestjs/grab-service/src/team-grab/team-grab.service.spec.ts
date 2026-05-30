@@ -484,10 +484,12 @@ describe('TeamGrabService', () => {
   });
 
   it('creates only one active team grab request when members trigger concurrently', async () => {
-    const readyTeam = team({ status: 'READY', size: 2 });
+    const readyTeam = team({ status: 'READY', size: 4 });
     const members = [
       member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
       member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+      member({ userId: 300, role: 'MEMBER', status: 'CONFIRMED' }),
+      member({ userId: 400, role: 'MEMBER', status: 'CONFIRMED' }),
     ];
     const repository: any = {
       findTeamById: jest.fn().mockResolvedValue(readyTeam),
@@ -503,6 +505,8 @@ describe('TeamGrabService', () => {
       publishReserved: jest.fn().mockResolvedValue(undefined),
       acquireTeamTriggerLock: jest.fn()
         .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
         .mockResolvedValueOnce(false),
       releaseTeamTriggerLock: jest.fn(),
     };
@@ -511,31 +515,40 @@ describe('TeamGrabService', () => {
     const results = await Promise.allSettled([
       service.triggerTeamGrab(1, 100),
       service.triggerTeamGrab(1, 200),
+      service.triggerTeamGrab(1, 300),
+      service.triggerTeamGrab(1, 400),
     ]);
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
-    expect(queueService.acquireTeamTriggerLock).toHaveBeenCalledTimes(2);
+    const fulfilled = results.filter(
+      (result): result is PromiseFulfilledResult<any> => result.status === 'fulfilled',
+    );
+    const rejected = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(3);
+    expect(queueService.acquireTeamTriggerLock).toHaveBeenCalledTimes(4);
     await expect(queueService.acquireTeamTriggerLock.mock.results[0].value).resolves.toBe(true);
     await expect(queueService.acquireTeamTriggerLock.mock.results[1].value).resolves.toBe(false);
+    await expect(queueService.acquireTeamTriggerLock.mock.results[2].value).resolves.toBe(false);
+    await expect(queueService.acquireTeamTriggerLock.mock.results[3].value).resolves.toBe(false);
     expect(grabRepository.createQueued).toHaveBeenCalledTimes(1);
     expect(repository.createTeamGrabRequest).toHaveBeenCalledTimes(1);
     expect(queueService.publishReserved).toHaveBeenCalledTimes(1);
 
-    const fulfilled = results.find((result) => result.status === 'fulfilled');
-    const rejected = results.find((result) => result.status === 'rejected');
-    expect(fulfilled).toEqual(expect.objectContaining({
-      status: 'fulfilled',
-      value: expect.objectContaining({ requestId: expect.any(String) }),
+    expect(fulfilled[0].value).toEqual(expect.objectContaining({
+      requestId: expect.any(String),
+      queueSeq: 1,
+      queueRank: 0,
     }));
-    expect((fulfilled as PromiseFulfilledResult<any>).value.requestId).toBe(
+    expect(fulfilled[0].value.requestId).toBe(
       grabRepository.createQueued.mock.calls[0][0].requestId,
     );
-    expect(rejected).toEqual(expect.objectContaining({
-      status: 'rejected',
-      reason: expect.any(ConflictException),
-    }));
-    expect((rejected as PromiseRejectedResult).reason.message).toBe('team grab is already in progress');
+    for (const result of rejected) {
+      expect(result.reason).toBeInstanceOf(ConflictException);
+      expect(result.reason.message).toBe('team grab is already in progress');
+    }
   });
 
   it('fails queued grab and releases lock when team grab insert fails before publish', async () => {
