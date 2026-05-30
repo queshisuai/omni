@@ -62,15 +62,59 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                  @Param("lockExpireTime") LocalDateTime lockExpireTime);
 
     @Update("UPDATE session_seat SET status = 3, order_id = #{orderId}, update_time = CURRENT_TIMESTAMP " +
+            ", lock_request_id = NULL " +
             "WHERE id = #{seatId} AND session_id = #{sessionId} AND (status = 2 OR (status = 1 AND order_id IS NULL))")
     int markSeatSold(@Param("seatId") Long seatId,
                      @Param("sessionId") Long sessionId,
                      @Param("orderId") Long orderId);
 
-    @Update("UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, update_time = CURRENT_TIMESTAMP " +
+    @Update("UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, " +
+            "lock_request_id = NULL, update_time = CURRENT_TIMESTAMP " +
             "WHERE id = #{seatId} AND session_id = #{sessionId} AND status = 2")
     int releaseLockedSeat(@Param("seatId") Long seatId,
                           @Param("sessionId") Long sessionId);
+
+    @Select("SELECT * FROM session_seat WHERE session_id = #{sessionId} " +
+            "AND ticket_type_id = #{ticketTypeId} AND status = 1 AND order_id IS NULL " +
+            "AND lock_expire_time IS NULL " +
+            "ORDER BY layout_section_id NULLS LAST, seat_block_id NULLS LAST, row_no NULLS LAST, seat_no NULLS LAST, id " +
+            "FOR UPDATE SKIP LOCKED")
+    List<SessionSeat> selectAvailableForTeamLock(@Param("sessionId") Long sessionId,
+                                                  @Param("ticketTypeId") Long ticketTypeId);
+
+    @Update({"<script>",
+            "UPDATE session_seat SET status = 2, lock_expire_time = #{lockExpireTime}, ",
+            "lock_request_id = #{lockRequestId}, update_time = CURRENT_TIMESTAMP ",
+            "WHERE session_id = #{sessionId} AND ticket_type_id = #{ticketTypeId} ",
+            "AND status = 1 AND order_id IS NULL AND lock_expire_time IS NULL AND id IN ",
+            "<foreach collection='seatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int lockTeamSeatIds(@Param("sessionId") Long sessionId,
+                        @Param("ticketTypeId") Long ticketTypeId,
+                        @Param("seatIds") List<Long> seatIds,
+                        @Param("lockRequestId") String lockRequestId,
+                        @Param("lockExpireTime") LocalDateTime lockExpireTime);
+
+    @Select({"<script>",
+            "SELECT * FROM session_seat WHERE session_id = #{sessionId} ",
+            "AND ticket_type_id = #{ticketTypeId} AND status = 2 ",
+            "AND lock_request_id = #{lockRequestId} AND id IN ",
+            "<foreach collection='seatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "ORDER BY layout_section_id NULLS LAST, seat_block_id NULLS LAST, row_no NULLS LAST, seat_no NULLS LAST, id",
+            "</script>"})
+    List<SessionSeat> selectLockedByRequest(@Param("sessionId") Long sessionId,
+                                            @Param("ticketTypeId") Long ticketTypeId,
+                                            @Param("seatIds") List<Long> seatIds,
+                                            @Param("lockRequestId") String lockRequestId);
+
+    @Update({"<script>",
+            "UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, ",
+            "lock_request_id = NULL, update_time = CURRENT_TIMESTAMP ",
+            "WHERE status = 2 AND lock_request_id = #{lockRequestId} AND id IN ",
+            "<foreach collection='seatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int releaseTeamSeatLockByRequest(@Param("lockRequestId") String lockRequestId,
+                                     @Param("seatIds") List<Long> seatIds);
 
     @Update("UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, update_time = CURRENT_TIMESTAMP " +
             "WHERE id = #{seatId} AND session_id = #{sessionId} AND status = 3")

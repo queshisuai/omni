@@ -2,6 +2,11 @@ package com.omni.ticket.service;
 
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.TeamSeatLockReleaseRequest;
+import com.omni.ticket.dto.TeamSeatLockRequest;
+import com.omni.ticket.dto.TeamSeatLockResponse;
+import com.omni.ticket.dto.TeamSeatLockValidationRequest;
+import com.omni.ticket.dto.TeamSeatLockValidationResponse;
 import com.omni.ticket.dto.TicketTypeVisibleResponse;
 import com.omni.ticket.dto.TicketTypesVisibleRequest;
 import com.omni.ticket.dto.TicketSalesLockRequest;
@@ -12,6 +17,7 @@ import com.omni.ticket.dto.TicketSalesSeatLockResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.SeatBlock;
 import com.omni.ticket.entity.Session;
+import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.mapper.ActivityMapper;
@@ -24,15 +30,26 @@ import com.omni.ticket.mapper.VenueMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
 public class TicketSalesInternalService {
+    private static final String STRICT_CONTIGUOUS = "STRICT_CONTIGUOUS";
+    private static final String SAME_BLOCK = "SAME_BLOCK";
+    private static final String SAME_TICKET_TYPE = "SAME_TICKET_TYPE";
+    private static final String FALLBACK = "FALLBACK";
+
     private final TicketTypeMapper ticketTypeMapper;
     private final SessionMapper sessionMapper;
     private final ActivityMapper activityMapper;
@@ -164,6 +181,64 @@ public class TicketSalesInternalService {
         return response;
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public TeamSeatLockResponse lockTeamSeats(TeamSeatLockRequest request) {
+        validateTeamLockRequest(request);
+        requireSessionSellable(request.getSessionId());
+        requireSellableTicketType(request.getSessionId(), request.getTicketTypeId());
+
+        List<SessionSeat> availableSeats = sortSeats(sessionSeatMapper.selectAvailableForTeamLock(
+                request.getSessionId(), request.getTicketTypeId()));
+        List<String> strategies = teamLockStrategies(request);
+        for (String strategy : strategies) {
+            List<SessionSeat> selectedSeats = selectByStrategy(availableSeats, request.getQuantity(), strategy);
+            if (selectedSeats.size() != request.getQuantity()) {
+                continue;
+            }
+            List<Long> seatIds = selectedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList());
+            int updated = sessionSeatMapper.lockTeamSeatIds(
+                    request.getSessionId(),
+                    request.getTicketTypeId(),
+                    seatIds,
+                    request.getLockRequestId(),
+                    request.getLockExpireTime());
+            if (updated != request.getQuantity()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock changed concurrently");
+            }
+            List<SessionSeat> lockedSeats = sessionSeatMapper.selectLockedByRequest(
+                    request.getSessionId(), request.getTicketTypeId(), seatIds, request.getLockRequestId());
+            TeamSeatLockResponse response = new TeamSeatLockResponse();
+            response.setLockedSeatIds(seatIds);
+            response.setSeatLabels(lockedSeats.stream().map(this::seatLabel).collect(Collectors.toList()));
+            response.setMatchedStrategy(strategy);
+            return response;
+        }
+        throw new BusinessException(ResultCode.BAD_REQUEST, "no team seat strategy can satisfy quantity");
+    }
+
+    public TeamSeatLockValidationResponse validateTeamSeatLock(TeamSeatLockValidationRequest request) {
+        if (request == null || request.getSessionId() == null || request.getTicketTypeId() == null
+                || request.getSeatIds() == null || request.getSeatIds().isEmpty()
+                || !StringUtils.hasText(request.getLockRequestId())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock validation parameters are required");
+        }
+        List<SessionSeat> lockedSeats = sessionSeatMapper.selectLockedByRequest(
+                request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), request.getLockRequestId());
+        TeamSeatLockValidationResponse response = new TeamSeatLockValidationResponse();
+        response.setValid(lockedSeats.size() == request.getSeatIds().size());
+        response.setSeatIds(lockedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList()));
+        response.setSeatLabels(lockedSeats.stream().map(this::seatLabel).collect(Collectors.toList()));
+        return response;
+    }
+
+    public Boolean releaseTeamSeatLock(TeamSeatLockReleaseRequest request) {
+        if (request == null || !StringUtils.hasText(request.getLockRequestId())
+                || request.getSeatIds() == null || request.getSeatIds().isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock release parameters are required");
+        }
+        return sessionSeatMapper.releaseTeamSeatLockByRequest(request.getLockRequestId(), request.getSeatIds()) > 0;
+    }
+
     private void requireSeatlessStandingTicketType(Long sessionId, Long ticketTypeId) {
         if (seatBlockMapper == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
@@ -183,6 +258,156 @@ public class TicketSalesInternalService {
                 || !Integer.valueOf(1).equals(block.getStatus())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
         }
+    }
+
+    private void validateTeamLockRequest(TeamSeatLockRequest request) {
+        if (request == null || request.getSessionId() == null || request.getTicketTypeId() == null
+                || request.getQuantity() == null || !StringUtils.hasText(request.getStrategy())
+                || !StringUtils.hasText(request.getLockRequestId()) || request.getLockExpireTime() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock parameters are required");
+        }
+        if (request.getQuantity() < 2 || request.getQuantity() > 6) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock quantity must be between 2 and 6");
+        }
+    }
+
+    private TicketType requireSellableTicketType(Long sessionId, Long ticketTypeId) {
+        TicketType ticketType = ticketTypeMapper.selectById(ticketTypeId);
+        if (ticketType == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "ticket type not found");
+        }
+        if (!sessionId.equals(ticketType.getSessionId())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket type does not belong to session");
+        }
+        if (!Integer.valueOf(1).equals(ticketType.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket type is not sellable");
+        }
+        return ticketType;
+    }
+
+    private List<String> teamLockStrategies(TeamSeatLockRequest request) {
+        String primary = normalizeStrategy(request.getStrategy());
+        if (FALLBACK.equals(primary)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "FALLBACK primary strategy is not supported");
+        }
+        LinkedHashSet<String> strategies = new LinkedHashSet<>();
+        strategies.add(primary);
+        if (request.getFallbacks() != null) {
+            for (String fallback : request.getFallbacks()) {
+                String strategy = normalizeStrategy(fallback);
+                if (!FALLBACK.equals(strategy)) {
+                    strategies.add(strategy);
+                }
+            }
+        }
+        return new ArrayList<>(strategies);
+    }
+
+    private String normalizeStrategy(String strategy) {
+        if (!StringUtils.hasText(strategy)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock strategy is required");
+        }
+        String normalized = strategy.trim().toUpperCase();
+        if (!STRICT_CONTIGUOUS.equals(normalized)
+                && !SAME_BLOCK.equals(normalized)
+                && !SAME_TICKET_TYPE.equals(normalized)
+                && !FALLBACK.equals(normalized)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "unsupported team seat lock strategy");
+        }
+        return normalized;
+    }
+
+    private List<SessionSeat> selectByStrategy(List<SessionSeat> seats, int quantity, String strategy) {
+        if (STRICT_CONTIGUOUS.equals(strategy)) {
+            return selectStrictContiguous(seats, quantity);
+        }
+        if (SAME_BLOCK.equals(strategy)) {
+            return selectSameBlock(seats, quantity);
+        }
+        if (SAME_TICKET_TYPE.equals(strategy)) {
+            return seats.size() >= quantity ? new ArrayList<>(seats.subList(0, quantity)) : Collections.emptyList();
+        }
+        return Collections.emptyList();
+    }
+
+    private List<SessionSeat> selectStrictContiguous(List<SessionSeat> seats, int quantity) {
+        Map<String, List<SessionSeat>> grouped = new LinkedHashMap<>();
+        for (SessionSeat seat : seats) {
+            if (seat.getRowNo() == null || seat.getSeatNo() == null) {
+                continue;
+            }
+            for (String groupKey : seatGroupKeys(seat)) {
+                grouped.computeIfAbsent(groupKey + ":" + seat.getRowNo(), key -> new ArrayList<>()).add(seat);
+            }
+        }
+        for (List<SessionSeat> rowSeats : grouped.values()) {
+            List<SessionSeat> sorted = sortSeats(rowSeats);
+            for (int start = 0; start <= sorted.size() - quantity; start++) {
+                boolean contiguous = true;
+                for (int offset = 1; offset < quantity; offset++) {
+                    int previous = sorted.get(start + offset - 1).getSeatNo();
+                    int current = sorted.get(start + offset).getSeatNo();
+                    if (current != previous + 1) {
+                        contiguous = false;
+                        break;
+                    }
+                }
+                if (contiguous) {
+                    return new ArrayList<>(sorted.subList(start, start + quantity));
+                }
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    private List<SessionSeat> selectSameBlock(List<SessionSeat> seats, int quantity) {
+        Map<String, List<SessionSeat>> grouped = new LinkedHashMap<>();
+        for (SessionSeat seat : seats) {
+            for (String groupKey : seatGroupKeys(seat)) {
+                grouped.computeIfAbsent(groupKey, key -> new ArrayList<>()).add(seat);
+            }
+        }
+        for (List<SessionSeat> blockSeats : grouped.values()) {
+            if (blockSeats.size() >= quantity) {
+                return new ArrayList<>(sortSeats(blockSeats).subList(0, quantity));
+            }
+        }
+        return Collections.emptyList();
+    }
+
+    private List<SessionSeat> sortSeats(List<SessionSeat> seats) {
+        if (seats == null || seats.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return seats.stream()
+                .sorted(Comparator
+                        .comparing(SessionSeat::getLayoutSectionId, Comparator.nullsLast(Long::compareTo))
+                        .thenComparing(SessionSeat::getSeatBlockId, Comparator.nullsLast(Long::compareTo))
+                        .thenComparing(SessionSeat::getRowNo, Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(SessionSeat::getSeatNo, Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(SessionSeat::getId, Comparator.nullsLast(Long::compareTo)))
+                .collect(Collectors.toList());
+    }
+
+    private List<String> seatGroupKeys(SessionSeat seat) {
+        List<String> keys = new ArrayList<>();
+        if (seat.getLayoutSectionId() != null) {
+            keys.add("section:" + seat.getLayoutSectionId());
+        }
+        if (seat.getSeatBlockId() != null) {
+            keys.add("block:" + seat.getSeatBlockId());
+        }
+        return keys;
+    }
+
+    private String seatLabel(SessionSeat seat) {
+        if (StringUtils.hasText(seat.getSeatLabel())) {
+            return seat.getSeatLabel();
+        }
+        if (seat.getRowNo() != null && seat.getSeatNo() != null) {
+            return seat.getRowNo() + "-" + seat.getSeatNo();
+        }
+        return String.valueOf(seat.getId());
     }
 
     @Transactional(rollbackFor = Exception.class)

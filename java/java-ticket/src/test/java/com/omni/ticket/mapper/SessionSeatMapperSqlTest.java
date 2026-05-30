@@ -6,7 +6,9 @@ import org.apache.ibatis.annotations.Update;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -42,6 +44,26 @@ class SessionSeatMapperSqlTest {
         assertTrue(sql.contains("s.status = 1"), sql);
         assertTrue(sql.contains("a.status = 1"), sql);
         assertTrue(sql.contains("a.publish_status = 'published'"), sql);
+    }
+
+    @Test
+    void teamSeatLockSelectUsesSkipLockedAndLifecycleSqlClearsOwner() throws Exception {
+        String selectSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "selectAvailableForTeamLock", Long.class, Long.class)).toLowerCase();
+        String lockSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "lockTeamSeatIds", Long.class, Long.class, List.class, String.class, LocalDateTime.class)).toLowerCase();
+        String releaseSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "releaseLockedSeat", Long.class, Long.class)).toLowerCase();
+        String releaseTeamSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "releaseTeamSeatLockByRequest", String.class, List.class)).toLowerCase();
+        String soldSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "markSeatSold", Long.class, Long.class, Long.class)).toLowerCase();
+
+        assertTrue(selectSql.contains("for update skip locked"), selectSql);
+        assertTrue(lockSql.contains("lock_request_id = #{lockrequestid}"), lockSql);
+        assertTrue(releaseSql.contains("lock_request_id = null"), releaseSql);
+        assertTrue(releaseTeamSql.contains("lock_request_id = null"), releaseTeamSql);
+        assertTrue(soldSql.contains("lock_request_id = null"), soldSql);
     }
 
     private String annotationSql(Method method) {
