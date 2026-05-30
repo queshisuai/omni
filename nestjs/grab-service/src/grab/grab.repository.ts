@@ -48,6 +48,7 @@ interface UpdateGrabProgressInput {
   currentTicketTypeId: number | null;
   currentAttemptIndex: number;
   attempts: GrabAttemptSnapshot[];
+  workerId?: string | null;
 }
 
 type MarkPendingRecoveryInput = Omit<UpdateGrabProgressInput, 'status'>;
@@ -213,6 +214,7 @@ export class GrabRepository {
            updated_at = now()
        where request_id = $1
          and progress_status <> all($7::varchar[])
+         and ($8::varchar is null or worker_id = $8)
        returning *`,
       [
         requestId,
@@ -222,6 +224,7 @@ export class GrabRepository {
         input.currentAttemptIndex,
         JSON.stringify(input.attempts),
         TERMINAL_PROGRESS_STATUSES,
+        input.workerId ?? null,
       ],
     );
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
@@ -279,6 +282,7 @@ export class GrabRepository {
            updated_at = now()
        where request_id = $1
          and progress_status = any($7::varchar[])
+         and ($8::varchar is null or worker_id = $8)
          and order_id is null
        returning *`,
       [
@@ -289,6 +293,7 @@ export class GrabRepository {
         input.currentAttemptIndex,
         JSON.stringify(input.attempts),
         [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.LOCKING],
+        input.workerId ?? null,
       ],
     );
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
@@ -300,6 +305,7 @@ export class GrabRepository {
     matchedTicketTypeId: number | null = null,
     attempts: GrabAttemptSnapshot[] = [],
     expectedProgressStatus: GrabStatus = GRAB_STATUS.ORDER_CREATING,
+    expectedWorkerId: string | null = null,
   ): Promise<GrabRequestRecord | null> {
     const result = await this.database.query<GrabRequestRow>(
       `update grab_request
@@ -313,8 +319,9 @@ export class GrabRepository {
            updated_at = now()
        where request_id = $1
          and progress_status = $6
+         and ($7::varchar is null or worker_id = $7)
        returning *`,
-      [requestId, GRAB_STATUS.ORDER_CREATED, orderId, matchedTicketTypeId, JSON.stringify(attempts), expectedProgressStatus],
+      [requestId, GRAB_STATUS.ORDER_CREATED, orderId, matchedTicketTypeId, JSON.stringify(attempts), expectedProgressStatus, expectedWorkerId],
     );
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }
@@ -339,7 +346,9 @@ export class GrabRepository {
          and quantity = $4
          and seat_ids = $5::jsonb
          and allocate_random = $6
-         and status = any($7::varchar[])
+         and requested_ticket_types = $7::jsonb
+         and allow_auto_downgrade = $8
+         and status = any($9::varchar[])
        order by created_at asc
        limit 1`,
       [
@@ -349,6 +358,8 @@ export class GrabRepository {
         input.quantity,
         JSON.stringify(normalizedSeatIds),
         input.allocateRandom,
+        JSON.stringify(input.requestedTicketTypes),
+        input.allowAutoDowngrade,
         activeStatuses,
       ],
     );

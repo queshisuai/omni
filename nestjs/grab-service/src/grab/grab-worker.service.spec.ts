@@ -56,6 +56,7 @@ describe('GrabWorkerService', () => {
       ackProcessed: jest.fn(),
     };
     const service = new GrabWorkerService(repository, admission, orderClient, queue);
+    record.workerId = (service as any).workerId;
 
     await service.processRequest('GRAB1');
 
@@ -79,7 +80,7 @@ describe('GrabWorkerService', () => {
     }));
     expect(repository.markOrderCreated).toHaveBeenCalledWith('GRAB1', 9001, 1, expect.arrayContaining([
       expect.objectContaining({ ticketTypeId: 1, status: 'ORDER_CREATED' }),
-    ]));
+    ]), GRAB_STATUS.ORDER_CREATING, expect.stringMatching(/^grab-worker-/));
     expect(repository.updateStatus).not.toHaveBeenCalled();
     expect(admission.release).not.toHaveBeenCalled();
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
@@ -105,6 +106,7 @@ describe('GrabWorkerService', () => {
       ackProcessed: jest.fn(),
     };
     const service = new GrabWorkerService(repository, admission, orderClient, queue);
+    record.workerId = (service as any).workerId;
 
     await service.processRequest('GRAB1');
 
@@ -138,6 +140,7 @@ describe('GrabWorkerService', () => {
       ackProcessed: jest.fn(),
     };
     const service = new GrabWorkerService(repository, admission, orderClient, queue);
+    record.workerId = (service as any).workerId;
 
     await service.processRequest('GRAB1');
 
@@ -219,7 +222,7 @@ describe('GrabWorkerService', () => {
 
     expect(repository.markOrderCreated).toHaveBeenCalledWith('GRAB1', 9001, 1, expect.arrayContaining([
       expect.objectContaining({ ticketTypeId: 1, status: 'ORDER_CREATED' }),
-    ]));
+    ]), GRAB_STATUS.ORDER_CREATING, expect.stringMatching(/^grab-worker-/));
     expect(admission.release).not.toHaveBeenCalled();
     expect(repository.updateStatus).not.toHaveBeenCalled();
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
@@ -254,7 +257,7 @@ describe('GrabWorkerService', () => {
     expect(orderClient.createOrder).not.toHaveBeenCalled();
     expect(repository.markOrderCreated).toHaveBeenCalledWith('GRAB1', 9001, 1, expect.arrayContaining([
       expect.objectContaining({ ticketTypeId: 1, status: 'ORDER_CREATED' }),
-    ]));
+    ]), GRAB_STATUS.LOCKING, expect.stringMatching(/^grab-worker-/));
     expect(admission.release).not.toHaveBeenCalled();
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
@@ -317,6 +320,7 @@ describe('GrabWorkerService', () => {
       ackProcessed: jest.fn(),
     };
     const service = new GrabWorkerService(repository, admission, orderClient, queue);
+    record.workerId = (service as any).workerId;
 
     await service.processRequest('GRAB1');
 
@@ -331,6 +335,39 @@ describe('GrabWorkerService', () => {
       restoreStock: true,
     }));
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
+  });
+
+  it('does not release a redis admission when order creation progress fails because another worker owns the lease', async () => {
+    const record = queuedRecord();
+    const repository: any = {
+      findByRequestId: jest.fn()
+        .mockResolvedValueOnce(record)
+        .mockResolvedValueOnce({ ...record, workerId: 'worker-other', progressStatus: GRAB_STATUS.WAITING }),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn()
+        .mockResolvedValueOnce(record)
+        .mockResolvedValueOnce(record)
+        .mockResolvedValueOnce(null),
+      markOrderCreated: jest.fn(),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn(),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(orderClient.createOrder).not.toHaveBeenCalled();
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(queue.ackProcessed).not.toHaveBeenCalled();
   });
 
   it('marks pending recovery when grab persistence fails after order creation succeeds but lookup is missing', async () => {
@@ -484,6 +521,35 @@ describe('GrabWorkerService', () => {
     expect(queue.discardInflight).not.toHaveBeenCalled();
   });
 
+  it('does not ack when the first progress update fails because another worker owns the lease', async () => {
+    const record = queuedRecord();
+    const repository: any = {
+      findByRequestId: jest.fn()
+        .mockResolvedValueOnce(record)
+        .mockResolvedValueOnce({ ...record, workerId: 'worker-other', progressStatus: GRAB_STATUS.WAITING }),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValueOnce(null),
+      expireActiveRequest: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn(),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn(),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(admission.admit).not.toHaveBeenCalled();
+    expect(orderClient.createOrder).not.toHaveBeenCalled();
+    expect(queue.ackProcessed).not.toHaveBeenCalled();
+  });
+
   it('downgrades to the next authorized ticket type after sold out', async () => {
     const record = queuedRecord({
       ticketTypeId: 1,
@@ -531,7 +597,7 @@ describe('GrabWorkerService', () => {
     expect(repository.markOrderCreated).toHaveBeenCalledWith('GRAB1', 9002, 2, expect.arrayContaining([
       expect.objectContaining({ ticketTypeId: 1, status: 'SOLD_OUT' }),
       expect.objectContaining({ ticketTypeId: 2, status: 'ORDER_CREATED' }),
-    ]));
+    ]), GRAB_STATUS.ORDER_CREATING, expect.stringMatching(/^grab-worker-/));
     expect(repository.updateProgress).toHaveBeenCalledWith('GRAB1', expect.objectContaining({
       status: GRAB_STATUS.DOWNGRADING,
       message: 'A sold out, trying B',

@@ -380,6 +380,11 @@ describe('GrabService', () => {
       quantity: 2,
       seatIds: [],
       allocateRandom: false,
+      requestedTicketTypes: [
+        { ticketTypeId: 202, name: 'A', maxPrice: 100 },
+        { ticketTypeId: 203, name: 'B', maxPrice: 80 },
+      ],
+      allowAutoDowngrade: true,
     });
     expect(queue.enqueue).not.toHaveBeenCalled();
     expect(repository.createQueued).not.toHaveBeenCalled();

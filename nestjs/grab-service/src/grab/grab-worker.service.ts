@@ -7,7 +7,7 @@ import { GRAB_STATUS, isTerminalGrabStatus } from './grab-status';
 import type { GrabAttemptSnapshot, GrabRequestRecord, GrabTicketPreference } from './grab.types';
 import { OrderClientService } from './order-client.service';
 
-type AttemptOutcome = 'ORDER_CREATED' | 'SOLD_OUT' | 'LIMITED' | 'FAILED' | 'CANCELLED' | 'PENDING_RECOVERY';
+type AttemptOutcome = 'ORDER_CREATED' | 'SOLD_OUT' | 'LIMITED' | 'FAILED' | 'CANCELLED' | 'PENDING_RECOVERY' | 'STALE_LEASE';
 type IdempotentAdmissionOutcome = AttemptOutcome | 'CONTINUE';
 type OrderLookupRecovery = 'RECOVERED' | 'MISSING' | 'UNKNOWN';
 
@@ -105,17 +105,18 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
           currentTicketTypeId: preference.ticketTypeId,
           currentAttemptIndex: index,
           attempts,
+          workerId: this.workerId,
         });
-        if (!downgraded) return true;
+        if (!downgraded) return await this.isStillLeaseOwner(record.requestId);
       }
 
       const outcome = await this.tryTicketType(record, preference, index, attempts);
+      if (outcome === 'STALE_LEASE') return false;
       if (outcome !== 'SOLD_OUT') return true;
 
       attempts = this.markAttempt(attempts, index, 'SOLD_OUT', 'ticket type sold out');
       if (index === effectivePreferences.length - 1) {
-        await this.finishTerminalAttempt(record, GRAB_STATUS.SOLD_OUT, 'ticket type sold out', preference, index, attempts, 'SOLD_OUT');
-        return true;
+        return await this.finishTerminalAttempt(record, GRAB_STATUS.SOLD_OUT, 'ticket type sold out', preference, index, attempts, 'SOLD_OUT');
       }
     }
     return true;
@@ -134,8 +135,9 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: tryingAttempts,
+      workerId: this.workerId,
     });
-    if (!tryingRecord) return 'CANCELLED';
+    if (!tryingRecord) return await this.missingProgressOutcome(record.requestId);
 
     const lockingAttempts = this.markAttempt(attempts, index, 'LOCKING', `Locking ${this.ticketLabel(preference)}`);
     const lockingRecord = await this.repository.updateProgress(record.requestId, {
@@ -144,8 +146,9 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: lockingAttempts,
+      workerId: this.workerId,
     });
-    if (!lockingRecord) return 'CANCELLED';
+    if (!lockingRecord) return await this.missingProgressOutcome(record.requestId);
 
     const admission = await this.admissionService.admit({
       requestId: record.requestId,
@@ -162,7 +165,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       return 'SOLD_OUT';
     }
     if (admission.outcome === 'LIMITED') {
-      await this.finishTerminalAttempt(
+      const finished = await this.finishTerminalAttempt(
         record,
         GRAB_STATUS.LIMITED,
         'purchase limit or seat lock conflict',
@@ -171,10 +174,10 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         lockingAttempts,
         'LIMITED',
       );
-      return 'LIMITED';
+      return finished ? 'LIMITED' : 'STALE_LEASE';
     }
     if (admission.outcome === 'STOCK_UNINITIALIZED') {
-      await this.finishTerminalAttempt(
+      const finished = await this.finishTerminalAttempt(
         record,
         GRAB_STATUS.FAILED,
         'grab stock is not initialized',
@@ -183,7 +186,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         lockingAttempts,
         'FAILED',
       );
-      return 'FAILED';
+      return finished ? 'FAILED' : 'STALE_LEASE';
     }
     if (admission.outcome === 'IDEMPOTENT') {
       const idempotentOutcome = await this.handleIdempotentAdmission(
@@ -202,10 +205,14 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: this.markAttempt(lockingAttempts, index, 'LOCKING', `${this.ticketLabel(preference)} locked`),
+      workerId: this.workerId,
     });
     if (!orderCreatingRecord) {
-      await this.releaseAdmission(record, preference);
-      return 'CANCELLED';
+      if (await this.isStillLeaseOwner(record.requestId)) {
+        await this.releaseAdmission(record, preference);
+        return 'CANCELLED';
+      }
+      return 'STALE_LEASE';
     }
 
     const orderInput = {
@@ -234,8 +241,8 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       }
       if (this.isLimitError(message)) {
         await this.releaseAdmission(record, preference);
-        await this.finishTerminalAttempt(record, GRAB_STATUS.LIMITED, message, preference, index, lockingAttempts, 'LIMITED');
-        return 'LIMITED';
+        const finished = await this.finishTerminalAttempt(record, GRAB_STATUS.LIMITED, message, preference, index, lockingAttempts, 'LIMITED');
+        return finished ? 'LIMITED' : 'STALE_LEASE';
       }
 
       const recovery = await this.recoverOrderByLookup(record, preference, index, lockingAttempts);
@@ -243,8 +250,8 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       if (recovery === 'UNKNOWN') return await this.markPendingRecovery(record, preference, index, lockingAttempts);
 
       await this.releaseAdmission(record, preference);
-      await this.finishTerminalAttempt(record, GRAB_STATUS.FAILED, message, preference, index, lockingAttempts, 'FAILED');
-      return 'FAILED';
+      const finished = await this.finishTerminalAttempt(record, GRAB_STATUS.FAILED, message, preference, index, lockingAttempts, 'FAILED');
+      return finished ? 'FAILED' : 'STALE_LEASE';
     }
   }
 
@@ -256,7 +263,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     existingRequestId: string | null,
   ): Promise<IdempotentAdmissionOutcome> {
     if (existingRequestId !== record.requestId) {
-      await this.finishTerminalAttempt(
+      const finished = await this.finishTerminalAttempt(
         record,
         GRAB_STATUS.FAILED,
         'idempotency hold belongs to another request',
@@ -265,10 +272,10 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         attempts,
         'FAILED',
       );
-      return 'FAILED';
+      return finished ? 'FAILED' : 'STALE_LEASE';
     }
 
-    const recovery = await this.recoverOrderByLookup(record, preference, index, attempts);
+    const recovery = await this.recoverOrderByLookup(record, preference, index, attempts, GRAB_STATUS.LOCKING);
     if (recovery === 'RECOVERED') return 'ORDER_CREATED';
     if (recovery === 'UNKNOWN') return await this.markPendingRecovery(record, preference, index, attempts);
     return 'CONTINUE';
@@ -288,13 +295,15 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         orderId,
         preference.ticketTypeId,
         orderAttempts,
+        GRAB_STATUS.ORDER_CREATING,
+        this.workerId,
       );
       if (marked) return true;
     } catch (error) {
       this.logger.error(error);
     }
 
-    return await this.recoverOrderByLookup(record, preference, index, attempts) === 'RECOVERED';
+    return await this.recoverOrderByLookup(record, preference, index, attempts, GRAB_STATUS.ORDER_CREATING) === 'RECOVERED';
   }
 
   private async recoverOrderByLookup(
@@ -302,6 +311,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     preference: GrabTicketPreference,
     index: number,
     attempts: GrabAttemptSnapshot[],
+    expectedProgressStatus: typeof GRAB_STATUS.LOCKING | typeof GRAB_STATUS.ORDER_CREATING = GRAB_STATUS.ORDER_CREATING,
   ): Promise<OrderLookupRecovery> {
     try {
       const existingOrder = await this.orderClient.findByGrabRequestId(record.requestId);
@@ -311,6 +321,8 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         existingOrder.id,
         preference.ticketTypeId,
         this.markAttempt(attempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)} order created`),
+        expectedProgressStatus,
+        this.workerId,
       );
       return recovered ? 'RECOVERED' : 'UNKNOWN';
     } catch (error) {
@@ -330,6 +342,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: this.markAttempt(attempts, index, 'LOCKING', 'order confirmation pending'),
+      workerId: this.workerId,
     });
     return 'PENDING_RECOVERY';
   }
@@ -355,16 +368,18 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     index: number,
     attempts: GrabAttemptSnapshot[],
     attemptStatus: GrabAttemptSnapshot['status'],
-  ): Promise<void> {
+  ): Promise<boolean> {
     const updated = await this.repository.updateProgress(record.requestId, {
       status,
       message,
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: this.markAttempt(attempts, index, attemptStatus, message),
+      workerId: this.workerId,
     });
-    if (!updated) return;
+    if (!updated) return await this.isStillLeaseOwner(record.requestId);
     await this.repository.updateStatus(record.requestId, status, message);
+    return true;
   }
 
   private preferencesFor(record: GrabRequestRecord): GrabTicketPreference[] {
@@ -395,6 +410,15 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
   private async ackIfQueued(record: Pick<GrabRequestRecord, 'sessionId' | 'requestId' | 'queueSeq'>): Promise<void> {
     if (record.queueSeq == null) return;
     await this.queueService.ackProcessed(record.sessionId, record.requestId, record.queueSeq);
+  }
+
+  private async isStillLeaseOwner(requestId: string): Promise<boolean> {
+    const latest = await this.repository.findByRequestId(requestId);
+    return latest?.workerId === this.workerId;
+  }
+
+  private async missingProgressOutcome(requestId: string): Promise<AttemptOutcome> {
+    return await this.isStillLeaseOwner(requestId) ? 'CANCELLED' : 'STALE_LEASE';
   }
 
   private isStockError(message: string): boolean {

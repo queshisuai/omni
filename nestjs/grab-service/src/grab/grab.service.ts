@@ -46,6 +46,7 @@ export class GrabService {
 
     const requestedTicketTypes = await this.normalizePreferences(dto);
     const firstPreference = requestedTicketTypes[0];
+    const allowAutoDowngrade = Boolean(dto.allowAutoDowngrade) && requestedTicketTypes.length > 1;
 
     const requestId = this.generateRequestId();
     const seatIds = [...(dto.seatIds ?? [])].sort((a, b) => a - b);
@@ -57,6 +58,8 @@ export class GrabService {
       quantity: dto.quantity,
       seatIds,
       allocateRandom,
+      requestedTicketTypes,
+      allowAutoDowngrade,
     });
     if (active) return this.toResponse(active);
 
@@ -81,7 +84,7 @@ export class GrabService {
         expireTime: new Date(Date.now() + this.requestTtlSeconds * 1000),
         queueSeq: queued.queueSeq,
         requestedTicketTypes,
-        allowAutoDowngrade: Boolean(dto.allowAutoDowngrade) && requestedTicketTypes.length > 1,
+        allowAutoDowngrade,
       });
     } catch (error) {
       await this.queueService.removeQueuedRequest(dto.sessionId, requestId);

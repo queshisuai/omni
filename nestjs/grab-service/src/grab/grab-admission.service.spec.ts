@@ -36,6 +36,26 @@ describe('GrabAdmissionService', () => {
     expect(result).toEqual({ outcome: 'ACCEPTED', existingRequestId: 'GRAB202605270001' });
   });
 
+  it('keeps accepted admission marker independent of the short hold ttl', async () => {
+    const evalMock = jest.fn().mockResolvedValue(['ACCEPTED', 'GRAB202605270001']);
+    const service = new GrabAdmissionService({ eval: evalMock } as any);
+
+    await service.admit({
+      requestId: 'GRAB202605270001',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 2,
+      seatIds: [],
+      idempotencyKey: 'idem-1',
+      ttlSeconds: 900,
+    });
+
+    const script = evalMock.mock.calls[0][0] as string;
+    expect(script).toContain("redis.call('HSET', markerKey");
+    expect(script).not.toContain("redis.call('EXPIRE', markerKey");
+  });
+
   it('rejects requests when redis stock is not initialized', async () => {
     const evalMock = jest.fn(async (script: string) => {
       expect(script).toContain("return {'STOCK_UNINITIALIZED', ''}");
@@ -78,7 +98,7 @@ describe('GrabAdmissionService', () => {
       'grab:user-hold:2004:101:202',
       'grab:admission:GRAB202605270001',
       'grab:seat-hold:301',
-    ], ['GRAB202605270001', '1', 'true']);
+    ], ['GRAB202605270001', '1', 'true', '86400']);
     const script = redis.eval.mock.calls[0][0];
     expect(script).toContain("redis.call('HGET', markerKey, 'restored')");
     expect(script).toContain("redis.call('HSET', markerKey, 'restored', '1')");
@@ -124,6 +144,7 @@ describe('GrabAdmissionService', () => {
 
     expect(redis.eval.mock.calls[0][1]).toContain('grab:admission:GRAB202605270001');
     expect(redis.eval.mock.calls[0][0]).toContain("redis.call('HSET', markerKey, 'restored', '1')");
-    expect(redis.eval.mock.calls[0][2]).toEqual(['GRAB202605270001', '1', 'false']);
+    expect(redis.eval.mock.calls[0][0]).toContain("redis.call('EXPIRE', markerKey");
+    expect(redis.eval.mock.calls[0][2]).toEqual(['GRAB202605270001', '1', 'false', '86400']);
   });
 });

@@ -103,6 +103,8 @@ export interface FindActiveGrabIntentInput {
   quantity: number;
   seatIds: number[];
   allocateRandom: boolean;
+  requestedTicketTypes: GrabTicketPreference[];
+  allowAutoDowngrade: boolean;
 }
 
 export interface GrabRequestResponse {

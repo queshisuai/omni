@@ -150,9 +150,11 @@ describe('GrabRepository', () => {
       currentTicketTypeId: 202,
       currentAttemptIndex: 0,
       attempts,
+      workerId: 'worker-1',
     });
 
     expect(query.mock.calls[0][0]).toContain('progress_status = $2');
+    expect(query.mock.calls[0][0]).toContain('worker_id = $8');
     expect(query.mock.calls[0][1]).toEqual([
       'GRAB202605270001',
       GRAB_STATUS.WAITING,
@@ -168,6 +170,7 @@ describe('GrabRepository', () => {
         GRAB_STATUS.PENDING_RECOVERY,
         GRAB_STATUS.EXPIRED,
       ],
+      'worker-1',
     ]);
     expect(result?.progressStatus).toBe(GRAB_STATUS.WAITING);
     expect(result?.attemptsSnapshot).toEqual(attempts);
@@ -269,6 +272,7 @@ describe('GrabRepository', () => {
 
     const result = await repository.markOrderCreated('GRAB202605270001', 9001, 202, attempts);
 
+    expect(query.mock.calls[0][0]).toContain('worker_id = $7');
     expect(query.mock.calls[0][1]).toEqual([
       'GRAB202605270001',
       GRAB_STATUS.ORDER_CREATED,
@@ -276,6 +280,7 @@ describe('GrabRepository', () => {
       202,
       JSON.stringify(attempts),
       GRAB_STATUS.ORDER_CREATING,
+      null,
     ]);
     expect(result?.status).toBe(GRAB_STATUS.ORDER_CREATED);
     expect(result?.progressStatus).toBe(GRAB_STATUS.ORDER_CREATED);
@@ -319,6 +324,7 @@ describe('GrabRepository', () => {
       null,
       JSON.stringify([]),
       GRAB_STATUS.ORDER_CREATING,
+      null,
     ]);
     expect(result?.matchedTicketTypeId).toBe(202);
   });
@@ -385,10 +391,12 @@ describe('GrabRepository', () => {
       currentTicketTypeId: 202,
       currentAttemptIndex: 0,
       attempts,
+      workerId: 'worker-1',
     });
 
     expect(query.mock.calls[0][0]).toContain('progress_status = any($7::varchar[])');
     expect(query.mock.calls[0][0]).toContain('completed_at = coalesce');
+    expect(query.mock.calls[0][0]).toContain('worker_id = $8');
     expect(query.mock.calls[0][1]).toEqual([
       'GRAB202605270001',
       GRAB_STATUS.PENDING_RECOVERY,
@@ -397,6 +405,7 @@ describe('GrabRepository', () => {
       0,
       JSON.stringify(attempts),
       [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.LOCKING],
+      'worker-1',
     ]);
     expect(result?.progressStatus).toBe(GRAB_STATUS.PENDING_RECOVERY);
     expect(result?.failReason).toBe('order confirmation pending');
@@ -431,18 +440,30 @@ describe('GrabRepository', () => {
       quantity: 2,
       seatIds: [302, 301],
       allocateRandom: false,
+      requestedTicketTypes: [
+        { ticketTypeId: 202, name: 'VIP', maxPrice: 880 },
+        { ticketTypeId: 203, name: 'A区', maxPrice: 680 },
+      ],
+      allowAutoDowngrade: true,
     });
 
     expect(query).toHaveBeenCalledWith(expect.stringContaining('status = any'), expect.any(Array));
-    expect(query.mock.calls[0][1].slice(0, 6)).toEqual([
+    expect(query.mock.calls[0][0]).toContain('requested_ticket_types = $7::jsonb');
+    expect(query.mock.calls[0][0]).toContain('allow_auto_downgrade = $8');
+    expect(query.mock.calls[0][1].slice(0, 8)).toEqual([
       2004,
       101,
       202,
       2,
       JSON.stringify([301, 302]),
       false,
+      JSON.stringify([
+        { ticketTypeId: 202, name: 'VIP', maxPrice: 880 },
+        { ticketTypeId: 203, name: 'A区', maxPrice: 680 },
+      ]),
+      true,
     ]);
-    expect(query.mock.calls[0][1][6]).toEqual([
+    expect(query.mock.calls[0][1][8]).toEqual([
       GRAB_STATUS.QUEUED,
       GRAB_STATUS.WAITING,
       GRAB_STATUS.TRYING_TICKET_TYPE,
@@ -452,7 +473,7 @@ describe('GrabRepository', () => {
       GRAB_STATUS.ORDER_CREATING,
       GRAB_STATUS.DOWNGRADING,
     ]);
-    expect(query.mock.calls[0][1][6]).not.toEqual(expect.arrayContaining([
+    expect(query.mock.calls[0][1][8]).not.toEqual(expect.arrayContaining([
       GRAB_STATUS.ORDER_CREATED,
       GRAB_STATUS.SOLD_OUT,
       GRAB_STATUS.LIMITED,
