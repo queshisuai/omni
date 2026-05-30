@@ -217,15 +217,15 @@ export class TeamGrabRepository {
   async updateTeamStatus(
     teamId: number,
     status: TeamStatus,
-    allowedCurrentStatuses?: TeamStatus[],
+    allowedCurrentStatuses: TeamStatus[],
   ): Promise<TicketTeamRecord | null> {
-    const statusGuard = allowedCurrentStatuses?.length ? ' and status = any($3::varchar[])' : '';
     const result = await this.database.query<TicketTeamRow>(
       `update ticket_team
        set status = $2, update_time = now()
-       where id = $1${statusGuard}
+       where id = $1
+         and status = any($3::varchar[])
        returning *`,
-      allowedCurrentStatuses?.length ? [teamId, status, allowedCurrentStatuses] : [teamId, status],
+      [teamId, status, allowedCurrentStatuses],
     );
     return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
   }

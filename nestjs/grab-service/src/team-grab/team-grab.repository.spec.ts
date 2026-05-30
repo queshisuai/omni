@@ -118,4 +118,15 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[0][1]).toEqual([1, 'READY', ['DRAFT', 'FAILED', 'EXPIRED', 'READY']]);
     expect(result?.status).toBe('READY');
   });
+
+  it('keeps team status updates guarded even when no current statuses match', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.updateTeamStatus(1, 'READY', []);
+
+    expect(query.mock.calls[0][0]).toContain('status = any($3::varchar[])');
+    expect(query.mock.calls[0][1]).toEqual([1, 'READY', []]);
+    expect(result).toBeNull();
+  });
 });
