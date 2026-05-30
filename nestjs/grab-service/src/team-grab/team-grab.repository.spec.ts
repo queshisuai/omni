@@ -460,6 +460,47 @@ describe('TeamGrabRepository', () => {
     expect(result[0].lockedSeatIds).toEqual([501]);
   });
 
+  it('finds stale unpublished queued team grab requests before seat locks are acquired', async () => {
+    const expireTime = new Date('2026-05-30T12:15:00.000Z');
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        team_id: '7',
+        team_grab_request_id: 'TEAM-GRAB-1',
+        grab_request_id: 'GRAB-QUEUED-1',
+        session_id: '20',
+        payer_user_id: '100',
+        queue_seq: '11',
+        expire_time: expireTime,
+      }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.findStaleUnpublishedTeamGrabRequests(25, 30);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain('from team_grab_request r');
+    expect(sql).toContain('join grab_request g on g.request_id = r.grab_request_id');
+    expect(sql).toContain('join ticket_team t on t.id = r.team_id');
+    expect(sql).toContain("r.status = 'pending'");
+    expect(sql).toContain('r.order_id is null');
+    expect(sql).toContain('jsonb_array_length');
+    expect(sql).toContain("g.status = 'queued'");
+    expect(sql).toContain("g.progress_status = 'queued'");
+    expect(sql).toContain("t.status = 'grabbing'");
+    expect(sql).toContain('g.queue_seq is not null');
+    expect(sql).toContain('interval');
+    expect(query.mock.calls[0][1]).toEqual([25, 30]);
+    expect(result).toEqual([{
+      teamId: 7,
+      teamGrabRequestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-QUEUED-1',
+      sessionId: 20,
+      payerUserId: 100,
+      queueSeq: 11,
+      expireTime,
+    }]);
+  });
+
   it('atomically claims stale pre-order recovery without changing status enum', async () => {
     const query = jest.fn().mockResolvedValue({
       rows: [{

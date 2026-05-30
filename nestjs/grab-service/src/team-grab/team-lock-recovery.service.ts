@@ -10,11 +10,12 @@ import {
   ORDER_CREATE_TIMEOUT_RELEASING,
   TeamGrabRepository,
 } from './team-grab.repository';
-import type { TeamGrabRequestRecord } from './team-grab.types';
+import type { StaleUnpublishedTeamGrabRequestRecord, TeamGrabRequestRecord } from './team-grab.types';
 
 const RECOVERY_LIMIT = 100;
 const STALE_PRE_ORDER_SECONDS = 30;
 const ORDER_CREATE_TIMEOUT = 'ORDER_CREATE_TIMEOUT';
+const UNPUBLISHED_QUEUE_EXPIRED_MESSAGE = 'team grab request expired before queue publish';
 
 @Injectable()
 export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
@@ -41,6 +42,8 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
   }
 
   async recoverStaleLocks(): Promise<void> {
+    await this.recoverUnpublishedQueuedTeamGrabs();
+
     const staleTeamGrabs = await this.repository.findStalePreOrderTeamGrabRequests(
       RECOVERY_LIMIT,
       STALE_PRE_ORDER_SECONDS,
@@ -48,6 +51,58 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
     for (const teamGrab of staleTeamGrabs) {
       await this.recoverTeamGrab(teamGrab).catch((error) => this.logger.error(error));
     }
+  }
+
+  private async recoverUnpublishedQueuedTeamGrabs(): Promise<void> {
+    const repository = this.repository as unknown as {
+      findStaleUnpublishedTeamGrabRequests?: (
+        limit: number,
+        olderThanSeconds: number,
+      ) => Promise<StaleUnpublishedTeamGrabRequestRecord[]>;
+    };
+    const finder = repository.findStaleUnpublishedTeamGrabRequests;
+    if (!finder) return;
+
+    const staleTeamGrabs = await finder.call(
+      this.repository,
+      RECOVERY_LIMIT,
+      STALE_PRE_ORDER_SECONDS,
+    );
+    for (const teamGrab of staleTeamGrabs) {
+      await this.recoverUnpublishedQueuedTeamGrab(teamGrab).catch((error) => this.logger.error(error));
+    }
+  }
+
+  private async recoverUnpublishedQueuedTeamGrab(teamGrab: StaleUnpublishedTeamGrabRequestRecord): Promise<void> {
+    const ttlSeconds = Math.ceil((teamGrab.expireTime.getTime() - Date.now()) / 1000);
+    if (ttlSeconds <= 0) {
+      const expired = await this.grabRepository.expireActiveRequest(
+        teamGrab.grabRequestId,
+        UNPUBLISHED_QUEUE_EXPIRED_MESSAGE,
+        [GRAB_STATUS.QUEUED],
+      );
+      if (!expired) return;
+
+      const transitioned = await this.repository.markTeamFailed(
+        teamGrab.teamId,
+        teamGrab.teamGrabRequestId,
+        UNPUBLISHED_QUEUE_EXPIRED_MESSAGE,
+      );
+      if (!transitioned) return;
+
+      await this.queueService
+        .removeQueuedRequest(teamGrab.sessionId, teamGrab.grabRequestId)
+        .catch((error) => this.logger.warn(error));
+      return;
+    }
+
+    await this.queueService.publishReserved({
+      requestId: teamGrab.grabRequestId,
+      sessionId: teamGrab.sessionId,
+      userId: teamGrab.payerUserId,
+      queueSeq: teamGrab.queueSeq,
+      ttlSeconds,
+    });
   }
 
   private async recoverTeamGrab(teamGrab: TeamGrabRequestRecord): Promise<void> {

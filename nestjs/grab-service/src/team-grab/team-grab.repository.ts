@@ -8,6 +8,7 @@ import type {
   BeginTeamGrabResult,
   CreateTeamInput,
   CreateTeamGrabRequestInput,
+  StaleUnpublishedTeamGrabRequestRecord,
   TeamMemberRole,
   TeamMemberStatus,
   TeamGrabRequestRecord,
@@ -70,6 +71,16 @@ interface TeamGrabRequestRow {
   fail_reason: string | null;
   create_time: Date;
   update_time: Date;
+}
+
+interface StaleUnpublishedTeamGrabRequestRow {
+  team_id: string | number;
+  team_grab_request_id: string;
+  grab_request_id: string;
+  session_id: string | number;
+  payer_user_id: string | number;
+  queue_seq: string | number;
+  expire_time: Date;
 }
 
 interface TeamSeatAssignmentRow {
@@ -561,6 +572,39 @@ export class TeamGrabRepository {
     return result.rows.map((row) => this.mapTeamGrabRow(row));
   }
 
+  async findStaleUnpublishedTeamGrabRequests(
+    limit: number,
+    olderThanSeconds: number,
+  ): Promise<StaleUnpublishedTeamGrabRequestRecord[]> {
+    const result = await this.database.query<StaleUnpublishedTeamGrabRequestRow>(
+      `select
+         r.team_id,
+         r.request_id as team_grab_request_id,
+         r.grab_request_id,
+         r.session_id,
+         r.payer_user_id,
+         g.queue_seq,
+         g.expire_time
+       from team_grab_request r
+       join grab_request g on g.request_id = r.grab_request_id
+       join ticket_team t on t.id = r.team_id
+       where r.status = 'PENDING'
+         and r.order_id is null
+         and jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) = 0
+         and g.status = 'QUEUED'
+         and g.progress_status = 'QUEUED'
+         and g.request_type = 'TEAM_GRAB'
+         and g.order_id is null
+         and g.queue_seq is not null
+         and t.status = 'GRABBING'
+         and greatest(r.update_time, g.updated_at) < now() - ($2::int * interval '1 second')
+       order by greatest(r.update_time, g.updated_at) asc, r.id asc
+       limit $1`,
+      [limit, olderThanSeconds],
+    );
+    return result.rows.map((row) => this.mapStaleUnpublishedTeamGrabRow(row));
+  }
+
   async claimStalePreOrderRecovery(requestId: string, olderThanSeconds: number): Promise<TeamGrabRequestRecord | null> {
     const result = await this.database.query<TeamGrabRequestRow>(
       `update team_grab_request r
@@ -1030,6 +1074,20 @@ export class TeamGrabRepository {
       failReason: row.fail_reason,
       createTime: row.create_time,
       updateTime: row.update_time,
+    };
+  }
+
+  private mapStaleUnpublishedTeamGrabRow(
+    row: StaleUnpublishedTeamGrabRequestRow,
+  ): StaleUnpublishedTeamGrabRequestRecord {
+    return {
+      teamId: Number(row.team_id),
+      teamGrabRequestId: row.team_grab_request_id,
+      grabRequestId: row.grab_request_id,
+      sessionId: Number(row.session_id),
+      payerUserId: Number(row.payer_user_id),
+      queueSeq: Number(row.queue_seq),
+      expireTime: row.expire_time,
     };
   }
 

@@ -77,6 +77,16 @@ export interface TeamGrabRequestRecord {
   updateTime: Date;
 }
 
+export interface StaleUnpublishedTeamGrabRequestRecord {
+  teamId: number;
+  teamGrabRequestId: string;
+  grabRequestId: string;
+  sessionId: number;
+  payerUserId: number;
+  queueSeq: number;
+  expireTime: Date;
+}
+
 export interface CreateTeamGrabRequestInput {
   requestId: string;
   grabRequestId: string;

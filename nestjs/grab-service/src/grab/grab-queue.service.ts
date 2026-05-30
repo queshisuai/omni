@@ -39,6 +39,10 @@ export class GrabQueueService {
   async publishReserved(request: PublishReservedRequest): Promise<void> {
     const sessionId = String(request.sessionId);
     const script = `
+      local metadataExists = redis.call('EXISTS', KEYS[1])
+      local queued = redis.call('LPOS', KEYS[2], ARGV[1])
+      local inflight = redis.call('LPOS', KEYS[4], ARGV[1])
+
       redis.call('HSET', KEYS[1],
         'requestId', ARGV[1],
         'sessionId', ARGV[2],
@@ -50,6 +54,10 @@ export class GrabQueueService {
       if ttl and ttl > 0 then
         redis.call('EXPIRE', KEYS[1], ttl)
       end
+      if metadataExists == 1 or queued or inflight then
+        redis.call('SADD', KEYS[3], ARGV[2])
+        return 0
+      end
       redis.call('RPUSH', KEYS[2], ARGV[1])
       redis.call('SADD', KEYS[3], ARGV[2])
       return 1
@@ -57,7 +65,12 @@ export class GrabQueueService {
 
     await this.redis.eval(
       script,
-      [this.requestKey(request.requestId), this.queueKey(request.sessionId), this.activeSessionsKey()],
+      [
+        this.requestKey(request.requestId),
+        this.queueKey(request.sessionId),
+        this.activeSessionsKey(),
+        this.inflightQueueKey(request.sessionId),
+      ],
       [
         request.requestId,
         sessionId,
