@@ -7,6 +7,7 @@ import { Banner } from '@/components/Banner'
 import { SectionRow } from '@/components/SectionRow'
 import { Footer } from '@/components/Footer'
 import { listActivities, listCategories } from '@/lib/api'
+import { createHomeResumeRefreshHandlers, createLatestRequestGate } from '@/lib/home-resume-refresh'
 import { categories as mockCategories, sections as mockSections, banners } from '@/lib/mock-data'
 import type { CategoryVO, ActivityVO } from '@/types/api'
 import type { SectionData, Activity } from '@/types/damai'
@@ -46,56 +47,61 @@ export default function HomePage() {
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [sections, setSections] = useState<SectionData[]>([])
   const [loading, setLoading] = useState(true)
+  const [requestGate] = useState(() => createLatestRequestGate())
   const fetchDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
 
   const fetchData = useCallback(async () => {
+    const requestId = requestGate.next()
     setLoading(true)
     try {
       const [catData, actData] = await Promise.all([
         listCategories(),
         listActivities({ page: 1, size: 50 }),
       ])
+      if (!requestGate.isCurrent(requestId)) return
       setCategories(catData)
       setSections(groupByCategory(actData.records.map(toActivity)))
     } catch {
+      if (!requestGate.isCurrent(requestId)) return
       // 降级到 mock 数据
       setCategories(mockCategories.map((c, i) => ({ id: i + 1, name: c.name, icon: null, sort: 0, status: 1 })) as CategoryVO[])
       setSections(mockSections)
     } finally {
-      setLoading(false)
+      if (requestGate.isCurrent(requestId)) {
+        setLoading(false)
+      }
     }
-  }, [])
+  }, [requestGate])
 
   fetchDataRef.current = fetchData
 
-  const refreshWhenVisible = () => {
+  const refreshWhenVisible = useCallback(() => {
     const now = Date.now()
     if (now - lastRefreshRef.current < 200) return
     lastRefreshRef.current = now
     fetchDataRef.current()
-  }
+  }, [])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
   useEffect(() => {
-    const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) refreshWhenVisible()
-    }
+    const handlers = createHomeResumeRefreshHandlers(
+      refreshWhenVisible,
+      () => document.visibilityState,
+    )
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') refreshWhenVisible()
-    }
-
-    window.addEventListener('pageshow', handlePageShow)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pageshow', handlers.handlePageShow)
+    window.addEventListener('popstate', handlers.handlePopState)
+    document.addEventListener('visibilitychange', handlers.handleVisibilityChange)
     return () => {
-      window.removeEventListener('pageshow', handlePageShow)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pageshow', handlers.handlePageShow)
+      window.removeEventListener('popstate', handlers.handlePopState)
+      document.removeEventListener('visibilitychange', handlers.handleVisibilityChange)
     }
-  }, [])
+  }, [refreshWhenVisible])
 
   const navCategories = categories.map((c) => ({ id: String(c.id), name: c.name }))
 
