@@ -43,7 +43,11 @@
       "targetInstance": "pg-grab",
       "targetDatabase": "omni_grab",
       "tables": ["grab_request"],
-      "migrations": ["grab/001_create_grab_request.sql"]
+      "migrations": [
+        "grab/001_create_grab_request.sql",
+        "grab/20260529_grab_progress_async_queue.sql",
+        "grab/20260530_grab_pending_recovery_status.sql"
+      ]
     }
   ]
 }

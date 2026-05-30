@@ -151,6 +151,16 @@ public class OrderController {
         return Result.success(orderService.getOrderItemDetail(id));
     }
 
+    @GetMapping("/internal/grab-requests/{grabRequestId}")
+    public Result<OrderListItemResponse> getInternalOrderByGrabRequest(
+            @PathVariable String grabRequestId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(orderService.findOrderByGrabRequestId(grabRequestId));
+    }
+
     @GetMapping("/internal/{id}/refund-options")
     public Result<RefundOptionsResponse> getInternalRefundOptions(@PathVariable Long id,
             @RequestHeader(value = "X-Internal-Token", required = false) String token) {

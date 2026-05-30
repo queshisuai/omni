@@ -1,10 +1,21 @@
-import { GrabController } from './grab.controller';
+import { GrabController, GrabSessionController } from './grab.controller';
 import { GRAB_STATUS } from './grab-status';
+import { BadRequestException } from '@nestjs/common';
 
 describe('GrabController', () => {
   it('submits grab request using authenticated user id', async () => {
+    const queuedResponse = {
+      requestId: 'GRAB1',
+      status: GRAB_STATUS.QUEUED,
+      orderId: null,
+      failReason: null,
+      queueSeq: 10,
+      queueRank: 3,
+      estimatedWaitSeconds: null,
+      message: 'queued',
+    };
     const service: any = {
-      submitRequest: jest.fn().mockResolvedValue({ requestId: 'GRAB1', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null }),
+      submitRequest: jest.fn().mockResolvedValue(queuedResponse),
     };
     const controller = new GrabController(service);
 
@@ -21,12 +32,22 @@ describe('GrabController', () => {
       quantity: 1,
       idempotencyKey: 'idem-1',
     });
-    expect(result).toEqual({ code: 200, message: 'success', data: { requestId: 'GRAB1', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001, failReason: null } });
+    expect(result).toEqual({ code: 200, message: 'success', data: queuedResponse });
   });
 
   it('ignores body userId and always uses authenticated user id', async () => {
+    const queuedResponse = {
+      requestId: 'GRAB2',
+      status: GRAB_STATUS.QUEUED,
+      orderId: null,
+      failReason: null,
+      queueSeq: 11,
+      queueRank: 4,
+      estimatedWaitSeconds: null,
+      message: 'queued',
+    };
     const service: any = {
-      submitRequest: jest.fn().mockResolvedValue({ requestId: 'GRAB2', status: GRAB_STATUS.ORDER_CREATED, orderId: 9002, failReason: null }),
+      submitRequest: jest.fn().mockResolvedValue(queuedResponse),
     };
     const controller = new GrabController(service);
 
@@ -46,6 +67,51 @@ describe('GrabController', () => {
       idempotencyKey: 'idem-body-user',
     });
     expect(service.submitRequest).not.toHaveBeenCalledWith(9999, expect.anything());
-    expect(result).toEqual({ code: 200, message: 'success', data: { requestId: 'GRAB2', status: GRAB_STATUS.ORDER_CREATED, orderId: 9002, failReason: null } });
+    expect(result).toEqual({ code: 200, message: 'success', data: queuedResponse });
+  });
+
+  it('routes progress lookups through the authenticated user id', async () => {
+    const progressResponse = {
+      requestId: 'GRAB1',
+      status: GRAB_STATUS.WAITING,
+      queueRank: 3,
+    };
+    const service: any = {
+      getProgress: jest.fn().mockResolvedValue(progressResponse),
+    };
+    const controller = new GrabController(service);
+
+    const result = await controller.progress({ user: { userId: 2004 } } as any, 'GRAB1');
+
+    expect(service.getProgress).toHaveBeenCalledWith(2004, 'GRAB1');
+    expect(result).toEqual({ code: 200, message: 'success', data: progressResponse });
+  });
+
+  it('routes visible stock lookup with parsed ticket ids', async () => {
+    const stockResponse = {
+      sessionId: 101,
+      ticketTypes: [{ ticketTypeId: 1, name: 'A', visibleStock: 87, level: 'AVAILABLE' }],
+      snapshotTime: '2026-05-29T12:00:00.000Z',
+    };
+    const visibleStockService: any = {
+      getSessionVisibleStock: jest.fn().mockResolvedValue(stockResponse),
+    };
+    const controller = new GrabSessionController(visibleStockService);
+
+    const result = await controller.stockVisible('101', '1,2,bad,0');
+
+    expect(visibleStockService.getSessionVisibleStock).toHaveBeenCalledWith(101, [1, 2]);
+    expect(result).toEqual({ code: 200, message: 'success', data: stockResponse });
+  });
+
+  it('rejects visible stock lookup when session id or ticket ids are invalid', async () => {
+    const visibleStockService: any = {
+      getSessionVisibleStock: jest.fn(),
+    };
+    const controller = new GrabSessionController(visibleStockService);
+
+    await expect(controller.stockVisible('0', '1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.stockVisible('101', '')).rejects.toBeInstanceOf(BadRequestException);
+    expect(visibleStockService.getSessionVisibleStock).not.toHaveBeenCalled();
   });
 });

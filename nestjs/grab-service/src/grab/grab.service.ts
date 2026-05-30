@@ -1,12 +1,22 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { GrabAdmissionService } from './grab-admission.service';
+import { GrabQueueService } from './grab-queue.service';
 import { ACTIVE_ASYNC_PROGRESS_STATUSES, GrabRepository, isUniqueViolation } from './grab.repository';
 import { GRAB_STATUS } from './grab-status';
-import type { GrabRequestRecord, GrabRequestResponse, SubmitGrabRequestDto } from './grab.types';
+import type { GrabStatus } from './grab-status';
+import type { GrabProgressResponse, GrabRequestRecord, GrabRequestResponse, GrabTicketPreference, SubmitGrabRequestDto } from './grab.types';
 import { OrderClientService } from './order-client.service';
+import { TicketClientService, TicketTypeVisibleInfo } from './ticket-client.service';
+import { VisibleStockService } from './visible-stock.service';
 
 const ACTIVE_ASYNC_PROGRESS_STATUS_SET = new Set<string>(ACTIVE_ASYNC_PROGRESS_STATUSES);
+const CANCELABLE_PROGRESS_STATUSES = new Set<string>([
+  GRAB_STATUS.QUEUED,
+  GRAB_STATUS.WAITING,
+  GRAB_STATUS.TRYING_TICKET_TYPE,
+  GRAB_STATUS.LOCKING,
+]);
 const RELEASEABLE_PROGRESS_STATUSES = new Set(['LOCKING', 'ORDER_CREATING']);
 const TERMINAL_CANCEL_STATUSES = new Set<string>([
   GRAB_STATUS.ORDER_CREATED,
@@ -24,6 +34,9 @@ export class GrabService {
     private readonly repository: GrabRepository,
     private readonly admissionService: GrabAdmissionService,
     private readonly orderClient: OrderClientService,
+    private readonly queueService: GrabQueueService,
+    private readonly ticketClient: TicketClientService,
+    private readonly visibleStockService: VisibleStockService,
   ) {}
 
   async submitRequest(userId: number, dto: SubmitGrabRequestDto): Promise<GrabRequestResponse> {
@@ -31,33 +44,50 @@ export class GrabService {
     const existing = await this.repository.findByUserAndIdempotency(userId, dto.idempotencyKey);
     if (existing) return this.toResponse(existing);
 
+    const requestedTicketTypes = await this.normalizePreferences(dto);
+    const firstPreference = requestedTicketTypes[0];
+    const allowAutoDowngrade = Boolean(dto.allowAutoDowngrade) && requestedTicketTypes.length > 1;
+
     const requestId = this.generateRequestId();
     const seatIds = [...(dto.seatIds ?? [])].sort((a, b) => a - b);
     const allocateRandom = Boolean(dto.allocateRandom);
     const active = await this.repository.findActiveByIntent({
       userId,
       sessionId: dto.sessionId,
-      ticketTypeId: dto.ticketTypeId,
+      ticketTypeId: firstPreference.ticketTypeId,
       quantity: dto.quantity,
       seatIds,
       allocateRandom,
+      requestedTicketTypes,
+      allowAutoDowngrade,
     });
     if (active) return this.toResponse(active);
 
+    const queued = await this.queueService.enqueue({
+      requestId,
+      sessionId: dto.sessionId,
+      userId,
+      ttlSeconds: this.requestTtlSeconds,
+    });
+
     let created: GrabRequestRecord;
     try {
-      created = await this.repository.createPending({
+      created = await this.repository.createQueued({
         requestId,
         idempotencyKey: dto.idempotencyKey,
         userId,
         sessionId: dto.sessionId,
-        ticketTypeId: dto.ticketTypeId,
+        ticketTypeId: firstPreference.ticketTypeId,
         quantity: dto.quantity,
         seatIds,
         allocateRandom,
         expireTime: new Date(Date.now() + this.requestTtlSeconds * 1000),
+        queueSeq: queued.queueSeq,
+        requestedTicketTypes,
+        allowAutoDowngrade,
       });
     } catch (error) {
+      await this.queueService.removeQueuedRequest(dto.sessionId, requestId);
       if (isUniqueViolation(error)) {
         const record = await this.repository.findByUserAndIdempotency(userId, dto.idempotencyKey);
         if (record) return this.toResponse(record);
@@ -65,106 +95,170 @@ export class GrabService {
       throw error;
     }
 
-    const admission = await this.admissionService.admit({
-      requestId: created.requestId,
-      userId,
-      sessionId: dto.sessionId,
-      ticketTypeId: dto.ticketTypeId,
-      quantity: dto.quantity,
-      seatIds,
-      idempotencyKey: dto.idempotencyKey,
-      ttlSeconds: this.requestTtlSeconds,
-    });
-
-    if (admission.outcome === 'IDEMPOTENT' && admission.existingRequestId) {
-      const record = await this.repository.findByRequestId(admission.existingRequestId);
-      return record ? this.toResponse(record) : this.toResponse(created);
-    }
-    if (admission.outcome === 'SOLD_OUT') {
-      return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.SOLD_OUT, '库存不足'));
-    }
-    if (admission.outcome === 'LIMITED') {
-      return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.LIMITED, '请勿重复抢票'));
-    }
-    if (admission.outcome === 'STOCK_UNINITIALIZED') {
-      return this.toResponse(await this.repository.updateStatus(created.requestId, GRAB_STATUS.FAILED, '抢票库存未初始化'));
-    }
-
-    await this.repository.updateStatus(created.requestId, GRAB_STATUS.ACCEPTED);
-    await this.repository.updateStatus(created.requestId, GRAB_STATUS.ORDER_CREATING);
-
-    try {
-      const order = await this.orderClient.createOrder({
-        userId,
-        sessionId: dto.sessionId,
-        ticketTypeId: dto.ticketTypeId,
-        quantity: dto.quantity,
-        seatIds,
-        allocateRandom,
-      });
-      return this.toResponse(await this.repository.markOrderCreated(created.requestId, order.id));
-    } catch (error) {
-      await this.admissionService.release({
-        userId,
-        sessionId: dto.sessionId,
-        ticketTypeId: dto.ticketTypeId,
-        quantity: dto.quantity,
-        seatIds,
-        idempotencyKey: dto.idempotencyKey,
-        restoreStock: true,
-      });
-      const message = error instanceof Error ? error.message : '订单创建失败';
-      const status = message.includes('库存') ? GRAB_STATUS.SOLD_OUT : message.includes('限购') ? GRAB_STATUS.LIMITED : GRAB_STATUS.FAILED;
-      return this.toResponse(await this.repository.updateStatus(created.requestId, status, message));
-    }
+    return this.toResponse(created, queued.queueRank);
   }
 
   async getRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {
     const record = await this.repository.findByRequestId(requestId);
-    if (!record) throw new NotFoundException('抢票请求不存在');
-    if (record.userId !== userId) throw new ForbiddenException('不能查看他人的抢票请求');
+    if (!record) throw new NotFoundException('grab request not found');
+    if (record.userId !== userId) throw new ForbiddenException('cannot view another user grab request');
     return this.toResponse(record);
+  }
+
+  async getProgress(userId: number, requestId: string): Promise<GrabProgressResponse> {
+    const record = await this.repository.findByRequestId(requestId);
+    if (!record) throw new NotFoundException('grab request not found');
+    if (record.userId !== userId) throw new ForbiddenException('cannot view another user grab request');
+    const queueRank = record.queueSeq == null ? null : await this.queueService.calculateQueueRank(record.sessionId, record.queueSeq);
+    const visibleStock = await this.resolveProgressVisibleStock(record);
+
+    return {
+      requestId: record.requestId,
+      sessionId: record.sessionId,
+      status: record.progressStatus,
+      orderId: record.orderId,
+      failReason: record.failReason,
+      queueSeq: record.queueSeq,
+      queueRank,
+      estimatedWaitSeconds: null,
+      currentTicketTypeId: record.currentTicketTypeId,
+      currentAttemptIndex: record.currentAttemptIndex,
+      requestedTicketTypes: record.requestedTicketTypes,
+      attempts: record.attemptsSnapshot,
+      visibleStock,
+      message: record.progressMessage,
+      matchedTicketTypeId: record.matchedTicketTypeId,
+      updateTime: record.updatedAt.toISOString(),
+    };
   }
 
   async cancelRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {
     const record = await this.repository.findByRequestId(requestId);
-    if (!record) throw new NotFoundException('抢票请求不存在');
-    if (record.userId !== userId) throw new ForbiddenException('不能取消他人的抢票请求');
+    if (!record) throw new NotFoundException('grab request not found');
+    if (record.userId !== userId) throw new ForbiddenException('cannot cancel another user grab request');
     if (TERMINAL_CANCEL_STATUSES.has(record.status)) return this.toResponse(record);
     if (record.orderId) return this.toResponse(record);
-    const progressStatus = (record as GrabRequestRecordWithProgress).progressStatus;
-    const hasAsyncProgress = Boolean(progressStatus);
-    const hasCancelableProgress = progressStatus ? ACTIVE_ASYNC_PROGRESS_STATUS_SET.has(progressStatus) : false;
-    const hasLegacyCancelableStatus = !hasAsyncProgress && (record.status === GRAB_STATUS.ACCEPTED || record.status === GRAB_STATUS.ORDER_CREATING);
+    const progressStatus = record.progressStatus;
+    const hasCancelableProgress = CANCELABLE_PROGRESS_STATUSES.has(progressStatus);
+    const hasLegacyCancelableStatus = !ACTIVE_ASYNC_PROGRESS_STATUS_SET.has(progressStatus) && record.status === GRAB_STATUS.ACCEPTED;
     if (!hasCancelableProgress && !hasLegacyCancelableStatus) return this.toResponse(record);
-    if ((progressStatus && RELEASEABLE_PROGRESS_STATUSES.has(progressStatus)) || hasLegacyCancelableStatus) {
-      await this.admissionService.release(record);
+    const expired = hasCancelableProgress
+      ? await this.repository.expireActiveRequest(requestId, 'grab request cancelled', [progressStatus as GrabStatus])
+      : await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, 'grab request cancelled');
+    if (!expired) {
+      const latest = await this.repository.findByRequestId(requestId);
+      return this.toResponse(latest ?? record);
     }
-    return this.toResponse(await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, 'grab request cancelled'));
+    if (RELEASEABLE_PROGRESS_STATUSES.has(progressStatus) || (!hasCancelableProgress && hasLegacyCancelableStatus)) {
+      await this.admissionService.release({
+        requestId: record.requestId,
+        userId: record.userId,
+        sessionId: record.sessionId,
+        ticketTypeId: record.currentTicketTypeId ?? record.ticketTypeId,
+        quantity: record.quantity,
+        seatIds: record.seatIds,
+        idempotencyKey: record.idempotencyKey,
+      });
+    }
+    return this.toResponse(expired);
   }
 
   private validateSubmitRequest(dto: SubmitGrabRequestDto): void {
-    if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('场次不正确');
-    if (!Number.isInteger(dto.ticketTypeId) || dto.ticketTypeId <= 0) throw new BadRequestException('票档不正确');
-    if (!Number.isInteger(dto.quantity) || dto.quantity <= 0) throw new BadRequestException('数量不正确');
-    if (!dto.idempotencyKey?.trim()) throw new BadRequestException('幂等键不能为空');
-    if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('座位数量不正确');
+    if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('invalid session');
+    if (!Number.isInteger(dto.quantity) || dto.quantity <= 0) throw new BadRequestException('invalid quantity');
+    if (!dto.idempotencyKey?.trim()) throw new BadRequestException('idempotency key is required');
+    if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('invalid seat quantity');
+  }
+
+  private async normalizePreferences(dto: SubmitGrabRequestDto): Promise<GrabTicketPreference[]> {
+    const preferences = dto.ticketTypePreferences?.length
+      ? dto.ticketTypePreferences
+      : dto.ticketTypeId == null
+        ? []
+        : [{ ticketTypeId: dto.ticketTypeId }];
+
+    if (preferences.length === 0) throw new BadRequestException('ticket type is required');
+
+    const requestedIds = preferences.map((preference) => {
+      if (!Number.isInteger(preference.ticketTypeId) || preference.ticketTypeId <= 0) {
+        throw new BadRequestException('invalid ticket type');
+      }
+
+      return preference.ticketTypeId;
+    });
+
+    if (dto.seatIds?.length && requestedIds.length > 1) {
+      throw new BadRequestException('seat selection does not support auto downgrade');
+    }
+
+    const metadata = await this.ticketClient.listVisibleTicketTypes(dto.sessionId, requestedIds);
+    const metadataById = new Map<number, TicketTypeVisibleInfo>(
+      metadata.map((ticket) => [ticket.ticketTypeId, ticket]),
+    );
+    const canonical = requestedIds.map((ticketTypeId) => {
+      const ticket = metadataById.get(ticketTypeId);
+      if (!ticket) throw new BadRequestException('ticket type is not available for this session');
+      return {
+        ticketTypeId,
+        name: ticket.name,
+        maxPrice: ticket.price,
+      };
+    });
+
+    if (!dto.allowAutoDowngrade) return [canonical[0]];
+
+    const requestedPrice = canonical[0].maxPrice;
+    for (const preference of canonical.slice(1)) {
+      if (preference.maxPrice > requestedPrice) {
+        throw new BadRequestException('auto downgrade cannot increase ticket price');
+      }
+    }
+
+    return canonical;
   }
 
   private generateRequestId(): string {
     return `GRAB${randomBytes(12).toString('hex')}`;
   }
 
-  private toResponse(record: Pick<GrabRequestRecord, 'requestId' | 'status' | 'orderId' | 'failReason'>): GrabRequestResponse {
+  private async resolveProgressVisibleStock(record: GrabRequestRecord) {
+    const ticketTypeId = record.currentTicketTypeId ?? record.requestedTicketTypes[record.currentAttemptIndex]?.ticketTypeId ?? record.ticketTypeId;
+    if (!ticketTypeId) return null;
+    try {
+      const snapshot = await this.visibleStockService.getSessionVisibleStock(record.sessionId, [ticketTypeId]);
+      const ticket = snapshot.ticketTypes.find((item) => item.ticketTypeId === ticketTypeId);
+      if (!ticket) return null;
+      return {
+        ticketTypeId: ticket.ticketTypeId,
+        visibleStock: ticket.visibleStock,
+        level: ticket.level,
+        snapshotTime: snapshot.snapshotTime,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async toResponse(
+    record: Pick<GrabRequestRecord, 'requestId' | 'status' | 'orderId' | 'failReason'> &
+      Partial<Pick<GrabRequestRecord, 'sessionId' | 'progressStatus' | 'progressMessage' | 'queueSeq'>>,
+    queueRank?: number | null,
+  ): Promise<GrabRequestResponse> {
+    const rank = queueRank ?? (
+      record.queueSeq != null && record.sessionId != null
+        ? await this.queueService.calculateQueueRank(record.sessionId, record.queueSeq)
+        : null
+    );
+
     return {
       requestId: record.requestId,
-      status: record.status,
+      status: record.progressStatus ?? record.status,
       orderId: record.orderId,
       failReason: record.failReason,
+      queueSeq: record.queueSeq ?? null,
+      queueRank: rank,
+      estimatedWaitSeconds: null,
+      message: record.progressMessage ?? null,
     };
   }
-}
-
-interface GrabRequestRecordWithProgress {
-  progressStatus?: string | null;
 }

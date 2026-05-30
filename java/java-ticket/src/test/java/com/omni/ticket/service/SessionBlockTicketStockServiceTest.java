@@ -22,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -117,8 +118,8 @@ class SessionBlockTicketStockServiceTest {
                 && Integer.valueOf(2).equals(ticketType.getRemainStock())));
         ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
         verify(sessionSeatMapper, org.mockito.Mockito.times(2)).insert(seatCaptor.capture());
-        assertEquals(List.of(1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).toList());
-        assertEquals(List.of(1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).toList());
+        assertEquals(List.of(1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).collect(Collectors.toList()));
+        assertEquals(List.of(1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).collect(Collectors.toList()));
     }
 
     @Test
@@ -178,8 +179,8 @@ class SessionBlockTicketStockServiceTest {
         verify(ticketTypeMapper, never()).insert(any());
         ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
         verify(sessionSeatMapper, org.mockito.Mockito.times(4)).insert(seatCaptor.capture());
-        assertEquals(List.of(11L, 11L, 11L, 11L), seatCaptor.getAllValues().stream().map(SessionSeat::getSeatBlockId).toList());
-        assertEquals(List.of(900L, 900L, 900L, 900L), seatCaptor.getAllValues().stream().map(SessionSeat::getTicketTypeId).toList());
+        assertEquals(List.of(11L, 11L, 11L, 11L), seatCaptor.getAllValues().stream().map(SessionSeat::getSeatBlockId).collect(Collectors.toList()));
+        assertEquals(List.of(900L, 900L, 900L, 900L), seatCaptor.getAllValues().stream().map(SessionSeat::getTicketTypeId).collect(Collectors.toList()));
     }
 
     @Test
@@ -210,8 +211,8 @@ class SessionBlockTicketStockServiceTest {
         verify(ticketTypeMapper, never()).insert(any());
         ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
         verify(sessionSeatMapper, org.mockito.Mockito.times(3)).insert(seatCaptor.capture());
-        assertEquals(List.of(2, 1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).toList());
-        assertEquals(List.of(1, 2, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).toList());
+        assertEquals(List.of(2, 1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).collect(Collectors.toList()));
+        assertEquals(List.of(1, 2, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).collect(Collectors.toList()));
     }
 
     @Test
@@ -279,9 +280,9 @@ class SessionBlockTicketStockServiceTest {
         verify(ticketTypeMapper, never()).insert(any());
         ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
         verify(sessionSeatMapper, org.mockito.Mockito.times(4)).insert(seatCaptor.capture());
-        assertEquals(List.of(10L, 10L, 10L, 10L), seatCaptor.getAllValues().stream().map(SessionSeat::getSeatBlockId).toList());
-        assertEquals(List.of(1, 1, 2, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).toList());
-        assertEquals(List.of(1, 2, 1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).toList());
+        assertEquals(List.of(10L, 10L, 10L, 10L), seatCaptor.getAllValues().stream().map(SessionSeat::getSeatBlockId).collect(Collectors.toList()));
+        assertEquals(List.of(1, 1, 2, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedRowNo).collect(Collectors.toList()));
+        assertEquals(List.of(1, 2, 1, 2), seatCaptor.getAllValues().stream().map(SessionSeat::getGeneratedSeatNo).collect(Collectors.toList()));
     }
 
     @Test
@@ -342,7 +343,7 @@ class SessionBlockTicketStockServiceTest {
                 && Integer.valueOf(4).equals(ticketType.getRemainStock())));
         ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
         verify(sessionSeatMapper, org.mockito.Mockito.times(4)).insert(seatCaptor.capture());
-        assertEquals(List.of(901L, 901L, 901L, 901L), seatCaptor.getAllValues().stream().map(SessionSeat::getTicketTypeId).toList());
+        assertEquals(List.of(901L, 901L, 901L, 901L), seatCaptor.getAllValues().stream().map(SessionSeat::getTicketTypeId).collect(Collectors.toList()));
     }
 
     @Test
@@ -384,7 +385,7 @@ class SessionBlockTicketStockServiceTest {
                 && new BigDecimal("1280.00").compareTo(ticketType.getPrice()) == 0));
         ArgumentCaptor<SessionSeat> seatCaptor = ArgumentCaptor.forClass(SessionSeat.class);
         verify(sessionSeatMapper, org.mockito.Mockito.times(4)).insert(seatCaptor.capture());
-        assertEquals(List.of(901L, 901L, 901L, 901L), seatCaptor.getAllValues().stream().map(SessionSeat::getTicketTypeId).toList());
+        assertEquals(List.of(901L, 901L, 901L, 901L), seatCaptor.getAllValues().stream().map(SessionSeat::getTicketTypeId).collect(Collectors.toList()));
     }
 
     private Session session(Long id, Long venueId) {

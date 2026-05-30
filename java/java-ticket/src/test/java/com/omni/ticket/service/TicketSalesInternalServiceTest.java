@@ -28,6 +28,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -74,6 +75,7 @@ class TicketSalesInternalServiceTest {
         ticketType.setPrice(new BigDecimal("380.00"));
         ticketType.setStatus(1);
         when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType);
+        when(sessionSeatMapper.selectSessionSellable(3001L)).thenReturn(true);
 
         TicketSalesQuoteRequest request = new TicketSalesQuoteRequest();
         request.setSessionId(3001L);
@@ -86,6 +88,46 @@ class TicketSalesInternalServiceTest {
         assertEquals("看台A", response.getTicketName());
         assertEquals(2, response.getQuantity());
         assertEquals(false, response.getSeatBased());
+    }
+
+    @Test
+    void quoteRejectsWhenSessionNotSellable() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionMapper sessionMapper = mock(SessionMapper.class);
+        ActivityMapper activityMapper = mock(ActivityMapper.class);
+        VenueMapper venueMapper = mock(VenueMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = new TicketSalesInternalService(
+                ticketTypeMapper, sessionMapper, activityMapper, venueMapper, sessionSeatMapper);
+
+        TicketType ticketType = ticketType(4001L, "A区票", new BigDecimal("380.00"));
+        when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType);
+        when(sessionSeatMapper.selectSessionSellable(3001L)).thenReturn(false);
+
+        TicketSalesQuoteRequest request = new TicketSalesQuoteRequest();
+        request.setSessionId(3001L);
+        request.setTicketTypeId(4001L);
+        request.setQuantity(1);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.quote(request));
+
+        assertEquals("session is not sellable", exception.getMessage());
+        verify(sessionMapper, never()).selectById(3001L);
+    }
+
+    @Test
+    void listVisibleTicketTypesHidesAllWhenSessionNotSellable() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        when(sessionSeatMapper.selectSessionSellable(3001L)).thenReturn(false);
+        when(ticketTypeMapper.selectBatchIds(List.of(4001L))).thenReturn(List.of(ticketType(4001L, "A区票", new BigDecimal("380.00"))));
+
+        com.omni.ticket.dto.TicketTypesVisibleRequest request = new com.omni.ticket.dto.TicketTypesVisibleRequest();
+        request.setSessionId(3001L);
+        request.setTicketTypeIds(List.of(4001L));
+
+        assertTrue(service.listVisibleTicketTypes(request).isEmpty());
     }
 
     @Test
@@ -102,6 +144,19 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
+    void lockStockRejectsWhenSessionNotSellableBeforeStockDecrease() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        when(sessionSeatMapper.selectSessionSellable(3001L)).thenReturn(false);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.lockStock(lockRequest(null, 2)));
+
+        assertEquals("session is not sellable", exception.getMessage());
+        verify(ticketTypeMapper, never()).decreaseRemainStockIfEnough(4001L, 2);
+    }
+
+    @Test
     void lockSeatsLocksEachSeat() {
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
         TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
@@ -111,6 +166,18 @@ class TicketSalesInternalServiceTest {
         TicketSalesSeatLockResponse response = service.lockSeats(lockRequest(List.of(501L, 502L), 2));
 
         assertEquals(List.of(501L, 502L), response.getLockedSeatIds());
+    }
+
+    @Test
+    void lockSeatsRejectsWhenSessionNotSellableBeforeSeatLock() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.selectSessionSellable(3001L)).thenReturn(false);
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.lockSeats(lockRequest(List.of(501L), 1)));
+
+        assertEquals("session is not sellable", exception.getMessage());
+        verify(sessionSeatMapper, never()).lockSeat(any(), any(), any(), any());
     }
 
     @Test
@@ -264,6 +331,7 @@ class TicketSalesInternalServiceTest {
         ticketType.setPrice(new BigDecimal("380.00"));
         ticketType.setStatus(1);
         when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType);
+        when(sessionSeatMapper.selectSessionSellable(3001L)).thenReturn(true);
 
         Session session = new Session();
         session.setId(3001L);
@@ -316,6 +384,7 @@ class TicketSalesInternalServiceTest {
         ticketType.setPrice(new BigDecimal("380.00"));
         ticketType.setStatus(1);
         when(ticketTypeMapper.selectById(3001L)).thenReturn(ticketType);
+        when(sessionSeatMapper.selectSessionSellable(2001L)).thenReturn(true);
 
         Session session = new Session();
         session.setId(2001L);
@@ -339,6 +408,7 @@ class TicketSalesInternalServiceTest {
     }
 
     private TicketSalesInternalService service(TicketTypeMapper ticketTypeMapper, SessionSeatMapper sessionSeatMapper) {
+        when(sessionSeatMapper.selectSessionSellable(3001L)).thenReturn(true);
         return new TicketSalesInternalService(
                 ticketTypeMapper, mock(SessionMapper.class), mock(ActivityMapper.class),
                 mock(VenueMapper.class), sessionSeatMapper);
@@ -348,6 +418,7 @@ class TicketSalesInternalServiceTest {
                                                SessionSeatMapper sessionSeatMapper,
                                                SeatBlockMapper seatBlockMapper,
                                                TicketGroupMapper ticketGroupMapper) {
+        when(sessionSeatMapper.selectSessionSellable(3001L)).thenReturn(true);
         return new TicketSalesInternalService(
                 ticketTypeMapper, mock(SessionMapper.class), mock(ActivityMapper.class),
                 mock(VenueMapper.class), sessionSeatMapper, seatBlockMapper, ticketGroupMapper);

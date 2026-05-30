@@ -7,12 +7,24 @@ export interface CreateOrderInput {
   quantity: number;
   seatIds: number[];
   allocateRandom: boolean;
+  authorizedMaxUnitPrice?: number | null;
+  grabRequestId?: string | null;
+  requestedTicketTypeId?: number | null;
+  matchedTicketTypeId?: number | null;
+  autoDowngraded?: boolean;
 }
 
 export interface CreatedOrderResponse {
   id: number;
   orderNo: string;
   amount: number;
+}
+
+export interface GrabOrderLookupResponse {
+  id: number;
+  orderNo: string;
+  status: string | null;
+  grabRequestId: string | null;
 }
 
 @Injectable()
@@ -22,11 +34,18 @@ export class OrderClientService {
 
   async createOrder(input: CreateOrderInput): Promise<CreatedOrderResponse> {
     if (!this.internalToken) {
-      throw new Error('订单内部接口令牌未配置');
+      throw new Error('order internal token is not configured');
     }
 
     const usesSeatEndpoint = input.seatIds.length > 0 || input.allocateRandom;
     const path = usesSeatEndpoint ? '/api/order/internal/create-with-seats' : '/api/order/internal/create';
+    const grabMetadata = {
+      authorizedMaxUnitPrice: input.authorizedMaxUnitPrice,
+      grabRequestId: input.grabRequestId,
+      requestedTicketTypeId: input.requestedTicketTypeId,
+      matchedTicketTypeId: input.matchedTicketTypeId,
+      autoDowngraded: Boolean(input.autoDowngraded),
+    };
     const body = usesSeatEndpoint
       ? {
           userId: input.userId,
@@ -34,12 +53,14 @@ export class OrderClientService {
           ticketTypeId: input.ticketTypeId,
           seatIds: input.seatIds,
           quantity: input.quantity,
+          ...grabMetadata,
         }
       : {
           userId: input.userId,
           sessionId: input.sessionId,
           ticketTypeId: input.ticketTypeId,
           quantity: input.quantity,
+          ...grabMetadata,
         };
 
     const response = await fetch(`${this.baseUrl}${path}`, {
@@ -49,8 +70,25 @@ export class OrderClientService {
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || '订单创建失败');
+      throw new Error(result.message || 'order creation failed');
     }
     return result.data;
+  }
+
+  async findByGrabRequestId(grabRequestId: string): Promise<GrabOrderLookupResponse | null> {
+    if (!this.internalToken) {
+      throw new Error('order internal token is not configured');
+    }
+
+    const response = await fetch(`${this.baseUrl}/api/order/internal/grab-requests/${encodeURIComponent(grabRequestId)}`, {
+      method: 'GET',
+      headers: { 'X-Internal-Token': this.internalToken },
+    });
+    if (response.status === 404) return null;
+    const result = await response.json();
+    if (!response.ok || (result.code !== 200 && result.code !== 404)) {
+      throw new Error(result.message || 'order lookup failed');
+    }
+    return result.data ?? null;
   }
 }

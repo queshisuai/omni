@@ -17,7 +17,9 @@ public interface OrderMapper extends BaseMapper<Order> {
             "o.user_deleted_at AS userDeletedAt, o.user_delete_expires_at AS userDeleteExpiresAt, " +
             "o.create_time AS createTime, o.update_time AS updateTime, os.activity_id AS activityId, " +
             "os.activity_name AS activityName, os.activity_poster AS activityPoster, os.venue_name AS venueName, " +
-            "os.session_time AS sessionTime, os.ticket_name AS ticketName, os.unit_price AS unitPrice, os.seat_labels AS seatLabels ";
+            "os.session_time AS sessionTime, os.ticket_name AS ticketName, os.unit_price AS unitPrice, os.seat_labels AS seatLabels, " +
+            "os.grab_request_id AS grabRequestId, os.requested_ticket_type_id AS requestedTicketTypeId, " +
+            "os.matched_ticket_type_id AS matchedTicketTypeId, os.auto_downgraded AS autoDowngraded ";
 
     String ORDER_LIST_JOINS = "FROM \"order\" o " +
             "LEFT JOIN order_snapshot os ON os.order_id = o.id ";
@@ -58,6 +60,10 @@ public interface OrderMapper extends BaseMapper<Order> {
 
     @Select("SELECT " + ORDER_LIST_COLUMNS + ORDER_LIST_JOINS + "WHERE o.id = #{id} LIMIT 1")
     OrderListItemResponse selectOrderListItemById(@Param("id") Long id);
+
+    @Select("SELECT " + ORDER_LIST_COLUMNS + ORDER_LIST_JOINS +
+            "WHERE os.grab_request_id = #{grabRequestId} LIMIT 1")
+    OrderListItemResponse selectOrderListItemByGrabRequestId(@Param("grabRequestId") String grabRequestId);
 
     @Update("UPDATE \"order\" SET status = #{nextStatus}, update_time = CURRENT_TIMESTAMP WHERE id = #{id} AND status = #{expectedStatus}")
     int updateStatusIfCurrent(@Param("id") Long id,

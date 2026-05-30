@@ -14,15 +14,6 @@ import type { OrderEntity, QrPayResponse, RefundOptionsVO, RefundRequestVO, Refu
 
 type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled' | 'trash'
 
-type GrabOrderMetadata = {
-  grabRequestId?: number | null
-  requestedTicketTypeId?: number | null
-  matchedTicketTypeId?: number | null
-  autoDowngraded?: boolean | null
-}
-
-type OrderWithGrabMetadata = OrderEntity & GrabOrderMetadata
-
 const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> = {
   1: { label: '待支付', color: '#ff1268', bg: '#fff0f5' },
   2: { label: '已支付', color: '#52c41a', bg: '#f6ffed' },
@@ -40,7 +31,7 @@ const REFUND_STATUS_MAP: Record<RefundStatus, { label: string; color: string }> 
 
 const ACTIVE_REFUND_STATUSES = new Set<RefundStatus>([0, 1, 4])
 
-interface EnrichedOrder extends OrderWithGrabMetadata {
+interface EnrichedOrder extends OrderEntity {
   activityName: string
   activityPoster: string
   activityId: number | null
@@ -53,8 +44,7 @@ interface EnrichedOrder extends OrderWithGrabMetadata {
 
 function enrichOrders(orders: OrderEntity[]): EnrichedOrder[] {
   return orders.map((order) => {
-    const grabOrder = order as OrderWithGrabMetadata
-    const fallbackTicketTypeId = grabOrder.matchedTicketTypeId ?? order.ticketTypeId
+    const fallbackTicketTypeId = order.matchedTicketTypeId ?? order.ticketTypeId
 
     return {
       ...order,

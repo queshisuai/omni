@@ -2,6 +2,8 @@ package com.omni.ticket.service;
 
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.TicketTypeVisibleResponse;
+import com.omni.ticket.dto.TicketTypesVisibleRequest;
 import com.omni.ticket.dto.TicketSalesLockRequest;
 import com.omni.ticket.dto.TicketSalesOrderRequest;
 import com.omni.ticket.dto.TicketSalesQuoteRequest;
@@ -27,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 public class TicketSalesInternalService {
@@ -79,6 +82,8 @@ public class TicketSalesInternalService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "票档不可售");
         }
 
+        requireSessionSellable(request.getSessionId());
+
         TicketSalesQuoteResponse response = new TicketSalesQuoteResponse();
         response.setSessionId(request.getSessionId());
         response.setTicketTypeId(request.getTicketTypeId());
@@ -93,9 +98,32 @@ public class TicketSalesInternalService {
         return response;
     }
 
+    public List<TicketTypeVisibleResponse> listVisibleTicketTypes(TicketTypesVisibleRequest request) {
+        if (request == null || request.getSessionId() == null || request.getTicketTypeIds() == null || request.getTicketTypeIds().isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket type parameters are required");
+        }
+        if (isSessionExplicitlyUnsellable(request.getSessionId())) {
+            return Collections.emptyList();
+        }
+        List<TicketType> ticketTypes = ticketTypeMapper.selectBatchIds(request.getTicketTypeIds());
+        return ticketTypes.stream()
+                .filter(ticketType -> request.getSessionId().equals(ticketType.getSessionId()))
+                .filter(ticketType -> Integer.valueOf(1).equals(ticketType.getStatus()))
+                .map(ticketType -> {
+                    TicketTypeVisibleResponse response = new TicketTypeVisibleResponse();
+                    response.setTicketTypeId(ticketType.getId());
+                    response.setName(ticketType.getName());
+                    response.setPrice(ticketType.getPrice());
+                    response.setRemainStock(ticketType.getRemainStock());
+                    return response;
+                })
+                .collect(Collectors.toList());
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public void lockStock(TicketSalesLockRequest request) {
         int quantity = requirePositiveQuantity(request.getQuantity());
+        requireSessionSellable(request.getSessionId());
         int updated = ticketTypeMapper.decreaseRemainStockIfEnough(request.getTicketTypeId(), quantity);
         if (updated != 1) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
@@ -104,6 +132,7 @@ public class TicketSalesInternalService {
 
     @Transactional(rollbackFor = Exception.class)
     public TicketSalesSeatLockResponse lockSeats(TicketSalesLockRequest request) {
+        requireSessionSellable(request.getSessionId());
         List<Long> seatIds = request.getSeatIds();
         if ((seatIds == null || seatIds.isEmpty()) && Boolean.TRUE.equals(request.getAllocateRandom())) {
             int quantity = requirePositiveQuantity(request.getQuantity());
@@ -201,6 +230,16 @@ public class TicketSalesInternalService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "购买数量不正确");
         }
         return quantity;
+    }
+
+    private void requireSessionSellable(Long sessionId) {
+        if (isSessionExplicitlyUnsellable(sessionId)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "session is not sellable");
+        }
+    }
+
+    private boolean isSessionExplicitlyUnsellable(Long sessionId) {
+        return Boolean.FALSE.equals(sessionSeatMapper.selectSessionSellable(sessionId));
     }
 
     private void fillSnapshotFields(TicketSalesQuoteResponse response, Long sessionId) {

@@ -21,6 +21,7 @@ describe('GrabAdmissionService', () => {
       'grab:stock:101:202',
       'grab:idempotency:2004:idem-1',
       'grab:user-hold:2004:101:202',
+      'grab:admission:GRAB202605270001',
       'grab:seat-hold:301',
       'grab:seat-hold:302',
     ], [
@@ -33,6 +34,26 @@ describe('GrabAdmissionService', () => {
       '2',
     ]);
     expect(result).toEqual({ outcome: 'ACCEPTED', existingRequestId: 'GRAB202605270001' });
+  });
+
+  it('keeps accepted admission marker independent of the short hold ttl', async () => {
+    const evalMock = jest.fn().mockResolvedValue(['ACCEPTED', 'GRAB202605270001']);
+    const service = new GrabAdmissionService({ eval: evalMock } as any);
+
+    await service.admit({
+      requestId: 'GRAB202605270001',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 2,
+      seatIds: [],
+      idempotencyKey: 'idem-1',
+      ttlSeconds: 900,
+    });
+
+    const script = evalMock.mock.calls[0][0] as string;
+    expect(script).toContain("redis.call('HSET', markerKey");
+    expect(script).not.toContain("redis.call('EXPIRE', markerKey");
   });
 
   it('rejects requests when redis stock is not initialized', async () => {
@@ -58,10 +79,11 @@ describe('GrabAdmissionService', () => {
   });
 
   it('restores stock and clears hold when releasing an accepted admission', async () => {
-    const redis = { incrBy: jest.fn(), del: jest.fn().mockResolvedValue(2) };
+    const redis = { eval: jest.fn().mockResolvedValue(1), incrBy: jest.fn(), del: jest.fn() };
     const service = new GrabAdmissionService(redis as any);
 
     await service.release({
+      requestId: 'GRAB202605270001',
       userId: 2004,
       sessionId: 101,
       ticketTypeId: 202,
@@ -70,11 +92,59 @@ describe('GrabAdmissionService', () => {
       idempotencyKey: 'idem-1',
     });
 
-    expect(redis.incrBy).toHaveBeenCalledWith('grab:stock:101:202', 1);
-    expect(redis.del).toHaveBeenCalledWith([
+    expect(redis.eval).toHaveBeenCalledWith(expect.stringContaining('markerKey'), [
+      'grab:stock:101:202',
       'grab:idempotency:2004:idem-1',
       'grab:user-hold:2004:101:202',
+      'grab:admission:GRAB202605270001',
       'grab:seat-hold:301',
-    ]);
+    ], ['GRAB202605270001', '1', 'true', '86400']);
+    const script = redis.eval.mock.calls[0][0];
+    expect(script).toContain("redis.call('HGET', markerKey, 'restored')");
+    expect(script).toContain("redis.call('HSET', markerKey, 'restored', '1')");
+    expect(script.indexOf("redis.call('HGET', markerKey, 'restored')")).toBeLessThan(script.indexOf("redis.call('INCRBY', KEYS[1], markerQuantity)"));
+    expect(redis.incrBy).not.toHaveBeenCalled();
+    expect(redis.del).not.toHaveBeenCalled();
+  });
+
+  it('release restores stock from a durable admission marker even after idempotency ttl expired', async () => {
+    const redis = { eval: jest.fn().mockResolvedValue(1) };
+    const service = new GrabAdmissionService(redis as any);
+
+    await service.release({
+      requestId: 'GRAB202605270001',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 2,
+      seatIds: [],
+      idempotencyKey: 'idem-1',
+    });
+
+    const script = redis.eval.mock.calls[0][0];
+    expect(script).not.toContain('return 0');
+    expect(script).toContain("local markerQuantity = tonumber(redis.call('HGET', markerKey, 'quantity') or ARGV[2])");
+    expect(script).toContain("redis.call('INCRBY', KEYS[1], markerQuantity)");
+  });
+
+  it('can clear a matching hold without restoring stock', async () => {
+    const redis = { eval: jest.fn().mockResolvedValue(1) };
+    const service = new GrabAdmissionService(redis as any);
+
+    await service.release({
+      requestId: 'GRAB202605270001',
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      seatIds: [],
+      idempotencyKey: 'idem-1',
+      restoreStock: false,
+    });
+
+    expect(redis.eval.mock.calls[0][1]).toContain('grab:admission:GRAB202605270001');
+    expect(redis.eval.mock.calls[0][0]).toContain("redis.call('HSET', markerKey, 'restored', '1')");
+    expect(redis.eval.mock.calls[0][0]).toContain("redis.call('EXPIRE', markerKey");
+    expect(redis.eval.mock.calls[0][2]).toEqual(['GRAB202605270001', '1', 'false', '86400']);
   });
 });

@@ -2,7 +2,7 @@
  * API 客户端 - fetch 封装
  */
 import { getToken } from './auth.ts'
-import type { ApiResult, AssetUploadVO, ChangePasswordRequest, GrabRequestResult, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, PrivateAssetVO, ResetPasswordRequest, SeatMapResponse, SubmitGrabRequestPayload, SubjectType, UserInfo } from '@/types/api'
+import type { ApiResult, AssetUploadVO, ChangePasswordRequest, GrabProgressResult, GrabRequestResult, LoginResponse, OrganizerApplicationStatus, OrganizerApplicationVO, PrivateAssetVO, ResetPasswordRequest, SeatMapResponse, SessionVisibleStockResult, SubmitGrabRequestPayload, SubjectType, UserInfo } from '@/types/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 const DEFAULT_REQUEST_TIMEOUT_MS = 5000
@@ -361,6 +361,16 @@ export async function submitGrabRequest(params: SubmitGrabRequestPayload) {
 
 export async function getGrabRequest(requestId: string) {
   return request<GrabRequestResult>(`/api/grab/requests/${encodeURIComponent(requestId)}`)
+}
+
+export async function getGrabProgress(requestId: string) {
+  return request<GrabProgressResult>(`/api/grab/requests/${encodeURIComponent(requestId)}/progress`)
+}
+
+export async function getGrabVisibleStock(sessionId: number, ticketTypeIds: number[]) {
+  const params = new URLSearchParams()
+  params.set('ticketTypeIds', ticketTypeIds.join(','))
+  return request<SessionVisibleStockResult>(`/api/grab/sessions/${sessionId}/stock-visible?${params.toString()}`)
 }
 
 export async function cancelGrabRequest(requestId: string) {

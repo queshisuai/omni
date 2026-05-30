@@ -29,6 +29,10 @@ public class OrderSnapshot {
     private BigDecimal unitPrice;
     private Integer quantity;
     private String seatLabels;
+    private String grabRequestId;
+    private Long requestedTicketTypeId;
+    private Long matchedTicketTypeId;
+    private Boolean autoDowngraded;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -62,6 +66,14 @@ public class OrderSnapshot {
     public void setQuantity(Integer quantity) { this.quantity = quantity; }
     public String getSeatLabels() { return seatLabels; }
     public void setSeatLabels(String seatLabels) { this.seatLabels = seatLabels; }
+    public String getGrabRequestId() { return grabRequestId; }
+    public void setGrabRequestId(String grabRequestId) { this.grabRequestId = grabRequestId; }
+    public Long getRequestedTicketTypeId() { return requestedTicketTypeId; }
+    public void setRequestedTicketTypeId(Long requestedTicketTypeId) { this.requestedTicketTypeId = requestedTicketTypeId; }
+    public Long getMatchedTicketTypeId() { return matchedTicketTypeId; }
+    public void setMatchedTicketTypeId(Long matchedTicketTypeId) { this.matchedTicketTypeId = matchedTicketTypeId; }
+    public Boolean getAutoDowngraded() { return autoDowngraded; }
+    public void setAutoDowngraded(Boolean autoDowngraded) { this.autoDowngraded = autoDowngraded; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getUpdateTime() { return updateTime; }

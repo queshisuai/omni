@@ -87,7 +87,8 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
 
     @Select("SELECT EXISTS(" +
             "SELECT 1 FROM session s JOIN activity a ON a.id = s.activity_id " +
-            "WHERE s.id = #{sessionId} AND s.status = 1 AND a.status = 1)")
+            "WHERE s.id = #{sessionId} AND s.status = 1 AND a.status = 1 " +
+            "AND a.publish_status = 'published')")
     Boolean selectSessionSellable(@Param("sessionId") Long sessionId);
 
     @Select({"<script>",

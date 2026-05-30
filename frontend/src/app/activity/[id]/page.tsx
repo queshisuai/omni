@@ -6,11 +6,27 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
-import { getActivityDetail, submitGrabRequest, getGrabRequest, createAlipayQrPay, getSeatMap } from '@/lib/api'
+import { cancelGrabRequest, createAlipayQrPay, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, submitGrabRequest } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import { buildSeatAllocationPayload } from '@/lib/purchase-intent'
+import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, getPurchaseQuantityMax } from '@/lib/purchase-intent'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
-import type { ActivityDetailVO, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, TicketTypeEntity } from '@/types/api'
+import type { ActivityDetailVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity } from '@/types/api'
+
+const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
+const GRAB_STATUS_LABELS: Record<string, string> = {
+  QUEUED: '排队中',
+  WAITING: '等待处理',
+  TRYING_TICKET_TYPE: '正在尝试票档',
+  LOCKING: '正在锁票',
+  ORDER_CREATING: '正在生成订单',
+  ORDER_CREATED: '已生成订单',
+  SOLD_OUT: '已售罄',
+  DOWNGRADING: '正在尝试后续票档',
+  PENDING_RECOVERY: '订单确认中',
+  FAILED: '抢票失败',
+  LIMITED: '限购失败',
+  EXPIRED: '已结束',
+}
 
 export default function ActivityDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -31,7 +47,15 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [seatMapLoading, setSeatMapLoading] = useState(false)
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([])
   const [grabIdempotency, setGrabIdempotency] = useState<{ intent: string; key: string } | null>(null)
+  const [allowAutoDowngrade, setAllowAutoDowngrade] = useState(false)
+  const [grabProgress, setGrabProgress] = useState<GrabProgressResult | null>(null)
+  const [grabProgressOpen, setGrabProgressOpen] = useState(false)
+  const [progressPaymentOpening, setProgressPaymentOpening] = useState(false)
+  const [visibleStock, setVisibleStock] = useState<SessionVisibleStockResult | null>(null)
   const seatMapRequestIdRef = useRef(0)
+  const progressPaymentOrderIdRef = useRef<number | null>(null)
+  const progressPaymentInFlightOrderIdRef = useRef<number | null>(null)
+  const hydratedGrabRequestRef = useRef<string | null>(null)
   const loadDetailRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
 
@@ -54,12 +78,55 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     [availableSeatIdSet, selectedSeatIds],
   )
   const seatMapPublished = detail?.activity.seatMapVisibility === 'published'
+  const buildTicketTypePreferences = () => {
+    if (!selectedSession || !selectedTicket) return []
+    const sorted = selectedSession.ticketTypes
+      .filter(ticket => ticket.id === selectedTicket.id || (allowAutoDowngrade && !showsSeatCraftSelection && ticket.price <= selectedTicket.price))
+      .sort((a, b) => {
+        if (a.id === selectedTicket.id) return -1
+        if (b.id === selectedTicket.id) return 1
+        return b.price - a.price
+      })
+    return sorted.map(ticket => ({ ticketTypeId: ticket.id, name: ticket.name, maxPrice: ticket.price }))
+  }
+  const downgradeCandidates = selectedSession && selectedTicket && !showsSeatCraftSelection
+    ? selectedSession.ticketTypes
+      .filter(ticket => ticket.id !== selectedTicket.id && ticket.price <= selectedTicket.price)
+      .sort((a, b) => b.price - a.price)
+    : []
+  const currentProgressStock = grabProgress?.currentTicketTypeId != null && visibleStock
+    ? visibleStock.ticketTypes.find(ticket => ticket.ticketTypeId === grabProgress.currentTicketTypeId)
+    : null
+  const selectedTicketVisibleStock = selectedTicket && visibleStock
+    ? visibleStock.ticketTypes.find(ticket => ticket.ticketTypeId === selectedTicket.id)
+    : null
+  const showPurchaseEntry = canShowPurchaseEntry({
+    ticket: selectedTicket,
+    visibleStock: selectedTicketVisibleStock,
+  })
+  const purchaseQuantityMax = getPurchaseQuantityMax({
+    ticket: selectedTicket,
+    visibleStock: selectedTicketVisibleStock,
+  })
+  const getActiveGrabStorageKey = () => {
+    const user = getUser()
+    return user ? `grab:active-request:${user.userId}:${id}` : null
+  }
+  const rememberActiveGrabRequest = (requestId: string) => {
+    const key = getActiveGrabStorageKey()
+    if (key) window.localStorage.setItem(key, requestId)
+  }
+  const forgetActiveGrabRequest = () => {
+    const key = getActiveGrabStorageKey()
+    if (key) window.localStorage.removeItem(key)
+  }
 
   const loadDetail = async () => {
     setLoading(true)
     setError('')
     setSelectedSession(null)
     setSelectedTicket(null)
+    setAllowAutoDowngrade(false)
     try {
       const data = await getActivityDetail(Number(id))
       setDetail(data)
@@ -84,17 +151,6 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     if (now - lastRefreshRef.current < 200) return
     lastRefreshRef.current = now
     void loadDetailRef.current()
-  }
-
-  const waitForGrabResult = async (requestId: string) => {
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const result = await getGrabRequest(requestId)
-      if (result.status === 'ORDER_CREATED' || result.status === 'SOLD_OUT' || result.status === 'LIMITED' || result.status === 'FAILED' || result.status === 'EXPIRED') {
-        return result
-      }
-      await new Promise(resolve => setTimeout(resolve, 800))
-    }
-    throw new Error('抢票排队超时，请稍后查看订单')
   }
 
   useEffect(() => {
@@ -149,6 +205,127 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
   }, [selectedSession, selectedTicket, seatMapPublished])
 
+  useEffect(() => {
+    if (!selectedSession?.ticketTypes.length) {
+      setVisibleStock(null)
+      return
+    }
+
+    let cancelled = false
+    const ids = selectedSession.ticketTypes.map(ticket => ticket.id)
+    getGrabVisibleStock(selectedSession.session.id, ids)
+      .then((stock) => {
+        if (!cancelled) setVisibleStock(stock)
+      })
+      .catch(() => {
+        if (!cancelled) setVisibleStock(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedSession])
+
+  useEffect(() => {
+    if (!grabProgressOpen || !grabProgress?.requestId || TERMINAL_GRAB_STATUSES.has(grabProgress.status)) return
+
+    let cancelled = false
+    const fetchProgress = () => {
+      getGrabProgress(grabProgress.requestId)
+        .then((progress) => {
+          if (!cancelled) setGrabProgress(progress)
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) setOrderError(err instanceof Error ? err.message : '抢票进度查询失败')
+        })
+    }
+
+    const timer = window.setInterval(fetchProgress, 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [grabProgressOpen, grabProgress?.requestId, grabProgress?.status])
+
+  const resetGrabIdempotencyKey = () => setGrabIdempotency(null)
+
+  const openProgressPayment = async (orderId: number) => {
+    if (progressPaymentOrderIdRef.current === orderId || progressPaymentInFlightOrderIdRef.current === orderId) return
+
+    progressPaymentInFlightOrderIdRef.current = orderId
+    setProgressPaymentOpening(true)
+    setOrderError('')
+    try {
+      const pay = await createAlipayQrPay(orderId)
+      progressPaymentOrderIdRef.current = orderId
+      setQrPay(pay)
+      setGrabProgressOpen(false)
+      setShowConfirm(false)
+      resetGrabIdempotencyKey()
+      forgetActiveGrabRequest()
+    } catch (err: unknown) {
+      setOrderError(err instanceof Error ? err.message : '支付创建失败')
+    } finally {
+      progressPaymentInFlightOrderIdRef.current = null
+      setProgressPaymentOpening(false)
+    }
+  }
+
+  const goToOrdersFromProgress = () => {
+    forgetActiveGrabRequest()
+    router.push('/orders')
+  }
+
+  useEffect(() => {
+    if (!grabProgressOpen || grabProgress?.status !== 'ORDER_CREATED' || !grabProgress.orderId) return
+
+    void openProgressPayment(grabProgress.orderId)
+  }, [grabProgressOpen, grabProgress?.status, grabProgress?.orderId])
+
+  useEffect(() => {
+    if (showsSeatCraftSelection && allowAutoDowngrade) {
+      setAllowAutoDowngrade(false)
+    }
+  }, [showsSeatCraftSelection, allowAutoDowngrade])
+
+  useEffect(() => {
+    if (quantity <= purchaseQuantityMax) return
+    setQuantity(purchaseQuantityMax)
+    setSelectedSeatIds(ids => ids.slice(0, purchaseQuantityMax))
+    resetGrabIdempotencyKey()
+  }, [purchaseQuantityMax, quantity])
+
+  useEffect(() => {
+    if (!detail || grabProgress?.requestId) return
+    const key = getActiveGrabStorageKey()
+    const requestId = key ? window.localStorage.getItem(key) : null
+    if (!requestId || hydratedGrabRequestRef.current === requestId) return
+
+    hydratedGrabRequestRef.current = requestId
+    getGrabProgress(requestId)
+      .then((progress) => {
+        const belongsToActivity = detail.sessions.some((session) => session.session.id === progress.sessionId)
+        if (!belongsToActivity) {
+          forgetActiveGrabRequest()
+          return
+        }
+        setGrabProgress(progress)
+        setGrabProgressOpen(true)
+      })
+      .catch(() => {
+        forgetActiveGrabRequest()
+      })
+  }, [detail, grabProgress?.requestId])
+
+  useEffect(() => {
+    if (!grabProgress?.requestId) return
+    if (TERMINAL_GRAB_STATUSES.has(grabProgress.status) && grabProgress.status !== 'ORDER_CREATED' && grabProgress.status !== 'PENDING_RECOVERY') {
+      forgetActiveGrabRequest()
+      return
+    }
+    rememberActiveGrabRequest(grabProgress.requestId)
+  }, [grabProgress?.requestId, grabProgress?.status])
+
   const handleBuy = () => {
     if (!isAuthenticated()) {
       router.push(`/login?ru=/activity/${id}`)
@@ -185,23 +362,23 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     resetGrabIdempotencyKey()
   }
 
-  const resetGrabIdempotencyKey = () => setGrabIdempotency(null)
-
   const buildGrabIntent = (userId: number) => {
     const allocation = buildSeatAllocationPayload({
       ticket: selectedTicket,
       seatSelectionVisible: showsSeatCraftSelection,
       selectedSeatIds: validSelectedSeatIds,
     })
-    const seatPart = allocation.seatIds.slice().sort((a, b) => a - b).join(',')
-    return [
+    const ticketTypePreferences = buildTicketTypePreferences()
+    return buildGrabIdempotencyIntent({
       userId,
-      selectedSession?.session.id ?? 0,
-      selectedTicket?.id ?? 0,
+      sessionId: selectedSession?.session.id ?? 0,
+      selectedTicketId: selectedTicket?.id ?? 0,
       quantity,
-      seatPart,
-      allocation.allocateRandom,
-    ].join(':')
+      seatIds: allocation.seatIds,
+      allocateRandom: allocation.allocateRandom,
+      allowAutoDowngrade: allowAutoDowngrade && !showsSeatCraftSelection,
+      ticketTypePreferences,
+    })
   }
 
   const getOrCreateGrabIdempotencyKey = (userId: number) => {
@@ -230,27 +407,68 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         return
       }
       const idempotencyKey = getOrCreateGrabIdempotencyKey(user.userId)
+      const ticketTypePreferences = buildTicketTypePreferences()
       const grab = await submitGrabRequest({
         sessionId: selectedSession.session.id,
         ticketTypeId: selectedTicket.id,
+        ticketTypePreferences,
+        allowAutoDowngrade: allowAutoDowngrade && !showsSeatCraftSelection,
         seatIds: allocation.seatIds,
         quantity,
         allocateRandom: allocation.allocateRandom,
         idempotencyKey,
       })
-      const result = grab.status === 'ORDER_CREATED' ? grab : await waitForGrabResult(grab.requestId)
-      if (result.status !== 'ORDER_CREATED' || !result.orderId) {
-        setOrderError(result.failReason || '抢票失败，请稍后重试')
-        return
-      }
-      const pay = await createAlipayQrPay(result.orderId)
-      setQrPay(pay)
+      setGrabProgress({
+        ...grab,
+        sessionId: selectedSession.session.id,
+        queueSeq: grab.queueSeq ?? null,
+        queueRank: grab.queueRank ?? null,
+        estimatedWaitSeconds: grab.estimatedWaitSeconds ?? null,
+        currentTicketTypeId: selectedTicket.id,
+        currentAttemptIndex: 0,
+        requestedTicketTypes: ticketTypePreferences.map(ticket => ({
+          ticketTypeId: ticket.ticketTypeId,
+          name: ticket.name ?? null,
+          maxPrice: ticket.maxPrice ?? null,
+        })),
+        attempts: ticketTypePreferences.map((ticket, index) => ({
+          ticketTypeId: ticket.ticketTypeId,
+          name: ticket.name ?? null,
+          status: index === 0 && grab.status !== 'QUEUED' ? 'TRYING' : 'PENDING',
+          message: index === 0 ? `等待尝试 ${ticket.name ?? `票档 ${ticket.ticketTypeId}`}` : '待尝试',
+        })),
+        visibleStock: null,
+        message: grab.message ?? null,
+        matchedTicketTypeId: null,
+        updateTime: new Date().toISOString(),
+      })
+      progressPaymentOrderIdRef.current = null
+      progressPaymentInFlightOrderIdRef.current = null
+      rememberActiveGrabRequest(grab.requestId)
+      setGrabProgressOpen(true)
       setShowConfirm(false)
-      resetGrabIdempotencyKey()
     } catch (err: unknown) {
       setOrderError(err instanceof Error ? err.message : '下单失败，请确认已登录并重试')
     } finally {
       setOrdering(false)
+    }
+  }
+
+  const handleCancelGrabProgress = async () => {
+    if (!grabProgress?.requestId) return
+    try {
+      const cancelled = await cancelGrabRequest(grabProgress.requestId)
+      setGrabProgress((prev) => prev ? {
+        ...prev,
+        ...cancelled,
+        queueSeq: cancelled.queueSeq ?? prev.queueSeq,
+        queueRank: cancelled.queueRank ?? prev.queueRank,
+        estimatedWaitSeconds: cancelled.estimatedWaitSeconds ?? prev.estimatedWaitSeconds,
+        message: cancelled.message ?? cancelled.failReason ?? '已取消抢票',
+        updateTime: new Date().toISOString(),
+      } : prev)
+    } catch (err: unknown) {
+      setOrderError(err instanceof Error ? err.message : '取消抢票失败')
     }
   }
 
@@ -335,6 +553,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                     key={sd.session.id}
                     onClick={() => {
                       setSelectedSession(sd)
+                      setAllowAutoDowngrade(false)
                       resetGrabIdempotencyKey()
                       if (sd.ticketTypes.length > 0) {
                         setSelectedTicket(sd.ticketTypes[0])
@@ -367,31 +586,37 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                     {selectedSession.ticketTypes.length === 0 ? (
                       <p className="text-[#999] text-sm">票档待公布</p>
                     ) : (
-                      selectedSession.ticketTypes.map((tt) => (
-                        <button
-                          key={tt.id}
-                          onClick={() => { setSelectedTicket(tt); setQuantity(1); setSelectedSeatIds([]); resetGrabIdempotencyKey() }}
-                          className="cursor-pointer border outline-none px-5 py-3 rounded text-sm transition-colors min-w-[100px]"
-                          style={{
-                            backgroundColor: selectedTicket?.id === tt.id ? '#fff0f5' : '#fff',
-                            borderColor: selectedTicket?.id === tt.id ? '#ff1268' : '#e5e5e5',
-                            color: selectedTicket?.id === tt.id ? '#ff1268' : '#333',
-                          }}
-                        >
-                          <div className="font-medium">{tt.name}</div>
-                          <div className="text-[18px] text-[#ff1268] font-medium mt-1">
-                            ¥{tt.price}
-                          </div>
-                          <div className="text-xs text-[#999] mt-0.5">
-                            {tt.remainStock == null ? '待生成库存' : tt.remainStock > 0 ? `余${tt.remainStock}张` : '售罄'}
-                          </div>
-                        </button>
-                      ))
+                      selectedSession.ticketTypes.map((tt) => {
+                        const stockHint = visibleStock?.ticketTypes.find(ticket => ticket.ticketTypeId === tt.id)
+                        return (
+                          <button
+                            key={tt.id}
+                            onClick={() => { setSelectedTicket(tt); setQuantity(1); setSelectedSeatIds([]); setAllowAutoDowngrade(false); resetGrabIdempotencyKey() }}
+                            className="cursor-pointer border outline-none px-5 py-3 rounded text-sm transition-colors min-w-[100px]"
+                            style={{
+                              backgroundColor: selectedTicket?.id === tt.id ? '#fff0f5' : '#fff',
+                              borderColor: selectedTicket?.id === tt.id ? '#ff1268' : '#e5e5e5',
+                              color: selectedTicket?.id === tt.id ? '#ff1268' : '#333',
+                            }}
+                          >
+                            <div className="font-medium">{tt.name}</div>
+                            <div className="text-[18px] text-[#ff1268] font-medium mt-1">
+                              ¥{tt.price}
+                            </div>
+                            <div className="text-xs text-[#999] mt-0.5">
+                              {stockHint?.visibleStock == null
+                                ? '库存变化较快'
+                                : stockHint.visibleStock > 0 ? `剩余约 ${stockHint.visibleStock} 张` : '当前可见库存紧张'}
+                            </div>
+                          </button>
+                        )
+                      })
                     )}
                   </div>
+                  <div className="mb-6 text-[12px] text-[#999]">库存变化较快，以锁票结果为准。</div>
 
                   {/* 数量选择 + 购买按钮 */}
-                  {selectedTicket && selectedTicket.remainStock > 0 && (
+                  {selectedTicket && showPurchaseEntry && (
                     <>
                       <div className="mb-5">
                         {seatMapPublished && seatMapLoading ? (
@@ -427,7 +652,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                           </button>
                           <span className="w-12 text-center text-[14px] text-[#111]">{quantity}</span>
                           <button
-                            onClick={() => { setQuantity(Math.min(selectedTicket.remainStock, quantity + 1)); resetGrabIdempotencyKey() }}
+                            onClick={() => { setQuantity(Math.min(purchaseQuantityMax, quantity + 1)); resetGrabIdempotencyKey() }}
                             className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
                           >
                             +
@@ -595,6 +820,25 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       <span className="text-[#999]">票档</span>
                       <span>{selectedTicket.name} × {quantity}张</span>
                     </div>
+                    {!showsSeatCraftSelection && downgradeCandidates.length > 0 && (
+                      <label className="flex items-start gap-2 rounded border border-[#f0f0f0] p-3 text-[13px] text-[#666]">
+                        <input
+                          type="checkbox"
+                          checked={allowAutoDowngrade}
+                          onChange={(event) => {
+                            setAllowAutoDowngrade(event.target.checked)
+                            resetGrabIdempotencyKey()
+                          }}
+                          className="mt-0.5"
+                        />
+                        <span className="leading-relaxed">
+                          允许自动尝试后续低价票档：
+                          {[selectedTicket, ...downgradeCandidates]
+                            .map(ticket => `${ticket.name} ¥${ticket.price}`)
+                            .join(' / ')}
+                        </span>
+                      </label>
+                    )}
                     {showsSeatCraftSelection && validSelectedSeatIds.length > 0 && (
                       <div className="flex justify-between">
                         <span className="text-[#999]">座位</span>
@@ -674,6 +918,149 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                     >
                       查看订单
                     </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {grabProgressOpen && grabProgress && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center px-4"
+                style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+              >
+                <div className="w-full max-w-[480px] rounded-lg bg-white p-6" onClick={(e) => e.stopPropagation()}>
+                  <div className="mb-4 flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-[18px] font-medium text-[#111]">抢票进度</h3>
+                      <p className="mt-1 text-[12px] text-[#999]">库存变化较快，以最终锁票结果为准。</p>
+                    </div>
+                    <span className="rounded-full bg-[#fff1f6] px-3 py-1 text-[12px] text-[#ff1268]">
+                      {GRAB_STATUS_LABELS[grabProgress.status] || grabProgress.status}
+                    </span>
+                  </div>
+
+                  <div className="mb-4 rounded border border-[#f0f0f0] p-3">
+                    <div className="text-[12px] text-[#999]">当前状态</div>
+                    <div className="mt-1 text-[14px] text-[#333]">
+                      {grabProgress.message || (grabProgress.queueRank != null ? `你前面还有 ${grabProgress.queueRank} 人` : '正在排队')}
+                    </div>
+                  </div>
+
+                  <div className="mb-4 grid grid-cols-2 gap-3 text-[13px]">
+                    <div className="rounded border border-[#f0f0f0] p-3">
+                      <div className="text-[#999]">排队信息</div>
+                      <div className="mt-1 text-[#333]">
+                        {grabProgress.queueRank != null ? `前方 ${grabProgress.queueRank} 人` : `序号 ${grabProgress.queueSeq ?? '-'}`}
+                      </div>
+                    </div>
+                    <div className="rounded border border-[#f0f0f0] p-3">
+                      <div className="text-[#999]">预计等待</div>
+                      <div className="mt-1 text-[#333]">
+                        {grabProgress.estimatedWaitSeconds != null ? `${grabProgress.estimatedWaitSeconds} 秒` : '计算中'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <div className="mb-2 text-[13px] font-medium text-[#333]">档位尝试列表</div>
+                    <div className="space-y-2">
+                      {(grabProgress.attempts.length > 0 ? grabProgress.attempts : grabProgress.requestedTicketTypes.map(ticket => ({
+                        ticketTypeId: ticket.ticketTypeId,
+                        name: ticket.name,
+                        status: 'PENDING',
+                        message: '待尝试',
+                      }))).map((attempt) => (
+                        <div key={attempt.ticketTypeId} className="flex items-center justify-between rounded border border-[#f0f0f0] px-3 py-2 text-[13px]">
+                          <span className="text-[#333]">{attempt.name ?? `票档 ${attempt.ticketTypeId}`}</span>
+                          <span className={
+                            attempt.status === 'SOLD_OUT' || attempt.status === 'FAILED' || attempt.status === 'LIMITED'
+                              ? 'text-[#999]'
+                              : attempt.status === 'TRYING' || attempt.status === 'LOCKING'
+                                ? 'text-[#ff1268]'
+                                : attempt.status === 'ORDER_CREATED'
+                                  ? 'text-[#22c55e]'
+                                  : 'text-[#666]'
+                          }>
+                            {attempt.message || attempt.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mb-5 rounded bg-[#fafafa] p-3 text-[12px] text-[#777]">
+                    <div className="font-medium text-[#555]">库存提示</div>
+                    <div className="mt-1">
+                      {grabProgress.visibleStock?.visibleStock != null
+                        ? `当前档位剩余约 ${grabProgress.visibleStock.visibleStock} 张`
+                        : currentProgressStock?.visibleStock != null
+                          ? `${currentProgressStock.name} 剩余约 ${currentProgressStock.visibleStock} 张`
+                          : '当前档位库存变化较快'}
+                    </div>
+                  </div>
+
+                  {orderError && (
+                    <div className="mb-4 rounded border border-[#ffcccc] bg-[#fff0f0] p-2.5 text-[13px] text-[#e74c3c]">
+                      {orderError}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap justify-end gap-3">
+                    {!TERMINAL_GRAB_STATUSES.has(grabProgress.status) && (
+                      <button
+                        type="button"
+                        onClick={handleCancelGrabProgress}
+                        className="cursor-pointer rounded border border-[#ddd] bg-white px-4 py-2 text-[14px] text-[#666] outline-none"
+                      >
+                        取消抢票
+                      </button>
+                    )}
+                    {grabProgress.status === 'ORDER_CREATED' && grabProgress.orderId && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void openProgressPayment(grabProgress.orderId!)}
+                          disabled={progressPaymentOpening}
+                          className="cursor-pointer rounded border-none bg-[#ff1268] px-4 py-2 text-[14px] text-white outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {progressPaymentOpening ? '打开支付中...' : '重新打开支付'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={goToOrdersFromProgress}
+                          className="cursor-pointer rounded border border-[#ddd] bg-white px-4 py-2 text-[14px] text-[#666] outline-none"
+                        >
+                          查看订单
+                        </button>
+                      </>
+                    )}
+                    {grabProgress.status === 'PENDING_RECOVERY' && (
+                      <button
+                        type="button"
+                        onClick={goToOrdersFromProgress}
+                        className="cursor-pointer rounded border border-[#ddd] bg-white px-4 py-2 text-[14px] text-[#666] outline-none"
+                      >
+                        查看订单
+                      </button>
+                    )}
+                    {(grabProgress.status === 'SOLD_OUT' || grabProgress.status === 'FAILED' || grabProgress.status === 'LIMITED') && (
+                      <button
+                        type="button"
+                        disabled
+                        className="cursor-not-allowed rounded border border-[#ddd] bg-[#f7f7f7] px-4 py-2 text-[14px] text-[#999] outline-none"
+                      >
+                        加入候补
+                      </button>
+                    )}
+                    {TERMINAL_GRAB_STATUSES.has(grabProgress.status) && grabProgress.status !== 'ORDER_CREATED' && (
+                      <button
+                        type="button"
+                        onClick={() => setGrabProgressOpen(false)}
+                        className="cursor-pointer rounded border border-[#ddd] bg-white px-4 py-2 text-[14px] text-[#666] outline-none"
+                      >
+                        关闭
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
