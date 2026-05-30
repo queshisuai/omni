@@ -252,12 +252,14 @@ public class OrderService {
     @Transactional(rollbackFor = Exception.class)
     public Order createTeamOrderWithLockedSeats(CreateTeamOrderRequest request) {
         TeamOrderSeatPayload payload = validateAndParseTeamOrderRequest(request);
-        if (StringUtils.hasText(request.getGrabRequestId())) {
-            orderMapper.acquireAdvisoryTransactionLock("grab-order:" + request.getGrabRequestId());
-        }
+        lockTeamGrabNamespaces(request.getGrabRequestId(), request.getTeamGrabRequestId());
         orderMapper.acquireAdvisoryTransactionLock("team-order:" + request.getTeamGrabRequestId());
 
         OrderListItemResponse existingTeamOrder = orderMapper.selectTeamOrderListItemByTeamGrabRequestId(request.getTeamGrabRequestId());
+        OrderListItemResponse teamGrabAsNormalOrder = orderMapper.selectOrderListItemByGrabRequestId(request.getTeamGrabRequestId());
+        if (teamGrabAsNormalOrder != null && !sameTeamOrderPayload(request, teamGrabAsNormalOrder)) {
+            throw new BusinessException(ResultCode.CONFLICT, "team grab request collides with a grab request");
+        }
         if (existingTeamOrder != null) {
             validateTeamOrderRetryMatchesGrabRequest(request, existingTeamOrder, payload);
             return loadExistingOrder(existingTeamOrder);
@@ -827,6 +829,19 @@ public class OrderService {
         if (!StringUtils.hasText(request.getGrabRequestId())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "grab request id is required for team order");
         }
+        if (request.getTeamGrabRequestId().equals(request.getGrabRequestId())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team grab request id must differ from grab request id");
+        }
+    }
+
+    private void lockTeamGrabNamespaces(String grabRequestId, String teamGrabRequestId) {
+        List<String> grabOrderLockKeys = List.of(
+                "grab-order:" + grabRequestId,
+                "grab-order:" + teamGrabRequestId);
+        grabOrderLockKeys.stream()
+                .distinct()
+                .sorted()
+                .forEach(orderMapper::acquireAdvisoryTransactionLock);
     }
 
     private TeamOrderSeatPayload validateAndParseTeamOrderRequest(CreateTeamOrderRequest request) {
