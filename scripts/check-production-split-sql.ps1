@@ -202,14 +202,17 @@ foreach ($file in $sqlFiles) {
         $normalized = $constraintName.ToLower()
         $lineNumber = 1 + ($content.Substring(0, $match.Index).Split("`n").Count - 1)
         if ($constraintNames.ContainsKey($normalized)) {
-            if (Test-HasPrecedingConstraintDrop $content $tableName $constraintName $match.Index) {
-                $constraintNames[$normalized] = "$($file.FullName):$lineNumber"
+            $firstSeen = $constraintNames[$normalized]
+            if (($tableName -eq $firstSeen.Table) -and (Test-HasPrecedingConstraintDrop $content $tableName $constraintName $match.Index)) {
                 continue
             }
-            Write-Host "FAIL duplicate constraint name '$constraintName' in $($file.FullName):$lineNumber; first seen at $($constraintNames[$normalized])"
+            Write-Host "FAIL duplicate constraint name '$constraintName' on table '$tableName' in $($file.FullName):$lineNumber; first seen on table '$($firstSeen.Table)' at $($firstSeen.Location)"
             exit 1
         }
-        $constraintNames[$normalized] = "$($file.FullName):$lineNumber"
+        $constraintNames[$normalized] = @{
+            Location = "$($file.FullName):$lineNumber"
+            Table = $tableName
+        }
     }
 }
 
