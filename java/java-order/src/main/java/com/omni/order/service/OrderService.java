@@ -144,6 +144,10 @@ public class OrderService {
     @Transactional(rollbackFor = Exception.class)
     public Order createOrder(CreateOrderRequest request) {
         int quantity = requirePositiveQuantity(request.getQuantity());
+        Order existingGrabOrder = resolveExistingNormalGrabOrder(request.getGrabRequestId());
+        if (existingGrabOrder != null) {
+            return existingGrabOrder;
+        }
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), null, quantity);
         validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
@@ -189,6 +193,10 @@ public class OrderService {
     public Order createOrderWithSeats(LockSeatsRequest request) {
         boolean hasSeatIds = request.getSeatIds() != null && !request.getSeatIds().isEmpty();
         int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
+        Order existingGrabOrder = resolveExistingNormalGrabOrder(request.getGrabRequestId());
+        if (existingGrabOrder != null) {
+            return existingGrabOrder;
+        }
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
         validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
@@ -825,6 +833,24 @@ public class OrderService {
         if (!StringUtils.hasText(request.getTeamGrabRequestId())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "team grab request id is required");
         }
+        if (!StringUtils.hasText(request.getGrabRequestId())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "grab request id is required for team order");
+        }
+    }
+
+    private Order resolveExistingNormalGrabOrder(String grabRequestId) {
+        if (!StringUtils.hasText(grabRequestId)) {
+            return null;
+        }
+        orderMapper.acquireAdvisoryTransactionLock("grab-order:" + grabRequestId);
+        OrderListItemResponse existingOrder = orderMapper.selectOrderListItemByGrabRequestId(grabRequestId);
+        if (existingOrder == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(existingOrder.getTeamOrder())) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a team order");
+        }
+        return loadExistingOrder(existingOrder);
     }
 
     private void validateTeamAuthorizedPrice(BigDecimal authorizedMaxUnitPrice, TicketSalesQuoteResponse quote) {

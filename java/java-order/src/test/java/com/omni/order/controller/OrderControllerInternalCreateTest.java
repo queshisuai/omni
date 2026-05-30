@@ -196,7 +196,7 @@ class OrderControllerInternalCreateTest {
         Result<Order> result = controller.createInternalTeamOrderBlocked(request, "test-internal-token", exception);
 
         assertEquals(429, result.getCode());
-        assertEquals("绯荤粺绻佸繖锛岃绋嶅悗閲嶈瘯", result.getMessage());
+        assertEquals("系统繁忙，请稍后重试", result.getMessage());
         assertNull(result.getData());
         verify(orderService, never()).createTeamOrderWithLockedSeats(any());
     }

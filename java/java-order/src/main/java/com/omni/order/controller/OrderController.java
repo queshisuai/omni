@@ -115,7 +115,7 @@ public class OrderController {
     }
 
     public Result<Order> createInternalTeamOrderBlocked(CreateTeamOrderRequest request, String token, BlockException exception) {
-        return Result.fail(429, "绯荤粺绻佸繖锛岃绋嶅悗閲嶈瘯");
+        return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
     @GetMapping("/user/{userId}")
