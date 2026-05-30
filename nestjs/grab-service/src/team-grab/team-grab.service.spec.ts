@@ -638,7 +638,7 @@ describe('TeamGrabService', () => {
     expect(queueService.releaseTeamTriggerLock).toHaveBeenCalledWith(1, 20, 30, queuedRequestId);
   });
 
-  it('marks grab and team grab failed when reserved publish fails after team becomes grabbing', async () => {
+  it('keeps committed team grab state for recovery when reserved publish has an uncertain failure', async () => {
     const readyTeam = team({ status: 'READY', size: 2 });
     const members = [
       member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
@@ -672,10 +672,17 @@ describe('TeamGrabService', () => {
     await expect(service.triggerTeamGrab(1, 100)).rejects.toThrow('redis unavailable');
 
     const queuedRequestId = repository.beginTeamGrab.mock.calls[0][0].grabRequestId;
-    expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, queuedRequestId);
-    expect(grabRepository.updateStatus).toHaveBeenCalledWith(queuedRequestId, 'FAILED', 'redis unavailable');
-    expect(repository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'redis unavailable');
-    expect(repository.updateTeamStatus).toHaveBeenLastCalledWith(1, 'FAILED', ['GRABBING']);
-    expect(queueService.releaseTeamTriggerLock).toHaveBeenCalledWith(1, 20, 30, expect.any(String));
+    expect(queueService.publishReserved).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: queuedRequestId,
+      sessionId: 20,
+      userId: 100,
+      queueSeq: 1,
+      ttlSeconds: 900,
+    }));
+    expect(queueService.removeQueuedRequest).not.toHaveBeenCalled();
+    expect(grabRepository.updateStatus).not.toHaveBeenCalled();
+    expect(repository.markTeamGrabFailed).not.toHaveBeenCalled();
+    expect(repository.updateTeamStatus).not.toHaveBeenCalled();
+    expect(queueService.releaseTeamTriggerLock).toHaveBeenCalledWith(1, 20, 30, queuedRequestId);
   });
 });

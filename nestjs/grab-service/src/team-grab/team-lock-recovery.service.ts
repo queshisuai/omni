@@ -55,17 +55,7 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async recoverUnpublishedQueuedTeamGrabs(): Promise<void> {
-    const repository = this.repository as unknown as {
-      findStaleUnpublishedTeamGrabRequests?: (
-        limit: number,
-        olderThanSeconds: number,
-      ) => Promise<StaleUnpublishedTeamGrabRequestRecord[]>;
-    };
-    const finder = repository.findStaleUnpublishedTeamGrabRequests;
-    if (!finder) return;
-
-    const staleTeamGrabs = await finder.call(
-      this.repository,
+    const staleTeamGrabs = await this.repository.findStaleUnpublishedTeamGrabRequests(
       RECOVERY_LIMIT,
       STALE_PRE_ORDER_SECONDS,
     );

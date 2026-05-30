@@ -2,7 +2,6 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { randomBytes, randomUUID } from 'crypto';
 import { GrabQueueService } from '../grab/grab-queue.service';
 import { GrabRepository } from '../grab/grab.repository';
-import { GRAB_STATUS } from '../grab/grab-status';
 import { isUniqueViolation, TeamGrabRepository } from './team-grab.repository';
 import { TeamPaymentSyncService } from './team-payment-sync.service';
 import type {
@@ -166,10 +165,7 @@ export class TeamGrabService {
     );
     if (!lockAcquired) throw new ConflictException('team grab is already in progress');
 
-    let grabRequestCreated = false;
-    let teamGrabRequestIdCreated: string | null = null;
-    let teamMarkedGrabbing = false;
-    let publishAttempted = false;
+    let teamGrabCommitted = false;
     try {
       const queueResult = await this.queueService.reserveQueueSeq(team.sessionId);
       const requestedTicketTypes = [{
@@ -188,12 +184,9 @@ export class TeamGrabService {
         expireTime,
         requestedTicketTypes,
       });
-      teamGrabRequestIdCreated = beginResult.teamGrabRequest.requestId;
-      grabRequestCreated = true;
-      teamMarkedGrabbing = true;
+      teamGrabCommitted = true;
       const frozenTeam = beginResult.team;
 
-      publishAttempted = true;
       await this.queueService.publishReserved({
         requestId: queuedGrabRequestId,
         sessionId: frozenTeam.sessionId,
@@ -209,21 +202,9 @@ export class TeamGrabService {
         teamStatus: frozenTeam.status,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'team grab trigger failed';
-      if (publishAttempted) {
-        await this.queueService.removeQueuedRequest(team.sessionId, queuedGrabRequestId).catch(() => undefined);
-      }
-      if (grabRequestCreated) {
-        await this.grabRepository.updateStatus(queuedGrabRequestId, GRAB_STATUS.FAILED, message).catch(() => undefined);
-      }
-      if (teamGrabRequestIdCreated) {
-        await this.repository.markTeamGrabFailed(teamGrabRequestIdCreated, message).catch(() => undefined);
-      }
-      if (teamMarkedGrabbing) {
-        await this.repository.updateTeamStatus(team.id, 'FAILED', ['GRABBING']).catch(() => undefined);
-      }
       await this.queueService.releaseTeamTriggerLock(team.id, team.sessionId, team.ticketTypeId, queuedGrabRequestId).catch(() => undefined);
-      this.throwConflictOnUniqueViolation(error, 'team grab is already in progress');
+      if (!teamGrabCommitted) this.throwConflictOnUniqueViolation(error, 'team grab is already in progress');
+      throw error;
     }
   }
 

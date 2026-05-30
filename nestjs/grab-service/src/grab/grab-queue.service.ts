@@ -39,7 +39,6 @@ export class GrabQueueService {
   async publishReserved(request: PublishReservedRequest): Promise<void> {
     const sessionId = String(request.sessionId);
     const script = `
-      local metadataExists = redis.call('EXISTS', KEYS[1])
       local queued = redis.call('LPOS', KEYS[2], ARGV[1])
       local inflight = redis.call('LPOS', KEYS[4], ARGV[1])
 

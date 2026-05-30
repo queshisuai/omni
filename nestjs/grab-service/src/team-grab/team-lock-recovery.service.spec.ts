@@ -52,6 +52,37 @@ function member(userId: number): TicketTeamMemberRecord {
 }
 
 describe('TeamLockRecoveryService', () => {
+  it('does not hide repositories missing the stale unpublished team grab finder', async () => {
+    const repository = {
+      findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([]),
+    };
+    const grabRepository = {};
+    const orderClient = {
+      findByGrabRequestId: jest.fn(),
+    };
+    const ticketClient = {
+      releaseTeamSeatLock: jest.fn(),
+    };
+    const queueService = {
+      publishReserved: jest.fn(),
+      removeQueuedRequest: jest.fn(),
+    };
+    const notificationClient = {
+      sendFailed: jest.fn(),
+    };
+    const service = new TeamLockRecoveryService(
+      repository as any,
+      grabRepository as any,
+      orderClient as any,
+      ticketClient as any,
+      queueService as any,
+      notificationClient as any,
+    );
+
+    await expect(service.recoverStaleLocks()).rejects.toThrow(/findStaleUnpublishedTeamGrabRequests/);
+    expect(repository.findStalePreOrderTeamGrabRequests).not.toHaveBeenCalled();
+  });
+
   it('recovers stale unpublished queued team grabs by publishing the reserved queue entry', async () => {
     const repository = {
       findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([unpublishedTeamGrab]),
@@ -263,6 +294,7 @@ describe('TeamLockRecoveryService', () => {
 
   it('claims stale missing-order recovery first without releasing locked seats', async () => {
     const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
       claimStalePreOrderRecovery: jest.fn().mockResolvedValue(staleTeamGrab),
       claimStalePreOrderRelease: jest.fn(),
@@ -322,6 +354,7 @@ describe('TeamLockRecoveryService', () => {
     const claimedTeamGrab = { ...staleTeamGrab, failReason: 'ORDER_CREATE_TIMEOUT_CLAIMED' };
     const releasingTeamGrab = { ...claimedTeamGrab, failReason: 'ORDER_CREATE_TIMEOUT_RELEASING' };
     const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([claimedTeamGrab]),
       claimStalePreOrderRecovery: jest.fn(),
       claimStalePreOrderRelease: jest.fn().mockResolvedValue(releasingTeamGrab),
@@ -373,6 +406,7 @@ describe('TeamLockRecoveryService', () => {
 
   it('leaves stale locks untouched when stale recovery loses the claim', async () => {
     const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
       claimStalePreOrderRecovery: jest.fn().mockResolvedValue(null),
       claimStalePreOrderRelease: jest.fn(),
@@ -421,6 +455,7 @@ describe('TeamLockRecoveryService', () => {
 
   it('recovers stale pre-order locks as order-created when lookup finds an order', async () => {
     const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
       claimStalePreOrderRecovery: jest.fn(),
       claimStalePreOrderRelease: jest.fn(),
@@ -487,6 +522,7 @@ describe('TeamLockRecoveryService', () => {
 
   it('continues found-order recovery when generic grab is already order-created with matching order', async () => {
     const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
       claimStalePreOrderRecovery: jest.fn(),
       claimStalePreOrderRelease: jest.fn(),
@@ -551,6 +587,7 @@ describe('TeamLockRecoveryService', () => {
 
   it('does not mark team locked when found-order team grab repair returns null', async () => {
     const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
       claimStalePreOrderRecovery: jest.fn(),
       claimStalePreOrderRelease: jest.fn(),
@@ -602,6 +639,7 @@ describe('TeamLockRecoveryService', () => {
 
   it('does not release or fail stale locks when order lookup throws', async () => {
     const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
       claimStalePreOrderRecovery: jest.fn(),
       claimStalePreOrderRelease: jest.fn(),
@@ -652,6 +690,7 @@ describe('TeamLockRecoveryService', () => {
     const claimedTeamGrab = { ...staleTeamGrab, failReason: 'ORDER_CREATE_TIMEOUT_CLAIMED' };
     const releasingTeamGrab = { ...claimedTeamGrab, failReason: 'ORDER_CREATE_TIMEOUT_RELEASING' };
     const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn()
         .mockResolvedValueOnce([claimedTeamGrab])
         .mockResolvedValueOnce([claimedTeamGrab]),
@@ -716,6 +755,7 @@ describe('TeamLockRecoveryService', () => {
     const claimedTeamGrab = { ...staleTeamGrab, failReason: 'ORDER_CREATE_TIMEOUT_CLAIMED' };
     const releasingTeamGrab = { ...claimedTeamGrab, failReason: 'ORDER_CREATE_TIMEOUT_RELEASING' };
     const repository = {
+      findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([claimedTeamGrab]),
       claimStalePreOrderRecovery: jest.fn(),
       claimStalePreOrderRelease: jest.fn().mockResolvedValue(releasingTeamGrab),

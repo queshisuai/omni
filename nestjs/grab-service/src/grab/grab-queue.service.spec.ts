@@ -86,7 +86,7 @@ describe('GrabQueueService', () => {
     });
 
     const [script] = redis.eval.mock.calls[0];
-    expect(script).toContain("local metadataExists = redis.call('EXISTS', KEYS[1])");
+    expect(script).not.toContain('metadataExists');
     expect(script).toContain("local queued = redis.call('LPOS', KEYS[2], ARGV[1])");
     expect(script).toContain("local inflight = redis.call('LPOS', KEYS[4], ARGV[1])");
     const hsetIndex = script.indexOf("redis.call('HSET', KEYS[1]");
@@ -97,7 +97,6 @@ describe('GrabQueueService', () => {
     const rpushIndex = script.indexOf("redis.call('RPUSH', KEYS[2], ARGV[1])");
     expect(duplicateGuardExpression).toContain('queued');
     expect(duplicateGuardExpression).toContain('inflight');
-    expect(duplicateGuardExpression).not.toContain('metadataExists');
     expect(duplicateGuardIndex).toBeGreaterThan(-1);
     expect(hsetIndex).toBeLessThan(duplicateGuardIndex);
     expect(duplicateGuardIndex).toBeLessThan(rpushIndex);
