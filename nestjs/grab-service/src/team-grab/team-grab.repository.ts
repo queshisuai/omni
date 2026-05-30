@@ -688,6 +688,27 @@ export class TeamGrabRepository {
     return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
   }
 
+  async markTeamGrabReleasePending(
+    requestId: string,
+    input: { lockedSeatIds: number[]; seatLabels: string[]; matchedStrategy: TeamSeatStrategy },
+  ): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `update team_grab_request
+       set status = 'LOCKED',
+           locked_seat_ids = $2::jsonb,
+           seat_labels = $3::jsonb,
+           matched_strategy = $4,
+           fail_reason = '${ORDER_CREATE_TIMEOUT_CLAIMED}',
+           update_time = now()
+       where request_id = $1
+         and status in ('GRABBING', 'LOCKED')
+         and order_id is null
+       returning *`,
+      [requestId, JSON.stringify(input.lockedSeatIds), JSON.stringify(input.seatLabels), input.matchedStrategy],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
   async markTeamGrabOrderCreated(requestId: string, orderId: number): Promise<TeamGrabRequestRecord | null> {
     const result = await this.database.query<TeamGrabRequestRow>(
       `update team_grab_request

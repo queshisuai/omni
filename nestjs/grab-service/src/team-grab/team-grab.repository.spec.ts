@@ -542,6 +542,49 @@ describe('TeamGrabRepository', () => {
     });
   });
 
+  it('marks a failed release compensation as stale pre-order recoverable with locked seats', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...teamGrabRow,
+        status: 'LOCKED',
+        locked_seat_ids: JSON.stringify([501, 502]),
+        seat_labels: JSON.stringify(['A-1', 'A-2']),
+        matched_strategy: 'SAME_BLOCK',
+        fail_reason: 'ORDER_CREATE_TIMEOUT_CLAIMED',
+      }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.markTeamGrabReleasePending('TEAM-GRAB-1', {
+      lockedSeatIds: [501, 502],
+      seatLabels: ['A-1', 'A-2'],
+      matchedStrategy: 'SAME_BLOCK',
+    });
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain("set status = 'locked'");
+    expect(sql).toContain('locked_seat_ids = $2::jsonb');
+    expect(sql).toContain('seat_labels = $3::jsonb');
+    expect(sql).toContain('matched_strategy = $4');
+    expect(sql).toContain("fail_reason = 'order_create_timeout_claimed'");
+    expect(sql).toContain("status in ('grabbing', 'locked')");
+    expect(sql).toContain('order_id is null');
+    expect(query.mock.calls[0][1]).toEqual([
+      'TEAM-GRAB-1',
+      JSON.stringify([501, 502]),
+      JSON.stringify(['A-1', 'A-2']),
+      'SAME_BLOCK',
+    ]);
+    expect(result).toMatchObject({
+      requestId: 'TEAM-GRAB-1',
+      status: 'LOCKED',
+      lockedSeatIds: [501, 502],
+      seatLabels: ['A-1', 'A-2'],
+      matchedStrategy: 'SAME_BLOCK',
+      failReason: 'ORDER_CREATE_TIMEOUT_CLAIMED',
+    });
+  });
+
   it('atomically claims stale pre-order release only from an existing recovery claim', async () => {
     const query = jest.fn().mockResolvedValue({
       rows: [{

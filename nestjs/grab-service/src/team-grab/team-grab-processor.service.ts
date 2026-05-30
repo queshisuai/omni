@@ -42,6 +42,8 @@ export class TeamGrabProcessorService {
     if (!grabbing) return false;
 
     let lockedSeatIds: number[] = [];
+    let lockedSeatLabels: string[] = [];
+    let matchedStrategy: TeamSeatStrategy | null = null;
     let orderInput: CreateTeamOrderWithLockedSeatsInput;
     try {
       const lock = await this.ticketClient.lockTeamSeats({
@@ -54,11 +56,13 @@ export class TeamGrabProcessorService {
         lockExpireTime: this.formatLocalDateTime(record.expireTime),
       });
       lockedSeatIds = lock.lockedSeatIds;
+      lockedSeatLabels = lock.seatLabels;
+      matchedStrategy = lock.matchedStrategy as TeamSeatStrategy;
 
       const persisted = await this.teamRepository.persistLockedSeats(teamGrab.requestId, {
         lockedSeatIds: lock.lockedSeatIds,
         seatLabels: lock.seatLabels,
-        matchedStrategy: lock.matchedStrategy as TeamSeatStrategy,
+        matchedStrategy,
       });
       if (!persisted) {
         throw new Error('failed to persist team locked seats');
@@ -84,10 +88,16 @@ export class TeamGrabProcessorService {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'team grab processing failed';
       if (lockedSeatIds.length > 0) {
-        await this.ticketClient.releaseTeamSeatLock(teamGrab.requestId, lockedSeatIds).catch((releaseError) => {
-          this.logger.error(releaseError);
+        const released = await this.releaseLockedSeats(teamGrab.requestId, lockedSeatIds);
+        if (!released) {
+          await this.teamRepository.markTeamGrabReleasePending(teamGrab.requestId, {
+            lockedSeatIds,
+            seatLabels: lockedSeatLabels,
+            matchedStrategy: matchedStrategy ?? teamGrab.strategy,
+          }).catch((pendingError) => this.logger.error(pendingError));
+          await this.markPendingRecovery(record, teamGrab);
           return false;
-        });
+        }
       }
       await this.markFailed(record, teamGrab, message);
       return true;
@@ -104,6 +114,20 @@ export class TeamGrabProcessorService {
     } catch (error) {
       this.logger.error(error);
       return await this.recoverAmbiguousOrderCreation(record, teamGrab);
+    }
+  }
+
+  private async releaseLockedSeats(requestId: string, lockedSeatIds: number[]): Promise<boolean> {
+    try {
+      const released = await this.ticketClient.releaseTeamSeatLock(requestId, lockedSeatIds);
+      if (!released) {
+        this.logger.warn(`team seat lock release returned false for ${requestId}`);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.logger.error(error);
+      return false;
     }
   }
 

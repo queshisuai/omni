@@ -599,4 +599,63 @@ describe('TeamGrabProcessorService', () => {
     expect(teamRepository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'failed to persist team locked seats');
     expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'FAILED', ['GRABBING', 'READY']);
   });
+
+  it('keeps locked seats recoverable when persistence and release compensation both fail', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue({ ...teamGrab, status: 'GRABBING' }),
+      persistLockedSeats: jest.fn().mockResolvedValue(null),
+      markTeamGrabReleasePending: jest.fn().mockResolvedValue({
+        ...teamGrab,
+        status: 'LOCKED',
+        lockedSeatIds: [501, 502],
+        seatLabels: ['A-1', 'A-2'],
+        matchedStrategy: 'SAME_BLOCK',
+        failReason: 'ORDER_CREATE_TIMEOUT_CLAIMED',
+      }),
+      markTeamGrabFailed: jest.fn(),
+      updateTeamStatus: jest.fn(),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn(),
+      markPendingRecovery: jest.fn().mockResolvedValue({ ...record, progressStatus: GRAB_STATUS.PENDING_RECOVERY }),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockResolvedValue({
+        lockedSeatIds: [501, 502],
+        seatLabels: ['A-1', 'A-2'],
+        matchedStrategy: 'SAME_BLOCK',
+      }),
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(false),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn(),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient });
+
+    await expect(processor.process(record)).resolves.toBe(false);
+
+    expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
+    expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', [501, 502]);
+    expect(teamRepository.markTeamGrabReleasePending).toHaveBeenCalledWith('TEAM-GRAB-1', {
+      lockedSeatIds: [501, 502],
+      seatLabels: ['A-1', 'A-2'],
+      matchedStrategy: 'SAME_BLOCK',
+    });
+    expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
+      message: 'team order confirmation pending',
+      currentTicketTypeId: 30,
+      workerId: 'worker-1',
+    }));
+    expect(grabRepository.updateStatus).not.toHaveBeenCalledWith(
+      'GRAB-QUEUED-1',
+      GRAB_STATUS.FAILED,
+      expect.any(String),
+    );
+    expect(teamRepository.markTeamGrabFailed).not.toHaveBeenCalled();
+    expect(teamRepository.updateTeamStatus).not.toHaveBeenCalledWith(1, 'FAILED', expect.any(Array));
+  });
 });
