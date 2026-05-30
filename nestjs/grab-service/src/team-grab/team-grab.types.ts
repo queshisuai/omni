@@ -38,6 +38,15 @@ export interface TicketTeamMemberRecord {
   joinTime: Date;
 }
 
+export interface TeamDetailServiceResponse {
+  team: TicketTeamRecord;
+  members: TicketTeamMemberRecord[];
+  canTriggerGrab?: boolean;
+  canPay?: boolean;
+  latestGrabRequestId?: string | null;
+  latestOrderId?: number | null;
+}
+
 export interface CreateTeamInput extends CreateTeamDto {
   leaderUserId: number;
   inviteCode: string;

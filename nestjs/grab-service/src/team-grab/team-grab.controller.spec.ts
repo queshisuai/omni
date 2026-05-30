@@ -67,7 +67,37 @@ describe('TeamGrabController', () => {
     expect(service.createTeam).toHaveBeenCalledWith(100, dto);
   });
 
-  it('gets team detail for the authenticated user and adds default task 3 state fields', async () => {
+  it('preserves service-supplied task 3 state fields in team detail', async () => {
+    const currentTeam = team({ id: 7, status: 'READY', leaderUserId: 100 });
+    const members = [member({ teamId: 7, userId: 100, role: 'LEADER', status: 'CONFIRMED' })];
+    const service = {
+      getTeamDetail: jest.fn().mockResolvedValue({
+        team: currentTeam,
+        members,
+        canTriggerGrab: true,
+        canPay: true,
+        latestGrabRequestId: 'grab-7',
+        latestOrderId: 99,
+      }),
+    };
+    const controller = createController(service);
+
+    await expect(controller.get(request(100), '7')).resolves.toEqual({
+      code: 200,
+      message: 'success',
+      data: {
+        team: currentTeam,
+        members,
+        canTriggerGrab: true,
+        canPay: true,
+        latestGrabRequestId: 'grab-7',
+        latestOrderId: 99,
+      },
+    });
+    expect(service.getTeamDetail).toHaveBeenCalledWith(7, 100);
+  });
+
+  it('uses conservative task 3 state defaults when service omits them', async () => {
     const currentTeam = team({ id: 7, status: 'READY', leaderUserId: 100 });
     const members = [member({ teamId: 7, userId: 100, role: 'LEADER', status: 'CONFIRMED' })];
     const service = { getTeamDetail: jest.fn().mockResolvedValue({ team: currentTeam, members }) };
@@ -79,7 +109,7 @@ describe('TeamGrabController', () => {
       data: {
         team: currentTeam,
         members,
-        canTriggerGrab: true,
+        canTriggerGrab: false,
         canPay: false,
         latestGrabRequestId: null,
         latestOrderId: null,
@@ -165,11 +195,18 @@ describe('TeamGrabController', () => {
     expect(service.updateStrategy).toHaveBeenCalledWith(7, 100, 'SAME_TICKET_TYPE', ['FALLBACK']);
   });
 
+  it.each(['abc', ' 1', '1e2', '1.5', '0', '-1'])('rejects invalid team id %p', async (teamId) => {
+    const service = { getTeamDetail: jest.fn() };
+    const controller = createController(service);
+
+    await expect(controller.get(request(100), teamId)).rejects.toBeInstanceOf(BadRequestException);
+    expect(service.getTeamDetail).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid numeric route params', async () => {
     const service = { getTeamDetail: jest.fn(), removeMember: jest.fn() };
     const controller = createController(service);
 
-    await expect(controller.get(request(100), 'abc')).rejects.toBeInstanceOf(BadRequestException);
     await expect(controller.removeMember(request(100), '1', '0')).rejects.toBeInstanceOf(BadRequestException);
     expect(service.getTeamDetail).not.toHaveBeenCalled();
     expect(service.removeMember).not.toHaveBeenCalled();

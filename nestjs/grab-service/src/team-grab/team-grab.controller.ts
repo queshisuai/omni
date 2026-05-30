@@ -4,8 +4,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TeamGrabService } from './team-grab.service';
 import type {
   CreateTeamDto,
+  TeamDetailServiceResponse,
   TeamSeatStrategy,
-  TeamStatus,
   TicketTeamMemberRecord,
   TicketTeamRecord,
 } from './team-grab.types';
@@ -34,41 +34,22 @@ interface TeamDetailResponse {
   latestOrderId: number | null;
 }
 
-type ServiceTeamDetail = {
-  team: TicketTeamRecord;
-  members: TicketTeamMemberRecord[];
-  canTriggerGrab?: boolean;
-  canPay?: boolean;
-  latestGrabRequestId?: string | null;
-  latestOrderId?: number | null;
-};
-
-const TRIGGERABLE_STATUSES = new Set<TeamStatus>(['READY', 'FAILED', 'EXPIRED']);
-
 function success<T>(data: T): ApiResult<T> {
   return { code: 200, message: 'success', data };
 }
 
 function parsePositiveInt(value: string, label: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (!/^[1-9]\d*$/.test(value)) {
     throw new BadRequestException(`invalid ${label}`);
   }
-  return parsed;
+  return Number(value);
 }
 
-function isActiveMember(members: TicketTeamMemberRecord[], userId: number): boolean {
-  return members.some((member) => member.userId === userId && member.status !== 'LEFT');
-}
-
-function toTeamDetailResponse(detail: ServiceTeamDetail, userId: number): TeamDetailResponse {
-  const isLeader = detail.team.leaderUserId === userId;
-  const isActive = isLeader || isActiveMember(detail.members, userId);
-
+function toTeamDetailResponse(detail: TeamDetailServiceResponse): TeamDetailResponse {
   return {
     team: detail.team,
     members: detail.members,
-    canTriggerGrab: detail.canTriggerGrab ?? (TRIGGERABLE_STATUSES.has(detail.team.status) && isActive),
+    canTriggerGrab: detail.canTriggerGrab ?? false,
     canPay: detail.canPay ?? false,
     latestGrabRequestId: detail.latestGrabRequestId ?? null,
     latestOrderId: detail.latestOrderId ?? null,
@@ -89,7 +70,7 @@ export class TeamGrabController {
   async get(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TeamDetailResponse>> {
     const parsedTeamId = parsePositiveInt(teamId, 'team');
     const detail = await this.teamGrabService.getTeamDetail(parsedTeamId, request.user.userId);
-    return success(toTeamDetailResponse(detail, request.user.userId));
+    return success(toTeamDetailResponse(detail));
   }
 
   @Post(':teamId/join')

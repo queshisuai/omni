@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto';
 import { isUniqueViolation, TeamGrabRepository } from './team-grab.repository';
 import type {
   CreateTeamDto,
+  TeamDetailServiceResponse,
   TeamSeatStrategy,
   TeamStatus,
   TicketTeamMemberRecord,
@@ -112,7 +113,7 @@ export class TeamGrabService {
     return this.refreshReadiness(updated);
   }
 
-  async getTeamDetail(teamId: number, userId: number): Promise<{ team: TicketTeamRecord; members: TicketTeamMemberRecord[] }> {
+  async getTeamDetail(teamId: number, userId: number): Promise<TeamDetailServiceResponse> {
     const team = await this.getExistingTeam(teamId);
     if (team.leaderUserId !== userId) {
       const member = await this.repository.findMember(teamId, userId);
