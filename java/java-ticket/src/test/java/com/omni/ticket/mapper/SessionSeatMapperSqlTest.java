@@ -117,8 +117,12 @@ class SessionSeatMapperSqlTest {
     void confirmSeatSqlAllowsAlreadySoldSameOrderButNotAvailableSeat() throws Exception {
         String soldSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "markSeatSold", Long.class, Long.class, Long.class, Long.class, String.class)).toLowerCase();
+        String normalizedSql = soldSql.replaceAll("\\s+", " ");
 
         assertTrue(soldSql.contains("status = 3 and order_id = #{orderid}"), soldSql);
+        assertTrue(normalizedSql.matches(".*where id = #\\{seatid} and session_id = #\\{sessionid} "
+                + "and ticket_type_id = #\\{tickettypeid} and \\( \\(status = 2 .*\\) "
+                + "or \\(status = 3 and order_id = #\\{orderid}\\)\\).*"), normalizedSql);
         assertFalse(soldSql.contains("status = 1"), soldSql);
     }
 
