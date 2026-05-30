@@ -1524,6 +1524,40 @@ class OrderServiceTest {
     }
 
     @Test
+    void createOrderWithSeatsPreservesQuoteSeatLabelsWhenLockLabelsAreMissing() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setSeatIds(List.of(301L, 302L));
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+
+        TicketSalesQuoteResponse quote = quoteWithoutLimit(2);
+        quote.setSeatLabels("A-1, A-2");
+        TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
+        lockResponse.setLockedSeatIds(List.of(301L, 302L));
+        lockResponse.setSeatLabels(List.of());
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+        doAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(85L);
+            return 1;
+        }).when(orderMapper).insert(any(Order.class));
+
+        service.createOrderWithSeats(request);
+
+        ArgumentCaptor<OrderSnapshot> snapshotCaptor = ArgumentCaptor.forClass(OrderSnapshot.class);
+        verify(orderSnapshotMapper).insert(snapshotCaptor.capture());
+        assertEquals("A-1, A-2", snapshotCaptor.getValue().getSeatLabels());
+
+        ArgumentCaptor<OrderSeat> seatCaptor = ArgumentCaptor.forClass(OrderSeat.class);
+        verify(orderSeatMapper, org.mockito.Mockito.times(2)).insert(seatCaptor.capture());
+        assertTrue(seatCaptor.getAllValues().stream().allMatch(seat -> seat.getSeatLabel() == null));
+    }
+
+    @Test
     void createOrderWithSeatsRejectsLockLabelCountMismatchBeforeInsert() {
         LockSeatsRequest request = new LockSeatsRequest();
         request.setUserId(2004L);

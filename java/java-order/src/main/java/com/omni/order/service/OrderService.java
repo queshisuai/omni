@@ -230,7 +230,9 @@ public class OrderService {
             }
             lockedSeatLabelsById = buildSeatLabelMap(lockedSeatIds, lockSeatLabels,
                     "ticket seat lock labels do not match locked seats");
-            quote.setSeatLabels(!lockedSeatLabelsById.isEmpty() ? String.join(", ", lockSeatLabels) : null);
+            if (!lockedSeatLabelsById.isEmpty()) {
+                quote.setSeatLabels(String.join(", ", lockSeatLabels));
+            }
         } else if (hasAggregateSeatLabels) {
             quote.setSeatLabels(String.join(", ", lockSeatLabels));
         } else {
