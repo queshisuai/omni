@@ -68,12 +68,14 @@ function createProcessor(overrides: any = {}) {
   const grabRepository = overrides.grabRepository ?? {};
   const ticketClient = overrides.ticketClient ?? {};
   const orderClient = overrides.orderClient ?? {};
+  const notificationClient = overrides.notificationClient;
   return {
-    processor: new TeamGrabProcessorService(teamRepository, grabRepository, ticketClient, orderClient),
+    processor: new TeamGrabProcessorService(teamRepository, grabRepository, ticketClient, orderClient, notificationClient),
     teamRepository,
     grabRepository,
     ticketClient,
     orderClient,
+    notificationClient,
   };
 }
 
@@ -305,7 +307,7 @@ describe('TeamGrabProcessorService', () => {
       findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
       updateTeamGrabStatus: jest.fn().mockResolvedValue(teamGrab),
       markTeamGrabFailed: jest.fn().mockResolvedValue({ ...teamGrab, status: 'FAILED' }),
-      updateTeamStatus: jest.fn(),
+      updateTeamStatus: jest.fn().mockResolvedValue({ id: 1, status: 'FAILED' }),
     };
     const grabRepository: any = {
       updateProgress: jest.fn().mockResolvedValue(record),
@@ -326,6 +328,91 @@ describe('TeamGrabProcessorService', () => {
     expect(teamRepository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'no team seat strategy can satisfy quantity');
     expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'FAILED', ['GRABBING', 'READY']);
   });
+
+  it('notifies confirmed members when ordinary team grab failure wins the team failure transition', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue(teamGrab),
+      markTeamGrabFailed: jest.fn().mockResolvedValue({ ...teamGrab, status: 'FAILED' }),
+      updateTeamStatus: jest.fn().mockResolvedValue({ id: 1, status: 'FAILED' }),
+      listConfirmedMembers: jest.fn().mockResolvedValue([
+        { userId: 100, status: 'CONFIRMED' },
+        { userId: 200, status: 'CONFIRMED' },
+      ]),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn().mockResolvedValue({ ...record, status: GRAB_STATUS.FAILED }),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockRejectedValue(new Error('no team seat strategy can satisfy quantity')),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn(),
+    };
+    const notificationClient: any = {
+      sendFailed: jest.fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('notify failed')),
+    };
+    const { processor } = createProcessor({
+      teamRepository,
+      grabRepository,
+      ticketClient,
+      orderClient,
+      notificationClient,
+    });
+
+    await expect(processor.process(record)).resolves.toBe(true);
+
+    expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'FAILED', ['GRABBING', 'READY']);
+    expect(teamRepository.listConfirmedMembers).toHaveBeenCalledWith(1);
+    expect(notificationClient.sendFailed).toHaveBeenCalledWith(100, null);
+    expect(notificationClient.sendFailed).toHaveBeenCalledWith(200, null);
+  });
+
+  it.each([null, false])(
+    'does not notify members when ordinary team grab failure loses the team failure transition with %p',
+    async (transitionResult) => {
+      const record = grabRecord();
+      const teamGrab = teamGrabRecord();
+      const teamRepository: any = {
+        findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+        updateTeamGrabStatus: jest.fn().mockResolvedValue(teamGrab),
+        markTeamGrabFailed: jest.fn().mockResolvedValue({ ...teamGrab, status: 'FAILED' }),
+        updateTeamStatus: jest.fn().mockResolvedValue(transitionResult),
+        listConfirmedMembers: jest.fn().mockResolvedValue([{ userId: 100, status: 'CONFIRMED' }]),
+      };
+      const grabRepository: any = {
+        updateProgress: jest.fn().mockResolvedValue(record),
+        updateStatus: jest.fn().mockResolvedValue({ ...record, status: GRAB_STATUS.FAILED }),
+      };
+      const ticketClient: any = {
+        lockTeamSeats: jest.fn().mockRejectedValue(new Error('no team seat strategy can satisfy quantity')),
+      };
+      const orderClient: any = {
+        createTeamOrderWithLockedSeats: jest.fn(),
+      };
+      const notificationClient: any = {
+        sendFailed: jest.fn(),
+      };
+      const { processor } = createProcessor({
+        teamRepository,
+        grabRepository,
+        ticketClient,
+        orderClient,
+        notificationClient,
+      });
+
+      await expect(processor.process(record)).resolves.toBe(true);
+
+      expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'FAILED', ['GRABBING', 'READY']);
+      expect(teamRepository.listConfirmedMembers).not.toHaveBeenCalled();
+      expect(notificationClient.sendFailed).not.toHaveBeenCalled();
+    },
+  );
 
   it('does not create an order or release locked seats when recovery already claimed the team grab', async () => {
     const record = grabRecord();

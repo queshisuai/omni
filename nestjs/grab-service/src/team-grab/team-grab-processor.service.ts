@@ -148,7 +148,10 @@ export class TeamGrabProcessorService {
   private async markFailed(record: GrabRequestRecord, teamGrab: TeamGrabRequestRecord, message: string): Promise<void> {
     await this.grabRepository.updateStatus(record.requestId, GRAB_STATUS.FAILED, message);
     await this.teamRepository.markTeamGrabFailed(teamGrab.requestId, message);
-    await this.teamRepository.updateTeamStatus(teamGrab.teamId, 'FAILED', ['GRABBING', 'READY']);
+    const failedTeam = await this.teamRepository.updateTeamStatus(teamGrab.teamId, 'FAILED', ['GRABBING', 'READY']);
+    if (failedTeam) {
+      await this.notifyFailed(teamGrab);
+    }
   }
 
   private async markPendingRecovery(record: GrabRequestRecord, teamGrab: TeamGrabRequestRecord): Promise<void> {
@@ -197,6 +200,18 @@ export class TeamGrabProcessorService {
       const members = await this.teamRepository.listConfirmedMembers(teamGrab.teamId);
       for (const member of members) {
         await this.notificationClient.sendLocked(member.userId, orderId).catch((error) => this.logger.warn(error));
+      }
+    } catch (error) {
+      this.logger.warn(error);
+    }
+  }
+
+  private async notifyFailed(teamGrab: TeamGrabRequestRecord): Promise<void> {
+    if (!this.notificationClient) return;
+    try {
+      const members = await this.teamRepository.listConfirmedMembers(teamGrab.teamId);
+      for (const member of members) {
+        await this.notificationClient.sendFailed(member.userId, null).catch((error) => this.logger.warn(error));
       }
     } catch (error) {
       this.logger.warn(error);
