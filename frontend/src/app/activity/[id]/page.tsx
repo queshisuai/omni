@@ -6,10 +6,12 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
-import { cancelGrabRequest, createAlipayQrPay, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, submitGrabRequest } from '@/lib/api'
+import { globalAlert, globalPrompt } from '@/components/GlobalDialog'
+import { cancelGrabRequest, createAlipayQrPay, createTeamGrab, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, submitGrabRequest } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, getPurchaseQuantityMax } from '@/lib/purchase-intent'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
+import { defaultTeamFallbacks } from '@/lib/team-grab'
 import type { ActivityDetailVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity } from '@/types/api'
 
 const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
@@ -51,6 +53,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [grabProgress, setGrabProgress] = useState<GrabProgressResult | null>(null)
   const [grabProgressOpen, setGrabProgressOpen] = useState(false)
   const [progressPaymentOpening, setProgressPaymentOpening] = useState(false)
+  const [teamActionLoading, setTeamActionLoading] = useState(false)
   const [visibleStock, setVisibleStock] = useState<SessionVisibleStockResult | null>(null)
   const seatMapRequestIdRef = useRef(0)
   const progressPaymentOrderIdRef = useRef<number | null>(null)
@@ -334,6 +337,69 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     if (!selectedTicket) return
     setOrderError('')
     setShowConfirm(true)
+  }
+
+  const ensureTeamSelection = () => {
+    if (!isAuthenticated()) {
+      router.push(`/login?ru=/activity/${id}`)
+      return false
+    }
+    if (!selectedSession || !selectedTicket) {
+      void globalAlert('请先选择场次和票档')
+      return false
+    }
+    return true
+  }
+
+  const handleCreateTeam = async () => {
+    if (!ensureTeamSelection() || !selectedSession || !selectedTicket) return
+
+    setTeamActionLoading(true)
+    try {
+      const team = await createTeamGrab({
+        activityId: detail?.activity.id ?? Number(id),
+        sessionId: selectedSession.session.id,
+        ticketTypeId: selectedTicket.id,
+        strategy: 'STRICT_CONTIGUOUS',
+        fallbacks: defaultTeamFallbacks('STRICT_CONTIGUOUS'),
+      })
+      router.push(`/teams/${team.id}`)
+    } catch (err: unknown) {
+      await globalAlert(err instanceof Error ? err.message : '创建小队失败')
+    } finally {
+      setTeamActionLoading(false)
+    }
+  }
+
+  const handleJoinTeam = async () => {
+    if (!isAuthenticated()) {
+      router.push(`/login?ru=/activity/${id}`)
+      return
+    }
+
+    const input = await globalPrompt('请输入小队 ID', '加入已有小队', '小队 ID')
+    const value = input?.trim()
+    if (!value) return
+    if (!/^\d+$/.test(value)) {
+      await globalAlert('小队 ID 必须是正整数')
+      return
+    }
+
+    const teamId = Number(value)
+    if (!Number.isSafeInteger(teamId) || teamId <= 0) {
+      await globalAlert('小队 ID 必须是正整数')
+      return
+    }
+
+    setTeamActionLoading(true)
+    try {
+      const team = await joinTeamGrab(teamId)
+      router.push(`/teams/${team.id}`)
+    } catch (err: unknown) {
+      await globalAlert(err instanceof Error ? err.message : '加入小队失败')
+    } finally {
+      setTeamActionLoading(false)
+    }
   }
 
   const handleAutoSelectSeats = () => {
@@ -671,6 +737,34 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         </button>
                       </div>
                     </>
+                  )}
+                  {selectedTicket && (
+                    <div className="mt-4 rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="text-[14px] font-medium text-[#333]">小队抢票</div>
+                          <div className="mt-1 text-[12px] text-[#999]">和朋友一起确认后抢票</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCreateTeam}
+                            disabled={teamActionLoading}
+                            className="min-h-10 rounded border-none bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white outline-none transition-colors hover:bg-[#e01058] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            创建小队
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleJoinTeam}
+                            disabled={teamActionLoading}
+                            className="min-h-10 rounded border border-[#ff1268] bg-white px-4 py-2 text-[14px] font-medium text-[#ff1268] outline-none transition-colors hover:bg-[#fff0f5] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            加入已有小队
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </>
               )}
