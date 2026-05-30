@@ -56,6 +56,9 @@ public interface OrderMapper extends BaseMapper<Order> {
             "AND o.status IN (1, 2)")
     Integer sumEffectiveQuantityByUserAndActivity(@Param("userId") Long userId, @Param("activityId") Long activityId);
 
+    @Select("SELECT pg_advisory_xact_lock(hashtext(#{key})::bigint)")
+    void acquireAdvisoryTransactionLock(@Param("key") String key);
+
     @Select("SELECT * FROM \"order\" WHERE id = #{id} FOR UPDATE")
     Order selectByIdForUpdate(@Param("id") Long id);
 
@@ -65,6 +68,17 @@ public interface OrderMapper extends BaseMapper<Order> {
     @Select("SELECT " + ORDER_LIST_COLUMNS + ORDER_LIST_JOINS +
             "WHERE os.grab_request_id = #{grabRequestId} LIMIT 1")
     OrderListItemResponse selectOrderListItemByGrabRequestId(@Param("grabRequestId") String grabRequestId);
+
+    @Select("SELECT o.* FROM \"order\" o " +
+            "JOIN order_snapshot os ON os.order_id = o.id " +
+            "WHERE os.team_grab_request_id = #{teamGrabRequestId} " +
+            "AND os.team_order = TRUE LIMIT 1")
+    Order selectTeamOrderByTeamGrabRequestId(@Param("teamGrabRequestId") String teamGrabRequestId);
+
+    @Select("SELECT o.* FROM \"order\" o " +
+            "JOIN order_snapshot os ON os.order_id = o.id " +
+            "WHERE os.grab_request_id = #{grabRequestId} LIMIT 1")
+    Order selectOrderByGrabRequestId(@Param("grabRequestId") String grabRequestId);
 
     @Update("UPDATE \"order\" SET status = #{nextStatus}, update_time = CURRENT_TIMESTAMP WHERE id = #{id} AND status = #{expectedStatus}")
     int updateStatusIfCurrent(@Param("id") Long id,

@@ -35,7 +35,7 @@ class OrderSentinelConfigTest {
         unrelatedRule.setCount(10);
         FlowRuleManager.loadRules(List.of(unrelatedRule));
 
-        new OrderSentinelConfig(80, 80, 80).afterPropertiesSet();
+        new OrderSentinelConfig(80, 80, 80, 80).afterPropertiesSet();
 
         Set<String> resources = FlowRuleManager.getRules().stream()
                 .map(FlowRule::getResource)
@@ -43,6 +43,7 @@ class OrderSentinelConfigTest {
         assertTrue(resources.contains("unrelated-flow"));
         assertTrue(resources.contains(OrderSentinelConfig.INTERNAL_CREATE_ORDER_RESOURCE));
         assertTrue(resources.contains(OrderSentinelConfig.INTERNAL_CREATE_ORDER_WITH_SEATS_RESOURCE));
+        assertTrue(resources.contains(OrderSentinelConfig.INTERNAL_CREATE_TEAM_ORDER_WITH_LOCKED_SEATS_RESOURCE));
         assertTrue(resources.contains(OrderSentinelConfig.INTERNAL_MARK_PAID_RESOURCE));
     }
 
@@ -56,7 +57,7 @@ class OrderSentinelConfigTest {
         unrelatedRule.setTimeWindow(10);
         DegradeRuleManager.loadRules(List.of(unrelatedRule));
 
-        new OrderSentinelConfig(80, 80, 80).afterPropertiesSet();
+        new OrderSentinelConfig(80, 80, 80, 80).afterPropertiesSet();
 
         Set<String> resources = DegradeRuleManager.getRules().stream()
                 .map(DegradeRule::getResource)

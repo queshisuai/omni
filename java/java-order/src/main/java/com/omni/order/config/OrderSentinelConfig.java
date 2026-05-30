@@ -19,20 +19,24 @@ public class OrderSentinelConfig implements InitializingBean {
 
     public static final String INTERNAL_CREATE_ORDER_RESOURCE = "order-internal-create";
     public static final String INTERNAL_CREATE_ORDER_WITH_SEATS_RESOURCE = "order-internal-create-with-seats";
+    public static final String INTERNAL_CREATE_TEAM_ORDER_WITH_LOCKED_SEATS_RESOURCE = "order-internal-team-create-with-locked-seats";
     public static final String INTERNAL_MARK_PAID_RESOURCE = "order-internal-mark-paid";
     public static final String USER_VALIDATE_RESOURCE = "order-user-validate";
     public static final String TICKET_SALES_RESOURCE = "order-ticket-sales";
 
     private final double createOrderQps;
     private final double createOrderWithSeatsQps;
+    private final double createTeamOrderWithLockedSeatsQps;
     private final double markPaidQps;
 
     public OrderSentinelConfig(
             @Value("${omni.sentinel.order.internal-create.qps:80}") double createOrderQps,
             @Value("${omni.sentinel.order.internal-create-with-seats.qps:80}") double createOrderWithSeatsQps,
+            @Value("${omni.sentinel.order.internal-team-create-with-locked-seats.qps:80}") double createTeamOrderWithLockedSeatsQps,
             @Value("${omni.sentinel.order.internal-mark-paid.qps:80}") double markPaidQps) {
         this.createOrderQps = createOrderQps;
         this.createOrderWithSeatsQps = createOrderWithSeatsQps;
+        this.createTeamOrderWithLockedSeatsQps = createTeamOrderWithLockedSeatsQps;
         this.markPaidQps = markPaidQps;
     }
 
@@ -41,6 +45,7 @@ public class OrderSentinelConfig implements InitializingBean {
         List<FlowRule> rules = new ArrayList<>();
         rules.add(flowRule(INTERNAL_CREATE_ORDER_RESOURCE, createOrderQps));
         rules.add(flowRule(INTERNAL_CREATE_ORDER_WITH_SEATS_RESOURCE, createOrderWithSeatsQps));
+        rules.add(flowRule(INTERNAL_CREATE_TEAM_ORDER_WITH_LOCKED_SEATS_RESOURCE, createTeamOrderWithLockedSeatsQps));
         rules.add(flowRule(INTERNAL_MARK_PAID_RESOURCE, markPaidQps));
         loadFlowRules(rules);
 

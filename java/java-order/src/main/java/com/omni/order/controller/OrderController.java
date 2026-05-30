@@ -105,12 +105,17 @@ public class OrderController {
      * 用户订单列表
      */
     @PostMapping("/internal/team/create-with-locked-seats")
+    @SentinelResource(value = OrderSentinelConfig.INTERNAL_CREATE_TEAM_ORDER_WITH_LOCKED_SEATS_RESOURCE, blockHandler = "createInternalTeamOrderBlocked")
     public Result<Order> createInternalTeamOrder(@RequestBody CreateTeamOrderRequest request,
                                                  @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
             return Result.fail(403, "forbidden");
         }
         return Result.success(orderService.createTeamOrderWithLockedSeats(request));
+    }
+
+    public Result<Order> createInternalTeamOrderBlocked(CreateTeamOrderRequest request, String token, BlockException exception) {
+        return Result.fail(429, "绯荤粺绻佸繖锛岃绋嶅悗閲嶈瘯");
     }
 
     @GetMapping("/user/{userId}")

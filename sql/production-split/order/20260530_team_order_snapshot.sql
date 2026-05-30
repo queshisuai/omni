@@ -10,3 +10,7 @@ alter table order_seat
 create index if not exists idx_order_snapshot_team_id
     on order_snapshot(team_id)
     where team_id is not null;
+
+create unique index if not exists uk_order_snapshot_team_grab_request
+    on order_snapshot(team_grab_request_id)
+    where team_order = true and team_grab_request_id is not null;

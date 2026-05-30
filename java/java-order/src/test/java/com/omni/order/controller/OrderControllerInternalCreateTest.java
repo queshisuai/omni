@@ -184,6 +184,24 @@ class OrderControllerInternalCreateTest {
     }
 
     @Test
+    void internalTeamCreateBlockHandlerReturnsBusyResponse() {
+        CreateTeamOrderRequest request = new CreateTeamOrderRequest();
+        request.setUserId(2004L);
+        request.setPayerUserId(2004L);
+        request.setSessionId(7L);
+        request.setTicketTypeId(21L);
+        request.setQuantity(1);
+        BlockException exception = new FlowException("order-internal-team-create-with-locked-seats");
+
+        Result<Order> result = controller.createInternalTeamOrderBlocked(request, "test-internal-token", exception);
+
+        assertEquals(429, result.getCode());
+        assertEquals("绯荤粺绻佸繖锛岃绋嶅悗閲嶈瘯", result.getMessage());
+        assertNull(result.getData());
+        verify(orderService, never()).createTeamOrderWithLockedSeats(any());
+    }
+
+    @Test
     void internalMarkPaidBlockHandlerReturnsBusyResponse() {
         BlockException exception = new FlowException("order-internal-mark-paid");
 

@@ -237,6 +237,18 @@ public class OrderService {
     @Transactional(rollbackFor = Exception.class)
     public Order createTeamOrderWithLockedSeats(CreateTeamOrderRequest request) {
         validateTeamOrderRequestBasics(request);
+        String teamOrderLockKey = "team-order:" + request.getTeamGrabRequestId();
+        orderMapper.acquireAdvisoryTransactionLock(teamOrderLockKey);
+        Order existing = orderMapper.selectTeamOrderByTeamGrabRequestId(request.getTeamGrabRequestId());
+        if (existing != null) {
+            return existing;
+        }
+        if (StringUtils.hasText(request.getGrabRequestId())) {
+            existing = orderMapper.selectOrderByGrabRequestId(request.getGrabRequestId());
+            if (existing != null) {
+                return existing;
+            }
+        }
         int quantity = requirePositiveQuantity(request.getQuantity());
         List<CreateTeamOrderRequest.TeamOrderSeatItem> seats = request.getSeats();
         if (seats == null || seats.size() != quantity) {
@@ -260,6 +272,7 @@ public class OrderService {
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), seatIds, quantity);
         validateTeamAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote);
+        lockLeaderActivityLimit(request.getUserId(), quote);
         validatePerUserLimit(request.getUserId(), quote, quantity);
         validateTeamSeatLock(request, seatIds);
 
@@ -815,6 +828,16 @@ public class OrderService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "authorized price is required for team order");
         }
         validateAuthorizedPrice(authorizedMaxUnitPrice, quote, "team-order");
+    }
+
+    private void lockLeaderActivityLimit(Long userId, TicketSalesQuoteResponse quote) {
+        if (quote == null || quote.getPerUserLimit() == null) {
+            return;
+        }
+        if (quote.getActivityId() == null) {
+            return;
+        }
+        orderMapper.acquireAdvisoryTransactionLock("order-limit:" + userId + ":" + quote.getActivityId());
     }
 
     private TicketSalesQuoteResponse quoteTickets(Long sessionId, Long ticketTypeId, List<Long> seatIds, int quantity) {
