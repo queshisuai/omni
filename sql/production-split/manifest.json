@@ -42,7 +42,7 @@
       "key": "grab",
       "targetInstance": "pg-grab",
       "targetDatabase": "omni_grab",
-      "tables": ["grab_request"],
+      "tables": ["grab_request", "ticket_team", "ticket_team_member", "team_grab_request", "team_seat_assignment"],
       "migrations": [
         "grab/001_create_grab_request.sql",
         "grab/20260529_grab_progress_async_queue.sql",

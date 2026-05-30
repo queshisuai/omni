@@ -1,3 +1,5 @@
+-- owner: grab-service
+
 create table if not exists ticket_team (
     id bigserial primary key,
     invite_code varchar(32) not null,
