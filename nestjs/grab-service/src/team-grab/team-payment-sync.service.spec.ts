@@ -86,18 +86,44 @@ describe('TeamPaymentSyncService', () => {
   it('sends paid notifications only when this sync transitions the team to paid', async () => {
     const { service, repository, notificationClient } = createService({
       repository: {
+        listConfirmedMembers: jest.fn().mockResolvedValue([
+          member({ userId: 100, role: 'LEADER', joinTime: new Date('2026-05-30T12:00:00.000Z') }),
+          member({ id: 2, userId: 200, role: 'MEMBER', joinTime: new Date('2026-05-30T12:01:00.000Z') }),
+          member({ id: 3, userId: 300, role: 'MEMBER', joinTime: new Date('2026-05-30T12:02:00.000Z') }),
+          member({ id: 4, userId: 400, role: 'MEMBER', joinTime: new Date('2026-05-30T12:03:00.000Z') }),
+        ]),
         assignPaidTeamSeats: jest.fn()
           .mockResolvedValueOnce(true)
           .mockResolvedValueOnce(false),
+      },
+      orderClient: {
+        getOrder: jest.fn().mockResolvedValue({ id: 9001, status: 2, userId: 100, quantity: 4 }),
+        listOrderSeats: jest.fn().mockResolvedValue([
+          { orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1', status: 2 },
+          { orderSeatId: 7002, sessionSeatId: 502, seatLabel: 'A-2', status: 2 },
+          { orderSeatId: 7003, sessionSeatId: 503, seatLabel: 'A-3', status: 2 },
+          { orderSeatId: 7004, sessionSeatId: 504, seatLabel: 'A-4', status: 2 },
+        ]),
       },
     });
 
     await service.syncLockedTeams();
     await service.syncLockedTeams();
 
+    const expectedAssignments = [
+      { userId: 100, orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1' },
+      { userId: 200, orderSeatId: 7002, sessionSeatId: 502, seatLabel: 'A-2' },
+      { userId: 300, orderSeatId: 7003, sessionSeatId: 503, seatLabel: 'A-3' },
+      { userId: 400, orderSeatId: 7004, sessionSeatId: 504, seatLabel: 'A-4' },
+    ];
     expect(repository.assignPaidTeamSeats).toHaveBeenCalledTimes(2);
-    expect(repository.assignPaidTeamSeats.mock.calls[0][2]).toEqual(repository.assignPaidTeamSeats.mock.calls[1][2]);
-    expect(notificationClient.sendPaid).toHaveBeenCalledTimes(2);
+    expect(repository.assignPaidTeamSeats.mock.calls[0][2]).toEqual(expectedAssignments);
+    expect(repository.assignPaidTeamSeats.mock.calls[1][2]).toEqual(expectedAssignments);
+    expect(notificationClient.sendPaid).toHaveBeenCalledTimes(4);
+    expect(notificationClient.sendPaid).toHaveBeenNthCalledWith(1, 100, 9001);
+    expect(notificationClient.sendPaid).toHaveBeenNthCalledWith(2, 200, 9001);
+    expect(notificationClient.sendPaid).toHaveBeenNthCalledWith(3, 300, 9001);
+    expect(notificationClient.sendPaid).toHaveBeenNthCalledWith(4, 400, 9001);
   });
 
   it('marks locked teams expired when the order is cancelled before payment', async () => {

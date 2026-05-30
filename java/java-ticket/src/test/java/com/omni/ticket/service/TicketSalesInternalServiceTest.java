@@ -427,6 +427,32 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
+    void lockTeamSeatsFallsBackToSameTicketTypeForFourSeatsWhenOnlyThreeAreContiguous() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType(4001L, "A", new BigDecimal("380.00")));
+        when(sessionSeatMapper.selectAvailableForTeamLock(3001L, 4001L, 40)).thenReturn(List.of(
+                seat(501L, 10L, 900L, 1, 1),
+                seat(502L, 10L, 900L, 1, 2),
+                seat(503L, 10L, 900L, 1, 3),
+                seat(601L, 20L, 901L, 4, 8)));
+        when(sessionSeatMapper.lockTeamSeatIds(eq(3001L), eq(4001L), eq(List.of(501L, 502L, 503L, 601L)), eq("team-lock-1"), any()))
+                .thenReturn(4);
+        when(sessionSeatMapper.selectLockedByRequest(3001L, 4001L, List.of(501L, 502L, 503L, 601L), "team-lock-1"))
+                .thenReturn(List.of(
+                        lockedSeat(501L, 10L, 900L, 1, 1, "A-1"),
+                        lockedSeat(502L, 10L, 900L, 1, 2, "A-2"),
+                        lockedSeat(503L, 10L, 900L, 1, 3, "A-3"),
+                        lockedSeat(601L, 20L, 901L, 4, 8, "B-8")));
+
+        TeamSeatLockResponse response = service.lockTeamSeats(teamLockRequest(4, "STRICT_CONTIGUOUS", List.of("SAME_TICKET_TYPE")));
+
+        assertEquals(List.of(501L, 502L, 503L, 601L), response.getLockedSeatIds());
+        assertEquals("SAME_TICKET_TYPE", response.getMatchedStrategy());
+    }
+
+    @Test
     void lockTeamSeatsSameTicketTypeUsesBlockRowSeatOrderingBeforeSection() {
         TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);

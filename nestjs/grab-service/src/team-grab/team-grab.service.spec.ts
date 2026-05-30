@@ -515,8 +515,27 @@ describe('TeamGrabService', () => {
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(queueService.acquireTeamTriggerLock).toHaveBeenCalledTimes(2);
+    await expect(queueService.acquireTeamTriggerLock.mock.results[0].value).resolves.toBe(true);
+    await expect(queueService.acquireTeamTriggerLock.mock.results[1].value).resolves.toBe(false);
     expect(grabRepository.createQueued).toHaveBeenCalledTimes(1);
     expect(repository.createTeamGrabRequest).toHaveBeenCalledTimes(1);
+    expect(queueService.publishReserved).toHaveBeenCalledTimes(1);
+
+    const fulfilled = results.find((result) => result.status === 'fulfilled');
+    const rejected = results.find((result) => result.status === 'rejected');
+    expect(fulfilled).toEqual(expect.objectContaining({
+      status: 'fulfilled',
+      value: expect.objectContaining({ requestId: expect.any(String) }),
+    }));
+    expect((fulfilled as PromiseFulfilledResult<any>).value.requestId).toBe(
+      grabRepository.createQueued.mock.calls[0][0].requestId,
+    );
+    expect(rejected).toEqual(expect.objectContaining({
+      status: 'rejected',
+      reason: expect.any(ConflictException),
+    }));
+    expect((rejected as PromiseRejectedResult).reason.message).toBe('team grab is already in progress');
   });
 
   it('fails queued grab and releases lock when team grab insert fails before publish', async () => {
