@@ -409,6 +409,25 @@ export class TeamGrabRepository {
     return result.rows.map((row) => this.mapTeamGrabRow(row));
   }
 
+  async claimStalePreOrderRecovery(requestId: string, olderThanSeconds: number): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `update team_grab_request r
+       set fail_reason = 'ORDER_CREATE_TIMEOUT_CLAIMED',
+           update_time = now()
+       from ticket_team t
+       where r.request_id = $1
+         and t.id = r.team_id
+         and r.status in ('GRABBING', 'LOCKED')
+         and r.order_id is null
+         and jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
+         and r.update_time < now() - ($2::int * interval '1 second')
+         and t.status in ('GRABBING', 'LOCKED')
+       returning r.*`,
+      [requestId, olderThanSeconds],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
   async updateTeamGrabStatus(
     requestId: string,
     status: TeamGrabRequestRecord['status'],
@@ -453,6 +472,23 @@ export class TeamGrabRepository {
            update_time = now()
        where request_id = $1
          and status in ('LOCKED', 'GRABBING')
+         and fail_reason is distinct from 'ORDER_CREATE_TIMEOUT_CLAIMED'
+       returning *`,
+      [requestId, orderId],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
+  async markClaimedTeamGrabOrderCreated(requestId: string, orderId: number): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `update team_grab_request
+       set status = 'ORDER_CREATED',
+           order_id = $2,
+           fail_reason = null,
+           update_time = now()
+       where request_id = $1
+         and status in ('LOCKED', 'GRABBING')
+         and fail_reason = 'ORDER_CREATE_TIMEOUT_CLAIMED'
        returning *`,
       [requestId, orderId],
     );

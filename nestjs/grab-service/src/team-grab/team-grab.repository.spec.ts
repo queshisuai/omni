@@ -330,6 +330,64 @@ describe('TeamGrabRepository', () => {
     expect(result[0].lockedSeatIds).toEqual([501]);
   });
 
+  it('atomically claims stale pre-order recovery without changing status enum', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...teamGrabRow,
+        status: 'LOCKED',
+        locked_seat_ids: JSON.stringify([501]),
+        fail_reason: 'ORDER_CREATE_TIMEOUT_CLAIMED',
+      }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.claimStalePreOrderRecovery('TEAM-GRAB-1', 30);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain('update team_grab_request');
+    expect(sql).toContain("fail_reason = 'order_create_timeout_claimed'");
+    expect(sql).toContain('from ticket_team');
+    expect(sql).toContain('r.request_id = $1');
+    expect(sql).toContain("r.status in ('grabbing', 'locked')");
+    expect(sql).toContain('r.order_id is null');
+    expect(sql).toContain('jsonb_array_length');
+    expect(sql).toContain("t.status in ('grabbing', 'locked')");
+    expect(sql).toContain('interval');
+    expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 30]);
+    expect(result).toMatchObject({
+      requestId: 'TEAM-GRAB-1',
+      status: 'LOCKED',
+      lockedSeatIds: [501],
+      failReason: 'ORDER_CREATE_TIMEOUT_CLAIMED',
+    });
+  });
+
+  it('keeps normal order-created persistence from winning after a recovery claim', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{ ...teamGrabRow, status: 'ORDER_CREATED', order_id: '9001' }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    await repository.markTeamGrabOrderCreated('TEAM-GRAB-1', 9001);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain("fail_reason is distinct from 'order_create_timeout_claimed'");
+    expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 9001]);
+  });
+
+  it('allows claimed recovery to persist an order found by second lookup', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{ ...teamGrabRow, status: 'ORDER_CREATED', order_id: '9001', fail_reason: null }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    await repository.markClaimedTeamGrabOrderCreated('TEAM-GRAB-1', 9001);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain("fail_reason = 'order_create_timeout_claimed'");
+    expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 9001]);
+  });
+
   it('inserts seat assignments idempotently and updates member seat fields in one transaction', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce({ rows: [] })

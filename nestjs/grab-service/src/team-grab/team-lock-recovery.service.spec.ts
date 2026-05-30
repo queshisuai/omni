@@ -44,7 +44,9 @@ describe('TeamLockRecoveryService', () => {
   it('releases stale pre-order ticket locks and marks team failed', async () => {
     const repository = {
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
+      claimStalePreOrderRecovery: jest.fn().mockResolvedValue(staleTeamGrab),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      markClaimedTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
       markTeamFailed: jest.fn().mockResolvedValue(true),
       listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
@@ -83,7 +85,9 @@ describe('TeamLockRecoveryService', () => {
     await service.recoverStaleLocks();
 
     expect(repository.findStalePreOrderTeamGrabRequests).toHaveBeenCalledWith(100, 30);
+    expect(orderClient.findByGrabRequestId).toHaveBeenCalledTimes(2);
     expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB-1');
+    expect(repository.claimStalePreOrderRecovery).toHaveBeenCalledWith('TEAM-GRAB-1', 30);
     expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', [501, 502]);
     expect(repository.markTeamFailed).toHaveBeenCalledWith(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT');
     expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-1', GRAB_STATUS.FAILED, 'ORDER_CREATE_TIMEOUT');
@@ -92,10 +96,12 @@ describe('TeamLockRecoveryService', () => {
     expect(notificationClient.sendFailed).toHaveBeenCalledWith(200, null);
   });
 
-  it('does not send failed notifications when stale recovery loses the active-to-failed transition', async () => {
+  it('leaves stale locks untouched when stale recovery loses the claim', async () => {
     const repository = {
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
+      claimStalePreOrderRecovery: jest.fn().mockResolvedValue(null),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      markClaimedTeamGrabOrderCreated: jest.fn(),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
       markTeamFailed: jest.fn().mockResolvedValue(false),
       listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
@@ -128,14 +134,20 @@ describe('TeamLockRecoveryService', () => {
 
     await service.recoverStaleLocks();
 
-    expect(repository.markTeamFailed).toHaveBeenCalledWith(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT');
+    expect(repository.claimStalePreOrderRecovery).toHaveBeenCalledWith('TEAM-GRAB-1', 30);
+    expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
+    expect(repository.markTeamFailed).not.toHaveBeenCalled();
+    expect(grabRepository.updateStatus).not.toHaveBeenCalled();
+    expect(queueService.removeQueuedRequest).not.toHaveBeenCalled();
     expect(notificationClient.sendFailed).not.toHaveBeenCalled();
   });
 
   it('recovers stale pre-order locks as order-created when lookup finds an order', async () => {
     const repository = {
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
+      claimStalePreOrderRecovery: jest.fn(),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      markClaimedTeamGrabOrderCreated: jest.fn(),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
       markTeamFailed: jest.fn().mockResolvedValue(undefined),
       listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
@@ -174,7 +186,9 @@ describe('TeamLockRecoveryService', () => {
     await service.recoverStaleLocks();
 
     expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB-1');
+    expect(repository.claimStalePreOrderRecovery).not.toHaveBeenCalled();
     expect(repository.markTeamGrabOrderCreated).toHaveBeenCalledWith('TEAM-GRAB-1', 9001);
+    expect(repository.markClaimedTeamGrabOrderCreated).not.toHaveBeenCalled();
     expect(repository.updateTeamStatus).toHaveBeenCalledWith(7, 'LOCKED', ['GRABBING', 'LOCKED']);
     expect(grabRepository.markOrderCreatedFromProgressStatuses).toHaveBeenCalledWith(
       'GRAB-1',
@@ -194,7 +208,9 @@ describe('TeamLockRecoveryService', () => {
   it('leaves stale locks untouched when found order cannot mark grab order created', async () => {
     const repository = {
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
+      claimStalePreOrderRecovery: jest.fn(),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      markClaimedTeamGrabOrderCreated: jest.fn(),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
       markTeamFailed: jest.fn().mockResolvedValue(undefined),
       listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
@@ -234,6 +250,7 @@ describe('TeamLockRecoveryService', () => {
       [],
       [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
     );
+    expect(repository.claimStalePreOrderRecovery).not.toHaveBeenCalled();
     expect(repository.markTeamGrabOrderCreated).not.toHaveBeenCalled();
     expect(repository.updateTeamStatus).not.toHaveBeenCalled();
     expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
@@ -246,7 +263,9 @@ describe('TeamLockRecoveryService', () => {
   it('does not release or fail stale locks when order lookup throws', async () => {
     const repository = {
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
+      claimStalePreOrderRecovery: jest.fn(),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue(undefined),
+      markClaimedTeamGrabOrderCreated: jest.fn(),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
       markTeamFailed: jest.fn().mockResolvedValue(undefined),
       listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
@@ -279,6 +298,112 @@ describe('TeamLockRecoveryService', () => {
     await service.recoverStaleLocks();
 
     expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB-1');
+    expect(repository.claimStalePreOrderRecovery).not.toHaveBeenCalled();
+    expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
+    expect(repository.markTeamFailed).not.toHaveBeenCalled();
+    expect(grabRepository.updateStatus).not.toHaveBeenCalled();
+    expect(queueService.removeQueuedRequest).not.toHaveBeenCalled();
+    expect(notificationClient.sendFailed).not.toHaveBeenCalled();
+  });
+
+  it('recovers order found by second lookup after claiming stale pre-order recovery', async () => {
+    const repository = {
+      findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
+      claimStalePreOrderRecovery: jest.fn().mockResolvedValue(staleTeamGrab),
+      markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      markClaimedTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      updateTeamStatus: jest.fn().mockResolvedValue(undefined),
+      markTeamFailed: jest.fn().mockResolvedValue(true),
+      listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
+    };
+    const grabRepository = {
+      markOrderCreatedFromProgressStatuses: jest.fn().mockResolvedValue({
+        requestId: 'GRAB-1',
+        status: GRAB_STATUS.ORDER_CREATED,
+        progressStatus: GRAB_STATUS.ORDER_CREATED,
+        orderId: 9001,
+      }),
+      markOrderCreated: jest.fn(),
+      updateStatus: jest.fn().mockResolvedValue(undefined),
+    };
+    const orderClient = {
+      findByGrabRequestId: jest.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 9001, orderNo: 'O1', status: 'PENDING', grabRequestId: 'GRAB-1' }),
+    };
+    const ticketClient = {
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
+    };
+    const queueService = {
+      removeQueuedRequest: jest.fn().mockResolvedValue(undefined),
+    };
+    const notificationClient = {
+      sendFailed: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new TeamLockRecoveryService(
+      repository as any,
+      grabRepository as any,
+      orderClient as any,
+      ticketClient as any,
+      queueService as any,
+      notificationClient as any,
+    );
+
+    await service.recoverStaleLocks();
+
+    expect(orderClient.findByGrabRequestId).toHaveBeenCalledTimes(2);
+    expect(repository.claimStalePreOrderRecovery).toHaveBeenCalledWith('TEAM-GRAB-1', 30);
+    expect(repository.markTeamGrabOrderCreated).not.toHaveBeenCalled();
+    expect(repository.markClaimedTeamGrabOrderCreated).toHaveBeenCalledWith('TEAM-GRAB-1', 9001);
+    expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
+    expect(repository.markTeamFailed).not.toHaveBeenCalled();
+    expect(grabRepository.updateStatus).not.toHaveBeenCalled();
+    expect(queueService.removeQueuedRequest).not.toHaveBeenCalled();
+    expect(notificationClient.sendFailed).not.toHaveBeenCalled();
+  });
+
+  it('leaves claimed stale locks untouched when second order lookup throws', async () => {
+    const repository = {
+      findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
+      claimStalePreOrderRecovery: jest.fn().mockResolvedValue(staleTeamGrab),
+      markTeamGrabOrderCreated: jest.fn().mockResolvedValue(undefined),
+      markClaimedTeamGrabOrderCreated: jest.fn().mockResolvedValue(undefined),
+      updateTeamStatus: jest.fn().mockResolvedValue(undefined),
+      markTeamFailed: jest.fn().mockResolvedValue(true),
+      listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
+    };
+    const grabRepository = {
+      markOrderCreatedFromProgressStatuses: jest.fn(),
+      markOrderCreated: jest.fn(),
+      updateStatus: jest.fn().mockResolvedValue(undefined),
+    };
+    const orderClient = {
+      findByGrabRequestId: jest.fn()
+        .mockResolvedValueOnce(null)
+        .mockRejectedValueOnce(new Error('order lookup unavailable')),
+    };
+    const ticketClient = {
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
+    };
+    const queueService = {
+      removeQueuedRequest: jest.fn().mockResolvedValue(undefined),
+    };
+    const notificationClient = {
+      sendFailed: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new TeamLockRecoveryService(
+      repository as any,
+      grabRepository as any,
+      orderClient as any,
+      ticketClient as any,
+      queueService as any,
+      notificationClient as any,
+    );
+
+    await service.recoverStaleLocks();
+
+    expect(orderClient.findByGrabRequestId).toHaveBeenCalledTimes(2);
+    expect(repository.claimStalePreOrderRecovery).toHaveBeenCalledWith('TEAM-GRAB-1', 30);
     expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
     expect(repository.markTeamFailed).not.toHaveBeenCalled();
     expect(grabRepository.updateStatus).not.toHaveBeenCalled();

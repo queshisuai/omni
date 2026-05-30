@@ -51,36 +51,62 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
       const existingOrder = await this.lookupOrder(teamGrab.grabRequestId);
       if (existingOrder === 'UNKNOWN') return;
       if (existingOrder) {
-        const grabOrderCreated = await this.grabRepository.markOrderCreatedFromProgressStatuses(
-          teamGrab.grabRequestId,
-          existingOrder.id,
-          teamGrab.ticketTypeId,
-          [],
-          [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
-        );
-        if (!grabOrderCreated) return;
-
-        await this.repository.markTeamGrabOrderCreated(teamGrab.requestId, existingOrder.id);
-        await this.repository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING', 'LOCKED']);
+        await this.recoverFoundOrder(teamGrab, existingOrder.id);
         return;
       }
     }
 
-    await this.ticketClient.releaseTeamSeatLock(teamGrab.requestId, teamGrab.lockedSeatIds);
-    const transitioned = await this.repository.markTeamFailed(teamGrab.teamId, teamGrab.requestId, ORDER_CREATE_TIMEOUT);
+    const claimed = await this.repository.claimStalePreOrderRecovery(teamGrab.requestId, STALE_PRE_ORDER_SECONDS);
+    if (!claimed) return;
+
+    if (claimed.grabRequestId) {
+      const existingOrder = await this.lookupOrder(claimed.grabRequestId);
+      if (existingOrder === 'UNKNOWN') return;
+      if (existingOrder) {
+        await this.recoverFoundOrder(claimed, existingOrder.id, true);
+        return;
+      }
+    }
+
+    await this.ticketClient.releaseTeamSeatLock(claimed.requestId, claimed.lockedSeatIds);
+    const transitioned = await this.repository.markTeamFailed(claimed.teamId, claimed.requestId, ORDER_CREATE_TIMEOUT);
     if (!transitioned) return;
 
-    if (teamGrab.grabRequestId) {
-      await this.grabRepository.updateStatus(teamGrab.grabRequestId, GRAB_STATUS.FAILED, ORDER_CREATE_TIMEOUT);
+    if (claimed.grabRequestId) {
+      await this.grabRepository.updateStatus(claimed.grabRequestId, GRAB_STATUS.FAILED, ORDER_CREATE_TIMEOUT);
       await this.queueService
-        .removeQueuedRequest(teamGrab.sessionId, teamGrab.grabRequestId)
+        .removeQueuedRequest(claimed.sessionId, claimed.grabRequestId)
         .catch((error) => this.logger.warn(error));
     }
 
-    const members = await this.repository.listConfirmedMembers(teamGrab.teamId);
+    const members = await this.repository.listConfirmedMembers(claimed.teamId);
     for (const member of members) {
       await this.notificationClient.sendFailed(member.userId, null).catch((error) => this.logger.warn(error));
     }
+  }
+
+  private async recoverFoundOrder(
+    teamGrab: TeamGrabRequestRecord,
+    orderId: number,
+    claimedRecovery = false,
+  ): Promise<void> {
+    if (!teamGrab.grabRequestId) return;
+
+    const grabOrderCreated = await this.grabRepository.markOrderCreatedFromProgressStatuses(
+      teamGrab.grabRequestId,
+      orderId,
+      teamGrab.ticketTypeId,
+      [],
+      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
+    );
+    if (!grabOrderCreated) return;
+
+    if (claimedRecovery) {
+      await this.repository.markClaimedTeamGrabOrderCreated(teamGrab.requestId, orderId);
+    } else {
+      await this.repository.markTeamGrabOrderCreated(teamGrab.requestId, orderId);
+    }
+    await this.repository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING', 'LOCKED']);
   }
 
   private async lookupOrder(grabRequestId: string): Promise<{ id: number } | null | 'UNKNOWN'> {
