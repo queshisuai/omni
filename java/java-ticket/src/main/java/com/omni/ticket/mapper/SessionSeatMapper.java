@@ -78,9 +78,10 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
             "AND ticket_type_id = #{ticketTypeId} AND status = 1 AND order_id IS NULL " +
             "AND lock_expire_time IS NULL " +
             "ORDER BY layout_section_id NULLS LAST, seat_block_id NULLS LAST, row_no NULLS LAST, seat_no NULLS LAST, id " +
-            "FOR UPDATE SKIP LOCKED")
+            "LIMIT #{limit} FOR UPDATE SKIP LOCKED")
     List<SessionSeat> selectAvailableForTeamLock(@Param("sessionId") Long sessionId,
-                                                  @Param("ticketTypeId") Long ticketTypeId);
+                                                  @Param("ticketTypeId") Long ticketTypeId,
+                                                  @Param("limit") Integer limit);
 
     @Update({"<script>",
             "UPDATE session_seat SET status = 2, lock_expire_time = #{lockExpireTime}, ",
@@ -98,7 +99,7 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
     @Select({"<script>",
             "SELECT * FROM session_seat WHERE session_id = #{sessionId} ",
             "AND ticket_type_id = #{ticketTypeId} AND status = 2 ",
-            "AND lock_request_id = #{lockRequestId} AND id IN ",
+            "AND lock_request_id = #{lockRequestId} AND lock_expire_time > CURRENT_TIMESTAMP AND id IN ",
             "<foreach collection='seatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
             "ORDER BY layout_section_id NULLS LAST, seat_block_id NULLS LAST, row_no NULLS LAST, seat_no NULLS LAST, id",
             "</script>"})
@@ -106,6 +107,14 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                                             @Param("ticketTypeId") Long ticketTypeId,
                                             @Param("seatIds") List<Long> seatIds,
                                             @Param("lockRequestId") String lockRequestId);
+
+    @Select("SELECT * FROM session_seat WHERE session_id = #{sessionId} " +
+            "AND ticket_type_id = #{ticketTypeId} AND status = 2 " +
+            "AND lock_request_id = #{lockRequestId} AND lock_expire_time > CURRENT_TIMESTAMP " +
+            "ORDER BY layout_section_id NULLS LAST, seat_block_id NULLS LAST, row_no NULLS LAST, seat_no NULLS LAST, id")
+    List<SessionSeat> selectLockedByRequestId(@Param("sessionId") Long sessionId,
+                                              @Param("ticketTypeId") Long ticketTypeId,
+                                              @Param("lockRequestId") String lockRequestId);
 
     @Update({"<script>",
             "UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, ",
@@ -115,6 +124,11 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
             "</script>"})
     int releaseTeamSeatLockByRequest(@Param("lockRequestId") String lockRequestId,
                                      @Param("seatIds") List<Long> seatIds);
+
+    @Update("UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, " +
+            "lock_request_id = NULL, update_time = CURRENT_TIMESTAMP " +
+            "WHERE status = 2 AND lock_request_id = #{lockRequestId}")
+    int releaseTeamSeatLockByRequestId(@Param("lockRequestId") String lockRequestId);
 
     @Update("UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, update_time = CURRENT_TIMESTAMP " +
             "WHERE id = #{seatId} AND session_id = #{sessionId} AND status = 3")

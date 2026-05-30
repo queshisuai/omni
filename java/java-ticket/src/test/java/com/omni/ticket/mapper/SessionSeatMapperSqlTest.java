@@ -49,20 +49,30 @@ class SessionSeatMapperSqlTest {
     @Test
     void teamSeatLockSelectUsesSkipLockedAndLifecycleSqlClearsOwner() throws Exception {
         String selectSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
-                "selectAvailableForTeamLock", Long.class, Long.class)).toLowerCase();
+                "selectAvailableForTeamLock", Long.class, Long.class, Integer.class)).toLowerCase();
         String lockSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "lockTeamSeatIds", Long.class, Long.class, List.class, String.class, LocalDateTime.class)).toLowerCase();
+        String lockedByRequestSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "selectLockedByRequest", Long.class, Long.class, List.class, String.class)).toLowerCase();
+        String lockedByRequestIdSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "selectLockedByRequestId", Long.class, Long.class, String.class)).toLowerCase();
         String releaseSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "releaseLockedSeat", Long.class, Long.class)).toLowerCase();
         String releaseTeamSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "releaseTeamSeatLockByRequest", String.class, List.class)).toLowerCase();
+        String releaseTeamByRequestSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "releaseTeamSeatLockByRequestId", String.class)).toLowerCase();
         String soldSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "markSeatSold", Long.class, Long.class, Long.class)).toLowerCase();
 
         assertTrue(selectSql.contains("for update skip locked"), selectSql);
+        assertTrue(selectSql.contains("limit #{limit}"), selectSql);
         assertTrue(lockSql.contains("lock_request_id = #{lockrequestid}"), lockSql);
+        assertTrue(lockedByRequestSql.contains("lock_expire_time > current_timestamp"), lockedByRequestSql);
+        assertTrue(lockedByRequestIdSql.contains("lock_expire_time > current_timestamp"), lockedByRequestIdSql);
         assertTrue(releaseSql.contains("lock_request_id = null"), releaseSql);
         assertTrue(releaseTeamSql.contains("lock_request_id = null"), releaseTeamSql);
+        assertTrue(releaseTeamByRequestSql.contains("lock_request_id = null"), releaseTeamByRequestSql);
         assertTrue(soldSql.contains("lock_request_id = null"), soldSql);
     }
 

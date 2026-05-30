@@ -49,6 +49,7 @@ public class TicketSalesInternalService {
     private static final String SAME_BLOCK = "SAME_BLOCK";
     private static final String SAME_TICKET_TYPE = "SAME_TICKET_TYPE";
     private static final String FALLBACK = "FALLBACK";
+    private static final int TEAM_LOCK_CANDIDATE_MULTIPLIER = 10;
 
     private final TicketTypeMapper ticketTypeMapper;
     private final SessionMapper sessionMapper;
@@ -186,10 +187,20 @@ public class TicketSalesInternalService {
         validateTeamLockRequest(request);
         requireSessionSellable(request.getSessionId());
         requireSellableTicketType(request.getSessionId(), request.getTicketTypeId());
+        List<String> strategies = teamLockStrategies(request);
+
+        List<SessionSeat> existingLockedSeats = sortSeats(sessionSeatMapper.selectLockedByRequestId(
+                request.getSessionId(), request.getTicketTypeId(), request.getLockRequestId()));
+        if (!existingLockedSeats.isEmpty()) {
+            if (existingLockedSeats.size() != request.getQuantity()) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock request already exists with different quantity");
+            }
+            return teamSeatLockResponse(existingLockedSeats,
+                    matchedExistingStrategy(existingLockedSeats, request.getQuantity(), strategies));
+        }
 
         List<SessionSeat> availableSeats = sortSeats(sessionSeatMapper.selectAvailableForTeamLock(
-                request.getSessionId(), request.getTicketTypeId()));
-        List<String> strategies = teamLockStrategies(request);
+                request.getSessionId(), request.getTicketTypeId(), teamLockCandidateLimit(request.getQuantity())));
         for (String strategy : strategies) {
             List<SessionSeat> selectedSeats = selectByStrategy(availableSeats, request.getQuantity(), strategy);
             if (selectedSeats.size() != request.getQuantity()) {
@@ -207,11 +218,7 @@ public class TicketSalesInternalService {
             }
             List<SessionSeat> lockedSeats = sessionSeatMapper.selectLockedByRequest(
                     request.getSessionId(), request.getTicketTypeId(), seatIds, request.getLockRequestId());
-            TeamSeatLockResponse response = new TeamSeatLockResponse();
-            response.setLockedSeatIds(seatIds);
-            response.setSeatLabels(lockedSeats.stream().map(this::seatLabel).collect(Collectors.toList()));
-            response.setMatchedStrategy(strategy);
-            return response;
+            return teamSeatLockResponse(lockedSeats, strategy);
         }
         throw new BusinessException(ResultCode.BAD_REQUEST, "no team seat strategy can satisfy quantity");
     }
@@ -232,11 +239,15 @@ public class TicketSalesInternalService {
     }
 
     public Boolean releaseTeamSeatLock(TeamSeatLockReleaseRequest request) {
-        if (request == null || !StringUtils.hasText(request.getLockRequestId())
-                || request.getSeatIds() == null || request.getSeatIds().isEmpty()) {
+        if (request == null || !StringUtils.hasText(request.getLockRequestId())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock release parameters are required");
         }
-        return sessionSeatMapper.releaseTeamSeatLockByRequest(request.getLockRequestId(), request.getSeatIds()) > 0;
+        if (request.getSeatIds() == null || request.getSeatIds().isEmpty()) {
+            sessionSeatMapper.releaseTeamSeatLockByRequestId(request.getLockRequestId());
+            return true;
+        }
+        sessionSeatMapper.releaseTeamSeatLockByRequest(request.getLockRequestId(), request.getSeatIds());
+        return true;
     }
 
     private void requireSeatlessStandingTicketType(Long sessionId, Long ticketTypeId) {
@@ -375,6 +386,31 @@ public class TicketSalesInternalService {
         return Collections.emptyList();
     }
 
+    private int teamLockCandidateLimit(int quantity) {
+        return Math.max(quantity, quantity * TEAM_LOCK_CANDIDATE_MULTIPLIER);
+    }
+
+    private TeamSeatLockResponse teamSeatLockResponse(List<SessionSeat> lockedSeats, String matchedStrategy) {
+        TeamSeatLockResponse response = new TeamSeatLockResponse();
+        response.setLockedSeatIds(lockedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList()));
+        response.setSeatLabels(lockedSeats.stream().map(this::seatLabel).collect(Collectors.toList()));
+        response.setMatchedStrategy(matchedStrategy);
+        return response;
+    }
+
+    private String matchedExistingStrategy(List<SessionSeat> lockedSeats, int quantity, List<String> strategies) {
+        List<Long> lockedSeatIds = lockedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList());
+        for (String strategy : strategies) {
+            List<Long> selectedSeatIds = selectByStrategy(lockedSeats, quantity, strategy).stream()
+                    .map(SessionSeat::getId)
+                    .collect(Collectors.toList());
+            if (lockedSeatIds.equals(selectedSeatIds)) {
+                return strategy;
+            }
+        }
+        return strategies.get(0);
+    }
+
     private List<SessionSeat> sortSeats(List<SessionSeat> seats) {
         if (seats == null || seats.isEmpty()) {
             return Collections.emptyList();
@@ -390,14 +426,13 @@ public class TicketSalesInternalService {
     }
 
     private List<String> seatGroupKeys(SessionSeat seat) {
-        List<String> keys = new ArrayList<>();
-        if (seat.getLayoutSectionId() != null) {
-            keys.add("section:" + seat.getLayoutSectionId());
-        }
         if (seat.getSeatBlockId() != null) {
-            keys.add("block:" + seat.getSeatBlockId());
+            return List.of("block:" + seat.getSeatBlockId());
         }
-        return keys;
+        if (seat.getLayoutSectionId() != null) {
+            return List.of("section:" + seat.getLayoutSectionId());
+        }
+        return Collections.emptyList();
     }
 
     private String seatLabel(SessionSeat seat) {
