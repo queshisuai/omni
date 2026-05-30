@@ -107,4 +107,15 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[0][1]).toEqual([1]);
     expect(result?.size).toBe(3);
   });
+
+  it('guards team status updates when allowed current statuses are provided', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [{ ...teamRow, status: 'READY' }] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.updateTeamStatus(1, 'READY', ['DRAFT', 'FAILED', 'EXPIRED', 'READY']);
+
+    expect(query.mock.calls[0][0]).toContain('status = any($3::varchar[])');
+    expect(query.mock.calls[0][1]).toEqual([1, 'READY', ['DRAFT', 'FAILED', 'EXPIRED', 'READY']]);
+    expect(result?.status).toBe('READY');
+  });
 });

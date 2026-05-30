@@ -214,13 +214,18 @@ export class TeamGrabRepository {
     return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
   }
 
-  async updateTeamStatus(teamId: number, status: TeamStatus): Promise<TicketTeamRecord | null> {
+  async updateTeamStatus(
+    teamId: number,
+    status: TeamStatus,
+    allowedCurrentStatuses?: TeamStatus[],
+  ): Promise<TicketTeamRecord | null> {
+    const statusGuard = allowedCurrentStatuses?.length ? ' and status = any($3::varchar[])' : '';
     const result = await this.database.query<TicketTeamRow>(
       `update ticket_team
        set status = $2, update_time = now()
-       where id = $1
+       where id = $1${statusGuard}
        returning *`,
-      [teamId, status],
+      allowedCurrentStatuses?.length ? [teamId, status, allowedCurrentStatuses] : [teamId, status],
     );
     return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
   }

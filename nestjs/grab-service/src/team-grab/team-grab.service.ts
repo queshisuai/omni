@@ -12,6 +12,8 @@ const READY_MIN_SIZE = 2;
 const READY_MAX_SIZE = 6;
 const JOINABLE_TEAM_STATUSES = new Set<TeamStatus>(['DRAFT', 'READY', 'FAILED', 'EXPIRED']);
 const ACTIVE_TEAM_STATUSES = new Set<TeamStatus>(['DRAFT', 'READY', 'GRABBING', 'LOCKED']);
+const READY_TRANSITION_STATUSES: TeamStatus[] = ['DRAFT', 'FAILED', 'EXPIRED', 'READY'];
+const DRAFT_TRANSITION_STATUSES: TeamStatus[] = ['READY'];
 const STRATEGY_RANK: Record<TeamSeatStrategy, number> = {
   STRICT_CONTIGUOUS: 0,
   SAME_BLOCK: 1,
@@ -136,12 +138,22 @@ export class TeamGrabService {
       confirmedCount <= READY_MAX_SIZE;
 
     if (shouldBeReady && current.status !== 'READY') {
-      return (await this.repository.updateTeamStatus(current.id, 'READY')) ?? current;
+      return this.updateReadinessStatus(current, 'READY', READY_TRANSITION_STATUSES);
     }
     if (!shouldBeReady && current.status === 'READY') {
-      return (await this.repository.updateTeamStatus(current.id, 'DRAFT')) ?? current;
+      return this.updateReadinessStatus(current, 'DRAFT', DRAFT_TRANSITION_STATUSES);
     }
     return current;
+  }
+
+  private async updateReadinessStatus(
+    current: TicketTeamRecord,
+    status: TeamStatus,
+    allowedCurrentStatuses: TeamStatus[],
+  ): Promise<TicketTeamRecord> {
+    const updated = await this.repository.updateTeamStatus(current.id, status, allowedCurrentStatuses);
+    if (updated) return updated;
+    return (await this.repository.findTeamById(current.id)) ?? current;
   }
 
   private validateCreateTeamDto(dto: CreateTeamDto): void {

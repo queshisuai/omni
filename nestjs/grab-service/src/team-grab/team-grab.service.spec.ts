@@ -133,9 +133,35 @@ describe('TeamGrabService', () => {
 
     const result = await service.confirmMember(1, 200);
 
-    expect(repository.updateTeamStatus).toHaveBeenCalledWith(1, 'READY');
+    expect(repository.updateTeamStatus).toHaveBeenCalledWith(1, 'READY', ['DRAFT', 'FAILED', 'EXPIRED', 'READY']);
     expect(result.status).toBe('READY');
     expect(result.size).toBe(3);
+  });
+
+  it('returns latest team state when READY transition loses to a locked status', async () => {
+    const locked = team({ status: 'LOCKED', size: 3 });
+    const repository: any = {
+      findTeamById: jest
+        .fn()
+        .mockResolvedValueOnce(team({ leaderUserId: 100, status: 'DRAFT' }))
+        .mockResolvedValueOnce(locked),
+      findMember: jest.fn().mockResolvedValue(member({ userId: 200, status: 'JOINED' })),
+      confirmMember: jest.fn().mockResolvedValue(member({ userId: 200, status: 'CONFIRMED' })),
+      listMembers: jest.fn().mockResolvedValue([
+        member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+        member({ userId: 200, status: 'CONFIRMED' }),
+        member({ userId: 300, status: 'CONFIRMED' }),
+      ]),
+      refreshTeamSize: jest.fn().mockResolvedValue(team({ size: 3, status: 'DRAFT' })),
+      updateTeamStatus: jest.fn().mockResolvedValue(null),
+    };
+    const service = createService(repository);
+
+    const result = await service.confirmMember(1, 200);
+
+    expect(repository.updateTeamStatus).toHaveBeenCalledWith(1, 'READY', ['DRAFT', 'FAILED', 'EXPIRED', 'READY']);
+    expect(repository.findTeamById).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe('LOCKED');
   });
 
   it('prevents member leave after team is LOCKED', async () => {
