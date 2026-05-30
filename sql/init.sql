@@ -250,7 +250,35 @@ CREATE TABLE order_seat (
     session_id BIGINT NOT NULL,
     ticket_type_id BIGINT NOT NULL,
     status SMALLINT DEFAULT 1,
+    seat_label VARCHAR(128),
     lock_expire_time TIMESTAMP,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE order_snapshot (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL UNIQUE REFERENCES "order"(id) ON DELETE CASCADE,
+    activity_id BIGINT,
+    activity_name VARCHAR(255),
+    activity_poster VARCHAR(500),
+    tour_id BIGINT,
+    station_id BIGINT,
+    session_id BIGINT,
+    session_time TIMESTAMP,
+    venue_name VARCHAR(255),
+    ticket_type_id BIGINT,
+    ticket_name VARCHAR(255),
+    unit_price NUMERIC(10, 2),
+    quantity INTEGER,
+    seat_labels TEXT,
+    grab_request_id VARCHAR(64),
+    requested_ticket_type_id BIGINT,
+    matched_ticket_type_id BIGINT,
+    auto_downgraded BOOLEAN NOT NULL DEFAULT FALSE,
+    team_id BIGINT,
+    team_grab_request_id VARCHAR(64),
+    team_order BOOLEAN NOT NULL DEFAULT FALSE,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -531,6 +559,13 @@ CREATE INDEX idx_order_status ON "order"(status);
 CREATE INDEX idx_order_seat_order ON order_seat(order_id);
 CREATE INDEX idx_order_seat_session_seat ON order_seat(session_seat_id);
 CREATE INDEX idx_order_seat_status ON order_seat(status);
+CREATE INDEX idx_order_snapshot_order_id ON order_snapshot(order_id);
+CREATE INDEX idx_order_snapshot_activity_id ON order_snapshot(activity_id);
+CREATE INDEX idx_order_snapshot_session_id ON order_snapshot(session_id);
+CREATE INDEX idx_order_snapshot_grab_request_id ON order_snapshot(grab_request_id);
+CREATE UNIQUE INDEX uk_order_snapshot_grab_request_id ON order_snapshot(grab_request_id) WHERE grab_request_id IS NOT NULL;
+CREATE INDEX idx_order_snapshot_team_id ON order_snapshot(team_id) WHERE team_id IS NOT NULL;
+CREATE UNIQUE INDEX uk_order_snapshot_team_grab_request ON order_snapshot(team_grab_request_id) WHERE team_order = TRUE AND team_grab_request_id IS NOT NULL;
 CREATE INDEX idx_payment_order ON payment(order_id);
 CREATE INDEX idx_payment_no ON payment(payment_no);
 CREATE INDEX idx_payment_out_trade_no ON payment(out_trade_no);

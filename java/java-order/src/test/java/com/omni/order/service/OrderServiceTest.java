@@ -218,6 +218,7 @@ class OrderServiceTest {
         assertEquals(2004L, order.getUserId());
         assertEquals(2, order.getQuantity());
         assertEquals(new BigDecimal("200.00"), order.getAmount());
+        verify(orderMapper).acquireAdvisoryTransactionLock("order-limit:2004:100");
         verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
         ArgumentCaptor<TicketSalesLockRequest> validationCaptor = ArgumentCaptor.forClass(TicketSalesLockRequest.class);
         verify(ticketSalesInternalClient).validateTeamSeatLock(validationCaptor.capture(), anyString());
@@ -233,13 +234,18 @@ class OrderServiceTest {
         Order existing = new Order();
         existing.setId(90L);
         existing.setOrderNo("DM-existing-team");
-        when(orderMapper.selectTeamOrderByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(existing);
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1"))
+                .thenReturn(teamOrderItem(90L, "TEAM-GRAB-1", "GRAB-LEADER-1", true));
+        when(orderMapper.selectById(90L)).thenReturn(existing);
 
         Order result = service.createTeamOrderWithLockedSeats(request);
 
         assertEquals(existing, result);
-        verify(orderMapper).acquireAdvisoryTransactionLock("team-order:TEAM-GRAB-1");
-        verify(orderMapper).selectTeamOrderByTeamGrabRequestId("TEAM-GRAB-1");
+        InOrder inOrder = inOrder(orderMapper);
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("grab-order:GRAB-LEADER-1");
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("team-order:TEAM-GRAB-1");
+        inOrder.verify(orderMapper).selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1");
+        verify(orderMapper).selectById(90L);
         verify(ticketSalesInternalClient, never()).validateTeamSeatLock(any(), anyString());
         verify(ticketSalesInternalClient, never()).quote(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
@@ -253,14 +259,20 @@ class OrderServiceTest {
         Order existing = new Order();
         existing.setId(91L);
         existing.setOrderNo("DM-existing-grab");
-        when(orderMapper.selectTeamOrderByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(null);
-        when(orderMapper.selectOrderByGrabRequestId("GRAB-LEADER-1")).thenReturn(existing);
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(null);
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-LEADER-1"))
+                .thenReturn(teamOrderItem(91L, "TEAM-GRAB-1", "GRAB-LEADER-1", true));
+        when(orderMapper.selectById(91L)).thenReturn(existing);
 
         Order result = service.createTeamOrderWithLockedSeats(request);
 
         assertEquals(existing, result);
-        verify(orderMapper).acquireAdvisoryTransactionLock("team-order:TEAM-GRAB-1");
-        verify(orderMapper).selectOrderByGrabRequestId("GRAB-LEADER-1");
+        InOrder inOrder = inOrder(orderMapper);
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("grab-order:GRAB-LEADER-1");
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("team-order:TEAM-GRAB-1");
+        inOrder.verify(orderMapper).selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1");
+        inOrder.verify(orderMapper).selectOrderListItemByGrabRequestId("GRAB-LEADER-1");
+        verify(orderMapper).selectById(91L);
         verify(ticketSalesInternalClient, never()).validateTeamSeatLock(any(), anyString());
         verify(ticketSalesInternalClient, never()).quote(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
@@ -280,12 +292,77 @@ class OrderServiceTest {
         service.createTeamOrderWithLockedSeats(request);
 
         InOrder inOrder = inOrder(orderMapper, ticketSalesInternalClient);
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("grab-order:GRAB-LEADER-1");
         inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("team-order:TEAM-GRAB-1");
-        inOrder.verify(orderMapper).selectTeamOrderByTeamGrabRequestId("TEAM-GRAB-1");
-        inOrder.verify(orderMapper).selectOrderByGrabRequestId("GRAB-LEADER-1");
+        inOrder.verify(orderMapper).selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1");
+        inOrder.verify(orderMapper).selectOrderListItemByGrabRequestId("GRAB-LEADER-1");
         inOrder.verify(ticketSalesInternalClient).quote(any(), anyString());
         inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("order-limit:2004:100");
         inOrder.verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
+    }
+
+    @Test
+    void createTeamOrderRejectsMismatchedGrabRequestForExistingTeamOrder() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        request.setGrabRequestId("GRAB-OTHER");
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1"))
+                .thenReturn(teamOrderItem(92L, "TEAM-GRAB-1", "GRAB-LEADER-1", true));
+
+        assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createOrderLocksActivityLimitBeforeSummingEffectiveQuantity() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setQuantity(1);
+
+        TicketSalesQuoteResponse quote = quoteWithLimit(1);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(0);
+        when(ticketSalesInternalClient.lockStock(any(TicketSalesLockRequest.class), anyString())).thenReturn(Result.success());
+
+        service.createOrder(request);
+
+        InOrder inOrder = inOrder(ticketSalesInternalClient, orderMapper);
+        inOrder.verify(ticketSalesInternalClient).quote(any(), anyString());
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("order-limit:2004:100");
+        inOrder.verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
+    }
+
+    @Test
+    void createTeamOrderRejectsGrabRequestHitForNonTeamOrder() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(null);
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-LEADER-1"))
+                .thenReturn(teamOrderItem(93L, null, "GRAB-LEADER-1", false));
+
+        assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+    }
+
+    @Test
+    void createTeamOrderRejectsGrabRequestHitForDifferentTeamRequest() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1")).thenReturn(null);
+        when(orderMapper.selectOrderListItemByGrabRequestId("GRAB-LEADER-1"))
+                .thenReturn(teamOrderItem(94L, "TEAM-GRAB-OTHER", "GRAB-LEADER-1", true));
+
+        assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
     }
 
     @Test
@@ -412,6 +489,30 @@ class OrderServiceTest {
     }
 
     @Test
+    void createOrderWithSeatsLocksActivityLimitBeforeSummingEffectiveQuantity() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setSeatIds(List.of(301L));
+
+        TicketSalesQuoteResponse quote = quoteWithLimit(1);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(0);
+        TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
+        lockResponse.setLockedSeatIds(List.of(301L));
+        when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+
+        service.createOrderWithSeats(request);
+
+        InOrder inOrder = inOrder(ticketSalesInternalClient, orderMapper);
+        inOrder.verify(ticketSalesInternalClient).quote(any(), anyString());
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("order-limit:2004:100");
+        inOrder.verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
+    }
+
+    @Test
     void createOrderCountsPendingOrdersAgainstActivityLimit() {
         CreateOrderRequest request = new CreateOrderRequest();
         request.setUserId(2004L);
@@ -487,6 +588,15 @@ class OrderServiceTest {
         quote.setUnitPrice(new BigDecimal("100.00"));
         quote.setQuantity(quantity);
         return quote;
+    }
+
+    private OrderListItemResponse teamOrderItem(Long id, String teamGrabRequestId, String grabRequestId, Boolean teamOrder) {
+        OrderListItemResponse item = new OrderListItemResponse();
+        item.setId(id);
+        item.setTeamGrabRequestId(teamGrabRequestId);
+        item.setGrabRequestId(grabRequestId);
+        item.setTeamOrder(teamOrder);
+        return item;
     }
 
     private CreateTeamOrderRequest teamOrderRequest() {

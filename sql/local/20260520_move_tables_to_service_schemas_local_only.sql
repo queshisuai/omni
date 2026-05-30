@@ -72,14 +72,43 @@ CREATE TABLE IF NOT EXISTS order_service.order_snapshot (
     unit_price NUMERIC(10, 2),
     quantity INTEGER,
     seat_labels TEXT,
+    grab_request_id VARCHAR(64),
+    requested_ticket_type_id BIGINT,
+    matched_ticket_type_id BIGINT,
+    auto_downgraded BOOLEAN NOT NULL DEFAULT FALSE,
+    team_id BIGINT,
+    team_grab_request_id VARCHAR(64),
+    team_order BOOLEAN NOT NULL DEFAULT FALSE,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_order_snapshot_order FOREIGN KEY (order_id) REFERENCES order_service."order"(id) ON DELETE CASCADE
 );
 
+ALTER TABLE IF EXISTS order_service.order_seat
+    ADD COLUMN IF NOT EXISTS seat_label VARCHAR(128);
+
+ALTER TABLE IF EXISTS order_service.order_snapshot
+    ADD COLUMN IF NOT EXISTS grab_request_id VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS requested_ticket_type_id BIGINT,
+    ADD COLUMN IF NOT EXISTS matched_ticket_type_id BIGINT,
+    ADD COLUMN IF NOT EXISTS auto_downgraded BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS team_id BIGINT,
+    ADD COLUMN IF NOT EXISTS team_grab_request_id VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS team_order BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE INDEX IF NOT EXISTS idx_order_snapshot_order_id ON order_service.order_snapshot(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_snapshot_activity_id ON order_service.order_snapshot(activity_id);
 CREATE INDEX IF NOT EXISTS idx_order_snapshot_session_id ON order_service.order_snapshot(session_id);
+CREATE INDEX IF NOT EXISTS idx_order_snapshot_grab_request_id ON order_service.order_snapshot(grab_request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_order_snapshot_grab_request_id
+    ON order_service.order_snapshot(grab_request_id)
+    WHERE grab_request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_order_snapshot_team_id
+    ON order_service.order_snapshot(team_id)
+    WHERE team_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_order_snapshot_team_grab_request
+    ON order_service.order_snapshot(team_grab_request_id)
+    WHERE team_order = TRUE AND team_grab_request_id IS NOT NULL;
 
 -- java-payment owned tables
 ALTER TABLE IF EXISTS payment SET SCHEMA payment_service;

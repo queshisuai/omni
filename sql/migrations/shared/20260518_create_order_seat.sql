@@ -7,6 +7,7 @@ CREATE TABLE order_seat (
     session_id BIGINT NOT NULL,
     ticket_type_id BIGINT NOT NULL,
     status SMALLINT DEFAULT 1,
+    seat_label VARCHAR(128),
     lock_expire_time TIMESTAMP,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP

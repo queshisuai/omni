@@ -237,16 +237,21 @@ public class OrderService {
     @Transactional(rollbackFor = Exception.class)
     public Order createTeamOrderWithLockedSeats(CreateTeamOrderRequest request) {
         validateTeamOrderRequestBasics(request);
-        String teamOrderLockKey = "team-order:" + request.getTeamGrabRequestId();
-        orderMapper.acquireAdvisoryTransactionLock(teamOrderLockKey);
-        Order existing = orderMapper.selectTeamOrderByTeamGrabRequestId(request.getTeamGrabRequestId());
-        if (existing != null) {
-            return existing;
+        if (StringUtils.hasText(request.getGrabRequestId())) {
+            orderMapper.acquireAdvisoryTransactionLock("grab-order:" + request.getGrabRequestId());
+        }
+        orderMapper.acquireAdvisoryTransactionLock("team-order:" + request.getTeamGrabRequestId());
+
+        OrderListItemResponse existingTeamOrder = orderMapper.selectTeamOrderListItemByTeamGrabRequestId(request.getTeamGrabRequestId());
+        if (existingTeamOrder != null) {
+            validateTeamOrderRetryMatchesGrabRequest(request, existingTeamOrder);
+            return loadExistingOrder(existingTeamOrder);
         }
         if (StringUtils.hasText(request.getGrabRequestId())) {
-            existing = orderMapper.selectOrderByGrabRequestId(request.getGrabRequestId());
-            if (existing != null) {
-                return existing;
+            OrderListItemResponse existingGrabOrder = orderMapper.selectOrderListItemByGrabRequestId(request.getGrabRequestId());
+            if (existingGrabOrder != null) {
+                validateGrabRetryMatchesTeamRequest(request, existingGrabOrder);
+                return loadExistingOrder(existingGrabOrder);
             }
         }
         int quantity = requirePositiveQuantity(request.getQuantity());
@@ -272,7 +277,6 @@ public class OrderService {
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), seatIds, quantity);
         validateTeamAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote);
-        lockLeaderActivityLimit(request.getUserId(), quote);
         validatePerUserLimit(request.getUserId(), quote, quantity);
         validateTeamSeatLock(request, seatIds);
 
@@ -830,14 +834,26 @@ public class OrderService {
         validateAuthorizedPrice(authorizedMaxUnitPrice, quote, "team-order");
     }
 
-    private void lockLeaderActivityLimit(Long userId, TicketSalesQuoteResponse quote) {
-        if (quote == null || quote.getPerUserLimit() == null) {
-            return;
+    private void validateTeamOrderRetryMatchesGrabRequest(CreateTeamOrderRequest request, OrderListItemResponse existingOrder) {
+        if (StringUtils.hasText(request.getGrabRequestId())
+                && !request.getGrabRequestId().equals(existingOrder.getGrabRequestId())) {
+            throw new BusinessException(ResultCode.CONFLICT, "team order retry conflicts with grab request");
         }
-        if (quote.getActivityId() == null) {
-            return;
+    }
+
+    private void validateGrabRetryMatchesTeamRequest(CreateTeamOrderRequest request, OrderListItemResponse existingOrder) {
+        if (!Boolean.TRUE.equals(existingOrder.getTeamOrder())
+                || !request.getTeamGrabRequestId().equals(existingOrder.getTeamGrabRequestId())) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order");
         }
-        orderMapper.acquireAdvisoryTransactionLock("order-limit:" + userId + ":" + quote.getActivityId());
+    }
+
+    private Order loadExistingOrder(OrderListItemResponse existingOrder) {
+        Order order = existingOrder != null && existingOrder.getId() != null ? orderMapper.selectById(existingOrder.getId()) : null;
+        if (order == null) {
+            throw new BusinessException(ResultCode.CONFLICT, "existing order snapshot is inconsistent");
+        }
+        return order;
     }
 
     private TicketSalesQuoteResponse quoteTickets(Long sessionId, Long ticketTypeId, List<Long> seatIds, int quantity) {
@@ -862,6 +878,7 @@ public class OrderService {
         if (quote.getActivityId() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "活动限购信息不完整");
         }
+        orderMapper.acquireAdvisoryTransactionLock("order-limit:" + userId + ":" + quote.getActivityId());
         Integer existing = orderMapper.sumEffectiveQuantityByUserAndActivity(userId, quote.getActivityId());
         int effective = existing == null ? 0 : existing;
         if (effective + quantity > limit) {
