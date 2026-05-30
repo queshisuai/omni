@@ -159,6 +159,19 @@ foreach ($file in $sqlFiles) {
 
 $constraintNames = @{}
 $constraintPattern = 'ADD\s+CONSTRAINT\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))'
+function Test-HasPrecedingConstraintDrop {
+    param(
+        [string]$Content,
+        [string]$ConstraintName,
+        [int]$BeforeIndex
+    )
+
+    $precedingContent = $Content.Substring(0, $BeforeIndex)
+    $escapedName = [regex]::Escape($ConstraintName)
+    $dropPattern = 'DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?(?:"' + $escapedName + '"|' + $escapedName + ')(?![A-Za-z0-9_])'
+    return [regex]::IsMatch($precedingContent, $dropPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+}
+
 foreach ($file in $sqlFiles) {
     $content = Get-Content -Raw -LiteralPath $file.FullName
     foreach ($match in [regex]::Matches($content, $constraintPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
@@ -169,6 +182,10 @@ foreach ($file in $sqlFiles) {
         $normalized = $constraintName.ToLower()
         $lineNumber = 1 + ($content.Substring(0, $match.Index).Split("`n").Count - 1)
         if ($constraintNames.ContainsKey($normalized)) {
+            if (Test-HasPrecedingConstraintDrop $content $constraintName $match.Index) {
+                $constraintNames[$normalized] = "$($file.FullName):$lineNumber"
+                continue
+            }
             Write-Host "FAIL duplicate constraint name '$constraintName' in $($file.FullName):$lineNumber; first seen at $($constraintNames[$normalized])"
             exit 1
         }
