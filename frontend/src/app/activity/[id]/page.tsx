@@ -8,7 +8,7 @@ import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelec
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { cancelGrabRequest, createAlipayQrPay, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, submitGrabRequest } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import { buildSeatAllocationPayload } from '@/lib/purchase-intent'
+import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, getPurchaseQuantityMax } from '@/lib/purchase-intent'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import type { ActivityDetailVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity } from '@/types/api'
 
@@ -49,9 +49,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [allowAutoDowngrade, setAllowAutoDowngrade] = useState(false)
   const [grabProgress, setGrabProgress] = useState<GrabProgressResult | null>(null)
   const [grabProgressOpen, setGrabProgressOpen] = useState(false)
+  const [progressPaymentOpening, setProgressPaymentOpening] = useState(false)
   const [visibleStock, setVisibleStock] = useState<SessionVisibleStockResult | null>(null)
   const seatMapRequestIdRef = useRef(0)
   const progressPaymentOrderIdRef = useRef<number | null>(null)
+  const progressPaymentInFlightOrderIdRef = useRef<number | null>(null)
   const hydratedGrabRequestRef = useRef<string | null>(null)
   const loadDetailRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
@@ -94,6 +96,17 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const currentProgressStock = grabProgress?.currentTicketTypeId != null && visibleStock
     ? visibleStock.ticketTypes.find(ticket => ticket.ticketTypeId === grabProgress.currentTicketTypeId)
     : null
+  const selectedTicketVisibleStock = selectedTicket && visibleStock
+    ? visibleStock.ticketTypes.find(ticket => ticket.ticketTypeId === selectedTicket.id)
+    : null
+  const showPurchaseEntry = canShowPurchaseEntry({
+    ticket: selectedTicket,
+    visibleStock: selectedTicketVisibleStock,
+  })
+  const purchaseQuantityMax = getPurchaseQuantityMax({
+    ticket: selectedTicket,
+    visibleStock: selectedTicketVisibleStock,
+  })
   const getActiveGrabStorageKey = () => {
     const user = getUser()
     return user ? `grab:active-request:${user.userId}:${id}` : null
@@ -233,21 +246,39 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
   }, [grabProgressOpen, grabProgress?.requestId, grabProgress?.status])
 
+  const resetGrabIdempotencyKey = () => setGrabIdempotency(null)
+
+  const openProgressPayment = async (orderId: number) => {
+    if (progressPaymentOrderIdRef.current === orderId || progressPaymentInFlightOrderIdRef.current === orderId) return
+
+    progressPaymentInFlightOrderIdRef.current = orderId
+    setProgressPaymentOpening(true)
+    setOrderError('')
+    try {
+      const pay = await createAlipayQrPay(orderId)
+      progressPaymentOrderIdRef.current = orderId
+      setQrPay(pay)
+      setGrabProgressOpen(false)
+      setShowConfirm(false)
+      resetGrabIdempotencyKey()
+      forgetActiveGrabRequest()
+    } catch (err: unknown) {
+      setOrderError(err instanceof Error ? err.message : '支付创建失败')
+    } finally {
+      progressPaymentInFlightOrderIdRef.current = null
+      setProgressPaymentOpening(false)
+    }
+  }
+
+  const goToOrdersFromProgress = () => {
+    forgetActiveGrabRequest()
+    router.push('/orders')
+  }
+
   useEffect(() => {
     if (!grabProgressOpen || grabProgress?.status !== 'ORDER_CREATED' || !grabProgress.orderId) return
-    if (progressPaymentOrderIdRef.current === grabProgress.orderId) return
 
-    progressPaymentOrderIdRef.current = grabProgress.orderId
-    createAlipayQrPay(grabProgress.orderId)
-      .then((pay) => {
-        setQrPay(pay)
-        setGrabProgressOpen(false)
-        setShowConfirm(false)
-        resetGrabIdempotencyKey()
-      })
-      .catch((err: unknown) => {
-        setOrderError(err instanceof Error ? err.message : '支付创建失败')
-      })
+    void openProgressPayment(grabProgress.orderId)
   }, [grabProgressOpen, grabProgress?.status, grabProgress?.orderId])
 
   useEffect(() => {
@@ -255,6 +286,13 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       setAllowAutoDowngrade(false)
     }
   }, [showsSeatCraftSelection, allowAutoDowngrade])
+
+  useEffect(() => {
+    if (quantity <= purchaseQuantityMax) return
+    setQuantity(purchaseQuantityMax)
+    setSelectedSeatIds(ids => ids.slice(0, purchaseQuantityMax))
+    resetGrabIdempotencyKey()
+  }, [purchaseQuantityMax, quantity])
 
   useEffect(() => {
     if (!detail || grabProgress?.requestId) return
@@ -280,7 +318,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
   useEffect(() => {
     if (!grabProgress?.requestId) return
-    if (TERMINAL_GRAB_STATUSES.has(grabProgress.status)) {
+    if (TERMINAL_GRAB_STATUSES.has(grabProgress.status) && grabProgress.status !== 'ORDER_CREATED') {
       forgetActiveGrabRequest()
       return
     }
@@ -323,23 +361,23 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     resetGrabIdempotencyKey()
   }
 
-  const resetGrabIdempotencyKey = () => setGrabIdempotency(null)
-
   const buildGrabIntent = (userId: number) => {
     const allocation = buildSeatAllocationPayload({
       ticket: selectedTicket,
       seatSelectionVisible: showsSeatCraftSelection,
       selectedSeatIds: validSelectedSeatIds,
     })
-    const seatPart = allocation.seatIds.slice().sort((a, b) => a - b).join(',')
-    return [
+    const ticketTypePreferences = buildTicketTypePreferences()
+    return buildGrabIdempotencyIntent({
       userId,
-      selectedSession?.session.id ?? 0,
-      selectedTicket?.id ?? 0,
+      sessionId: selectedSession?.session.id ?? 0,
+      selectedTicketId: selectedTicket?.id ?? 0,
       quantity,
-      seatPart,
-      allocation.allocateRandom,
-    ].join(':')
+      seatIds: allocation.seatIds,
+      allocateRandom: allocation.allocateRandom,
+      allowAutoDowngrade: allowAutoDowngrade && !showsSeatCraftSelection,
+      ticketTypePreferences,
+    })
   }
 
   const getOrCreateGrabIdempotencyKey = (userId: number) => {
@@ -404,6 +442,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         updateTime: new Date().toISOString(),
       })
       progressPaymentOrderIdRef.current = null
+      progressPaymentInFlightOrderIdRef.current = null
       rememberActiveGrabRequest(grab.requestId)
       setGrabProgressOpen(true)
       setShowConfirm(false)
@@ -576,7 +615,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                   <div className="mb-6 text-[12px] text-[#999]">库存变化较快，以锁票结果为准。</div>
 
                   {/* 数量选择 + 购买按钮 */}
-                  {selectedTicket && selectedTicket.remainStock > 0 && (
+                  {selectedTicket && showPurchaseEntry && (
                     <>
                       <div className="mb-5">
                         {seatMapPublished && seatMapLoading ? (
@@ -612,7 +651,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                           </button>
                           <span className="w-12 text-center text-[14px] text-[#111]">{quantity}</span>
                           <button
-                            onClick={() => { setQuantity(Math.min(selectedTicket.remainStock, quantity + 1)); resetGrabIdempotencyKey() }}
+                            onClick={() => { setQuantity(Math.min(purchaseQuantityMax, quantity + 1)); resetGrabIdempotencyKey() }}
                             className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
                           >
                             +
@@ -976,13 +1015,23 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       </button>
                     )}
                     {grabProgress.status === 'ORDER_CREATED' && grabProgress.orderId && (
-                      <button
-                        type="button"
-                        onClick={() => router.push('/orders')}
-                        className="cursor-pointer rounded border-none bg-[#ff1268] px-4 py-2 text-[14px] text-white outline-none"
-                      >
-                        查看订单
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void openProgressPayment(grabProgress.orderId!)}
+                          disabled={progressPaymentOpening}
+                          className="cursor-pointer rounded border-none bg-[#ff1268] px-4 py-2 text-[14px] text-white outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {progressPaymentOpening ? '打开支付中...' : '重新打开支付'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={goToOrdersFromProgress}
+                          className="cursor-pointer rounded border border-[#ddd] bg-white px-4 py-2 text-[14px] text-[#666] outline-none"
+                        >
+                          查看订单
+                        </button>
+                      </>
                     )}
                     {(grabProgress.status === 'SOLD_OUT' || grabProgress.status === 'FAILED' || grabProgress.status === 'LIMITED') && (
                       <button
