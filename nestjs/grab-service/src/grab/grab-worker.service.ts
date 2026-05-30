@@ -337,14 +337,18 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     index: number,
     attempts: GrabAttemptSnapshot[],
   ): Promise<AttemptOutcome> {
-    await this.repository.markPendingRecovery(record.requestId, {
+    const marked = await this.repository.markPendingRecovery(record.requestId, {
       message: 'order confirmation pending',
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: this.markAttempt(attempts, index, 'LOCKING', 'order confirmation pending'),
       workerId: this.workerId,
     });
-    return 'PENDING_RECOVERY';
+    if (marked) return 'PENDING_RECOVERY';
+
+    const latest = await this.repository.findByRequestId(record.requestId);
+    if (latest && (isTerminalGrabStatus(latest.progressStatus) || latest.orderId)) return 'CANCELLED';
+    return 'STALE_LEASE';
   }
 
   private async releaseAdmission(record: GrabRequestRecord, preference: GrabTicketPreference): Promise<void> {

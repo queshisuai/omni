@@ -405,6 +405,38 @@ describe('GrabWorkerService', () => {
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
 
+  it('does not ack when pending recovery write fails because another worker owns the lease', async () => {
+    const record = queuedRecord();
+    const repository: any = {
+      findByRequestId: jest.fn()
+        .mockResolvedValueOnce(record)
+        .mockResolvedValueOnce({ ...record, workerId: 'worker-other', progressStatus: GRAB_STATUS.ORDER_CREATING }),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn(),
+      markPendingRecovery: jest.fn().mockResolvedValue(null),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockRejectedValue(new Error('order service timeout')),
+      findByGrabRequestId: jest.fn().mockRejectedValue(new Error('order lookup unavailable')),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+
+    await service.processRequest('GRAB1');
+
+    expect(repository.markPendingRecovery).toHaveBeenCalled();
+    expect(admission.release).not.toHaveBeenCalled();
+    expect(queue.ackProcessed).not.toHaveBeenCalled();
+  });
+
   it('recovers an existing order by grab request id when marking order-created initially fails', async () => {
     const record = queuedRecord();
     const repository: any = {
