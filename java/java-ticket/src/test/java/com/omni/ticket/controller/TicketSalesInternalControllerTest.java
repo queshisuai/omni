@@ -155,6 +155,14 @@ class TicketSalesInternalControllerTest {
     }
 
     @Test
+    void validateTeamSeatLockRejectsMissingToken() {
+        Result<TeamSeatLockValidationResponse> result = controller.validateTeamSeatLock(new TeamSeatLockValidationRequest(), null);
+
+        assertEquals(403, result.getCode());
+        verifyNoInteractions(service);
+    }
+
+    @Test
     void releaseTeamSeatLockRejectsMissingToken() {
         Result<Boolean> result = controller.releaseTeamSeatLock(new TeamSeatLockReleaseRequest(), null);
 

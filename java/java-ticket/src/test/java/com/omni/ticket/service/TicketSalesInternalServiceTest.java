@@ -344,6 +344,50 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
+    void lockTeamSeatsMatchesSameBlockSeats() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType(4001L, "A", new BigDecimal("380.00")));
+        when(sessionSeatMapper.selectAvailableForTeamLock(3001L, 4001L)).thenReturn(List.of(
+                seat(501L, 10L, 900L, 1, 1),
+                seat(601L, 20L, 900L, 4, 8),
+                seat(701L, 30L, 901L, 2, 3)));
+        when(sessionSeatMapper.lockTeamSeatIds(eq(3001L), eq(4001L), eq(List.of(501L, 601L)), eq("team-lock-1"), any()))
+                .thenReturn(2);
+        when(sessionSeatMapper.selectLockedByRequest(3001L, 4001L, List.of(501L, 601L), "team-lock-1"))
+                .thenReturn(List.of(
+                        lockedSeat(501L, 10L, 900L, 1, 1, "Block-A-1"),
+                        lockedSeat(601L, 20L, 900L, 4, 8, "Block-A-8")));
+
+        TeamSeatLockResponse response = service.lockTeamSeats(teamLockRequest(2, "SAME_BLOCK", List.of()));
+
+        assertEquals(List.of(501L, 601L), response.getLockedSeatIds());
+        assertEquals(List.of("Block-A-1", "Block-A-8"), response.getSeatLabels());
+        assertEquals("SAME_BLOCK", response.getMatchedStrategy());
+    }
+
+    @Test
+    void lockTeamSeatsRejectsWhenTeamSeatUpdateCountDoesNotMatchQuantity() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType(4001L, "A", new BigDecimal("380.00")));
+        when(sessionSeatMapper.selectAvailableForTeamLock(3001L, 4001L)).thenReturn(List.of(
+                seat(501L, 10L, null, 1, 1),
+                seat(502L, 10L, null, 1, 2),
+                seat(503L, 10L, null, 1, 3)));
+        when(sessionSeatMapper.lockTeamSeatIds(eq(3001L), eq(4001L), eq(List.of(501L, 502L, 503L)), eq("team-lock-1"), any()))
+                .thenReturn(2);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.lockTeamSeats(teamLockRequest(3, "STRICT_CONTIGUOUS", List.of())));
+
+        assertEquals("team seat lock changed concurrently", exception.getMessage());
+        verify(sessionSeatMapper, never()).selectLockedByRequest(any(), any(), any(), any());
+    }
+
+    @Test
     void lockTeamSeatsRejectsWhenNoStrategyCanSatisfyQuantity() {
         TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
