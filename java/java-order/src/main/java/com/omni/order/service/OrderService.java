@@ -260,6 +260,10 @@ public class OrderService {
         if (teamGrabAsNormalOrder != null && !sameTeamOrderPayload(request, teamGrabAsNormalOrder)) {
             throw new BusinessException(ResultCode.CONFLICT, "team grab request collides with a grab request");
         }
+        OrderListItemResponse grabAsTeamGrabOrder = orderMapper.selectTeamOrderListItemByTeamGrabRequestId(request.getGrabRequestId());
+        if (grabAsTeamGrabOrder != null) {
+            throw new BusinessException(ResultCode.CONFLICT, "grab request collides with a team grab request");
+        }
         if (existingTeamOrder != null) {
             validateTeamOrderRetryMatchesGrabRequest(request, existingTeamOrder, payload);
             return loadExistingOrder(existingTeamOrder);

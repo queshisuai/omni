@@ -1,6 +1,7 @@
 package com.omni.order.service;
 
 import com.omni.common.result.Result;
+import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.order.client.PaymentInternalClient;
 import com.omni.order.client.TicketSalesInternalClient;
@@ -857,6 +858,35 @@ class OrderServiceTest {
         inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("team-order:TEAM-GRAB-1");
         inOrder.verify(orderMapper).selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-1");
         inOrder.verify(orderMapper).selectOrderListItemByGrabRequestId("TEAM-GRAB-1");
+        verify(orderMapper, never()).selectOrderListItemByGrabRequestId("GRAB-LEADER-1");
+        verify(orderMapper, never()).selectById(any());
+        verify(ticketSalesInternalClient, never()).quote(any(), anyString());
+        verify(ticketSalesInternalClient, never()).validateTeamSeatLock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSeatMapper, never()).insert(any(OrderSeat.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void createTeamOrderRejectsGrabRequestThatCollidesWithExistingTeamGrabBeforeTicketOrInsertSideEffects() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        request.setTeamGrabRequestId("TEAM-GRAB-2");
+        request.setGrabRequestId("GRAB-LEADER-1");
+        OrderListItemResponse existingTeamGrab = teamOrderItem(105L, "GRAB-LEADER-1", "GRAB-LEADER-OLD", true);
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-2")).thenReturn(null);
+        when(orderMapper.selectOrderListItemByGrabRequestId("TEAM-GRAB-2")).thenReturn(null);
+        when(orderMapper.selectTeamOrderListItemByTeamGrabRequestId("GRAB-LEADER-1")).thenReturn(existingTeamGrab);
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
+        InOrder inOrder = inOrder(orderMapper);
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("grab-order:GRAB-LEADER-1");
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("grab-order:TEAM-GRAB-2");
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("team-order:TEAM-GRAB-2");
+        inOrder.verify(orderMapper).selectTeamOrderListItemByTeamGrabRequestId("TEAM-GRAB-2");
+        inOrder.verify(orderMapper).selectOrderListItemByGrabRequestId("TEAM-GRAB-2");
+        inOrder.verify(orderMapper).selectTeamOrderListItemByTeamGrabRequestId("GRAB-LEADER-1");
         verify(orderMapper, never()).selectOrderListItemByGrabRequestId("GRAB-LEADER-1");
         verify(orderMapper, never()).selectById(any());
         verify(ticketSalesInternalClient, never()).quote(any(), anyString());
