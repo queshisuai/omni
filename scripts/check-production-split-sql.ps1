@@ -158,31 +158,51 @@ foreach ($file in $sqlFiles) {
 }
 
 $constraintNames = @{}
-$constraintPattern = 'ADD\s+CONSTRAINT\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))'
+$identifierPattern = '(?:(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*)?(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))'
+$constraintPattern = 'ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?' + $identifierPattern + '\s+ADD\s+CONSTRAINT\s+(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))'
 function Test-HasPrecedingConstraintDrop {
     param(
         [string]$Content,
+        [string]$TableName,
         [string]$ConstraintName,
         [int]$BeforeIndex
     )
 
     $precedingContent = $Content.Substring(0, $BeforeIndex)
-    $escapedName = [regex]::Escape($ConstraintName)
-    $dropPattern = 'DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?(?:"' + $escapedName + '"|' + $escapedName + ')(?![A-Za-z0-9_])'
-    return [regex]::IsMatch($precedingContent, $dropPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $dropPattern = 'ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?' + $identifierPattern + '\s+DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))'
+    $normalizedTable = (Normalize-Identifier $TableName)
+    $normalizedConstraint = $ConstraintName.ToLower()
+
+    foreach ($dropMatch in [regex]::Matches($precedingContent, $dropPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        $dropTable = Get-IdentifierFromMatch $dropMatch 1 2
+        if ($dropTable -ne $normalizedTable) {
+            continue
+        }
+
+        $dropConstraint = $dropMatch.Groups[3].Value
+        if (-not $dropConstraint) {
+            $dropConstraint = $dropMatch.Groups[4].Value
+        }
+        if ($dropConstraint.ToLower() -eq $normalizedConstraint) {
+            return $true
+        }
+    }
+
+    return $false
 }
 
 foreach ($file in $sqlFiles) {
     $content = Get-Content -Raw -LiteralPath $file.FullName
     foreach ($match in [regex]::Matches($content, $constraintPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
-        $constraintName = $match.Groups[1].Value
+        $tableName = Get-IdentifierFromMatch $match 1 2
+        $constraintName = $match.Groups[3].Value
         if (-not $constraintName) {
-            $constraintName = $match.Groups[2].Value
+            $constraintName = $match.Groups[4].Value
         }
         $normalized = $constraintName.ToLower()
         $lineNumber = 1 + ($content.Substring(0, $match.Index).Split("`n").Count - 1)
         if ($constraintNames.ContainsKey($normalized)) {
-            if (Test-HasPrecedingConstraintDrop $content $constraintName $match.Index) {
+            if (Test-HasPrecedingConstraintDrop $content $tableName $constraintName $match.Index) {
                 $constraintNames[$normalized] = "$($file.FullName):$lineNumber"
                 continue
             }
@@ -193,7 +213,6 @@ foreach ($file in $sqlFiles) {
     }
 }
 
-$identifierPattern = '(?:(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*)?(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))'
 $createTablePattern = 'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?' + $identifierPattern
 $alterTablePattern = 'ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?' + $identifierPattern
 $updatePattern = 'UPDATE\s+(?:ONLY\s+)?' + $identifierPattern
