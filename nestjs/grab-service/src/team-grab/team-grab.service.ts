@@ -1,19 +1,15 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
-import { TeamGrabRepository } from './team-grab.repository';
+import { isUniqueViolation, TeamGrabRepository } from './team-grab.repository';
 import type {
   CreateTeamDto,
   TeamSeatStrategy,
   TeamStatus,
+  TicketTeamMemberRecord,
   TicketTeamRecord,
 } from './team-grab.types';
 
-const READY_MIN_SIZE = 2;
-const READY_MAX_SIZE = 6;
 const JOINABLE_TEAM_STATUSES = new Set<TeamStatus>(['DRAFT', 'READY', 'FAILED', 'EXPIRED']);
-const ACTIVE_TEAM_STATUSES = new Set<TeamStatus>(['DRAFT', 'READY', 'GRABBING', 'LOCKED']);
-const READY_TRANSITION_STATUSES: TeamStatus[] = ['DRAFT', 'FAILED', 'EXPIRED', 'READY'];
-const DRAFT_TRANSITION_STATUSES: TeamStatus[] = ['READY'];
 const STRATEGY_RANK: Record<TeamSeatStrategy, number> = {
   STRICT_CONTIGUOUS: 0,
   SAME_BLOCK: 1,
@@ -31,14 +27,16 @@ export class TeamGrabService {
     const active = await this.repository.findActiveTeamForUser(dto.sessionId, leaderUserId);
     if (active) throw new ConflictException('user already has an active team for this session');
 
-    const team = await this.repository.createTeam({
-      ...dto,
-      leaderUserId,
-      inviteCode: this.generateInviteCode(),
-      fallbacks,
-    });
-    await this.repository.insertLeaderMember(team.id, team.sessionId, leaderUserId);
-    return (await this.repository.refreshTeamSize(team.id)) ?? team;
+    try {
+      return await this.repository.createTeam({
+        ...dto,
+        leaderUserId,
+        inviteCode: this.generateInviteCode(),
+        fallbacks,
+      });
+    } catch (error) {
+      this.throwConflictOnUniqueViolation(error, 'unable to create team');
+    }
   }
 
   async joinTeam(teamId: number, userId: number): Promise<TicketTeamRecord> {
@@ -49,9 +47,14 @@ export class TeamGrabService {
     const active = await this.repository.findActiveTeamForUser(team.sessionId, userId);
     if (active && active.id !== teamId) throw new ConflictException('user already has an active team for this session');
 
-    const inserted = await this.repository.insertMember(team.id, team.sessionId, userId);
+    let inserted: TicketTeamMemberRecord | null;
+    try {
+      inserted = await this.repository.insertMember(team.id, team.sessionId, userId);
+    } catch (error) {
+      this.throwConflictOnUniqueViolation(error, 'unable to join team');
+    }
     if (!inserted) throw new ConflictException('unable to join team');
-    return (await this.repository.refreshTeamSize(team.id)) ?? team;
+    return this.refreshReadiness(team);
   }
 
   async confirmMember(teamId: number, userId: number): Promise<TicketTeamRecord> {
@@ -59,7 +62,12 @@ export class TeamGrabService {
     const member = await this.repository.findMember(teamId, userId);
     if (!member || member.status === 'LEFT') throw new NotFoundException('team member not found');
     if (member.status !== 'CONFIRMED') {
-      const confirmed = await this.repository.confirmMember(teamId, userId);
+      let confirmed: TicketTeamMemberRecord | null;
+      try {
+        confirmed = await this.repository.confirmMember(teamId, userId);
+      } catch (error) {
+        this.throwConflictOnUniqueViolation(error, 'unable to confirm team member');
+      }
       if (!confirmed) throw new ConflictException('unable to confirm team member');
     }
     return this.refreshReadiness(team);
@@ -74,8 +82,7 @@ export class TeamGrabService {
 
     const left = await this.repository.leaveMember(teamId, userId);
     if (!left) throw new ConflictException('unable to leave team');
-    const refreshed = await this.repository.refreshTeamSize(teamId);
-    return this.refreshReadiness(refreshed ?? team);
+    return this.refreshReadiness(team);
   }
 
   async removeMember(teamId: number, leaderUserId: number, memberUserId: number): Promise<TicketTeamRecord> {
@@ -86,8 +93,7 @@ export class TeamGrabService {
 
     const removed = await this.repository.removeMember(teamId, memberUserId);
     if (!removed) throw new NotFoundException('team member not found');
-    const refreshed = await this.repository.refreshTeamSize(teamId);
-    return this.refreshReadiness(refreshed ?? team);
+    return this.refreshReadiness(team);
   }
 
   async updateStrategy(
@@ -106,7 +112,7 @@ export class TeamGrabService {
     return this.refreshReadiness(updated);
   }
 
-  async getTeamDetail(teamId: number, userId: number): Promise<{ team: TicketTeamRecord; members: Awaited<ReturnType<TeamGrabRepository['listMembers']>> }> {
+  async getTeamDetail(teamId: number, userId: number): Promise<{ team: TicketTeamRecord; members: TicketTeamMemberRecord[] }> {
     const team = await this.getExistingTeam(teamId);
     if (team.leaderUserId !== userId) {
       const member = await this.repository.findMember(teamId, userId);
@@ -125,35 +131,9 @@ export class TeamGrabService {
   }
 
   private async refreshReadiness(team: TicketTeamRecord): Promise<TicketTeamRecord> {
-    const members = await this.repository.listMembers(team.id);
-    const confirmedCount = members.filter((member) => member.status === 'CONFIRMED').length;
-    const refreshed = await this.repository.refreshTeamSize(team.id);
-    const current = refreshed ?? { ...team, size: confirmedCount };
-    const shouldBeReady =
-      ACTIVE_TEAM_STATUSES.has(current.status) &&
-      current.status !== 'GRABBING' &&
-      current.status !== 'LOCKED' &&
-      current.strategy !== 'FALLBACK' &&
-      confirmedCount >= READY_MIN_SIZE &&
-      confirmedCount <= READY_MAX_SIZE;
-
-    if (shouldBeReady && current.status !== 'READY') {
-      return this.updateReadinessStatus(current, 'READY', READY_TRANSITION_STATUSES);
-    }
-    if (!shouldBeReady && current.status === 'READY') {
-      return this.updateReadinessStatus(current, 'DRAFT', DRAFT_TRANSITION_STATUSES);
-    }
-    return current;
-  }
-
-  private async updateReadinessStatus(
-    current: TicketTeamRecord,
-    status: TeamStatus,
-    allowedCurrentStatuses: TeamStatus[],
-  ): Promise<TicketTeamRecord> {
-    const updated = await this.repository.updateTeamStatus(current.id, status, allowedCurrentStatuses);
-    if (updated) return updated;
-    return (await this.repository.findTeamById(current.id)) ?? current;
+    const refreshed = await this.repository.refreshTeamReadiness(team.id);
+    if (refreshed) return refreshed;
+    return (await this.repository.findTeamById(team.id)) ?? team;
   }
 
   private validateCreateTeamDto(dto: CreateTeamDto): void {
@@ -187,5 +167,10 @@ export class TeamGrabService {
 
   private generateInviteCode(): string {
     return randomBytes(5).toString('hex').toUpperCase().slice(0, 8);
+  }
+
+  private throwConflictOnUniqueViolation(error: unknown, message: string): never {
+    if (isUniqueViolation(error)) throw new ConflictException(message);
+    throw error;
   }
 }

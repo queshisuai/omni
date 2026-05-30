@@ -29,8 +29,16 @@ const memberRow = {
 
 describe('TeamGrabRepository', () => {
   it('creates teams with parameterized strategy fallbacks and maps rows', async () => {
-    const query = jest.fn().mockResolvedValue({ rows: [teamRow] });
-    const repository = new TeamGrabRepository({ query } as any);
+    const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [teamRow] })
+      .mockResolvedValueOnce({ rows: [memberRow] })
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, size: 1 }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const release = jest.fn();
+    const repository = new TeamGrabRepository({
+      pool: { connect: jest.fn().mockResolvedValue({ query, release }) },
+    } as any);
 
     const result = await repository.createTeam({
       inviteCode: 'TEAM1234',
@@ -42,7 +50,8 @@ describe('TeamGrabRepository', () => {
       fallbacks: ['SAME_TICKET_TYPE', 'FALLBACK'],
     });
 
-    expect(query).toHaveBeenCalledWith(expect.stringContaining('insert into ticket_team'), [
+    expect(query).toHaveBeenNthCalledWith(1, 'BEGIN');
+    expect(query).toHaveBeenNthCalledWith(2, expect.stringContaining('insert into ticket_team'), [
       'TEAM1234',
       100,
       10,
@@ -52,12 +61,46 @@ describe('TeamGrabRepository', () => {
       JSON.stringify(['SAME_TICKET_TYPE', 'FALLBACK']),
       'DRAFT',
     ]);
+    expect(query.mock.calls[2][0]).toContain('insert into ticket_team_member');
+    expect(query.mock.calls[3][0]).toContain('update ticket_team');
+    expect(query).toHaveBeenNthCalledWith(5, 'COMMIT');
+    expect(release).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       id: 1,
       inviteCode: 'TEAM1234',
       leaderUserId: 100,
+      size: 1,
       fallbacks: ['SAME_TICKET_TYPE', 'FALLBACK'],
     });
+  });
+
+  it('rolls back team creation when leader insertion violates a unique constraint', async () => {
+    const uniqueViolation = Object.assign(new Error('duplicate key'), { code: '23505' });
+    const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [teamRow] })
+      .mockRejectedValueOnce(uniqueViolation)
+      .mockResolvedValueOnce({ rows: [] });
+    const release = jest.fn();
+    const repository = new TeamGrabRepository({
+      pool: { connect: jest.fn().mockResolvedValue({ query, release }) },
+    } as any);
+
+    await expect(repository.createTeam({
+      inviteCode: 'TEAM1234',
+      leaderUserId: 100,
+      activityId: 10,
+      sessionId: 20,
+      ticketTypeId: 30,
+      strategy: 'SAME_BLOCK',
+      fallbacks: [],
+    })).rejects.toBe(uniqueViolation);
+
+    expect(query).toHaveBeenNthCalledWith(1, 'BEGIN');
+    expect(query.mock.calls[1][0]).toContain('insert into ticket_team');
+    expect(query.mock.calls[2][0]).toContain('insert into ticket_team_member');
+    expect(query).toHaveBeenNthCalledWith(4, 'ROLLBACK');
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it('inserts the leader as a confirmed member', async () => {
@@ -96,6 +139,33 @@ describe('TeamGrabRepository', () => {
     expect(result?.status).toBe('LEFT');
   });
 
+  it('guards member insertion by active joined and confirmed capacity under a team lock', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.insertMember(1, 20, 200);
+
+    expect(query.mock.calls[0][0]).toContain('for update');
+    expect(query.mock.calls[0][0]).toContain("m.status in ('JOINED', 'CONFIRMED')");
+    expect(query.mock.calls[0][0]).toContain('active_members.count < 6');
+    expect(query.mock.calls[0][1]).toEqual([1, 20, 200]);
+    expect(result).toBeNull();
+  });
+
+  it('guards invited member confirmation by active joined and confirmed capacity under a team lock', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.confirmMember(1, 200);
+
+    expect(query.mock.calls[0][0]).toContain('for update');
+    expect(query.mock.calls[0][0]).toContain("m.status in ('JOINED', 'CONFIRMED')");
+    expect(query.mock.calls[0][0]).toContain("ticket_team_member.status = 'JOINED'");
+    expect(query.mock.calls[0][0]).toContain('active_members.count < 6');
+    expect(query.mock.calls[0][1]).toEqual([1, 200]);
+    expect(result).toBeNull();
+  });
+
   it('refreshes size from confirmed members only', async () => {
     const query = jest.fn().mockResolvedValue({ rows: [{ ...teamRow, size: 3 }] });
     const repository = new TeamGrabRepository({ query } as any);
@@ -106,6 +176,20 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[0][0]).toContain('update ticket_team');
     expect(query.mock.calls[0][1]).toEqual([1]);
     expect(result?.size).toBe(3);
+  });
+
+  it('refreshes size and readiness from current confirmed member counts in one guarded query', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [{ ...teamRow, size: 2, status: 'READY' }] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.refreshTeamReadiness(1);
+
+    expect(query.mock.calls[0][0]).toContain('confirmed_members.count');
+    expect(query.mock.calls[0][0]).toContain('between 2 and 6');
+    expect(query.mock.calls[0][0]).toContain("t.status in ('DRAFT', 'FAILED', 'EXPIRED', 'READY')");
+    expect(query.mock.calls[0][1]).toEqual([1]);
+    expect(result?.status).toBe('READY');
+    expect(result?.size).toBe(2);
   });
 
   it('guards team status updates when allowed current statuses are provided', async () => {

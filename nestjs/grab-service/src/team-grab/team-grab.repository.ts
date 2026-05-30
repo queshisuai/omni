@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { QueryResult } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import type {
   CreateTeamInput,
@@ -37,12 +38,33 @@ interface TicketTeamMemberRow {
   join_time: Date;
 }
 
+interface TransactionClient {
+  query<T>(sql: string, params?: unknown[]): Promise<QueryResult<T>>;
+  release(): void;
+}
+
+interface TransactionPool {
+  connect(): Promise<TransactionClient>;
+}
+
+export function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
+}
+
 @Injectable()
 export class TeamGrabRepository {
   constructor(private readonly database: DatabaseService) {}
 
   async createTeam(input: CreateTeamInput): Promise<TicketTeamRecord> {
-    const result = await this.database.query<TicketTeamRow>(
+    return this.withTransaction(async (client) => {
+      const team = await this.insertTeam(client, input);
+      await this.insertLeaderMemberWithClient(client, team.id, team.sessionId, input.leaderUserId);
+      return (await this.refreshTeamSizeWithClient(client, team.id)) ?? team;
+    });
+  }
+
+  private async insertTeam(client: Pick<DatabaseService, 'query'>, input: CreateTeamInput): Promise<TicketTeamRecord> {
+    const result = await client.query<TicketTeamRow>(
       `insert into ticket_team (
         invite_code, leader_user_id, activity_id, session_id, ticket_type_id,
         strategy, fallback_strategy_json, status
@@ -63,7 +85,16 @@ export class TeamGrabRepository {
   }
 
   async insertLeaderMember(teamId: number, sessionId: number, leaderUserId: number): Promise<TicketTeamMemberRecord> {
-    const result = await this.database.query<TicketTeamMemberRow>(
+    return this.insertLeaderMemberWithClient(this.database, teamId, sessionId, leaderUserId);
+  }
+
+  private async insertLeaderMemberWithClient(
+    client: Pick<DatabaseService, 'query'>,
+    teamId: number,
+    sessionId: number,
+    leaderUserId: number,
+  ): Promise<TicketTeamMemberRecord> {
+    const result = await client.query<TicketTeamMemberRow>(
       `insert into ticket_team_member (team_id, session_id, user_id, role, status)
        values ($1, $2, $3, $4, $5)
        returning *`,
@@ -126,18 +157,27 @@ export class TeamGrabRepository {
 
   async insertMember(teamId: number, sessionId: number, userId: number): Promise<TicketTeamMemberRecord | null> {
     const result = await this.database.query<TicketTeamMemberRow>(
-      `insert into ticket_team_member (team_id, session_id, user_id, role, status)
-       select $1, $2, $3, 'MEMBER', 'JOINED'
-       where exists (
-         select 1 from ticket_team t
+      `with locked_team as (
+         select t.id
+         from ticket_team t
          where t.id = $1
            and t.session_id = $2
            and t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
-           and t.size < 6
+         for update
+       ),
+       active_members as (
+         select count(*)::int as count
+         from ticket_team_member m
+         where m.team_id = $1 and m.status in ('JOINED', 'CONFIRMED')
        )
+       insert into ticket_team_member (team_id, session_id, user_id, role, status)
+       select $1, $2, $3, 'MEMBER', 'JOINED'
+       from locked_team, active_members
+       where active_members.count < 6
        on conflict (team_id, user_id) do update
        set status = 'JOINED', update_time = now()
        where ticket_team_member.status = 'LEFT'
+         and (select count from active_members) < 6
        returning *`,
       [teamId, sessionId, userId],
     );
@@ -146,16 +186,28 @@ export class TeamGrabRepository {
 
   async confirmMember(teamId: number, userId: number): Promise<TicketTeamMemberRecord | null> {
     const result = await this.database.query<TicketTeamMemberRow>(
-      `update ticket_team_member
+      `with locked_team as (
+         select t.id
+         from ticket_team t
+         where t.id = $1 and t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
+         for update
+       ),
+       active_members as (
+         select count(*)::int as count
+         from ticket_team_member m
+         where m.team_id = $1 and m.status in ('JOINED', 'CONFIRMED')
+       )
+       update ticket_team_member
        set status = 'CONFIRMED', update_time = now()
-       where team_id = $1
-         and user_id = $2
-         and status in ('INVITED', 'JOINED')
-         and exists (
-           select 1 from ticket_team t
-           where t.id = $1 and t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
+       from locked_team, active_members
+       where ticket_team_member.team_id = $1
+         and ticket_team_member.user_id = $2
+         and ticket_team_member.status in ('INVITED', 'JOINED')
+         and (
+           ticket_team_member.status = 'JOINED'
+           or active_members.count < 6
          )
-       returning *`,
+       returning ticket_team_member.*`,
       [teamId, userId],
     );
     return result.rows[0] ? this.mapMemberRow(result.rows[0]) : null;
@@ -231,7 +283,14 @@ export class TeamGrabRepository {
   }
 
   async refreshTeamSize(teamId: number): Promise<TicketTeamRecord | null> {
-    const result = await this.database.query<TicketTeamRow>(
+    return this.refreshTeamSizeWithClient(this.database, teamId);
+  }
+
+  private async refreshTeamSizeWithClient(
+    client: Pick<DatabaseService, 'query'>,
+    teamId: number,
+  ): Promise<TicketTeamRecord | null> {
+    const result = await client.query<TicketTeamRow>(
       `update ticket_team
        set size = (
          select count(*)::int
@@ -244,6 +303,51 @@ export class TeamGrabRepository {
       [teamId],
     );
     return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
+  }
+
+  async refreshTeamReadiness(teamId: number): Promise<TicketTeamRecord | null> {
+    const result = await this.database.query<TicketTeamRow>(
+      `with confirmed_members as (
+         select count(*)::int as count
+         from ticket_team_member m
+         where m.team_id = $1 and m.status = 'CONFIRMED'
+       )
+       update ticket_team t
+       set size = confirmed_members.count,
+           status = case
+             when t.status in ('DRAFT', 'FAILED', 'EXPIRED', 'READY')
+               and t.strategy <> 'FALLBACK'
+               and confirmed_members.count between 2 and 6
+               then 'READY'
+             when t.status = 'READY'
+               then 'DRAFT'
+             else t.status
+           end,
+           update_time = now()
+       from confirmed_members
+       where t.id = $1
+       returning t.*`,
+      [teamId],
+    );
+    return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
+  }
+
+  private async withTransaction<T>(callback: (client: Pick<DatabaseService, 'query'>) => Promise<T>): Promise<T> {
+    const pool = (this.database as unknown as { pool?: TransactionPool }).pool;
+    if (!pool) throw new Error('database transaction pool is unavailable');
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await callback(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   private mapTeamRow(row: TicketTeamRow): TicketTeamRecord {
