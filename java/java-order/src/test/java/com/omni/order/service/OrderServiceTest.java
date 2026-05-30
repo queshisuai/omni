@@ -12,7 +12,9 @@ import com.omni.order.dto.CreateTeamOrderRequest;
 import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.OrderListItemResponse;
+import com.omni.order.dto.PaymentSyncDecisionResponse;
 import com.omni.order.dto.TicketSalesLockRequest;
+import com.omni.order.dto.TicketSalesOrderRequest;
 import com.omni.order.dto.TicketSalesQuoteResponse;
 import com.omni.order.dto.TicketSalesSeatLockResponse;
 import com.omni.order.entity.Order;
@@ -1750,6 +1752,78 @@ class OrderServiceTest {
         verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
     }
 
+    @Test
+    void teamOrderMarkPaidConfirmsOnlyLockedSeatsWithTeamGrabRequestIdFence() {
+        Order order = paidOrder(2101L, 101L, 1L);
+        OrderSeat lockedSeat = orderSeat(2101L, 301L, "A-1");
+        lockedSeat.setId(9001L);
+        lockedSeat.setSessionId(101L);
+        lockedSeat.setTicketTypeId(1L);
+        lockedSeat.setStatus(1);
+        OrderSeat soldSeat = orderSeat(2101L, 302L, "A-2");
+        soldSeat.setId(9002L);
+        soldSeat.setSessionId(101L);
+        soldSeat.setTicketTypeId(1L);
+        soldSeat.setStatus(2);
+        when(orderMapper.selectById(2101L)).thenReturn(order);
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of(lockedSeat, soldSeat));
+        when(orderSnapshotMapper.selectOne(any())).thenReturn(teamSnapshot(2101L, "TEAM-GRAB-1"));
+        when(ticketSalesInternalClient.confirmSold(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
+
+        service.markPaid(2101L);
+
+        ArgumentCaptor<TicketSalesOrderRequest> captor = ArgumentCaptor.forClass(TicketSalesOrderRequest.class);
+        verify(ticketSalesInternalClient).confirmSold(captor.capture(), eq("test-internal-token"));
+        assertEquals(List.of(301L), captor.getValue().getSeatIds());
+        assertEquals("TEAM-GRAB-1", captor.getValue().getLockRequestId());
+    }
+
+    @Test
+    void teamOrderMarkPaidSkipsRemoteConfirmWhenLocalSeatsAlreadySold() {
+        Order order = paidOrder(2102L, 101L, 1L);
+        OrderSeat soldSeat = orderSeat(2102L, 302L, "A-2");
+        soldSeat.setId(9002L);
+        soldSeat.setSessionId(101L);
+        soldSeat.setTicketTypeId(1L);
+        soldSeat.setStatus(2);
+        when(orderMapper.selectById(2102L)).thenReturn(order);
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of(soldSeat));
+
+        Order result = service.markPaid(2102L);
+
+        assertEquals(OrderService.STATUS_PAID, result.getStatus());
+        verify(ticketSalesInternalClient, never()).confirmSold(any(), anyString());
+        verify(orderSeatMapper, never()).updateById(any());
+    }
+
+    @Test
+    void teamOrderCancelReleasesWithTeamGrabRequestIdFence() {
+        Order order = pendingOrder(2103L, 101L, 1L);
+        OrderSeat lockedSeat = orderSeat(2103L, 301L, "A-1");
+        lockedSeat.setId(9003L);
+        lockedSeat.setSessionId(101L);
+        lockedSeat.setTicketTypeId(1L);
+        lockedSeat.setStatus(1);
+        when(orderMapper.selectById(2103L)).thenReturn(order);
+        when(paymentInternalClient.syncOrderForCancel(2103L, "test-internal-token"))
+                .thenReturn(Result.success(safeToCancelDecision()));
+        when(orderMapper.updateStatusIfCurrent(2103L, OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED))
+                .thenReturn(1);
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of(lockedSeat));
+        when(orderSnapshotMapper.selectOne(any())).thenReturn(teamSnapshot(2103L, "TEAM-GRAB-1"));
+        when(ticketSalesInternalClient.release(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
+
+        service.cancelOrder(2103L);
+
+        ArgumentCaptor<TicketSalesOrderRequest> captor = ArgumentCaptor.forClass(TicketSalesOrderRequest.class);
+        verify(ticketSalesInternalClient).release(captor.capture(), eq("test-internal-token"));
+        assertEquals(List.of(301L), captor.getValue().getSeatIds());
+        assertEquals("TEAM-GRAB-1", captor.getValue().getLockRequestId());
+        assertEquals(4, lockedSeat.getStatus());
+    }
+
     private TicketSalesQuoteResponse quoteWithLimit(int quantity) {
         TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
         quote.setActivityId(100L);
@@ -1765,6 +1839,45 @@ class OrderServiceTest {
         quote.setUnitPrice(new BigDecimal("100.00"));
         quote.setQuantity(quantity);
         return quote;
+    }
+
+    private PaymentSyncDecisionResponse safeToCancelDecision() {
+        PaymentSyncDecisionResponse decision = new PaymentSyncDecisionResponse();
+        decision.setPaid(false);
+        decision.setSafeToCancel(true);
+        return decision;
+    }
+
+    private Order pendingOrder(Long id, Long sessionId, Long ticketTypeId) {
+        Order order = baseOrder(id, sessionId, ticketTypeId);
+        order.setStatus(OrderService.STATUS_PENDING);
+        return order;
+    }
+
+    private Order paidOrder(Long id, Long sessionId, Long ticketTypeId) {
+        Order order = baseOrder(id, sessionId, ticketTypeId);
+        order.setStatus(OrderService.STATUS_PAID);
+        return order;
+    }
+
+    private Order baseOrder(Long id, Long sessionId, Long ticketTypeId) {
+        Order order = new Order();
+        order.setId(id);
+        order.setOrderNo("DM" + id);
+        order.setUserId(2004L);
+        order.setSessionId(sessionId);
+        order.setTicketTypeId(ticketTypeId);
+        order.setQuantity(1);
+        order.setAmount(new BigDecimal("100.00"));
+        return order;
+    }
+
+    private OrderSnapshot teamSnapshot(Long orderId, String teamGrabRequestId) {
+        OrderSnapshot snapshot = new OrderSnapshot();
+        snapshot.setOrderId(orderId);
+        snapshot.setTeamOrder(true);
+        snapshot.setTeamGrabRequestId(teamGrabRequestId);
+        return snapshot;
     }
 
     private OrderListItemResponse teamOrderItem(Long id, String teamGrabRequestId, String grabRequestId, Boolean teamOrder) {

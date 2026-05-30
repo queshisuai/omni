@@ -720,6 +720,8 @@ class TicketSalesInternalServiceTest {
     void confirmSoldMarksSeats() {
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
         TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.markSeatSold(501L, 3001L, 4001L, 88L, null)).thenReturn(1);
+        when(sessionSeatMapper.markSeatSold(502L, 3001L, 4001L, 88L, null)).thenReturn(1);
 
         TicketSalesOrderRequest request = new TicketSalesOrderRequest();
         request.setOrderId(88L);
@@ -729,8 +731,49 @@ class TicketSalesInternalServiceTest {
 
         service.confirmSold(request);
 
-        verify(sessionSeatMapper).markSeatSold(501L, 3001L, 88L);
-        verify(sessionSeatMapper).markSeatSold(502L, 3001L, 88L);
+        verify(sessionSeatMapper).markSeatSold(501L, 3001L, 4001L, 88L, null);
+        verify(sessionSeatMapper).markSeatSold(502L, 3001L, 4001L, 88L, null);
+    }
+
+    @Test
+    void confirmSoldUsesLockRequestIdFenceAndFailsOnPartialSeatUpdate() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.markSeatSold(501L, 3001L, 4001L, 88L, "TEAM-GRAB-1")).thenReturn(1);
+        when(sessionSeatMapper.markSeatSold(502L, 3001L, 4001L, 88L, "TEAM-GRAB-1")).thenReturn(0);
+
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setOrderId(88L);
+        request.setSessionId(3001L);
+        request.setTicketTypeId(4001L);
+        request.setSeatIds(List.of(501L, 502L));
+        request.setLockRequestId("TEAM-GRAB-1");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.confirmSold(request));
+
+        assertEquals(409, exception.getCode());
+        verify(sessionSeatMapper).markSeatSold(501L, 3001L, 4001L, 88L, "TEAM-GRAB-1");
+        verify(sessionSeatMapper).markSeatSold(502L, 3001L, 4001L, 88L, "TEAM-GRAB-1");
+    }
+
+    @Test
+    void releaseUsesLockRequestIdFenceAndFailsOnPartialSeatUpdate() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.releaseLockedSeat(501L, 3001L, 4001L, "TEAM-GRAB-1")).thenReturn(1);
+        when(sessionSeatMapper.releaseLockedSeat(502L, 3001L, 4001L, "TEAM-GRAB-1")).thenReturn(0);
+
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setSessionId(3001L);
+        request.setTicketTypeId(4001L);
+        request.setSeatIds(List.of(501L, 502L));
+        request.setLockRequestId("TEAM-GRAB-1");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.release(request));
+
+        assertEquals(409, exception.getCode());
+        verify(sessionSeatMapper).releaseLockedSeat(501L, 3001L, 4001L, "TEAM-GRAB-1");
+        verify(sessionSeatMapper).releaseLockedSeat(502L, 3001L, 4001L, "TEAM-GRAB-1");
     }
 
     @Test

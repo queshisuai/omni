@@ -8,6 +8,7 @@ public class TicketSalesOrderRequest {
     private Long ticketTypeId;
     private List<Long> seatIds;
     private Integer quantity;
+    private String lockRequestId;
 
     public Long getOrderId() { return orderId; }
     public void setOrderId(Long orderId) { this.orderId = orderId; }
@@ -19,4 +20,6 @@ public class TicketSalesOrderRequest {
     public void setSeatIds(List<Long> seatIds) { this.seatIds = seatIds; }
     public Integer getQuantity() { return quantity; }
     public void setQuantity(Integer quantity) { this.quantity = quantity; }
+    public String getLockRequestId() { return lockRequestId; }
+    public void setLockRequestId(String lockRequestId) { this.lockRequestId = lockRequestId; }
 }

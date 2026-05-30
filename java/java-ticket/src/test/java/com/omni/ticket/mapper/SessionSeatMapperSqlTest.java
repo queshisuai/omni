@@ -30,7 +30,8 @@ class SessionSeatMapperSqlTest {
 
     @Test
     void releasingSeatsKeepsTicketTypeBinding() throws Exception {
-        String releaseSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod("releaseLockedSeat", Long.class, Long.class)).toLowerCase();
+        String releaseSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "releaseLockedSeat", Long.class, Long.class, Long.class, String.class)).toLowerCase();
         String restoreSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod("restoreSoldSeat", Long.class, Long.class)).toLowerCase();
 
         assertFalse(releaseSql.contains("ticket_type_id = null"), "释放锁座不能清空票档绑定");
@@ -71,13 +72,13 @@ class SessionSeatMapperSqlTest {
         String lockedByRequestIdSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "selectLockedByRequestId", Long.class, Long.class, String.class)).toLowerCase();
         String releaseSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
-                "releaseLockedSeat", Long.class, Long.class)).toLowerCase();
+                "releaseLockedSeat", Long.class, Long.class, Long.class, String.class)).toLowerCase();
         String releaseTeamSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "releaseTeamSeatLockByRequest", String.class, List.class)).toLowerCase();
         String releaseTeamByRequestSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "releaseTeamSeatLockByRequestId", String.class)).toLowerCase();
         String soldSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
-                "markSeatSold", Long.class, Long.class, Long.class)).toLowerCase();
+                "markSeatSold", Long.class, Long.class, Long.class, Long.class, String.class)).toLowerCase();
 
         assertTrue(selectSql.contains("for update skip locked"), selectSql);
         assertTrue(selectSql.contains("limit #{limit}"), selectSql);
@@ -91,6 +92,25 @@ class SessionSeatMapperSqlTest {
         assertTrue(releaseTeamSql.contains("lock_request_id = null"), releaseTeamSql);
         assertTrue(releaseTeamByRequestSql.contains("lock_request_id = null"), releaseTeamByRequestSql);
         assertTrue(soldSql.contains("lock_request_id = null"), soldSql);
+    }
+
+    @Test
+    void confirmAndReleaseSeatSqlUseTicketTypeLockRequestAndLockedStatusFencing() throws Exception {
+        String soldSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "markSeatSold", Long.class, Long.class, Long.class, Long.class, String.class)).toLowerCase();
+        String releaseSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "releaseLockedSeat", Long.class, Long.class, Long.class, String.class)).toLowerCase();
+
+        assertTrue(soldSql.contains("ticket_type_id = #{tickettypeid}"), soldSql);
+        assertTrue(soldSql.contains("status = 2"), soldSql);
+        assertFalse(soldSql.contains("status = 1"), soldSql);
+        assertTrue(soldSql.contains("lock_request_id = #{lockrequestid}"), soldSql);
+        assertTrue(soldSql.contains("lock_request_id is null"), soldSql);
+
+        assertTrue(releaseSql.contains("ticket_type_id = #{tickettypeid}"), releaseSql);
+        assertTrue(releaseSql.contains("status = 2"), releaseSql);
+        assertTrue(releaseSql.contains("lock_request_id = #{lockrequestid}"), releaseSql);
+        assertTrue(releaseSql.contains("lock_request_id is null"), releaseSql);
     }
 
     @Test

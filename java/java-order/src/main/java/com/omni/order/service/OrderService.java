@@ -705,8 +705,9 @@ public class OrderService {
                 } else if (order.getStatus() != STATUS_CANCELLED) {
                     continue;
                 }
-                releaseSingleLockedSeat(orderSeat);
-                released++;
+                if (releaseSingleLockedSeat(orderSeat)) {
+                    released++;
+                }
             }
         }
         released += releaseExpiredPendingOrders(now.minusMinutes(15));
@@ -1288,28 +1289,38 @@ public class OrderService {
         List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
                 .eq(OrderSeat::getOrderId, order.getId())
                 .in(OrderSeat::getStatus, ORDER_SEAT_LOCKED, ORDER_SEAT_SOLD));
+        List<OrderSeat> lockedSeats = new ArrayList<>();
+        if (orderSeats != null) {
+            for (OrderSeat orderSeat : orderSeats) {
+                if (orderSeat.getStatus() != null && orderSeat.getStatus() == ORDER_SEAT_LOCKED) {
+                    lockedSeats.add(orderSeat);
+                }
+            }
+        }
+        if (orderSeats != null && !orderSeats.isEmpty() && lockedSeats.isEmpty()) {
+            return;
+        }
         TicketSalesOrderRequest request = new TicketSalesOrderRequest();
         request.setOrderId(order.getId());
         request.setSessionId(order.getSessionId());
         request.setTicketTypeId(order.getTicketTypeId());
         request.setQuantity(order.getQuantity());
-        if (orderSeats != null && !orderSeats.isEmpty()) {
-            LocalDateTime now = LocalDateTime.now();
-            List<Long> seatIds = new ArrayList<>();
-            for (OrderSeat orderSeat : orderSeats) {
-                if (orderSeat.getStatus() == null || orderSeat.getStatus() == ORDER_SEAT_LOCKED) {
-                    orderSeat.setStatus(ORDER_SEAT_SOLD);
-                    orderSeat.setUpdateTime(now);
-                    orderSeatMapper.updateById(orderSeat);
-                }
-                seatIds.add(orderSeat.getSessionSeatId());
-            }
-            request.setSeatIds(seatIds);
+        if (!lockedSeats.isEmpty()) {
+            request.setSeatIds(lockedSeats.stream().map(OrderSeat::getSessionSeatId).collect(Collectors.toList()));
+            request.setLockRequestId(resolveTeamLockRequestId(order.getId()));
         }
         String token = requireInternalApiToken("票务库存接口令牌未配置");
         Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.confirmSold(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
+        }
+        if (!lockedSeats.isEmpty()) {
+            LocalDateTime now = LocalDateTime.now();
+            for (OrderSeat orderSeat : lockedSeats) {
+                orderSeat.setStatus(ORDER_SEAT_SOLD);
+                orderSeat.setUpdateTime(now);
+                orderSeatMapper.updateById(orderSeat);
+            }
         }
     }
 
@@ -1339,6 +1350,7 @@ public class OrderService {
                 seatIds.add(orderSeat.getSessionSeatId());
             }
             request.setSeatIds(seatIds);
+            request.setLockRequestId(resolveTeamLockRequestId(order.getId()));
         }
         String token = requireInternalApiToken("票务库存接口令牌未配置");
         Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.release(request, token));
@@ -1359,23 +1371,38 @@ public class OrderService {
         }
     }
 
-    private void releaseSingleLockedSeat(OrderSeat orderSeat) {
+    private boolean releaseSingleLockedSeat(OrderSeat orderSeat) {
         TicketSalesOrderRequest request = new TicketSalesOrderRequest();
         request.setOrderId(orderSeat.getOrderId());
         request.setSessionId(orderSeat.getSessionId());
         request.setTicketTypeId(orderSeat.getTicketTypeId());
         request.setSeatIds(List.of(orderSeat.getSessionSeatId()));
         request.setQuantity(1);
+        request.setLockRequestId(resolveTeamLockRequestId(orderSeat.getOrderId()));
         String token = requireInternalApiToken("票务库存接口令牌未配置");
         Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.release(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             log.warn("释放座位锁失败，票务服务拒绝: orderSeatId={}, sessionSeatId={}, orderId={}",
                     orderSeat.getId(), orderSeat.getSessionSeatId(), orderSeat.getOrderId());
-            return;
+            return false;
         }
         orderSeat.setStatus(ORDER_SEAT_RELEASED);
         orderSeat.setUpdateTime(LocalDateTime.now());
         orderSeatMapper.updateById(orderSeat);
+        return true;
+    }
+
+    private String resolveTeamLockRequestId(Long orderId) {
+        if (orderSnapshotMapper == null || orderId == null) {
+            return null;
+        }
+        OrderSnapshot snapshot = orderSnapshotMapper.selectOne(new LambdaQueryWrapper<OrderSnapshot>()
+                .eq(OrderSnapshot::getOrderId, orderId));
+        if (snapshot == null || !Boolean.TRUE.equals(snapshot.getTeamOrder())
+                || !StringUtils.hasText(snapshot.getTeamGrabRequestId())) {
+            return null;
+        }
+        return snapshot.getTeamGrabRequestId();
     }
 
     private void refundTicketsStrict(Order order) {

@@ -61,18 +61,42 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                  @Param("ticketTypeId") Long ticketTypeId,
                  @Param("lockExpireTime") LocalDateTime lockExpireTime);
 
-    @Update("UPDATE session_seat SET status = 3, order_id = #{orderId}, update_time = CURRENT_TIMESTAMP " +
-            ", lock_request_id = NULL " +
-            "WHERE id = #{seatId} AND session_id = #{sessionId} AND (status = 2 OR (status = 1 AND order_id IS NULL))")
+    @Update({"<script>",
+            "UPDATE session_seat SET status = 3, order_id = #{orderId}, update_time = CURRENT_TIMESTAMP, ",
+            "lock_request_id = NULL ",
+            "WHERE id = #{seatId} AND session_id = #{sessionId} AND ticket_type_id = #{ticketTypeId} AND status = 2 ",
+            "<choose>",
+            "<when test='lockRequestId != null and lockRequestId != \"\"'>",
+            "AND lock_request_id = #{lockRequestId}",
+            "</when>",
+            "<otherwise>",
+            "AND lock_request_id IS NULL",
+            "</otherwise>",
+            "</choose>",
+            "</script>"})
     int markSeatSold(@Param("seatId") Long seatId,
                      @Param("sessionId") Long sessionId,
-                     @Param("orderId") Long orderId);
+                     @Param("ticketTypeId") Long ticketTypeId,
+                     @Param("orderId") Long orderId,
+                     @Param("lockRequestId") String lockRequestId);
 
-    @Update("UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, " +
-            "lock_request_id = NULL, update_time = CURRENT_TIMESTAMP " +
-            "WHERE id = #{seatId} AND session_id = #{sessionId} AND status = 2")
+    @Update({"<script>",
+            "UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, ",
+            "lock_request_id = NULL, update_time = CURRENT_TIMESTAMP ",
+            "WHERE id = #{seatId} AND session_id = #{sessionId} AND ticket_type_id = #{ticketTypeId} AND status = 2 ",
+            "<choose>",
+            "<when test='lockRequestId != null and lockRequestId != \"\"'>",
+            "AND lock_request_id = #{lockRequestId}",
+            "</when>",
+            "<otherwise>",
+            "AND lock_request_id IS NULL",
+            "</otherwise>",
+            "</choose>",
+            "</script>"})
     int releaseLockedSeat(@Param("seatId") Long seatId,
-                          @Param("sessionId") Long sessionId);
+                          @Param("sessionId") Long sessionId,
+                          @Param("ticketTypeId") Long ticketTypeId,
+                          @Param("lockRequestId") String lockRequestId);
 
     @Select("SELECT pg_advisory_xact_lock(hashtext(#{lockRequestId})::bigint)")
     void acquireTeamLockRequestLock(@Param("lockRequestId") String lockRequestId);

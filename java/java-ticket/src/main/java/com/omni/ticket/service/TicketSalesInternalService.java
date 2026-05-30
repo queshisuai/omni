@@ -481,8 +481,13 @@ public class TicketSalesInternalService {
     @Transactional(rollbackFor = Exception.class)
     public void confirmSold(TicketSalesOrderRequest request) {
         if (request.getSeatIds() != null && !request.getSeatIds().isEmpty()) {
+            int updated = 0;
             for (Long seatId : request.getSeatIds()) {
-                sessionSeatMapper.markSeatSold(seatId, request.getSessionId(), request.getOrderId());
+                updated += sessionSeatMapper.markSeatSold(seatId, request.getSessionId(), request.getTicketTypeId(),
+                        request.getOrderId(), request.getLockRequestId());
+            }
+            if (updated != request.getSeatIds().size()) {
+                throw new BusinessException(ResultCode.CONFLICT, "seat lock fencing failed while confirming sold");
             }
         }
     }
@@ -490,8 +495,13 @@ public class TicketSalesInternalService {
     @Transactional(rollbackFor = Exception.class)
     public void release(TicketSalesOrderRequest request) {
         if (request.getSeatIds() != null && !request.getSeatIds().isEmpty()) {
+            int updated = 0;
             for (Long seatId : request.getSeatIds()) {
-                sessionSeatMapper.releaseLockedSeat(seatId, request.getSessionId());
+                updated += sessionSeatMapper.releaseLockedSeat(seatId, request.getSessionId(), request.getTicketTypeId(),
+                        request.getLockRequestId());
+            }
+            if (updated != request.getSeatIds().size()) {
+                throw new BusinessException(ResultCode.CONFLICT, "seat lock fencing failed while releasing");
             }
         } else {
             ticketTypeMapper.increaseRemainStock(request.getTicketTypeId(), requirePositiveQuantity(request.getQuantity()));
