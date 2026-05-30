@@ -830,6 +830,9 @@ public class OrderService {
         if (!StringUtils.hasText(request.getTeamGrabRequestId())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "team grab request id is required");
         }
+        if (request.getTeamId() == null || request.getTeamId() <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team id is required for team order");
+        }
         if (!StringUtils.hasText(request.getGrabRequestId())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "grab request id is required for team order");
         }
@@ -882,6 +885,9 @@ public class OrderService {
                 quantity,
                 request.getGrabRequestId(),
                 request.getAuthorizedMaxUnitPrice(),
+                request.getRequestedTicketTypeId(),
+                request.getMatchedTicketTypeId(),
+                request.getAutoDowngraded(),
                 SEAT_SELECTION_NONE,
                 null);
     }
@@ -894,6 +900,9 @@ public class OrderService {
                 quantity,
                 request.getGrabRequestId(),
                 request.getAuthorizedMaxUnitPrice(),
+                request.getRequestedTicketTypeId(),
+                request.getMatchedTicketTypeId(),
+                request.getAutoDowngraded(),
                 seatSelectionMode,
                 request.getSeatIds());
     }
@@ -904,6 +913,9 @@ public class OrderService {
                                                  int quantity,
                                                  String grabRequestId,
                                                  BigDecimal authorizedMaxUnitPrice,
+                                                 Long requestedTicketTypeId,
+                                                 Long matchedTicketTypeId,
+                                                 Boolean autoDowngraded,
                                                  String seatSelectionMode,
                                                  List<Long> requestedSeatIds) {
         if (!StringUtils.hasText(grabRequestId)) {
@@ -922,7 +934,8 @@ public class OrderService {
             throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a team order");
         }
         if (!sameOrderPayload(existingOrder, userId, sessionId, ticketTypeId, quantity)
-                || !grabRequestId.equals(existingOrder.getGrabRequestId())) {
+                || !grabRequestId.equals(existingOrder.getGrabRequestId())
+                || !sameGrabRetrySnapshotPayload(existingOrder, requestedTicketTypeId, matchedTicketTypeId, autoDowngraded)) {
             throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
         }
         Order loadedOrder = validateExistingNormalOrderAuthorizedPrice(authorizedMaxUnitPrice, existingOrder);
@@ -965,11 +978,20 @@ public class OrderService {
                 || !sameOrderPayload(existingOrder, request.getUserId(), request.getSessionId(), request.getTicketTypeId(), request.getQuantity())) {
             return false;
         }
-        return request.getTeamId() == null || Objects.equals(request.getTeamId(), existingOrder.getTeamId());
+        return Objects.equals(request.getTeamId(), existingOrder.getTeamId());
     }
 
     private boolean teamSeatSelectionModeMatches(OrderListItemResponse existingOrder) {
         return SEAT_SELECTION_TEAM.equals(existingOrder.getSeatSelectionMode()) || existingOrder.getSeatSelectionMode() == null;
+    }
+
+    private boolean sameGrabRetrySnapshotPayload(OrderListItemResponse existingOrder,
+                                                 Long requestedTicketTypeId,
+                                                 Long matchedTicketTypeId,
+                                                 Boolean autoDowngraded) {
+        return Objects.equals(requestedTicketTypeId, existingOrder.getRequestedTicketTypeId())
+                && Objects.equals(matchedTicketTypeId, existingOrder.getMatchedTicketTypeId())
+                && Objects.equals(autoDowngraded, existingOrder.getAutoDowngraded());
     }
 
     private boolean sameOrderPayload(OrderListItemResponse existingOrder,
