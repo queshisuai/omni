@@ -94,6 +94,11 @@ export class TeamGrabProcessorService {
     }
 
     try {
+      const orderCreateClaim = await this.teamRepository.markTeamGrabOrderCreateInProgress(teamGrab.requestId);
+      if (!orderCreateClaim) {
+        await this.markPendingRecovery(record, teamGrab);
+        return false;
+      }
       const order = await this.orderClient.createTeamOrderWithLockedSeats(orderInput);
       return await this.finishOrderCreated(record, teamGrab, order.id);
     } catch (error) {

@@ -5,7 +5,11 @@ import { OrderClientService } from '../grab/order-client.service';
 import { GRAB_STATUS } from '../grab/grab-status';
 import { TicketClientService } from '../grab/ticket-client.service';
 import { NotificationClientService } from './notification-client.service';
-import { TeamGrabRepository } from './team-grab.repository';
+import {
+  ORDER_CREATE_TIMEOUT_CLAIMED,
+  ORDER_CREATE_TIMEOUT_RELEASING,
+  TeamGrabRepository,
+} from './team-grab.repository';
 import type { TeamGrabRequestRecord } from './team-grab.types';
 
 const RECOVERY_LIMIT = 100;
@@ -56,40 +60,45 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const claimed = await this.repository.claimStalePreOrderRecovery(teamGrab.requestId, STALE_PRE_ORDER_SECONDS);
-    if (!claimed) return;
+    if (!this.hasReleaseClaimMarker(teamGrab)) {
+      await this.repository.claimStalePreOrderRecovery(teamGrab.requestId, STALE_PRE_ORDER_SECONDS);
+      return;
+    }
 
-    if (claimed.grabRequestId) {
-      const existingOrder = await this.lookupOrder(claimed.grabRequestId);
+    const releaseClaim = await this.repository.claimStalePreOrderRelease(teamGrab.requestId, STALE_PRE_ORDER_SECONDS);
+    if (!releaseClaim) return;
+
+    if (releaseClaim.grabRequestId) {
+      const existingOrder = await this.lookupOrder(releaseClaim.grabRequestId);
       if (existingOrder === 'UNKNOWN') return;
       if (existingOrder) {
-        await this.recoverFoundOrder(claimed, existingOrder.id, true);
+        await this.recoverFoundOrder(releaseClaim, existingOrder.id);
         return;
       }
     }
 
-    await this.ticketClient.releaseTeamSeatLock(claimed.requestId, claimed.lockedSeatIds);
-    const transitioned = await this.repository.markTeamFailed(claimed.teamId, claimed.requestId, ORDER_CREATE_TIMEOUT);
+    await this.ticketClient.releaseTeamSeatLock(releaseClaim.requestId, releaseClaim.lockedSeatIds);
+    const transitioned = await this.repository.markTeamFailed(
+      releaseClaim.teamId,
+      releaseClaim.requestId,
+      ORDER_CREATE_TIMEOUT,
+    );
     if (!transitioned) return;
 
-    if (claimed.grabRequestId) {
-      await this.grabRepository.updateStatus(claimed.grabRequestId, GRAB_STATUS.FAILED, ORDER_CREATE_TIMEOUT);
+    if (releaseClaim.grabRequestId) {
+      await this.grabRepository.updateStatus(releaseClaim.grabRequestId, GRAB_STATUS.FAILED, ORDER_CREATE_TIMEOUT);
       await this.queueService
-        .removeQueuedRequest(claimed.sessionId, claimed.grabRequestId)
+        .removeQueuedRequest(releaseClaim.sessionId, releaseClaim.grabRequestId)
         .catch((error) => this.logger.warn(error));
     }
 
-    const members = await this.repository.listConfirmedMembers(claimed.teamId);
+    const members = await this.repository.listConfirmedMembers(releaseClaim.teamId);
     for (const member of members) {
       await this.notificationClient.sendFailed(member.userId, null).catch((error) => this.logger.warn(error));
     }
   }
 
-  private async recoverFoundOrder(
-    teamGrab: TeamGrabRequestRecord,
-    orderId: number,
-    claimedRecovery = false,
-  ): Promise<void> {
+  private async recoverFoundOrder(teamGrab: TeamGrabRequestRecord, orderId: number): Promise<void> {
     if (!teamGrab.grabRequestId) return;
 
     const grabOrderCreated = await this.grabRepository.markOrderCreatedFromProgressStatuses(
@@ -99,13 +108,19 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
       [],
       [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
     );
-    if (!grabOrderCreated) return;
-
-    if (claimedRecovery) {
-      await this.repository.markClaimedTeamGrabOrderCreated(teamGrab.requestId, orderId);
-    } else {
-      await this.repository.markTeamGrabOrderCreated(teamGrab.requestId, orderId);
+    if (!grabOrderCreated) {
+      const existingGrab = await this.grabRepository.findByRequestId(teamGrab.grabRequestId);
+      if (
+        !existingGrab
+        || existingGrab.orderId !== orderId
+        || existingGrab.progressStatus !== GRAB_STATUS.ORDER_CREATED
+      ) {
+        return;
+      }
     }
+
+    const teamOrderCreated = await this.repository.repairTeamGrabOrderCreated(teamGrab.requestId, orderId);
+    if (!teamOrderCreated) return;
     await this.repository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING', 'LOCKED']);
   }
 
@@ -116,5 +131,10 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(error);
       return 'UNKNOWN';
     }
+  }
+
+  private hasReleaseClaimMarker(teamGrab: TeamGrabRequestRecord): boolean {
+    return teamGrab.failReason === ORDER_CREATE_TIMEOUT_CLAIMED
+      || teamGrab.failReason === ORDER_CREATE_TIMEOUT_RELEASING;
   }
 }

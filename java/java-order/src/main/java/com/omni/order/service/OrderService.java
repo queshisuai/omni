@@ -640,10 +640,12 @@ public class OrderService {
         return order;
     }
 
+    @Transactional(readOnly = true)
     public OrderListItemResponse findOrderByGrabRequestId(String grabRequestId) {
         if (!StringUtils.hasText(grabRequestId)) {
             return null;
         }
+        orderMapper.acquireAdvisoryTransactionLock("grab-order:" + grabRequestId);
         return orderMapper.selectOrderListItemByGrabRequestId(grabRequestId);
     }
 

@@ -1435,6 +1435,9 @@ class OrderServiceTest {
         assertEquals("DM20260530120000ABCDEF", result.getOrderNo());
         assertEquals(1, result.getStatus());
         assertEquals("GRAB-20260530-1", result.getGrabRequestId());
+        InOrder inOrder = inOrder(orderMapper);
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("grab-order:GRAB-20260530-1");
+        inOrder.verify(orderMapper).selectOrderListItemByGrabRequestId("GRAB-20260530-1");
     }
 
     @Test
@@ -1444,6 +1447,9 @@ class OrderServiceTest {
         OrderListItemResponse result = service.findOrderByGrabRequestId("GRAB-20260530-missing");
 
         assertNull(result);
+        InOrder inOrder = inOrder(orderMapper);
+        inOrder.verify(orderMapper).acquireAdvisoryTransactionLock("grab-order:GRAB-20260530-missing");
+        inOrder.verify(orderMapper).selectOrderListItemByGrabRequestId("GRAB-20260530-missing");
     }
 
     @Test

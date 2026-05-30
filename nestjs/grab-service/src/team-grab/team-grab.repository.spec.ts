@@ -350,6 +350,7 @@ describe('TeamGrabRepository', () => {
     expect(sql).toContain('r.request_id = $1');
     expect(sql).toContain("r.status in ('grabbing', 'locked')");
     expect(sql).toContain('r.order_id is null');
+    expect(sql).toContain("r.fail_reason is null");
     expect(sql).toContain('jsonb_array_length');
     expect(sql).toContain("t.status in ('grabbing', 'locked')");
     expect(sql).toContain('interval');
@@ -362,6 +363,48 @@ describe('TeamGrabRepository', () => {
     });
   });
 
+  it('atomically claims stale pre-order release only from an existing recovery claim', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...teamGrabRow,
+        status: 'LOCKED',
+        locked_seat_ids: JSON.stringify([501]),
+        fail_reason: 'ORDER_CREATE_TIMEOUT_RELEASING',
+      }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.claimStalePreOrderRelease('TEAM-GRAB-1', 30);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain("fail_reason = 'order_create_timeout_releasing'");
+    expect(sql).toContain("r.fail_reason in ('order_create_timeout_claimed', 'order_create_timeout_releasing')");
+    expect(sql).toContain("r.status in ('grabbing', 'locked')");
+    expect(sql).toContain('r.order_id is null');
+    expect(sql).toContain("t.status in ('grabbing', 'locked')");
+    expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 30]);
+    expect(result).toMatchObject({
+      requestId: 'TEAM-GRAB-1',
+      failReason: 'ORDER_CREATE_TIMEOUT_RELEASING',
+    });
+  });
+
+  it('marks team order creation in progress only when no recovery marker exists', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{ ...teamGrabRow, status: 'LOCKED', fail_reason: 'ORDER_CREATE_IN_PROGRESS' }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    await repository.markTeamGrabOrderCreateInProgress('TEAM-GRAB-1');
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain("fail_reason = 'order_create_in_progress'");
+    expect(sql).toContain("status in ('locked', 'grabbing')");
+    expect(sql).toContain('order_id is null');
+    expect(sql).toContain("(fail_reason is null or fail_reason = 'order_create_in_progress')");
+    expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1']);
+  });
+
   it('keeps normal order-created persistence from winning after a recovery claim', async () => {
     const query = jest.fn().mockResolvedValue({
       rows: [{ ...teamGrabRow, status: 'ORDER_CREATED', order_id: '9001' }],
@@ -372,6 +415,7 @@ describe('TeamGrabRepository', () => {
 
     const sql = query.mock.calls[0][0].toLowerCase();
     expect(sql).toContain("fail_reason is distinct from 'order_create_timeout_claimed'");
+    expect(sql).toContain("fail_reason is distinct from 'order_create_timeout_releasing'");
     expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 9001]);
   });
 
@@ -385,6 +429,25 @@ describe('TeamGrabRepository', () => {
 
     const sql = query.mock.calls[0][0].toLowerCase();
     expect(sql).toContain("fail_reason = 'order_create_timeout_claimed'");
+    expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 9001]);
+  });
+
+  it('repairs recovered order-created team grabs from claimed or releasing markers idempotently', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{ ...teamGrabRow, status: 'ORDER_CREATED', order_id: '9001', fail_reason: null }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    await repository.repairTeamGrabOrderCreated('TEAM-GRAB-1', 9001);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain("status = 'order_created'");
+    expect(sql).toContain('order_id = $2');
+    expect(sql).toContain("status in ('locked', 'grabbing', 'order_created')");
+    expect(sql).toContain('(order_id is null or order_id = $2)');
+    expect(sql).toContain("fail_reason is null");
+    expect(sql).toContain("order_create_timeout_claimed");
+    expect(sql).toContain("order_create_timeout_releasing");
     expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 9001]);
   });
 
