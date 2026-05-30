@@ -26,6 +26,7 @@ import {
   confirmedMemberCount,
   teamMemberSeatAssignmentLabel,
   teamStatusLabel,
+  triggerTeamGrabWithRecovery,
 } from '@/lib/team-grab'
 import type {
   GrabProgressResult,
@@ -195,11 +196,16 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
   const handleTrigger = async () => {
     if (!team) return
     setActionLoading(true)
-    setProgress(null)
     try {
-      const result = await triggerTeamGrab(team.id)
-      setRequestId(result.requestId)
-      await loadTeam()
+      await triggerTeamGrabWithRecovery({
+        teamId: team.id,
+        triggerTeamGrab,
+        loadTeam,
+        setRequestId,
+        clearProgress: () => setProgress(null),
+        showError: (message) => globalAlert(message),
+        fallbackErrorMessage: '发起小队抢票失败',
+      })
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '发起小队抢票失败')
     } finally {

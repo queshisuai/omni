@@ -1,6 +1,7 @@
 import type {
   TeamSeatStrategy,
   TeamStatus,
+  TeamGrabTriggerResult,
   TicketTeamDetailVO,
   TicketTeamMemberVO,
   TicketTeamVO,
@@ -40,6 +41,16 @@ const STRATEGY_RANK: Record<TeamSeatStrategy, number> = {
 
 const EDITABLE_TEAM_STATUSES = new Set<TeamStatus>(['DRAFT', 'READY', 'FAILED', 'EXPIRED'])
 
+type TriggerTeamGrabWithRecoveryArgs = {
+  teamId: number
+  triggerTeamGrab: (teamId: number) => Promise<TeamGrabTriggerResult>
+  loadTeam: () => Promise<void>
+  setRequestId: (requestId: string) => void
+  clearProgress: () => void
+  showError: (message: string) => Promise<void>
+  fallbackErrorMessage: string
+}
+
 export function strategyLabel(strategy: TeamSeatStrategy) {
   return STRATEGY_LABELS[strategy]
 }
@@ -74,6 +85,30 @@ export function canTriggerTeamGrab(detail: TicketTeamDetailVO, currentUserId: nu
   return detail.canTriggerGrab && detail.members.some((member) => (
     member.userId === currentUserId && member.status === 'CONFIRMED'
   ))
+}
+
+export async function triggerTeamGrabWithRecovery({
+  teamId,
+  triggerTeamGrab,
+  loadTeam,
+  setRequestId,
+  clearProgress,
+  showError,
+  fallbackErrorMessage,
+}: TriggerTeamGrabWithRecoveryArgs) {
+  clearProgress()
+
+  let result: TeamGrabTriggerResult
+  try {
+    result = await triggerTeamGrab(teamId)
+  } catch (err: unknown) {
+    await loadTeam()
+    await showError(err instanceof Error ? err.message : fallbackErrorMessage)
+    return
+  }
+
+  setRequestId(result.requestId)
+  await loadTeam()
 }
 
 export function confirmedMemberCount(members: TicketTeamMemberVO[]) {

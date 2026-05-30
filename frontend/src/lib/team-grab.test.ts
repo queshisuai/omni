@@ -10,6 +10,16 @@ import {
 } from './team-grab.ts'
 import type { TicketTeamDetailVO, TicketTeamMemberVO, TicketTeamVO } from '@/types/api'
 
+type TriggerTeamGrabRefreshHelper = (args: {
+  teamId: number
+  triggerTeamGrab: (teamId: number) => Promise<{ requestId: string }>
+  loadTeam: () => Promise<void>
+  setRequestId: (requestId: string) => void
+  clearProgress: () => void
+  showError: (message: string) => Promise<void>
+  fallbackErrorMessage: string
+}) => Promise<void>
+
 function makeTeam(overrides: Partial<TicketTeamVO> = {}): TicketTeamVO {
   return {
     id: 1,
@@ -119,6 +129,42 @@ test('allows triggering only when current user is confirmed and backend allows i
     }), 10),
     false,
   )
+})
+
+test('refreshes team detail when triggering team grab fails after an unknown publish outcome', async () => {
+  const teamGrabModule = await import('./team-grab.ts') as typeof import('./team-grab.ts') & {
+    triggerTeamGrabWithRecovery?: TriggerTeamGrabRefreshHelper
+  }
+  assert.equal(typeof teamGrabModule.triggerTeamGrabWithRecovery, 'function')
+
+  const calls: string[] = []
+  await teamGrabModule.triggerTeamGrabWithRecovery!({
+    teamId: 1,
+    triggerTeamGrab: async (teamId) => {
+      calls.push(`trigger:${teamId}`)
+      throw new Error('publish failed')
+    },
+    loadTeam: async () => {
+      calls.push('loadTeam')
+    },
+    setRequestId: (requestId) => {
+      calls.push(`requestId:${requestId}`)
+    },
+    clearProgress: () => {
+      calls.push('clearProgress')
+    },
+    showError: async (message) => {
+      calls.push(`alert:${message}`)
+    },
+    fallbackErrorMessage: 'fallback trigger error',
+  })
+
+  assert.deepEqual(calls, [
+    'clearProgress',
+    'trigger:1',
+    'loadTeam',
+    'alert:publish failed',
+  ])
 })
 
 test('uses readable team seat labels before opaque ids', () => {

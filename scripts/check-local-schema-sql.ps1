@@ -3,6 +3,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 
 $sqlFile = Join-Path -Path $repoRoot -ChildPath "sql/local/20260520_move_tables_to_service_schemas_local_only.sql"
 $sharedOrderSnapshotSqlFile = Join-Path -Path $repoRoot -ChildPath "sql/migrations/shared/20260520_order_snapshot.sql"
+$sharedMigrationRoot = Join-Path -Path $repoRoot -ChildPath "sql/migrations/shared"
 $initSqlFile = Join-Path -Path $repoRoot -ChildPath "sql/init.sql"
 if (-not (Test-Path -LiteralPath $sqlFile)) {
     Write-Host "FAIL missing local schema move SQL: $sqlFile"
@@ -12,6 +13,10 @@ if (-not (Test-Path -LiteralPath $sharedOrderSnapshotSqlFile)) {
     Write-Host "FAIL missing shared order snapshot SQL: $sharedOrderSnapshotSqlFile"
     exit 1
 }
+if (-not (Test-Path -LiteralPath $sharedMigrationRoot)) {
+    Write-Host "FAIL missing shared migration root: $sharedMigrationRoot"
+    exit 1
+}
 if (-not (Test-Path -LiteralPath $initSqlFile)) {
     Write-Host "FAIL missing init SQL: $initSqlFile"
     exit 1
@@ -19,6 +24,9 @@ if (-not (Test-Path -LiteralPath $initSqlFile)) {
 
 $content = Get-Content -Raw -LiteralPath $sqlFile
 $sharedOrderSnapshotContent = Get-Content -Raw -LiteralPath $sharedOrderSnapshotSqlFile
+$sharedMigrationContent = ((Get-ChildItem -Path $sharedMigrationRoot -Filter "*.sql" | Sort-Object Name | ForEach-Object {
+    Get-Content -Raw -LiteralPath $_.FullName
+}) -join "`n")
 $initContent = Get-Content -Raw -LiteralPath $initSqlFile
 
 $requiredPhrases = @(
@@ -71,6 +79,29 @@ $requiredInitPatterns = @(
 foreach ($required in $requiredInitPatterns) {
     if ($initContent -notmatch $required.Pattern) {
         Write-Host "FAIL init SQL missing required team grab item: $($required.Name)"
+        exit 1
+    }
+}
+
+$requiredSharedTeamGrabPatterns = @(
+    @{ Name = "session_seat.lock_request_id"; Pattern = "(?is)ALTER\s+TABLE\s+session_seat\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+lock_request_id\s+VARCHAR\s*\(\s*64\s*\)" },
+    @{ Name = "session_seat.seat_block_id"; Pattern = "(?is)ALTER\s+TABLE\s+session_seat\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+seat_block_id\s+BIGINT" },
+    @{ Name = "grab_request table"; Pattern = "(?is)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+grab_request\s*\([^;]*request_type\s+VARCHAR\s*\(\s*32\s*\)[^;]*progress_status\s+VARCHAR\s*\(\s*32\s*\)" },
+    @{ Name = "ticket_team table"; Pattern = "(?is)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+ticket_team\s*\([^;]*invite_code\s+VARCHAR\s*\(\s*32\s*\)[^;]*leader_user_id\s+BIGINT" },
+    @{ Name = "ticket_team_member table"; Pattern = "(?is)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+ticket_team_member\s*\([^;]*team_id\s+BIGINT\s+NOT\s+NULL\s+REFERENCES\s+ticket_team\s*\(\s*id\s*\)" },
+    @{ Name = "team_grab_request table"; Pattern = "(?is)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+team_grab_request\s*\([^;]*grab_request_id\s+VARCHAR\s*\(\s*64\s*\)[^;]*quantity\s+INTEGER\s+NOT\s+NULL" },
+    @{ Name = "team_seat_assignment table"; Pattern = "(?is)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+team_seat_assignment\s*\([^;]*order_seat_id\s+BIGINT\s+NOT\s+NULL[^;]*seat_label\s+VARCHAR\s*\(\s*128\s*\)" },
+    @{ Name = "grab_request progress index"; Pattern = "(?is)CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+idx_grab_request_progress_expire_time\s+ON\s+grab_request\s*\(\s*progress_status\s*,\s*expire_time\s*\)" },
+    @{ Name = "team member active session index"; Pattern = "(?is)CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+uk_ticket_team_member_active_session\s+ON\s+ticket_team_member\s*\(\s*user_id\s*,\s*session_id\s*\)\s+WHERE\s+status\s+IN\s*\(\s*'JOINED'\s*,\s*'CONFIRMED'\s*\)" },
+    @{ Name = "team active request index"; Pattern = "(?is)CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+uk_team_grab_request_active_team\s+ON\s+team_grab_request\s*\(\s*team_id\s*\)\s+WHERE\s+status\s+IN\s*\(\s*'PENDING'\s*,\s*'GRABBING'\s*,\s*'LOCKED'\s*,\s*'ORDER_CREATED'\s*\)" },
+    @{ Name = "team grab request unique index"; Pattern = "(?is)CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+uk_team_grab_request_grab_request_id\s+ON\s+team_grab_request\s*\(\s*grab_request_id\s*\)" },
+    @{ Name = "session_seat lock request index"; Pattern = "(?is)CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+idx_session_seat_lock_request\s+ON\s+session_seat\s*\(\s*lock_request_id\s*\)\s+WHERE\s+lock_request_id\s+IS\s+NOT\s+NULL" },
+    @{ Name = "session_seat team lock lookup index"; Pattern = "(?is)CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+idx_session_seat_team_lock_lookup\s+ON\s+session_seat\s*\(\s*session_id\s*,\s*ticket_type_id\s*,\s*status\s*,\s*seat_block_id\s*,\s*\(CASE\s+WHEN\s+seat_block_id\s+IS\s+NULL\s+THEN\s+layout_section_id\s+END\)\s*,\s*row_no\s*,\s*seat_no\s*,\s*id\s*\)\s+WHERE\s+order_id\s+IS\s+NULL\s+AND\s+lock_expire_time\s+IS\s+NULL" }
+)
+
+foreach ($required in $requiredSharedTeamGrabPatterns) {
+    if ($sharedMigrationContent -notmatch $required.Pattern) {
+        Write-Host "FAIL shared migration SQL missing required team grab item: $($required.Name)"
         exit 1
     }
 }
