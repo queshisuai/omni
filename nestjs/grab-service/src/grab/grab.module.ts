@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 import { TeamGrabRepository } from '../team-grab/team-grab.repository';
+import { TeamGrabController } from '../team-grab/team-grab.controller';
 import { TeamGrabService } from '../team-grab/team-grab.service';
 import { GrabAdmissionService } from './grab-admission.service';
 import { GrabCompensationService } from './grab-compensation.service';
@@ -17,7 +18,7 @@ import { VisibleStockService } from './visible-stock.service';
 
 @Module({
   imports: [AuthModule, DatabaseModule],
-  controllers: [GrabController, GrabSessionController],
+  controllers: [GrabController, GrabSessionController, TeamGrabController],
   providers: [
     GrabService,
     GrabRepository,
