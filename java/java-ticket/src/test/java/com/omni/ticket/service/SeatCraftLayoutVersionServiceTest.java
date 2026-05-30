@@ -675,7 +675,7 @@ class SeatCraftLayoutVersionServiceTest {
         SeatLayoutVersion draft = version(100L, 4, "draft");
         List<TicketGroup> insertedGroups = new ArrayList<>();
 
-        when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(draft, null);
+        when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(draft).thenReturn(null);
         when(blockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
                 versionBlock(92L, 100L, "block-b", 2, "gridBlock"),
                 versionBlock(91L, 100L, "block-a", 1, "gridBlock")));
@@ -709,7 +709,7 @@ class SeatCraftLayoutVersionServiceTest {
         SeatBlock currentOwnerBlock = materializedBlock(301L, "session", 3001L, "stale-current");
         SeatBlock otherOwnerBlock = materializedBlock(302L, "session", 9999L, "stale-other");
 
-        when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(draft, null);
+        when(versionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(draft).thenReturn(null);
         when(blockMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(publishedBlocks(), publishedBlocks());
         when(groupMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(publishedGroups(), publishedGroups());
         when(bindingMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(publishedBindings(), publishedBindings());

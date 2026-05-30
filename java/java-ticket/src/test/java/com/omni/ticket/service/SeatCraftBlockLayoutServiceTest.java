@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -111,9 +112,9 @@ class SeatCraftBlockLayoutServiceTest {
 
         ArgumentCaptor<SeatOverride> overrideCaptor = ArgumentCaptor.forClass(SeatOverride.class);
         verify(seatOverrideMapper, org.mockito.Mockito.times(2)).insert(overrideCaptor.capture());
-        assertEquals(List.of("hidden", "deleted"), overrideCaptor.getAllValues().stream().map(SeatOverride::getStatus).toList());
-        assertEquals(List.of(1, 2), overrideCaptor.getAllValues().stream().map(SeatOverride::getRowNo).toList());
-        assertEquals(List.of(1, 2), overrideCaptor.getAllValues().stream().map(SeatOverride::getSeatNo).toList());
+        assertEquals(List.of("hidden", "deleted"), overrideCaptor.getAllValues().stream().map(SeatOverride::getStatus).collect(Collectors.toList()));
+        assertEquals(List.of(1, 2), overrideCaptor.getAllValues().stream().map(SeatOverride::getRowNo).collect(Collectors.toList()));
+        assertEquals(List.of(1, 2), overrideCaptor.getAllValues().stream().map(SeatOverride::getSeatNo).collect(Collectors.toList()));
     }
 
     @Test
@@ -317,9 +318,9 @@ class SeatCraftBlockLayoutServiceTest {
         SeatCraftBlockDtos.LayoutRequest result = service.getLayout("venue", 9L);
 
         assertNotNull(result);
-        assertEquals(List.of("hidden", "deleted"), result.getOverrides().stream().map(SeatCraftBlockDtos.OverrideRequest::getStatus).toList());
-        assertEquals(List.of(1, 2), result.getOverrides().stream().map(SeatCraftBlockDtos.OverrideRequest::getRowNo).toList());
-        assertEquals(List.of(1, 2), result.getOverrides().stream().map(SeatCraftBlockDtos.OverrideRequest::getSeatNo).toList());
+        assertEquals(List.of("hidden", "deleted"), result.getOverrides().stream().map(SeatCraftBlockDtos.OverrideRequest::getStatus).collect(Collectors.toList()));
+        assertEquals(List.of(1, 2), result.getOverrides().stream().map(SeatCraftBlockDtos.OverrideRequest::getRowNo).collect(Collectors.toList()));
+        assertEquals(List.of(1, 2), result.getOverrides().stream().map(SeatCraftBlockDtos.OverrideRequest::getSeatNo).collect(Collectors.toList()));
     }
 
     @Test

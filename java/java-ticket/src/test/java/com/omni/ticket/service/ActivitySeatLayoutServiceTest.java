@@ -23,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -127,8 +128,8 @@ class ActivitySeatLayoutServiceTest {
 
         ArgumentCaptor<ActivitySeatLayout> updateCaptor = ArgumentCaptor.forClass(ActivitySeatLayout.class);
         verify(activityLayoutMapper, times(2)).updateById(updateCaptor.capture());
-        assertEquals(List.of(99L, 100L), updateCaptor.getAllValues().stream().map(ActivitySeatLayout::getId).toList());
-        assertEquals(List.of(0, 0), updateCaptor.getAllValues().stream().map(ActivitySeatLayout::getStatus).toList());
+        assertEquals(List.of(99L, 100L), updateCaptor.getAllValues().stream().map(ActivitySeatLayout::getId).collect(Collectors.toList()));
+        assertEquals(List.of(0, 0), updateCaptor.getAllValues().stream().map(ActivitySeatLayout::getStatus).collect(Collectors.toList()));
 
         ArgumentCaptor<ActivitySeatLayout> insertCaptor = ArgumentCaptor.forClass(ActivitySeatLayout.class);
         verify(activityLayoutMapper).insert(insertCaptor.capture());
