@@ -41,7 +41,6 @@ const TERMINAL_GRAB_STATUSES = new Set<GrabStatus>([
   'SOLD_OUT',
   'LIMITED',
   'EXPIRED',
-  'PENDING_RECOVERY',
 ])
 
 const GRAB_STATUS_LABELS: Record<GrabStatus, string> = {

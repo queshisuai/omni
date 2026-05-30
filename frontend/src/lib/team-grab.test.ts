@@ -61,6 +61,13 @@ test('keeps looser fallbacks in their original order', () => {
   )
 })
 
+test('sorts fallback strategies from strict to loose', () => {
+  assert.deepEqual(
+    normalizeFallbacks('STRICT_CONTIGUOUS', ['SAME_TICKET_TYPE', 'SAME_BLOCK']),
+    ['SAME_BLOCK', 'SAME_TICKET_TYPE'],
+  )
+})
+
 test('removes duplicate, fallback, and primary fallback strategies', () => {
   assert.deepEqual(
     normalizeFallbacks('STRICT_CONTIGUOUS', [

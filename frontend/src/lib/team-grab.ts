@@ -49,13 +49,15 @@ export function teamStatusLabel(status: TeamStatus) {
 export function normalizeFallbacks(primary: TeamSeatStrategy, fallbacks: TeamSeatStrategy[]) {
   const seen = new Set<TeamSeatStrategy>()
 
-  return fallbacks.filter((fallback) => {
-    if (seen.has(fallback)) return false
-    seen.add(fallback)
-    if (fallback === 'FALLBACK') return false
-    if (fallback === primary) return false
-    return STRATEGY_RANK[fallback] > STRATEGY_RANK[primary]
-  })
+  return fallbacks
+    .filter((fallback) => {
+      if (seen.has(fallback)) return false
+      seen.add(fallback)
+      if (fallback === 'FALLBACK') return false
+      if (fallback === primary) return false
+      return STRATEGY_RANK[fallback] > STRATEGY_RANK[primary]
+    })
+    .sort((left, right) => STRATEGY_RANK[left] - STRATEGY_RANK[right])
 }
 
 export function defaultTeamFallbacks(primary: TeamSeatStrategy) {
