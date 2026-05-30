@@ -60,7 +60,8 @@ export class TeamPaymentSyncService implements OnModuleInit, OnModuleDestroy {
 
     if (order.status === ORDER_STATUS_CANCELLED) {
       const members = await this.orderedConfirmedMembers(teamGrab.teamId);
-      await this.repository.markTeamExpired(teamGrab.teamId, 'ORDER_CANCELLED');
+      const transitioned = await this.repository.markTeamExpired(teamGrab.teamId, 'ORDER_CANCELLED');
+      if (!transitioned) return;
       await this.notifyMembers(members, (member) => this.notificationClient.sendExpired(member.userId, teamGrab.orderId));
     }
   }

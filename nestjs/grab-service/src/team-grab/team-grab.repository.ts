@@ -611,8 +611,19 @@ export class TeamGrabRepository {
     return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
   }
 
-  async markTeamExpired(teamId: number, reason: string): Promise<void> {
-    await this.database.withTransaction(async (client) => {
+  async markTeamExpired(teamId: number, reason: string): Promise<boolean> {
+    return this.database.withTransaction(async (client) => {
+      const teamResult = await client.query(
+        `update ticket_team
+         set status = 'EXPIRED',
+             update_time = now()
+         where id = $1
+           and status = 'LOCKED'
+         returning *`,
+        [teamId],
+      );
+      if (teamResult.rows.length === 0) return false;
+
       await client.query(
         `update team_grab_request
          set status = 'EXPIRED',
@@ -623,19 +634,23 @@ export class TeamGrabRepository {
            and status in ('ORDER_CREATED', 'LOCKED')`,
         [teamId, reason],
       );
-      await client.query(
-        `update ticket_team
-         set status = 'EXPIRED',
-             update_time = now()
-         where id = $1
-           and status = 'LOCKED'`,
-        [teamId],
-      );
+      return true;
     });
   }
 
-  async markTeamFailed(teamId: number, requestId: string, reason: string): Promise<void> {
-    await this.database.withTransaction(async (client) => {
+  async markTeamFailed(teamId: number, requestId: string, reason: string): Promise<boolean> {
+    return this.database.withTransaction(async (client) => {
+      const teamResult = await client.query(
+        `update ticket_team
+         set status = 'FAILED',
+             update_time = now()
+         where id = $1
+           and status in ('GRABBING', 'LOCKED', 'READY')
+         returning *`,
+        [teamId],
+      );
+      if (teamResult.rows.length === 0) return false;
+
       await client.query(
         `update team_grab_request
          set status = 'FAILED',
@@ -645,14 +660,7 @@ export class TeamGrabRepository {
            and status <> 'ORDER_CREATED'`,
         [requestId, reason],
       );
-      await client.query(
-        `update ticket_team
-         set status = 'FAILED',
-             update_time = now()
-         where id = $1
-           and status in ('GRABBING', 'LOCKED', 'READY')`,
-        [teamId],
-      );
+      return true;
     });
   }
 

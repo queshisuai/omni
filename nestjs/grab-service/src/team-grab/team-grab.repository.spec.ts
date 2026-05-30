@@ -421,24 +421,48 @@ describe('TeamGrabRepository', () => {
   it('marks teams paid, expired, and failed with guarded status transitions', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'PAID' }] })
-      .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'EXPIRED' }] })
       .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'EXPIRED' }] })
-      .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'FAILED' }] })
-      .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'FAILED' }] });
+      .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'EXPIRED' }] })
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'FAILED' }] })
+      .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'FAILED' }] });
     const withTransaction = jest.fn((callback) => callback({ query }));
     const repository = new TeamGrabRepository({ query, withTransaction } as any);
 
     await repository.markTeamPaid(7);
-    await repository.markTeamExpired(7, 'ORDER_CANCELLED');
-    await repository.markTeamFailed(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT');
+    const expired = await repository.markTeamExpired(7, 'ORDER_CANCELLED');
+    const failed = await repository.markTeamFailed(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT');
 
     expect(query.mock.calls[0][0]).toContain("status = 'PAID'");
     expect(query.mock.calls[0][0]).toContain("status = 'LOCKED'");
     expect(query.mock.calls[0][1]).toEqual([7]);
     expect(withTransaction).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[1][0]).toContain("status = 'EXPIRED'");
-    expect(query.mock.calls[1][1]).toEqual([7, 'ORDER_CANCELLED']);
+    expect(query.mock.calls[1][0]).toContain("status = 'LOCKED'");
+    expect(query.mock.calls[1][1]).toEqual([7]);
+    expect(query.mock.calls[2][0]).toContain("status = 'EXPIRED'");
+    expect(query.mock.calls[2][1]).toEqual([7, 'ORDER_CANCELLED']);
     expect(query.mock.calls[3][0]).toContain("status = 'FAILED'");
-    expect(query.mock.calls[3][1]).toEqual(['TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT']);
+    expect(query.mock.calls[3][0]).toContain("status in ('GRABBING', 'LOCKED', 'READY')");
+    expect(query.mock.calls[3][1]).toEqual([7]);
+    expect(query.mock.calls[4][0]).toContain("status = 'FAILED'");
+    expect(query.mock.calls[4][1]).toEqual(['TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT']);
+    expect(expired).toBe(true);
+    expect(failed).toBe(true);
+  });
+
+  it('returns false without updating team grab rows when terminal team transition loses', async () => {
+    const expireQuery = jest.fn().mockResolvedValueOnce({ rows: [] });
+    const failQuery = jest.fn().mockResolvedValueOnce({ rows: [] });
+    const repository = new TeamGrabRepository({
+      withTransaction: jest.fn()
+        .mockImplementationOnce((callback) => callback({ query: expireQuery }))
+        .mockImplementationOnce((callback) => callback({ query: failQuery })),
+    } as any);
+
+    await expect(repository.markTeamExpired(7, 'ORDER_CANCELLED')).resolves.toBe(false);
+    await expect(repository.markTeamFailed(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT')).resolves.toBe(false);
+
+    expect(expireQuery).toHaveBeenCalledTimes(1);
+    expect(failQuery).toHaveBeenCalledTimes(1);
   });
 });

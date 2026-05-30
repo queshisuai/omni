@@ -67,7 +67,9 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
     }
 
     await this.ticketClient.releaseTeamSeatLock(teamGrab.requestId, teamGrab.lockedSeatIds);
-    await this.repository.markTeamFailed(teamGrab.teamId, teamGrab.requestId, ORDER_CREATE_TIMEOUT);
+    const transitioned = await this.repository.markTeamFailed(teamGrab.teamId, teamGrab.requestId, ORDER_CREATE_TIMEOUT);
+    if (!transitioned) return;
+
     if (teamGrab.grabRequestId) {
       await this.grabRepository.updateStatus(teamGrab.grabRequestId, GRAB_STATUS.FAILED, ORDER_CREATE_TIMEOUT);
       await this.queueService

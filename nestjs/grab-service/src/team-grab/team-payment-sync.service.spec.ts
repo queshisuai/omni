@@ -51,7 +51,7 @@ function createService(overrides: any = {}) {
       member({ id: 2, userId: 200, role: 'MEMBER', joinTime: new Date('2026-05-30T12:01:00.000Z') }),
     ]),
     assignPaidTeamSeats: jest.fn().mockResolvedValue(true),
-    markTeamExpired: jest.fn().mockResolvedValue(undefined),
+    markTeamExpired: jest.fn().mockResolvedValue(true),
     ...overrides.repository,
   };
   const orderClient = {
@@ -111,6 +111,18 @@ describe('TeamPaymentSyncService', () => {
     expect(repository.assignPaidTeamSeats).not.toHaveBeenCalled();
     expect(notificationClient.sendExpired).toHaveBeenCalledWith(100, 9001);
     expect(notificationClient.sendExpired).toHaveBeenCalledWith(200, 9001);
+  });
+
+  it('does not send expired notifications when cancelled sync loses the locked-to-expired transition', async () => {
+    const { service, repository, notificationClient } = createService({
+      repository: { markTeamExpired: jest.fn().mockResolvedValue(false) },
+      orderClient: { getOrder: jest.fn().mockResolvedValue({ id: 9001, status: 3, userId: 100, quantity: 2 }) },
+    });
+
+    await service.syncLockedTeams();
+
+    expect(repository.markTeamExpired).toHaveBeenCalledWith(7, 'ORDER_CANCELLED');
+    expect(notificationClient.sendExpired).not.toHaveBeenCalled();
   });
 
   it('sends paid notifications after assignment and paid marking', async () => {

@@ -46,7 +46,7 @@ describe('TeamLockRecoveryService', () => {
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
-      markTeamFailed: jest.fn().mockResolvedValue(undefined),
+      markTeamFailed: jest.fn().mockResolvedValue(true),
       listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
     };
     const grabRepository = {
@@ -90,6 +90,46 @@ describe('TeamLockRecoveryService', () => {
     expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
     expect(notificationClient.sendFailed).toHaveBeenCalledWith(100, null);
     expect(notificationClient.sendFailed).toHaveBeenCalledWith(200, null);
+  });
+
+  it('does not send failed notifications when stale recovery loses the active-to-failed transition', async () => {
+    const repository = {
+      findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
+      markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      updateTeamStatus: jest.fn().mockResolvedValue(undefined),
+      markTeamFailed: jest.fn().mockResolvedValue(false),
+      listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
+    };
+    const grabRepository = {
+      markOrderCreatedFromProgressStatuses: jest.fn(),
+      markOrderCreated: jest.fn(),
+      updateStatus: jest.fn().mockResolvedValue(undefined),
+    };
+    const orderClient = {
+      findByGrabRequestId: jest.fn().mockResolvedValue(null),
+    };
+    const ticketClient = {
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
+    };
+    const queueService = {
+      removeQueuedRequest: jest.fn().mockResolvedValue(undefined),
+    };
+    const notificationClient = {
+      sendFailed: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new TeamLockRecoveryService(
+      repository as any,
+      grabRepository as any,
+      orderClient as any,
+      ticketClient as any,
+      queueService as any,
+      notificationClient as any,
+    );
+
+    await service.recoverStaleLocks();
+
+    expect(repository.markTeamFailed).toHaveBeenCalledWith(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT');
+    expect(notificationClient.sendFailed).not.toHaveBeenCalled();
   });
 
   it('recovers stale pre-order locks as order-created when lookup finds an order', async () => {
