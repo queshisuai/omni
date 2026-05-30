@@ -67,6 +67,7 @@ class SessionSeatMapperSqlTest {
 
         assertTrue(selectSql.contains("for update skip locked"), selectSql);
         assertTrue(selectSql.contains("limit #{limit}"), selectSql);
+        assertTrue(selectSql.indexOf("seat_block_id") < selectSql.indexOf("layout_section_id"), selectSql);
         assertTrue(lockSql.contains("lock_request_id = #{lockrequestid}"), lockSql);
         assertTrue(lockedByRequestSql.contains("lock_expire_time > current_timestamp"), lockedByRequestSql);
         assertTrue(lockedByRequestIdSql.contains("lock_expire_time > current_timestamp"), lockedByRequestIdSql);

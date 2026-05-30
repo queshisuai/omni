@@ -185,8 +185,6 @@ public class TicketSalesInternalService {
     @Transactional(rollbackFor = Exception.class)
     public TeamSeatLockResponse lockTeamSeats(TeamSeatLockRequest request) {
         validateTeamLockRequest(request);
-        requireSessionSellable(request.getSessionId());
-        requireSellableTicketType(request.getSessionId(), request.getTicketTypeId());
         List<String> strategies = teamLockStrategies(request);
 
         List<SessionSeat> existingLockedSeats = sortSeats(sessionSeatMapper.selectLockedByRequestId(
@@ -198,6 +196,9 @@ public class TicketSalesInternalService {
             return teamSeatLockResponse(existingLockedSeats,
                     matchedExistingStrategy(existingLockedSeats, request.getQuantity(), strategies));
         }
+
+        requireSessionSellable(request.getSessionId());
+        requireSellableTicketType(request.getSessionId(), request.getTicketTypeId());
 
         List<SessionSeat> availableSeats = sortSeats(sessionSeatMapper.selectAvailableForTeamLock(
                 request.getSessionId(), request.getTicketTypeId(), teamLockCandidateLimit(request.getQuantity())));
@@ -417,12 +418,16 @@ public class TicketSalesInternalService {
         }
         return seats.stream()
                 .sorted(Comparator
-                        .comparing(SessionSeat::getLayoutSectionId, Comparator.nullsLast(Long::compareTo))
-                        .thenComparing(SessionSeat::getSeatBlockId, Comparator.nullsLast(Long::compareTo))
+                        .comparing(SessionSeat::getSeatBlockId, Comparator.nullsLast(Long::compareTo))
+                        .thenComparing(this::fallbackSectionSortKey, Comparator.nullsLast(Long::compareTo))
                         .thenComparing(SessionSeat::getRowNo, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(SessionSeat::getSeatNo, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(SessionSeat::getId, Comparator.nullsLast(Long::compareTo)))
                 .collect(Collectors.toList());
+    }
+
+    private Long fallbackSectionSortKey(SessionSeat seat) {
+        return seat.getSeatBlockId() == null ? seat.getLayoutSectionId() : null;
     }
 
     private List<String> seatGroupKeys(SessionSeat seat) {

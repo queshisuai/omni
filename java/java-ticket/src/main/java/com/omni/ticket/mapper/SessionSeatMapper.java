@@ -77,7 +77,9 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
     @Select("SELECT * FROM session_seat WHERE session_id = #{sessionId} " +
             "AND ticket_type_id = #{ticketTypeId} AND status = 1 AND order_id IS NULL " +
             "AND lock_expire_time IS NULL " +
-            "ORDER BY layout_section_id NULLS LAST, seat_block_id NULLS LAST, row_no NULLS LAST, seat_no NULLS LAST, id " +
+            "ORDER BY seat_block_id NULLS LAST, " +
+            "CASE WHEN seat_block_id IS NULL THEN layout_section_id END NULLS LAST, " +
+            "row_no NULLS LAST, seat_no NULLS LAST, id " +
             "LIMIT #{limit} FOR UPDATE SKIP LOCKED")
     List<SessionSeat> selectAvailableForTeamLock(@Param("sessionId") Long sessionId,
                                                   @Param("ticketTypeId") Long ticketTypeId,
@@ -101,7 +103,7 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
             "AND ticket_type_id = #{ticketTypeId} AND status = 2 ",
             "AND lock_request_id = #{lockRequestId} AND lock_expire_time > CURRENT_TIMESTAMP AND id IN ",
             "<foreach collection='seatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
-            "ORDER BY layout_section_id NULLS LAST, seat_block_id NULLS LAST, row_no NULLS LAST, seat_no NULLS LAST, id",
+            "ORDER BY seat_block_id NULLS LAST, CASE WHEN seat_block_id IS NULL THEN layout_section_id END NULLS LAST, row_no NULLS LAST, seat_no NULLS LAST, id",
             "</script>"})
     List<SessionSeat> selectLockedByRequest(@Param("sessionId") Long sessionId,
                                             @Param("ticketTypeId") Long ticketTypeId,
@@ -111,7 +113,9 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
     @Select("SELECT * FROM session_seat WHERE session_id = #{sessionId} " +
             "AND ticket_type_id = #{ticketTypeId} AND status = 2 " +
             "AND lock_request_id = #{lockRequestId} AND lock_expire_time > CURRENT_TIMESTAMP " +
-            "ORDER BY layout_section_id NULLS LAST, seat_block_id NULLS LAST, row_no NULLS LAST, seat_no NULLS LAST, id")
+            "ORDER BY seat_block_id NULLS LAST, " +
+            "CASE WHEN seat_block_id IS NULL THEN layout_section_id END NULLS LAST, " +
+            "row_no NULLS LAST, seat_no NULLS LAST, id")
     List<SessionSeat> selectLockedByRequestId(@Param("sessionId") Long sessionId,
                                               @Param("ticketTypeId") Long ticketTypeId,
                                               @Param("lockRequestId") String lockRequestId);
