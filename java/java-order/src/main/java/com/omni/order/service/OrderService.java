@@ -144,7 +144,7 @@ public class OrderService {
         int quantity = requirePositiveQuantity(request.getQuantity());
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), null, quantity);
-        validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote);
+        validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
         validatePerUserLimit(request.getUserId(), quote, quantity);
         Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity, quote.getUnitPrice());
         lockStockForOrder(order);
@@ -189,7 +189,7 @@ public class OrderService {
         int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
         validateUserExists(request.getUserId());
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
-        validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote);
+        validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
         validatePerUserLimit(request.getUserId(), quote, quantity);
         TicketSalesLockRequest lockRequest = new TicketSalesLockRequest();
         lockRequest.setOrderId(0L);
@@ -680,8 +680,14 @@ public class OrderService {
         return quantity;
     }
 
-    private void validateAuthorizedPrice(BigDecimal authorizedMaxUnitPrice, TicketSalesQuoteResponse quote) {
-        if (authorizedMaxUnitPrice == null || quote == null || quote.getUnitPrice() == null) {
+    private void validateAuthorizedPrice(BigDecimal authorizedMaxUnitPrice, TicketSalesQuoteResponse quote, String grabRequestId) {
+        if (authorizedMaxUnitPrice == null) {
+            if (StringUtils.hasText(grabRequestId)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "authorized price is required for grab order");
+            }
+            return;
+        }
+        if (quote == null || quote.getUnitPrice() == null) {
             return;
         }
         if (quote.getUnitPrice().compareTo(authorizedMaxUnitPrice) > 0) {

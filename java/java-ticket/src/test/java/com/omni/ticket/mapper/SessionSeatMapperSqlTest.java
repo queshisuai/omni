@@ -35,6 +35,15 @@ class SessionSeatMapperSqlTest {
         assertTrue(restoreSql.contains("status = 1"));
     }
 
+    @Test
+    void selectSessionSellableRequiresPublishedActivity() throws Exception {
+        String sql = annotationSql(SessionSeatMapper.class.getDeclaredMethod("selectSessionSellable", Long.class)).toLowerCase();
+
+        assertTrue(sql.contains("s.status = 1"), sql);
+        assertTrue(sql.contains("a.status = 1"), sql);
+        assertTrue(sql.contains("a.publish_status = 'published'"), sql);
+    }
+
     private String annotationSql(Method method) {
         Select select = method.getAnnotation(Select.class);
         if (select != null) {

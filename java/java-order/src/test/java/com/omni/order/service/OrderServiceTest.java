@@ -151,6 +151,48 @@ class OrderServiceTest {
     }
 
     @Test
+    void createOrderRejectsGrabOrderMissingAuthorizedMaxBeforeLockOrInsert() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(1);
+        request.setGrabRequestId("GRAB-MISSING-AUTH");
+
+        TicketSalesQuoteResponse quote = quoteWithoutLimit(1);
+        quote.setUnitPrice(new BigDecimal("1280.00"));
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+
+        assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void createOrderWithSeatsRejectsGrabOrderMissingAuthorizedMaxBeforeLockOrInsert() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setSeatIds(List.of(301L));
+        request.setGrabRequestId("GRAB-SEAT-MISSING-AUTH");
+
+        TicketSalesQuoteResponse quote = quoteWithoutLimit(1);
+        quote.setUnitPrice(new BigDecimal("1280.00"));
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+
+        assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
+
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
     void createOrderWritesGrabSnapshotFields() {
         CreateOrderRequest request = new CreateOrderRequest();
         request.setUserId(2004L);
