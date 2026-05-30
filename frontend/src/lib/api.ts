@@ -389,6 +389,11 @@ export async function getGrabProgress(requestId: string) {
   return request<GrabProgressResult>(`/api/grab/requests/${encodeURIComponent(requestId)}/progress`)
 }
 
+export async function getTeamGrabProgress(teamId: number, requestId: string) {
+  assertPositiveInteger(teamId, 'teamId')
+  return request<GrabProgressResult>(`/api/grab/teams/${teamId}/requests/${encodeURIComponent(requestId)}/progress`)
+}
+
 export async function getGrabVisibleStock(sessionId: number, ticketTypeIds: number[]) {
   const params = new URLSearchParams()
   params.set('ticketTypeIds', ticketTypeIds.join(','))

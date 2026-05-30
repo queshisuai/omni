@@ -109,6 +109,16 @@ export class GrabService {
     const record = await this.repository.findByRequestId(requestId);
     if (!record) throw new NotFoundException('grab request not found');
     if (record.userId !== userId) throw new ForbiddenException('cannot view another user grab request');
+    return this.toProgressResponse(record);
+  }
+
+  async getProgressForVerifiedRequest(requestId: string): Promise<GrabProgressResponse> {
+    const record = await this.repository.findByRequestId(requestId);
+    if (!record) throw new NotFoundException('grab request not found');
+    return this.toProgressResponse(record);
+  }
+
+  private async toProgressResponse(record: GrabRequestRecord): Promise<GrabProgressResponse> {
     const queueRank = record.queueSeq == null ? null : await this.queueService.calculateQueueRank(record.sessionId, record.queueSeq);
     const visibleStock = await this.resolveProgressVisibleStock(record);
 

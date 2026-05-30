@@ -11,8 +11,8 @@ import { TeamStrategyPicker } from '@/components/team-grab/TeamStrategyPicker'
 import {
   confirmTeamGrab,
   createAlipayQrPay,
-  getGrabProgress,
   getTeamGrab,
+  getTeamGrabProgress,
   leaveTeamGrab,
   removeTeamGrabMember,
   syncTeamGrabPaid,
@@ -119,7 +119,7 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
     let cancelled = false
     const poll = async () => {
       try {
-        const nextProgress = await getGrabProgress(requestId)
+        const nextProgress = await getTeamGrabProgress(teamId, requestId)
         if (cancelled) return
         setProgress(nextProgress)
         pollTickRef.current += 1
@@ -147,7 +147,7 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [loadTeam, requestId])
+  }, [loadTeam, requestId, teamId])
 
   const team = detail?.team
   const currentMember = useMemo(

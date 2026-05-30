@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'crypto';
 import { GrabQueueService } from '../grab/grab-queue.service';
-import { GrabRepository } from '../grab/grab.repository';
+import { GrabService } from '../grab/grab.service';
 import { isUniqueViolation, TeamGrabRepository } from './team-grab.repository';
 import { TeamPaymentSyncService } from './team-payment-sync.service';
+import type { GrabProgressResponse } from '../grab/grab.types';
 import type {
   CreateTeamDto,
   TeamDetailServiceResponse,
@@ -30,7 +31,7 @@ const STRATEGY_RANK: Record<TeamSeatStrategy, number> = {
 export class TeamGrabService {
   constructor(
     private readonly repository: TeamGrabRepository,
-    private readonly grabRepository: GrabRepository,
+    private readonly grabService: GrabService,
     private readonly queueService: GrabQueueService,
     @Optional() private readonly paymentSyncService?: TeamPaymentSyncService,
   ) {}
@@ -206,6 +207,14 @@ export class TeamGrabService {
       if (!teamGrabCommitted) this.throwConflictOnUniqueViolation(error, 'team grab is already in progress');
       throw error;
     }
+  }
+
+  async getTeamGrabProgress(teamId: number, userId: number, requestId: string): Promise<GrabProgressResponse> {
+    await this.getTeamDetail(teamId, userId);
+    const teamGrab = await this.repository.findTeamGrabByGrabRequestId(requestId);
+    if (!teamGrab) throw new NotFoundException('team grab request not found');
+    if (teamGrab.teamId !== teamId) throw new ForbiddenException('grab request does not belong to this team');
+    return this.grabService.getProgressForVerifiedRequest(requestId);
   }
 
   async syncPaidTeam(teamId: number, userId: number): Promise<TeamPaymentSyncResponse> {

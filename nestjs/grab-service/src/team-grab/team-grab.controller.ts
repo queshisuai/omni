@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { AuthenticatedRequest } from '../auth/authenticated-request';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import type { GrabProgressResponse } from '../grab/grab.types';
 import { TeamGrabService } from './team-grab.service';
 import type {
   CreateTeamDto,
@@ -92,6 +93,15 @@ export class TeamGrabController {
   @Post(':teamId/trigger')
   async trigger(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TeamGrabTriggerResponse>> {
     return success(await this.teamGrabService.triggerTeamGrab(parsePositiveInt(teamId, 'team'), request.user.userId));
+  }
+
+  @Get(':teamId/requests/:requestId/progress')
+  async progress(
+    @Req() request: AuthenticatedRequest,
+    @Param('teamId') teamId: string,
+    @Param('requestId') requestId: string,
+  ): Promise<ApiResult<GrabProgressResponse>> {
+    return success(await this.teamGrabService.getTeamGrabProgress(parsePositiveInt(teamId, 'team'), request.user.userId, requestId));
   }
 
   @Post(':teamId/sync-paid')

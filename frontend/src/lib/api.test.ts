@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createAlipayQrPay, getGrabProgress, getGrabVisibleStock, joinTeamGrab, removeTeamGrabMember } from './api.ts'
+import { createAlipayQrPay, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, removeTeamGrabMember } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -77,6 +77,28 @@ test('loads visible stock with ticket type query params', async () => {
 
     assert.equal(requestedUrl, '/api/grab/sessions/101/stock-visible?ticketTypeIds=1%2C2')
     assert.equal(result.sessionId, 101)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads team grab progress through the team-scoped endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: 'success',
+      data: { requestId: 'GRAB1', status: 'WAITING', queueRank: 3 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await getTeamGrabProgress(7, 'GRAB1')
+
+    assert.equal(requestedUrl, '/api/grab/teams/7/requests/GRAB1/progress')
+    assert.equal(result.status, 'WAITING')
   } finally {
     globalThis.fetch = originalFetch
   }

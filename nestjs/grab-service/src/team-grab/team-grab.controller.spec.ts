@@ -209,6 +209,36 @@ describe('TeamGrabController', () => {
     expect(service.triggerTeamGrab).toHaveBeenCalledWith(7, 200);
   });
 
+  it('loads team-scoped grab progress as the authenticated user', async () => {
+    const response = {
+      requestId: 'GRAB-1',
+      sessionId: 20,
+      status: 'WAITING',
+      orderId: null,
+      failReason: null,
+      queueSeq: 9,
+      queueRank: 4,
+      estimatedWaitSeconds: null,
+      currentTicketTypeId: 30,
+      currentAttemptIndex: 0,
+      requestedTicketTypes: [],
+      attempts: [],
+      visibleStock: null,
+      message: 'waiting',
+      matchedTicketTypeId: null,
+      updateTime: now.toISOString(),
+    };
+    const service = { getTeamGrabProgress: jest.fn().mockResolvedValue(response) };
+    const controller = createController(service);
+
+    await expect(controller.progress(request(200), '7', 'GRAB-1')).resolves.toEqual({
+      code: 200,
+      message: 'success',
+      data: response,
+    });
+    expect(service.getTeamGrabProgress).toHaveBeenCalledWith(7, 200, 'GRAB-1');
+  });
+
   it('triggers explicit paid sync as the authenticated user', async () => {
     const response = { teamId: 7, synced: true };
     const service = { syncPaidTeam: jest.fn().mockResolvedValue(response) };

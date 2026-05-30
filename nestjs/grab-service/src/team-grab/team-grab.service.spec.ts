@@ -66,8 +66,9 @@ function teamGrabRequest(overrides: Partial<TeamGrabRequestRecord> = {}): TeamGr
 function createService(repository: any, overrides: any = {}): TeamGrabService {
   return new TeamGrabService(
     repository,
-    overrides.grabRepository ?? {},
+    overrides.grabService ?? {},
     overrides.queueService ?? {},
+    overrides.paymentSyncService,
   );
 }
 
@@ -350,6 +351,90 @@ describe('TeamGrabService', () => {
 
     expect(repository.listMembers).toHaveBeenCalledTimes(1);
     expect(repository.findLatestTeamGrabRequestByTeamId).not.toHaveBeenCalled();
+  });
+
+  it('allows a non-leader team member to view progress for this team request', async () => {
+    const members = [
+      member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+      member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+    ];
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(team({ id: 7, leaderUserId: 100, status: 'GRABBING' })),
+      listMembers: jest.fn().mockResolvedValue(members),
+      findLatestTeamGrabRequestByTeamId: jest.fn().mockResolvedValue(teamGrabRequest({
+        teamId: 7,
+        grabRequestId: 'GRAB-QUEUED-7',
+      })),
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrabRequest({
+        teamId: 7,
+        grabRequestId: 'GRAB-QUEUED-7',
+      })),
+    };
+    const progress = {
+      requestId: 'GRAB-QUEUED-7',
+      sessionId: 20,
+      status: 'WAITING',
+      orderId: null,
+      failReason: null,
+      queueSeq: 9,
+      queueRank: 2,
+      estimatedWaitSeconds: null,
+      currentTicketTypeId: 30,
+      currentAttemptIndex: 0,
+      requestedTicketTypes: [{ ticketTypeId: 30, name: null, maxPrice: null }],
+      attempts: [],
+      visibleStock: null,
+      message: 'waiting',
+      matchedTicketTypeId: null,
+      updateTime: now.toISOString(),
+    };
+    const grabService = { getProgressForVerifiedRequest: jest.fn().mockResolvedValue(progress) };
+    const service = createService(repository, { grabService });
+
+    await expect(service.getTeamGrabProgress(7, 200, 'GRAB-QUEUED-7')).resolves.toBe(progress);
+
+    expect(repository.findTeamGrabByGrabRequestId).toHaveBeenCalledWith('GRAB-QUEUED-7');
+    expect(grabService.getProgressForVerifiedRequest).toHaveBeenCalledWith('GRAB-QUEUED-7');
+  });
+
+  it('rejects team progress for non-members before loading the grab request', async () => {
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(team({ id: 7, leaderUserId: 100, status: 'GRABBING' })),
+      listMembers: jest.fn().mockResolvedValue([
+        member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+        member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+      ]),
+      findLatestTeamGrabRequestByTeamId: jest.fn(),
+      findTeamGrabByGrabRequestId: jest.fn(),
+    };
+    const grabService = { getProgressForVerifiedRequest: jest.fn() };
+    const service = createService(repository, { grabService });
+
+    await expect(service.getTeamGrabProgress(7, 300, 'GRAB-QUEUED-7')).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(repository.findTeamGrabByGrabRequestId).not.toHaveBeenCalled();
+    expect(grabService.getProgressForVerifiedRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects team progress when the request belongs to another team', async () => {
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(team({ id: 7, leaderUserId: 100, status: 'GRABBING' })),
+      listMembers: jest.fn().mockResolvedValue([
+        member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+        member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+      ]),
+      findLatestTeamGrabRequestByTeamId: jest.fn().mockResolvedValue(null),
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrabRequest({
+        teamId: 8,
+        grabRequestId: 'GRAB-OTHER',
+      })),
+    };
+    const grabService = { getProgressForVerifiedRequest: jest.fn() };
+    const service = createService(repository, { grabService });
+
+    await expect(service.getTeamGrabProgress(7, 200, 'GRAB-OTHER')).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(grabService.getProgressForVerifiedRequest).not.toHaveBeenCalled();
   });
 
   it('returns canPay=false for a non-leader viewing a locked team order', async () => {
