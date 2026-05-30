@@ -54,8 +54,9 @@ export class TeamGrabService {
     }
   }
 
-  async joinTeam(teamId: number, userId: number): Promise<TicketTeamRecord> {
+  async joinTeam(teamId: number, userId: number, inviteCode: string): Promise<TicketTeamRecord> {
     const team = await this.getExistingTeam(teamId);
+    this.validateInviteCode(team, inviteCode);
     if (!JOINABLE_TEAM_STATUSES.has(team.status)) throw new ForbiddenException('team is not joinable');
     const existingMember = await this.repository.findMember(teamId, userId);
     if (existingMember && existingMember.status !== 'LEFT') throw new ConflictException('user is already in this team');
@@ -154,14 +155,6 @@ export class TeamGrabService {
     const team = await this.getExistingTeam(teamId);
     if (!TRIGGERABLE_TEAM_STATUSES.includes(team.status)) throw new ForbiddenException('team is not ready to grab');
 
-    const members = await this.repository.listMembers(teamId);
-    const confirmedMembers = members.filter((member) => member.status === 'CONFIRMED');
-    if (!confirmedMembers.some((member) => member.userId === triggerUserId)) {
-      throw new ForbiddenException('trigger user must be a confirmed member');
-    }
-    const quantity = confirmedMembers.length;
-    if (quantity < 2 || quantity > 6) throw new BadRequestException('team must have 2-6 confirmed members');
-
     const queuedGrabRequestId = `GRAB-${randomUUID()}`;
     const teamGrabRequestId = `TEAM-GRAB-${randomUUID()}`;
     const lockAcquired = await this.queueService.acquireTeamTriggerLock(
@@ -179,62 +172,41 @@ export class TeamGrabService {
     let publishAttempted = false;
     try {
       const queueResult = await this.queueService.reserveQueueSeq(team.sessionId);
-
       const requestedTicketTypes = [{
         ticketTypeId: team.ticketTypeId,
         name: null,
         maxPrice: null,
       }];
       const expireTime = new Date(Date.now() + TEAM_GRAB_REQUEST_TTL_SECONDS * 1000);
-      const grabRequest = await this.grabRepository.createQueued({
-        requestId: queuedGrabRequestId,
-        idempotencyKey: `team:${team.id}:${teamGrabRequestId}`,
-        userId: team.leaderUserId,
-        sessionId: team.sessionId,
-        ticketTypeId: team.ticketTypeId,
-        quantity,
-        seatIds: [],
-        allocateRandom: true,
-        expireTime,
-        queueSeq: queueResult.queueSeq,
-        requestedTicketTypes,
-        allowAutoDowngrade: false,
-        requestType: 'TEAM_GRAB',
-      });
-      grabRequestCreated = true;
-
-      const teamGrabRequest = await this.repository.createTeamGrabRequest({
-        requestId: teamGrabRequestId,
-        grabRequestId: grabRequest.requestId,
+      const beginResult = await this.repository.beginTeamGrab({
         teamId: team.id,
         triggerUserId,
-        payerUserId: team.leaderUserId,
-        sessionId: team.sessionId,
-        ticketTypeId: team.ticketTypeId,
-        quantity,
-        strategy: team.strategy,
-        fallbacks: team.fallbacks,
+        requestId: teamGrabRequestId,
+        grabRequestId: queuedGrabRequestId,
+        idempotencyKey: `team:${team.id}:${teamGrabRequestId}`,
+        queueSeq: queueResult.queueSeq,
+        expireTime,
+        requestedTicketTypes,
       });
-      teamGrabRequestIdCreated = teamGrabRequest.requestId;
-
-      const updatedTeam = await this.repository.updateTeamStatus(team.id, 'GRABBING', TRIGGERABLE_TEAM_STATUSES);
-      if (!updatedTeam) throw new ConflictException('team grab is already in progress');
+      teamGrabRequestIdCreated = beginResult.teamGrabRequest.requestId;
+      grabRequestCreated = true;
       teamMarkedGrabbing = true;
+      const frozenTeam = beginResult.team;
 
       publishAttempted = true;
       await this.queueService.publishReserved({
         requestId: queuedGrabRequestId,
-        sessionId: team.sessionId,
-        userId: team.leaderUserId,
+        sessionId: frozenTeam.sessionId,
+        userId: frozenTeam.leaderUserId,
         queueSeq: queueResult.queueSeq,
         ttlSeconds: TEAM_GRAB_REQUEST_TTL_SECONDS,
       });
 
       return {
-        requestId: grabRequest.requestId,
+        requestId: beginResult.teamGrabRequest.grabRequestId ?? queuedGrabRequestId,
         queueSeq: queueResult.queueSeq,
         queueRank: queueResult.queueRank,
-        teamStatus: updatedTeam.status,
+        teamStatus: frozenTeam.status,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'team grab trigger failed';
@@ -278,6 +250,18 @@ export class TeamGrabService {
     if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('invalid session');
     if (!Number.isInteger(dto.ticketTypeId) || dto.ticketTypeId <= 0) throw new BadRequestException('invalid ticket type');
     this.validateStrategy(dto.strategy);
+  }
+
+  private validateInviteCode(team: TicketTeamRecord, inviteCode: string | undefined): void {
+    const normalizedInput = this.normalizeInviteCode(inviteCode);
+    if (!normalizedInput) throw new BadRequestException('invite code is required');
+    if (normalizedInput !== this.normalizeInviteCode(team.inviteCode)) {
+      throw new ForbiddenException('invalid invite code');
+    }
+  }
+
+  private normalizeInviteCode(inviteCode: string | undefined): string {
+    return (inviteCode ?? '').trim().toUpperCase();
   }
 
   private validateStrategy(strategy: TeamSeatStrategy): void {

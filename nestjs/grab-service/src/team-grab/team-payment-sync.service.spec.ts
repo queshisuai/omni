@@ -38,6 +38,7 @@ function member(overrides: Partial<TicketTeamMemberRecord> = {}): TicketTeamMemb
     status: 'CONFIRMED',
     seatId: null,
     orderSeatId: null,
+    seatLabel: null,
     joinTime: now,
     ...overrides,
   };

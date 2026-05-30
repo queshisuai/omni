@@ -1,7 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import type { DatabaseQueryClient } from '../database/database.service';
+import { GRAB_STATUS } from '../grab/grab-status';
+import type { GrabAttemptSnapshot } from '../grab/grab.types';
 import type {
+  BeginTeamGrabInput,
+  BeginTeamGrabResult,
   CreateTeamInput,
   CreateTeamGrabRequestInput,
   TeamMemberRole,
@@ -42,6 +46,7 @@ interface TicketTeamMemberRow {
   status: TeamMemberStatus;
   seat_id: string | number | null;
   order_seat_id: string | number | null;
+  seat_label?: string | null;
   join_time: Date;
 }
 
@@ -166,9 +171,13 @@ export class TeamGrabRepository {
 
   async listMembers(teamId: number): Promise<TicketTeamMemberRecord[]> {
     const result = await this.database.query<TicketTeamMemberRow>(
-      `select * from ticket_team_member
-       where team_id = $1
-       order by join_time asc, id asc`,
+      `select m.*, a.seat_label
+       from ticket_team_member m
+       left join team_seat_assignment a
+         on a.team_id = m.team_id
+        and a.user_id = m.user_id
+       where m.team_id = $1
+       order by m.join_time asc, m.id asc`,
       [teamId],
     );
     return result.rows.map((row) => this.mapMemberRow(row));
@@ -325,9 +334,13 @@ export class TeamGrabRepository {
 
   async listConfirmedMembers(teamId: number): Promise<TicketTeamMemberRecord[]> {
     const result = await this.database.query<TicketTeamMemberRow>(
-      `select * from ticket_team_member
-       where team_id = $1 and status = 'CONFIRMED'
-       order by join_time asc, id asc`,
+      `select m.*, a.seat_label
+       from ticket_team_member m
+       left join team_seat_assignment a
+         on a.team_id = m.team_id
+        and a.user_id = m.user_id
+       where m.team_id = $1 and m.status = 'CONFIRMED'
+       order by m.join_time asc, m.id asc`,
       [teamId],
     );
     return result.rows.map((row) => this.mapMemberRow(row));
@@ -354,6 +367,130 @@ export class TeamGrabRepository {
       ],
     );
     return this.mapTeamGrabRow(result.rows[0]);
+  }
+
+  async beginTeamGrab(input: BeginTeamGrabInput): Promise<BeginTeamGrabResult> {
+    return this.database.withTransaction(async (client) => {
+      const teamResult = await client.query<TicketTeamRow>(
+        `select *
+         from ticket_team
+         where id = $1
+           and status in ('READY', 'FAILED', 'EXPIRED')
+         for update`,
+        [input.teamId],
+      );
+      const teamRow = teamResult.rows[0];
+      if (!teamRow) throw new ConflictException('team grab is already in progress');
+      const team = this.mapTeamRow(teamRow);
+
+      const memberResult = await client.query<TicketTeamMemberRow>(
+        `select m.*, a.seat_label
+         from ticket_team_member m
+         left join team_seat_assignment a
+           on a.team_id = m.team_id
+          and a.user_id = m.user_id
+         where m.team_id = $1
+           and m.status = 'CONFIRMED'
+         order by
+           case when m.role = 'LEADER' then 0 else 1 end,
+           m.join_time asc,
+           m.id asc`,
+        [input.teamId],
+      );
+      const confirmedMembers = memberResult.rows.map((row) => this.mapMemberRow(row));
+      if (!confirmedMembers.some((member) => member.userId === input.triggerUserId)) {
+        throw new ForbiddenException('trigger user must be a confirmed member');
+      }
+
+      const quantity = confirmedMembers.length;
+      if (quantity < 2 || quantity > 6) {
+        throw new BadRequestException('team must have 2-6 confirmed members');
+      }
+
+      const teamGrabResult = await client.query<TeamGrabRequestRow>(
+        `insert into team_grab_request (
+          request_id, grab_request_id, team_id, trigger_user_id, payer_user_id,
+          session_id, ticket_type_id, quantity, strategy, fallback_strategy_json
+        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+        returning *`,
+        [
+          input.requestId,
+          input.grabRequestId,
+          team.id,
+          input.triggerUserId,
+          team.leaderUserId,
+          team.sessionId,
+          team.ticketTypeId,
+          quantity,
+          team.strategy,
+          JSON.stringify(team.fallbacks),
+        ],
+      );
+
+      const progressMessage = `你前面还有 ${Math.max(input.queueSeq - 1, 0)} 人`;
+      const attempts: GrabAttemptSnapshot[] = input.requestedTicketTypes.map((preference) => ({
+        ticketTypeId: preference.ticketTypeId,
+        name: preference.name,
+        status: 'PENDING',
+        message: '待尝试',
+      }));
+      await client.query(
+        `insert into grab_request (
+          request_id, idempotency_key, user_id, session_id, ticket_type_id,
+          quantity, seat_ids, allocate_random, status, progress_status,
+          progress_message, request_type, queue_seq, requested_ticket_types,
+          allow_auto_downgrade, current_ticket_type_id, current_attempt_index,
+          attempts_snapshot, expire_time
+        ) values (
+          $1, $2, $3, $4, $5,
+          $6, $7::jsonb, $8, $9, $10,
+          $11, $12, $13, $14::jsonb,
+          $15, $16, $17,
+          $18::jsonb, $19
+        )
+        returning request_id`,
+        [
+          input.grabRequestId,
+          input.idempotencyKey,
+          team.leaderUserId,
+          team.sessionId,
+          team.ticketTypeId,
+          quantity,
+          JSON.stringify([]),
+          true,
+          GRAB_STATUS.QUEUED,
+          GRAB_STATUS.QUEUED,
+          progressMessage,
+          'TEAM_GRAB',
+          input.queueSeq,
+          JSON.stringify(input.requestedTicketTypes),
+          false,
+          team.ticketTypeId,
+          0,
+          JSON.stringify(attempts),
+          input.expireTime,
+        ],
+      );
+
+      const updatedTeamResult = await client.query<TicketTeamRow>(
+        `update ticket_team
+         set status = 'GRABBING',
+             size = $2,
+             update_time = now()
+         where id = $1
+           and status in ('READY', 'FAILED', 'EXPIRED')
+         returning *`,
+        [team.id, quantity],
+      );
+      const updatedTeam = updatedTeamResult.rows[0];
+      if (!updatedTeam) throw new ConflictException('team grab is already in progress');
+
+      return {
+        team: this.mapTeamRow(updatedTeam),
+        teamGrabRequest: this.mapTeamGrabRow(teamGrabResult.rows[0]),
+        confirmedMembers,
+      };
+    });
   }
 
   async findTeamGrabByGrabRequestId(grabRequestId: string): Promise<TeamGrabRequestRecord | null> {
@@ -867,6 +1004,7 @@ export class TeamGrabRepository {
       status: row.status,
       seatId: row.seat_id == null ? null : Number(row.seat_id),
       orderSeatId: row.order_seat_id == null ? null : Number(row.order_seat_id),
+      seatLabel: row.seat_label ?? null,
       joinTime: row.join_time,
     };
   }

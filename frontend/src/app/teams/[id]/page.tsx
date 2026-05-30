@@ -14,6 +14,7 @@ import {
   getGrabProgress,
   getTeamGrab,
   leaveTeamGrab,
+  removeTeamGrabMember,
   syncTeamGrabPaid,
   triggerTeamGrab,
   updateTeamGrabStrategy,
@@ -23,6 +24,7 @@ import {
   canShowPayButton,
   canTriggerTeamGrab,
   confirmedMemberCount,
+  teamMemberSeatAssignmentLabel,
   teamStatusLabel,
 } from '@/lib/team-grab'
 import type {
@@ -69,6 +71,7 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
+  const [removingUserId, setRemovingUserId] = useState<number | null>(null)
   const [strategySaving, setStrategySaving] = useState(false)
   const [syncingPaid, setSyncingPaid] = useState(false)
   const [requestId, setRequestId] = useState<string | null>(null)
@@ -152,9 +155,10 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
   )
   const isLeader = Boolean(team && currentUserId === team.leaderUserId)
   const canEditStrategy = Boolean(team && isLeader && EDITABLE_STATUSES.has(team.status))
+  const canRemoveMembers = Boolean(team && isLeader && EDITABLE_STATUSES.has(team.status))
   const canLeave = Boolean(team && currentMember && !isLeader && EDITABLE_STATUSES.has(team.status))
   const confirmedCount = detail ? confirmedMemberCount(detail.members) : 0
-  const assignedMembers = detail?.members.filter(member => member.seatId != null || member.orderSeatId != null) ?? []
+  const assignedMembers = detail?.members.filter(member => teamMemberSeatAssignmentLabel(member)) ?? []
   const inviteLink = team ? `/teams/${team.id}` : ''
   const canPay = Boolean(team && currentUserId && detail?.latestOrderId && canShowPayButton(team, currentUserId))
   const canTrigger = Boolean(detail && currentUserId && canTriggerTeamGrab(detail, currentUserId))
@@ -241,6 +245,20 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
       await globalAlert(err instanceof Error ? err.message : '退出小队失败')
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  const handleRemoveMember = async (memberUserId: number) => {
+    if (!team) return
+    if (!(await globalConfirm('确认移除该成员？'))) return
+    setRemovingUserId(memberUserId)
+    try {
+      await removeTeamGrabMember(team.id, memberUserId)
+      await loadTeam()
+    } catch (err: unknown) {
+      await globalAlert(err instanceof Error ? err.message : '移除成员失败')
+    } finally {
+      setRemovingUserId(null)
     }
   }
 
@@ -345,7 +363,14 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
               <h2 className="text-[16px] font-medium text-[#111]">成员</h2>
               <span className="text-[13px] text-[#999]">{confirmedCount} 人已确认</span>
             </div>
-            <TeamMemberList members={detail.members} leaderUserId={team.leaderUserId} currentUserId={currentUserId} />
+            <TeamMemberList
+              members={detail.members}
+              leaderUserId={team.leaderUserId}
+              currentUserId={currentUserId}
+              canRemoveMembers={canRemoveMembers}
+              removingUserId={removingUserId}
+              onRemoveMember={handleRemoveMember}
+            />
           </section>
 
           <section className="bg-white p-5">
@@ -460,11 +485,7 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
                 {assignedMembers.map(member => (
                   <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f0f0f0] px-4 py-3 text-[13px] last:border-b-0">
                     <span className="font-medium text-[#333]">用户 {member.userId}</span>
-                    <span className="text-[#666]">
-                      {member.seatId != null ? `seatId ${member.seatId}` : ''}
-                      {member.seatId != null && member.orderSeatId != null ? ' / ' : ''}
-                      {member.orderSeatId != null ? `orderSeatId ${member.orderSeatId}` : ''}
-                    </span>
+                    <span className="text-[#666]">{teamMemberSeatAssignmentLabel(member)}</span>
                   </div>
                 ))}
               </div>

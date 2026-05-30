@@ -11,6 +11,7 @@ CREATE SCHEMA IF NOT EXISTS ticket_service;
 CREATE SCHEMA IF NOT EXISTS order_service;
 CREATE SCHEMA IF NOT EXISTS payment_service;
 CREATE SCHEMA IF NOT EXISTS notification_service;
+CREATE SCHEMA IF NOT EXISTS grab_service;
 
 -- java-user owned tables
 ALTER TABLE IF EXISTS "user" SET SCHEMA user_service;
@@ -52,6 +53,13 @@ ALTER TABLE IF EXISTS layout_section SET SCHEMA ticket_service;
 ALTER TABLE IF EXISTS "order" SET SCHEMA order_service;
 ALTER TABLE IF EXISTS order_seat SET SCHEMA order_service;
 ALTER TABLE IF EXISTS order_snapshot SET SCHEMA order_service;
+
+-- grab-service owned tables
+ALTER TABLE IF EXISTS grab_request SET SCHEMA grab_service;
+ALTER TABLE IF EXISTS ticket_team SET SCHEMA grab_service;
+ALTER TABLE IF EXISTS ticket_team_member SET SCHEMA grab_service;
+ALTER TABLE IF EXISTS team_grab_request SET SCHEMA grab_service;
+ALTER TABLE IF EXISTS team_seat_assignment SET SCHEMA grab_service;
 
 -- Some disposable local databases were created before order_snapshot existed.
 -- Keep this local-only script idempotent so the order service can write snapshots

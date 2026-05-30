@@ -38,6 +38,8 @@ const STRATEGY_RANK: Record<TeamSeatStrategy, number> = {
   FALLBACK: 3,
 }
 
+const EDITABLE_TEAM_STATUSES = new Set<TeamStatus>(['DRAFT', 'READY', 'FAILED', 'EXPIRED'])
+
 export function strategyLabel(strategy: TeamSeatStrategy) {
   return STRATEGY_LABELS[strategy]
 }
@@ -76,4 +78,21 @@ export function canTriggerTeamGrab(detail: TicketTeamDetailVO, currentUserId: nu
 
 export function confirmedMemberCount(members: TicketTeamMemberVO[]) {
   return members.filter((member) => member.status === 'CONFIRMED').length
+}
+
+export function teamMemberSeatAssignmentLabel(member: TicketTeamMemberVO) {
+  const readableLabel = member.seatLabel?.trim()
+  if (readableLabel) return readableLabel
+
+  return [
+    member.seatId != null ? `seatId ${member.seatId}` : null,
+    member.orderSeatId != null ? `orderSeatId ${member.orderSeatId}` : null,
+  ].filter(Boolean).join(' / ')
+}
+
+export function canLeaderRemoveTeamMember(team: TicketTeamVO, currentUserId: number | null | undefined, member: TicketTeamMemberVO) {
+  return currentUserId === team.leaderUserId
+    && EDITABLE_TEAM_STATUSES.has(team.status)
+    && member.userId !== team.leaderUserId
+    && member.status !== 'LEFT'
 }

@@ -86,7 +86,7 @@ $schemaColumns = @{
     "station_config_version" = New-ColumnSet @("id", "station_id", "activity_id", "tour_id", "venue_id", "venue_application_id", "reviewer_id", "created_by")
     "stock_log" = New-ColumnSet @("id", "session_id", "ticket_type_id")
     "team_grab_request" = New-ColumnSet @("id", "request_id", "grab_request_id", "team_id", "trigger_user_id", "payer_user_id", "session_id", "ticket_type_id", "order_id")
-    "team_seat_assignment" = New-ColumnSet @("id", "team_id", "user_id", "order_id", "order_seat_id", "session_seat_id")
+    "team_seat_assignment" = New-ColumnSet @("id", "team_id", "user_id", "order_id", "order_seat_id", "session_seat_id", "seat_label")
     "ticket_team" = New-ColumnSet @("id", "invite_code", "leader_user_id", "activity_id", "session_id", "ticket_type_id")
     "ticket_team_member" = New-ColumnSet @("id", "team_id", "session_id", "user_id", "seat_id", "order_seat_id")
     "ticket_group" = New-ColumnSet @("id")
@@ -289,9 +289,17 @@ if (-not (Test-Path -LiteralPath $teamSeatLockSql)) {
     exit 1
 }
 $teamSeatLockContent = (Get-Content -Raw -LiteralPath $teamSeatLockSql).ToLower()
+if ($teamSeatLockContent -notmatch 'alter\s+table\s+session_seat\s+add\s+column\s+if\s+not\s+exists\s+lock_request_id\s+varchar\s*\(\s*64\s*\)') {
+    Write-Host "FAIL team seat lock SQL must add session_seat.lock_request_id: $teamSeatLockSql"
+    exit 1
+}
 $teamSeatLockIndexPattern = 'create\s+index\s+if\s+not\s+exists\s+idx_session_seat_team_lock_lookup\s+on\s+session_seat\s*\(\s*session_id\s*,\s*ticket_type_id\s*,\s*status\s*,\s*seat_block_id\s*,\s*\(case\s+when\s+seat_block_id\s+is\s+null\s+then\s+layout_section_id\s+end\)\s*,\s*row_no\s*,\s*seat_no\s*,\s*id\s*\)\s*where\s+order_id\s+is\s+null\s+and\s+lock_expire_time\s+is\s+null'
 if ($teamSeatLockContent -notmatch $teamSeatLockIndexPattern) {
     Write-Host "FAIL team seat lock index must match candidate query ordering and partial predicate: $teamSeatLockSql"
+    exit 1
+}
+if ($teamSeatLockContent -notmatch 'create\s+index\s+if\s+not\s+exists\s+idx_session_seat_lock_request\s+on\s+session_seat\s*\(\s*lock_request_id\s*\)\s*where\s+lock_request_id\s+is\s+not\s+null') {
+    Write-Host "FAIL team seat lock SQL must index session_seat.lock_request_id: $teamSeatLockSql"
     exit 1
 }
 
@@ -315,6 +323,16 @@ if (-not (Test-Path -LiteralPath $teamGrabSql)) {
     exit 1
 }
 $teamGrabContent = (Get-Content -Raw -LiteralPath $teamGrabSql).ToLower()
+foreach ($tableName in @("ticket_team", "ticket_team_member", "team_grab_request", "team_seat_assignment")) {
+    if ($teamGrabContent -notmatch ("create\s+table\s+if\s+not\s+exists\s+" + $tableName + "\s*\(")) {
+        Write-Host "FAIL team grab SQL must create ${tableName}: $teamGrabSql"
+        exit 1
+    }
+}
+if ($teamGrabContent -notmatch 'seat_label\s+varchar\s*\(\s*128\s*\)') {
+    Write-Host "FAIL team grab SQL must store order-owned seat labels on team assignments: $teamGrabSql"
+    exit 1
+}
 if ($teamGrabContent -notmatch 'alter\s+table\s+team_grab_request\s+add\s+column\s+if\s+not\s+exists\s+grab_request_id\s+varchar\s*\(\s*64\s*\)') {
     Write-Host "FAIL team grab SQL must add grab_request_id for existing tables: $teamGrabSql"
     exit 1

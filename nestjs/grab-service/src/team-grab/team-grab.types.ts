@@ -1,3 +1,5 @@
+import type { GrabTicketPreference } from '../grab/grab.types';
+
 export type TeamStatus = 'DRAFT' | 'READY' | 'GRABBING' | 'LOCKED' | 'PAID' | 'FAILED' | 'CANCELLED' | 'EXPIRED';
 export type TeamMemberRole = 'LEADER' | 'MEMBER';
 export type TeamMemberStatus = 'INVITED' | 'JOINED' | 'CONFIRMED' | 'LEFT';
@@ -35,6 +37,7 @@ export interface TicketTeamMemberRecord {
   status: TeamMemberStatus;
   seatId: number | null;
   orderSeatId: number | null;
+  seatLabel: string | null;
   joinTime: Date;
 }
 
@@ -85,6 +88,23 @@ export interface CreateTeamGrabRequestInput {
   quantity: number;
   strategy: TeamSeatStrategy;
   fallbacks: TeamSeatStrategy[];
+}
+
+export interface BeginTeamGrabInput {
+  teamId: number;
+  triggerUserId: number;
+  requestId: string;
+  grabRequestId: string;
+  idempotencyKey: string;
+  queueSeq: number;
+  expireTime: Date;
+  requestedTicketTypes: GrabTicketPreference[];
+}
+
+export interface BeginTeamGrabResult {
+  team: TicketTeamRecord;
+  teamGrabRequest: TeamGrabRequestRecord;
+  confirmedMembers: TicketTeamMemberRecord[];
 }
 
 export interface TeamGrabTriggerResponse {

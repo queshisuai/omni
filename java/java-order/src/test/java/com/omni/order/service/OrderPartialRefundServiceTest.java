@@ -128,6 +128,7 @@ class OrderPartialRefundServiceTest {
     void getRefundOptionsReturnsRefundableSeatsAndUnitPrice() {
         Order order = paidOrder(10L, 2);
         OrderSeat seat = soldSeat(900L, 800L);
+        seat.setSeatLabel("A-1");
         when(orderMapper.selectById(10L)).thenReturn(order);
         when(orderSeatMapper.selectRefundableSeatsByOrderId(10L)).thenReturn(List.of(seat));
         when(orderSeatMapper.countRefundedSeatsByOrderId(10L)).thenReturn(1);
@@ -139,6 +140,7 @@ class OrderPartialRefundServiceTest {
         assertEquals(1, response.getRefundableQuantity());
         assertEquals(new BigDecimal("380.00"), response.getUnitPrice());
         assertEquals(900L, response.getSeats().get(0).getOrderSeatId());
+        assertEquals("A-1", response.getSeats().get(0).getSeatLabel());
     }
 
     @Test

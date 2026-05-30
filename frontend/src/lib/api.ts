@@ -411,11 +411,15 @@ export async function getTeamGrab(teamId: number): Promise<TicketTeamDetailVO> {
   return request<TicketTeamDetailVO>(`/api/grab/teams/${teamId}`)
 }
 
-export async function joinTeamGrab(teamId: number, inviteCode?: string): Promise<TicketTeamVO> {
+function normalizeInviteCode(inviteCode: string) {
+  return inviteCode.trim().toUpperCase()
+}
+
+export async function joinTeamGrab(teamId: number, inviteCode: string): Promise<TicketTeamVO> {
   assertPositiveInteger(teamId, 'teamId')
   return request<TicketTeamVO>(`/api/grab/teams/${teamId}/join`, {
     method: 'POST',
-    body: JSON.stringify({ inviteCode }),
+    body: JSON.stringify({ inviteCode: normalizeInviteCode(inviteCode) }),
   })
 }
 
@@ -430,6 +434,14 @@ export async function leaveTeamGrab(teamId: number): Promise<TicketTeamVO> {
   assertPositiveInteger(teamId, 'teamId')
   return request<TicketTeamVO>(`/api/grab/teams/${teamId}/leave`, {
     method: 'POST',
+  })
+}
+
+export async function removeTeamGrabMember(teamId: number, userId: number): Promise<TicketTeamVO> {
+  assertPositiveInteger(teamId, 'teamId')
+  assertPositiveInteger(userId, 'userId')
+  return request<TicketTeamVO>(`/api/grab/teams/${teamId}/members/${userId}`, {
+    method: 'DELETE',
   })
 }
 

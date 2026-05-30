@@ -79,9 +79,9 @@ export class TeamGrabController {
   async join(
     @Req() request: AuthenticatedRequest,
     @Param('teamId') teamId: string,
-    @Body() _body: JoinTeamDto,
+    @Body() body: JoinTeamDto,
   ): Promise<ApiResult<TicketTeamRecord>> {
-    return success(await this.teamGrabService.joinTeam(parsePositiveInt(teamId, 'team'), request.user.userId));
+    return success(await this.teamGrabService.joinTeam(parsePositiveInt(teamId, 'team'), request.user.userId, body?.inviteCode ?? ''));
   }
 
   @Post(':teamId/confirm')

@@ -37,6 +37,7 @@ function member(overrides: Partial<TicketTeamMemberRecord> = {}): TicketTeamMemb
     status: 'CONFIRMED',
     seatId: null,
     orderSeatId: null,
+    seatLabel: null,
     joinTime: now,
     ...overrides,
   };
@@ -132,12 +133,12 @@ describe('TeamGrabController', () => {
     const service = { joinTeam: jest.fn().mockResolvedValue(joined) };
     const controller = createController(service);
 
-    await expect(controller.join(request(200), '7', { inviteCode: 'TEAM1234' })).resolves.toEqual({
+    await expect(controller.join(request(200), '7', { inviteCode: ' TEAM1234 ' })).resolves.toEqual({
       code: 200,
       message: 'success',
       data: joined,
     });
-    expect(service.joinTeam).toHaveBeenCalledWith(7, 200);
+    expect(service.joinTeam).toHaveBeenCalledWith(7, 200, ' TEAM1234 ');
   });
 
   it('confirms the authenticated member', async () => {

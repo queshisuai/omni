@@ -391,9 +391,16 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       return
     }
 
+    const inviteCodeInput = await globalPrompt('请输入小队邀请码', '加入已有小队', '邀请码')
+    const inviteCode = inviteCodeInput?.trim()
+    if (!inviteCode) {
+      await globalAlert('请输入小队邀请码')
+      return
+    }
+
     setTeamActionLoading(true)
     try {
-      const team = await joinTeamGrab(teamId)
+      const team = await joinTeamGrab(teamId, inviteCode)
       router.push(`/teams/${team.id}`)
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '加入小队失败')

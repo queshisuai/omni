@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  canLeaderRemoveTeamMember,
   canShowPayButton,
   canTriggerTeamGrab,
   normalizeFallbacks,
   strategyLabel,
+  teamMemberSeatAssignmentLabel,
 } from './team-grab.ts'
 import type { TicketTeamDetailVO, TicketTeamMemberVO, TicketTeamVO } from '@/types/api'
 
@@ -33,6 +35,7 @@ function makeMember(overrides: Partial<TicketTeamMemberVO> = {}): TicketTeamMemb
     status: 'JOINED',
     seatId: null,
     orderSeatId: null,
+    seatLabel: null,
     joinTime: '2026-05-31T00:00:00.000Z',
     ...overrides,
   }
@@ -114,6 +117,37 @@ test('allows triggering only when current user is confirmed and backend allows i
       canTriggerGrab: true,
       members: [makeMember({ userId: 10, status: 'JOINED' })],
     }), 10),
+    false,
+  )
+})
+
+test('uses readable team seat labels before opaque ids', () => {
+  assert.equal(
+    teamMemberSeatAssignmentLabel(makeMember({ seatId: 501, orderSeatId: 7001, seatLabel: 'A-1' })),
+    'A-1',
+  )
+  assert.equal(
+    teamMemberSeatAssignmentLabel(makeMember({ seatId: 501, orderSeatId: 7001, seatLabel: null })),
+    'seatId 501 / orderSeatId 7001',
+  )
+  assert.equal(teamMemberSeatAssignmentLabel(makeMember()), '')
+})
+
+test('leader can remove non-leader members only while the team is editable', () => {
+  assert.equal(
+    canLeaderRemoveTeamMember(makeTeam({ status: 'READY', leaderUserId: 10 }), 10, makeMember({ userId: 11, status: 'CONFIRMED' })),
+    true,
+  )
+  assert.equal(
+    canLeaderRemoveTeamMember(makeTeam({ status: 'GRABBING', leaderUserId: 10 }), 10, makeMember({ userId: 11, status: 'CONFIRMED' })),
+    false,
+  )
+  assert.equal(
+    canLeaderRemoveTeamMember(makeTeam({ status: 'READY', leaderUserId: 10 }), 11, makeMember({ userId: 12, status: 'CONFIRMED' })),
+    false,
+  )
+  assert.equal(
+    canLeaderRemoveTeamMember(makeTeam({ status: 'READY', leaderUserId: 10 }), 10, makeMember({ userId: 10, role: 'LEADER', status: 'CONFIRMED' })),
     false,
   )
 })

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createAlipayQrPay, getGrabProgress, getGrabVisibleStock } from './api.ts'
+import { createAlipayQrPay, getGrabProgress, getGrabVisibleStock, joinTeamGrab, removeTeamGrabMember } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -77,6 +77,56 @@ test('loads visible stock with ticket type query params', async () => {
 
     assert.equal(requestedUrl, '/api/grab/sessions/101/stock-visible?ticketTypeIds=1%2C2')
     assert.equal(result.sessionId, 101)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('joins a team with a normalized invite code in the request body', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  let requestedBody = ''
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input)
+    requestedBody = String(init?.body ?? '')
+    return new Response(JSON.stringify({
+      code: 200,
+      message: 'success',
+      data: { id: 7, inviteCode: 'TEAM1234', leaderUserId: 100, activityId: 10, sessionId: 20, ticketTypeId: 30, size: 2, strategy: 'SAME_BLOCK', fallbacks: [], status: 'DRAFT' },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await joinTeamGrab(7, ' team1234 ')
+
+    assert.equal(requestedUrl, '/api/grab/teams/7/join')
+    assert.equal(requestedBody, JSON.stringify({ inviteCode: 'TEAM1234' }))
+    assert.equal(result.id, 7)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('removes a team member through the leader endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  let requestedMethod = ''
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input)
+    requestedMethod = init?.method ?? 'GET'
+    return new Response(JSON.stringify({
+      code: 200,
+      message: 'success',
+      data: { id: 7, inviteCode: 'TEAM1234', leaderUserId: 100, activityId: 10, sessionId: 20, ticketTypeId: 30, size: 1, strategy: 'SAME_BLOCK', fallbacks: [], status: 'DRAFT' },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await removeTeamGrabMember(7, 200)
+
+    assert.equal(requestedUrl, '/api/grab/teams/7/members/200')
+    assert.equal(requestedMethod, 'DELETE')
+    assert.equal(result.size, 1)
   } finally {
     globalThis.fetch = originalFetch
   }

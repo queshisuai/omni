@@ -474,7 +474,7 @@ public class OrderService {
         response.setSessionSeatId(seat.getSessionSeatId());
         response.setSessionId(seat.getSessionId());
         response.setTicketTypeId(seat.getTicketTypeId());
-        response.setSeatLabel(seat.getSessionSeatId() != null ? String.valueOf(seat.getSessionSeatId()) : null);
+        response.setSeatLabel(seat.getSeatLabel());
         return response;
     }
 

@@ -36,6 +36,7 @@ function member(userId: number): TicketTeamMemberRecord {
     status: 'CONFIRMED',
     seatId: null,
     orderSeatId: null,
+    seatLabel: null,
     joinTime: now,
   };
 }

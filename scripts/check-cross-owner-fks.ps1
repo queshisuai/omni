@@ -13,6 +13,7 @@ Add-Owners -Tables @("category", "artist", "tour", "station", "activity", "sessi
 Add-Owners -Tables @("order", "order_seat", "order_snapshot") -Owner "java-order"
 Add-Owners -Tables @("payment", "refund_request") -Owner "java-payment"
 Add-Owners -Tables @("notification") -Owner "java-notification"
+Add-Owners -Tables @("grab_request", "ticket_team", "ticket_team_member", "team_grab_request", "team_seat_assignment") -Owner "grab-service"
 
 # --- Normalize table name: strip quotes and lowercase ---
 function Normalize-TableName {

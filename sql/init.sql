@@ -155,6 +155,8 @@ CREATE TABLE session_seat (
     seat_label VARCHAR(30) NOT NULL,
     status SMALLINT DEFAULT 1,
     lock_expire_time TIMESTAMP,
+    lock_request_id VARCHAR(64),
+    seat_block_id BIGINT,
     order_id BIGINT REFERENCES "order"(id),
     ticket_type_id BIGINT REFERENCES ticket_type(id),
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -282,6 +284,145 @@ CREATE TABLE order_snapshot (
     team_order BOOLEAN NOT NULL DEFAULT FALSE,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE grab_request (
+    id BIGSERIAL PRIMARY KEY,
+    request_id VARCHAR(64) NOT NULL,
+    idempotency_key VARCHAR(128) NOT NULL,
+    user_id BIGINT NOT NULL,
+    session_id BIGINT NOT NULL,
+    ticket_type_id BIGINT NOT NULL,
+    quantity INTEGER NOT NULL,
+    seat_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    allocate_random BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(32) NOT NULL,
+    request_type VARCHAR(32) NOT NULL DEFAULT 'NORMAL_GRAB',
+    queue_seq BIGINT,
+    requested_ticket_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+    allow_auto_downgrade BOOLEAN NOT NULL DEFAULT FALSE,
+    current_ticket_type_id BIGINT,
+    current_attempt_index INTEGER NOT NULL DEFAULT 0,
+    matched_ticket_type_id BIGINT,
+    progress_status VARCHAR(32) NOT NULL DEFAULT 'QUEUED',
+    progress_message VARCHAR(512),
+    attempts_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+    order_id BIGINT,
+    fail_reason VARCHAR(512),
+    worker_claimed_at TIMESTAMPTZ,
+    worker_id VARCHAR(128),
+    processing_started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    expire_time TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uk_grab_request_request_id UNIQUE (request_id),
+    CONSTRAINT uk_grab_request_user_idempotency UNIQUE (user_id, idempotency_key),
+    CONSTRAINT chk_grab_request_quantity_positive CHECK (quantity > 0),
+    CONSTRAINT chk_grab_request_status CHECK (status IN (
+        'QUEUED',
+        'WAITING',
+        'TRYING_TICKET_TYPE',
+        'LOCKING',
+        'PENDING',
+        'ACCEPTED',
+        'ORDER_CREATING',
+        'ORDER_CREATED',
+        'SOLD_OUT',
+        'DOWNGRADING',
+        'PENDING_RECOVERY',
+        'LIMITED',
+        'FAILED',
+        'EXPIRED'
+    )),
+    CONSTRAINT chk_grab_request_progress_status CHECK (progress_status IN (
+        'QUEUED',
+        'WAITING',
+        'TRYING_TICKET_TYPE',
+        'LOCKING',
+        'ORDER_CREATING',
+        'ORDER_CREATED',
+        'SOLD_OUT',
+        'DOWNGRADING',
+        'PENDING_RECOVERY',
+        'LIMITED',
+        'FAILED',
+        'EXPIRED'
+    ))
+);
+
+CREATE TABLE ticket_team (
+    id BIGSERIAL PRIMARY KEY,
+    invite_code VARCHAR(32) NOT NULL,
+    leader_user_id BIGINT NOT NULL,
+    activity_id BIGINT NOT NULL,
+    session_id BIGINT NOT NULL,
+    ticket_type_id BIGINT NOT NULL,
+    size INTEGER NOT NULL DEFAULT 1,
+    strategy VARCHAR(32) NOT NULL DEFAULT 'STRICT_CONTIGUOUS',
+    fallback_strategy_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+    create_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+    update_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uk_ticket_team_invite_code UNIQUE (invite_code),
+    CONSTRAINT chk_ticket_team_size CHECK (size BETWEEN 1 AND 6),
+    CONSTRAINT chk_ticket_team_strategy CHECK (strategy IN ('STRICT_CONTIGUOUS', 'SAME_BLOCK', 'SAME_TICKET_TYPE', 'FALLBACK')),
+    CONSTRAINT chk_ticket_team_status CHECK (status IN ('DRAFT', 'READY', 'GRABBING', 'LOCKED', 'PAID', 'FAILED', 'CANCELLED', 'EXPIRED'))
+);
+
+CREATE TABLE ticket_team_member (
+    id BIGSERIAL PRIMARY KEY,
+    team_id BIGINT NOT NULL REFERENCES ticket_team(id) ON DELETE CASCADE,
+    session_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    role VARCHAR(16) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    seat_id BIGINT,
+    order_seat_id BIGINT,
+    join_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+    update_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uk_ticket_team_member_team_user UNIQUE (team_id, user_id),
+    CONSTRAINT chk_ticket_team_member_role CHECK (role IN ('LEADER', 'MEMBER')),
+    CONSTRAINT chk_ticket_team_member_status CHECK (status IN ('INVITED', 'JOINED', 'CONFIRMED', 'LEFT'))
+);
+
+CREATE TABLE team_grab_request (
+    id BIGSERIAL PRIMARY KEY,
+    request_id VARCHAR(64) NOT NULL,
+    grab_request_id VARCHAR(64) NOT NULL,
+    team_id BIGINT NOT NULL REFERENCES ticket_team(id),
+    trigger_user_id BIGINT NOT NULL,
+    payer_user_id BIGINT NOT NULL,
+    session_id BIGINT NOT NULL,
+    ticket_type_id BIGINT NOT NULL,
+    quantity INTEGER NOT NULL,
+    strategy VARCHAR(32) NOT NULL,
+    fallback_strategy_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    matched_strategy VARCHAR(32),
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    order_id BIGINT,
+    locked_seat_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    seat_labels JSONB NOT NULL DEFAULT '[]'::jsonb,
+    fail_reason VARCHAR(512),
+    create_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+    update_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uk_team_grab_request_request_id UNIQUE (request_id),
+    CONSTRAINT uk_team_grab_request_grab_request_id UNIQUE (grab_request_id),
+    CONSTRAINT chk_team_grab_request_quantity CHECK (quantity BETWEEN 2 AND 6),
+    CONSTRAINT chk_team_grab_request_status CHECK (status IN ('PENDING', 'GRABBING', 'LOCKED', 'ORDER_CREATED', 'FAILED', 'EXPIRED'))
+);
+
+CREATE TABLE team_seat_assignment (
+    id BIGSERIAL PRIMARY KEY,
+    team_id BIGINT NOT NULL REFERENCES ticket_team(id),
+    user_id BIGINT NOT NULL,
+    order_id BIGINT NOT NULL,
+    order_seat_id BIGINT NOT NULL,
+    session_seat_id BIGINT NOT NULL,
+    seat_label VARCHAR(128),
+    create_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uk_team_assignment_team_user UNIQUE (team_id, user_id),
+    CONSTRAINT uk_team_assignment_order_seat UNIQUE (order_seat_id)
 );
 
 CREATE TABLE venue_seat_layout_template (
@@ -567,6 +708,17 @@ CREATE INDEX idx_order_snapshot_grab_request_id ON order_snapshot(grab_request_i
 CREATE UNIQUE INDEX uk_order_snapshot_grab_request_id ON order_snapshot(grab_request_id) WHERE grab_request_id IS NOT NULL;
 CREATE INDEX idx_order_snapshot_team_id ON order_snapshot(team_id) WHERE team_id IS NOT NULL;
 CREATE UNIQUE INDEX uk_order_snapshot_team_grab_request ON order_snapshot(team_grab_request_id) WHERE team_order = TRUE AND team_grab_request_id IS NOT NULL;
+CREATE INDEX idx_grab_request_status_expire_time ON grab_request(status, expire_time);
+CREATE INDEX idx_grab_request_user_created_at ON grab_request(user_id, created_at DESC);
+CREATE INDEX idx_grab_request_session_queue_seq ON grab_request(session_id, queue_seq);
+CREATE INDEX idx_grab_request_progress_expire_time ON grab_request(progress_status, expire_time);
+CREATE UNIQUE INDEX uk_ticket_team_member_active_session ON ticket_team_member(user_id, session_id) WHERE status IN ('JOINED', 'CONFIRMED');
+CREATE UNIQUE INDEX uk_team_grab_request_active_team ON team_grab_request(team_id) WHERE status IN ('PENDING', 'GRABBING', 'LOCKED', 'ORDER_CREATED');
+CREATE INDEX idx_ticket_team_leader ON ticket_team(leader_user_id, create_time DESC);
+CREATE INDEX idx_ticket_team_session ON ticket_team(session_id, status);
+CREATE INDEX idx_ticket_team_member_team ON ticket_team_member(team_id, status, join_time);
+CREATE INDEX idx_team_grab_request_order ON team_grab_request(order_id);
+CREATE INDEX idx_team_grab_request_grab_request ON team_grab_request(grab_request_id);
 CREATE INDEX idx_payment_order ON payment(order_id);
 CREATE INDEX idx_payment_no ON payment(payment_no);
 CREATE INDEX idx_payment_out_trade_no ON payment(out_trade_no);
@@ -588,6 +740,8 @@ CREATE INDEX idx_session_seat_session ON session_seat(session_id);
 CREATE INDEX idx_session_seat_venue ON session_seat(venue_id);
 CREATE INDEX idx_session_seat_area ON session_seat(area_id);
 CREATE INDEX idx_session_seat_status ON session_seat(status);
+CREATE INDEX idx_session_seat_lock_request ON session_seat(lock_request_id) WHERE lock_request_id IS NOT NULL;
+CREATE INDEX idx_session_seat_team_lock_lookup ON session_seat(session_id, ticket_type_id, status, seat_block_id, (CASE WHEN seat_block_id IS NULL THEN layout_section_id END), row_no, seat_no, id) WHERE order_id IS NULL AND lock_expire_time IS NULL;
 CREATE UNIQUE INDEX idx_session_seat_session_venue_seat ON session_seat(session_id, venue_seat_id);
 CREATE UNIQUE INDEX idx_session_seat_layout_position ON session_seat(session_id, layout_section_id, row_no, seat_no) WHERE layout_section_id IS NOT NULL;
 CREATE INDEX idx_ticket_type_area_ticket_type ON ticket_type_area(ticket_type_id);

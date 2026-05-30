@@ -209,6 +209,7 @@ export interface TicketTeamMemberVO {
   status: TeamMemberStatus
   seatId: number | null
   orderSeatId: number | null
+  seatLabel?: string | null
   joinTime: string
 }
 

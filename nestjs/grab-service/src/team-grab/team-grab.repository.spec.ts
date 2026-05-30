@@ -24,6 +24,7 @@ const memberRow = {
   status: 'CONFIRMED',
   seat_id: null,
   order_seat_id: null,
+  seat_label: null,
   join_time: new Date('2026-05-30T12:00:00.000Z'),
 };
 
@@ -171,6 +172,26 @@ describe('TeamGrabRepository', () => {
     expect(result).toBeNull();
   });
 
+  it('lists members with order-owned team seat assignment labels', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{ ...memberRow, seat_id: '501', order_seat_id: '7001', seat_label: 'A-1' }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.listMembers(1);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain('left join team_seat_assignment');
+    expect(sql).toContain('a.seat_label');
+    expect(query.mock.calls[0][1]).toEqual([1]);
+    expect(result[0]).toMatchObject({
+      userId: 100,
+      seatId: 501,
+      orderSeatId: 7001,
+      seatLabel: 'A-1',
+    });
+  });
+
   it('guards invited member confirmation by active joined and confirmed capacity under a team lock', async () => {
     const query = jest.fn().mockResolvedValue({ rows: [] });
     const repository = new TeamGrabRepository({ query } as any);
@@ -290,6 +311,96 @@ describe('TeamGrabRepository', () => {
     ]);
     expect(result.requestId).toBe('TEAM-GRAB-1');
     expect(result.grabRequestId).toBe('GRAB-QUEUED-1');
+  });
+
+  it('begins a team grab by locking the team, freezing confirmed members, inserting queued and team requests, and marking grabbing in one transaction', async () => {
+    const confirmedRows = [
+      { ...memberRow, id: '9', user_id: '100', role: 'LEADER', join_time: new Date('2026-05-30T12:00:00.000Z') },
+      { ...memberRow, id: '10', user_id: '200', role: 'MEMBER', join_time: new Date('2026-05-30T12:01:00.000Z') },
+    ];
+    const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'READY', size: 2 }] })
+      .mockResolvedValueOnce({ rows: confirmedRows })
+      .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, quantity: 2, status: 'PENDING' }] })
+      .mockResolvedValueOnce({ rows: [{ request_id: 'GRAB-QUEUED-1' }] })
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'GRABBING', size: 2 }] });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ withTransaction } as any);
+
+    const result = await repository.beginTeamGrab({
+      teamId: 1,
+      triggerUserId: 200,
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-QUEUED-1',
+      queueSeq: 11,
+      idempotencyKey: 'team:1:TEAM-GRAB-1',
+      expireTime: new Date('2026-05-30T12:15:00.000Z'),
+      requestedTicketTypes: [{ ticketTypeId: 30, name: null, maxPrice: null }],
+    });
+
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    const lockSql = query.mock.calls[0][0].toLowerCase();
+    expect(lockSql).toContain('from ticket_team');
+    expect(lockSql).toContain("status in ('ready', 'failed', 'expired')");
+    expect(lockSql).toContain('for update');
+    expect(query.mock.calls[0][1]).toEqual([1]);
+
+    const memberSql = query.mock.calls[1][0].toLowerCase();
+    expect(memberSql).toContain('from ticket_team_member');
+    expect(memberSql).toContain("status = 'confirmed'");
+    expect(memberSql).toContain('order by');
+    expect(query.mock.calls[1][1]).toEqual([1]);
+
+    expect(query.mock.calls[2][0]).toContain('insert into team_grab_request');
+    expect(query.mock.calls[2][1]).toEqual([
+      'TEAM-GRAB-1',
+      'GRAB-QUEUED-1',
+      1,
+      200,
+      100,
+      20,
+      30,
+      2,
+      'SAME_BLOCK',
+      JSON.stringify(['SAME_TICKET_TYPE', 'FALLBACK']),
+    ]);
+
+    const queuedGrabSql = query.mock.calls[3][0].toLowerCase();
+    expect(queuedGrabSql).toContain('insert into grab_request');
+    expect(queuedGrabSql).toContain('request_type');
+    expect(queuedGrabSql).toContain('queue_seq');
+    expect(query.mock.calls[3][1]).toEqual([
+      'GRAB-QUEUED-1',
+      'team:1:TEAM-GRAB-1',
+      100,
+      20,
+      30,
+      2,
+      JSON.stringify([]),
+      true,
+      'QUEUED',
+      'QUEUED',
+      '你前面还有 10 人',
+      'TEAM_GRAB',
+      11,
+      JSON.stringify([{ ticketTypeId: 30, name: null, maxPrice: null }]),
+      false,
+      30,
+      0,
+      JSON.stringify([{ ticketTypeId: 30, name: null, status: 'PENDING', message: '待尝试' }]),
+      new Date('2026-05-30T12:15:00.000Z'),
+    ]);
+
+    const updateSql = query.mock.calls[4][0].toLowerCase();
+    expect(updateSql).toContain("status = 'grabbing'");
+    expect(updateSql).toContain('size = $2');
+    expect(updateSql).toContain("status in ('ready', 'failed', 'expired')");
+    expect(query.mock.calls[4][1]).toEqual([1, 2]);
+    expect(result).toMatchObject({
+      team: { status: 'GRABBING', size: 2 },
+      teamGrabRequest: { requestId: 'TEAM-GRAB-1', quantity: 2 },
+      confirmedMembers: [{ userId: 100 }, { userId: 200 }],
+    });
   });
 
   it('finds team grab requests by queued grab request id', async () => {
