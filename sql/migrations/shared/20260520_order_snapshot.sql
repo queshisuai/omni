@@ -38,6 +38,9 @@ ALTER TABLE IF EXISTS order_snapshot
     ADD COLUMN IF NOT EXISTS team_grab_request_id VARCHAR(64),
     ADD COLUMN IF NOT EXISTS team_order BOOLEAN NOT NULL DEFAULT FALSE;
 
+ALTER TABLE IF EXISTS order_seat
+    ADD COLUMN IF NOT EXISTS seat_label VARCHAR(128);
+
 CREATE INDEX IF NOT EXISTS idx_order_snapshot_order_id ON order_snapshot(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_snapshot_activity_id ON order_snapshot(activity_id);
 CREATE INDEX IF NOT EXISTS idx_order_snapshot_session_id ON order_snapshot(session_id);

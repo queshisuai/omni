@@ -2,12 +2,18 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
 $sqlFile = Join-Path -Path $repoRoot -ChildPath "sql/local/20260520_move_tables_to_service_schemas_local_only.sql"
+$sharedOrderSnapshotSqlFile = Join-Path -Path $repoRoot -ChildPath "sql/migrations/shared/20260520_order_snapshot.sql"
 if (-not (Test-Path -LiteralPath $sqlFile)) {
     Write-Host "FAIL missing local schema move SQL: $sqlFile"
     exit 1
 }
+if (-not (Test-Path -LiteralPath $sharedOrderSnapshotSqlFile)) {
+    Write-Host "FAIL missing shared order snapshot SQL: $sharedOrderSnapshotSqlFile"
+    exit 1
+}
 
 $content = Get-Content -Raw -LiteralPath $sqlFile
+$sharedOrderSnapshotContent = Get-Content -Raw -LiteralPath $sharedOrderSnapshotSqlFile
 
 $requiredPhrases = @(
     "disposable database",
@@ -27,6 +33,11 @@ foreach ($phrase in $requiredPhrases) {
         Write-Host "FAIL local schema SQL missing required phrase: $phrase"
         exit 1
     }
+}
+
+if ($sharedOrderSnapshotContent -notmatch "ALTER\s+TABLE\s+IF\s+EXISTS\s+order_seat\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+seat_label\s+VARCHAR\(128\)") {
+    Write-Host "FAIL shared order snapshot SQL missing idempotent order_seat.seat_label migration"
+    exit 1
 }
 
 $forbiddenPatterns = @(
