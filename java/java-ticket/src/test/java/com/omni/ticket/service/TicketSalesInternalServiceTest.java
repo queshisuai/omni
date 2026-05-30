@@ -40,10 +40,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.InOrder;
 import org.springframework.transaction.annotation.Transactional;
 
 class TicketSalesInternalServiceTest {
@@ -342,6 +344,42 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
+    void lockTeamSeatsAcquiresRequestLockBeforeReadingExistingLock() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        when(sessionSeatMapper.selectLockedByRequestId(3001L, 4001L, "team-lock-1"))
+                .thenReturn(List.of(
+                        lockedSeat(501L, 10L, 900L, 1, 1, "A-1"),
+                        lockedSeat(502L, 10L, 900L, 1, 2, "A-2")));
+
+        TeamSeatLockResponse response = service.lockTeamSeats(teamLockRequest(2, "STRICT_CONTIGUOUS", List.of()));
+
+        assertEquals(List.of(501L, 502L), response.getLockedSeatIds());
+        InOrder inOrder = inOrder(sessionSeatMapper);
+        inOrder.verify(sessionSeatMapper).acquireTeamLockRequestLock("team-lock-1");
+        inOrder.verify(sessionSeatMapper).selectLockedByRequestId(3001L, 4001L, "team-lock-1");
+        verify(sessionSeatMapper, never()).selectAvailableForTeamLock(any(), any(), any());
+        verify(sessionSeatMapper, never()).lockTeamSeatIds(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void lockTeamSeatsRetryInfersExistingStrategyWithStablePriority() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        when(sessionSeatMapper.selectLockedByRequestId(3001L, 4001L, "team-lock-1"))
+                .thenReturn(List.of(
+                        lockedSeat(501L, 10L, 900L, 1, 1, "A-1"),
+                        lockedSeat(502L, 10L, 900L, 1, 2, "A-2")));
+
+        TeamSeatLockResponse response = service.lockTeamSeats(teamLockRequest(2, "SAME_TICKET_TYPE", List.of()));
+
+        assertEquals(List.of(501L, 502L), response.getLockedSeatIds());
+        assertEquals("STRICT_CONTIGUOUS", response.getMatchedStrategy());
+    }
+
+    @Test
     void lockTeamSeatsRetryReturnsExistingSeatsWhenSessionIsNoLongerSellable() {
         TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
@@ -454,6 +492,35 @@ class TicketSalesInternalServiceTest {
                         lockedSeat(903L, 90L, 990L, 1, 3, "Late-3")));
 
         TeamSeatLockResponse response = service.lockTeamSeats(teamLockRequest(3, "STRICT_CONTIGUOUS", List.of("SAME_BLOCK")));
+
+        assertEquals(List.of(901L, 902L, 903L), response.getLockedSeatIds());
+        assertEquals("STRICT_CONTIGUOUS", response.getMatchedStrategy());
+        verify(sessionSeatMapper).selectAvailableForTeamLock(3001L, 4001L, 30);
+        verify(sessionSeatMapper).selectAvailableForTeamLock(3001L, 4001L, 60);
+    }
+
+    @Test
+    void lockTeamSeatsExpandsPrimaryStrategyBeforeUsingSameTicketTypeFallback() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType(4001L, "A", new BigDecimal("380.00")));
+        List<SessionSeat> firstWindow = sparseTeamSeats(30);
+        List<SessionSeat> expandedWindow = new ArrayList<>(firstWindow);
+        expandedWindow.add(seat(901L, 90L, 990L, 1, 1));
+        expandedWindow.add(seat(902L, 90L, 990L, 1, 2));
+        expandedWindow.add(seat(903L, 90L, 990L, 1, 3));
+        when(sessionSeatMapper.selectAvailableForTeamLock(3001L, 4001L, 30)).thenReturn(firstWindow);
+        when(sessionSeatMapper.selectAvailableForTeamLock(3001L, 4001L, 60)).thenReturn(expandedWindow);
+        when(sessionSeatMapper.lockTeamSeatIds(eq(3001L), eq(4001L), eq(List.of(901L, 902L, 903L)), eq("team-lock-1"), any()))
+                .thenReturn(3);
+        when(sessionSeatMapper.selectLockedByRequest(3001L, 4001L, List.of(901L, 902L, 903L), "team-lock-1"))
+                .thenReturn(List.of(
+                        lockedSeat(901L, 90L, 990L, 1, 1, "Late-1"),
+                        lockedSeat(902L, 90L, 990L, 1, 2, "Late-2"),
+                        lockedSeat(903L, 90L, 990L, 1, 3, "Late-3")));
+
+        TeamSeatLockResponse response = service.lockTeamSeats(teamLockRequest(3, "STRICT_CONTIGUOUS", List.of("SAME_TICKET_TYPE")));
 
         assertEquals(List.of(901L, 902L, 903L), response.getLockedSeatIds());
         assertEquals("STRICT_CONTIGUOUS", response.getMatchedStrategy());

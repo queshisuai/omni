@@ -74,6 +74,9 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
     int releaseLockedSeat(@Param("seatId") Long seatId,
                           @Param("sessionId") Long sessionId);
 
+    @Select("SELECT pg_advisory_xact_lock(hashtext(#{lockRequestId})::bigint)")
+    void acquireTeamLockRequestLock(@Param("lockRequestId") String lockRequestId);
+
     @Select("SELECT * FROM session_seat WHERE session_id = #{sessionId} " +
             "AND ticket_type_id = #{ticketTypeId} AND status = 1 AND order_id IS NULL " +
             "AND lock_expire_time IS NULL " +

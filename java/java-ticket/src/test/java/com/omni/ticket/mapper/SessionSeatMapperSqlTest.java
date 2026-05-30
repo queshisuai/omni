@@ -52,6 +52,8 @@ class SessionSeatMapperSqlTest {
     void teamSeatLockSelectUsesSkipLockedAndLifecycleSqlClearsOwner() throws Exception {
         String selectSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "selectAvailableForTeamLock", Long.class, Long.class, Integer.class)).toLowerCase();
+        String requestLockSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "acquireTeamLockRequestLock", String.class)).toLowerCase();
         String lockSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "lockTeamSeatIds", Long.class, Long.class, List.class, String.class, LocalDateTime.class)).toLowerCase();
         String lockedByRequestSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
@@ -70,6 +72,8 @@ class SessionSeatMapperSqlTest {
         assertTrue(selectSql.contains("for update skip locked"), selectSql);
         assertTrue(selectSql.contains("limit #{limit}"), selectSql);
         assertTrue(selectSql.indexOf("seat_block_id") < selectSql.indexOf("layout_section_id"), selectSql);
+        assertTrue(requestLockSql.contains("pg_advisory_xact_lock"), requestLockSql);
+        assertTrue(requestLockSql.contains("hashtext(#{lockrequestid})::bigint"), requestLockSql);
         assertTrue(lockSql.contains("lock_request_id = #{lockrequestid}"), lockSql);
         assertTrue(lockedByRequestSql.contains("lock_expire_time > current_timestamp"), lockedByRequestSql);
         assertTrue(lockedByRequestIdSql.contains("lock_expire_time > current_timestamp"), lockedByRequestIdSql);

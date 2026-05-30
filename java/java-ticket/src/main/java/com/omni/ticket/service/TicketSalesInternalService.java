@@ -50,6 +50,8 @@ public class TicketSalesInternalService {
     private static final String SAME_BLOCK = "SAME_BLOCK";
     private static final String SAME_TICKET_TYPE = "SAME_TICKET_TYPE";
     private static final String FALLBACK = "FALLBACK";
+    private static final List<String> STANDARD_TEAM_LOCK_STRATEGIES = List.of(
+            STRICT_CONTIGUOUS, SAME_BLOCK, SAME_TICKET_TYPE);
     private static final int TEAM_LOCK_CANDIDATE_MULTIPLIER = 10;
 
     @Value("${omni.ticket.team-lock.max-candidates:2000}")
@@ -189,6 +191,7 @@ public class TicketSalesInternalService {
     @Transactional(rollbackFor = Exception.class)
     public TeamSeatLockResponse lockTeamSeats(TeamSeatLockRequest request) {
         validateTeamLockRequest(request);
+        sessionSeatMapper.acquireTeamLockRequestLock(request.getLockRequestId());
         List<String> strategies = teamLockStrategies(request);
 
         List<SessionSeat> existingLockedSeats = sortSeats(sessionSeatMapper.selectLockedByRequestId(
@@ -198,7 +201,7 @@ public class TicketSalesInternalService {
                 throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock request already exists with different quantity");
             }
             return teamSeatLockResponse(existingLockedSeats,
-                    matchedExistingStrategy(existingLockedSeats, request.getQuantity(), strategies));
+                    matchedExistingStrategy(existingLockedSeats, request.getQuantity()));
         }
 
         requireFutureLockExpireTime(request.getLockExpireTime());
@@ -206,36 +209,35 @@ public class TicketSalesInternalService {
         requireSellableTicketType(request.getSessionId(), request.getTicketTypeId());
 
         int maxLimit = teamLockMaxCandidateLimit(request.getQuantity());
-        int limit = Math.min(teamLockCandidateLimit(request.getQuantity()), maxLimit);
-        while (true) {
-            List<SessionSeat> availableSeats = sortSeats(sessionSeatMapper.selectAvailableForTeamLock(
-                    request.getSessionId(), request.getTicketTypeId(), limit));
-            for (String strategy : strategies) {
+        for (String strategy : strategies) {
+            int limit = Math.min(teamLockCandidateLimit(request.getQuantity()), maxLimit);
+            while (true) {
+                List<SessionSeat> availableSeats = sortSeats(sessionSeatMapper.selectAvailableForTeamLock(
+                        request.getSessionId(), request.getTicketTypeId(), limit));
                 List<SessionSeat> selectedSeats = selectByStrategy(availableSeats, request.getQuantity(), strategy);
-                if (selectedSeats.size() != request.getQuantity()) {
-                    continue;
+                if (selectedSeats.size() == request.getQuantity()) {
+                    List<Long> seatIds = selectedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList());
+                    int updated = sessionSeatMapper.lockTeamSeatIds(
+                            request.getSessionId(),
+                            request.getTicketTypeId(),
+                            seatIds,
+                            request.getLockRequestId(),
+                            request.getLockExpireTime());
+                    if (updated != request.getQuantity()) {
+                        throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock changed concurrently");
+                    }
+                    List<SessionSeat> lockedSeats = sessionSeatMapper.selectLockedByRequest(
+                            request.getSessionId(), request.getTicketTypeId(), seatIds, request.getLockRequestId());
+                    if (lockedSeats.size() != request.getQuantity()) {
+                        throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock ownership validation failed");
+                    }
+                    return teamSeatLockResponse(lockedSeats, strategy);
                 }
-                List<Long> seatIds = selectedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList());
-                int updated = sessionSeatMapper.lockTeamSeatIds(
-                        request.getSessionId(),
-                        request.getTicketTypeId(),
-                        seatIds,
-                        request.getLockRequestId(),
-                        request.getLockExpireTime());
-                if (updated != request.getQuantity()) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock changed concurrently");
+                if (availableSeats.size() < limit || limit >= maxLimit) {
+                    break;
                 }
-                List<SessionSeat> lockedSeats = sessionSeatMapper.selectLockedByRequest(
-                        request.getSessionId(), request.getTicketTypeId(), seatIds, request.getLockRequestId());
-                if (lockedSeats.size() != request.getQuantity()) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock ownership validation failed");
-                }
-                return teamSeatLockResponse(lockedSeats, strategy);
+                limit = Math.min(maxLimit, Math.max(limit + 1, limit * 2));
             }
-            if (availableSeats.size() < limit || limit >= maxLimit) {
-                break;
-            }
-            limit = Math.min(maxLimit, Math.max(limit + 1, limit * 2));
         }
         throw new BusinessException(ResultCode.BAD_REQUEST, "no team seat strategy can satisfy quantity");
     }
@@ -425,9 +427,9 @@ public class TicketSalesInternalService {
         return response;
     }
 
-    private String matchedExistingStrategy(List<SessionSeat> lockedSeats, int quantity, List<String> strategies) {
+    private String matchedExistingStrategy(List<SessionSeat> lockedSeats, int quantity) {
         List<Long> lockedSeatIds = lockedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList());
-        for (String strategy : strategies) {
+        for (String strategy : STANDARD_TEAM_LOCK_STRATEGIES) {
             List<Long> selectedSeatIds = selectByStrategy(lockedSeats, quantity, strategy).stream()
                     .map(SessionSeat::getId)
                     .collect(Collectors.toList());
@@ -435,7 +437,7 @@ public class TicketSalesInternalService {
                 return strategy;
             }
         }
-        return strategies.get(0);
+        return SAME_TICKET_TYPE;
     }
 
     private List<SessionSeat> sortSeats(List<SessionSeat> seats) {
