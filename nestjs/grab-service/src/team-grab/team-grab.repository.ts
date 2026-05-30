@@ -3,8 +3,10 @@ import { DatabaseService } from '../database/database.service';
 import type { DatabaseQueryClient } from '../database/database.service';
 import type {
   CreateTeamInput,
+  CreateTeamGrabRequestInput,
   TeamMemberRole,
   TeamMemberStatus,
+  TeamGrabRequestRecord,
   TeamSeatStrategy,
   TeamStatus,
   TicketTeamMemberRecord,
@@ -36,6 +38,28 @@ interface TicketTeamMemberRow {
   seat_id: string | number | null;
   order_seat_id: string | number | null;
   join_time: Date;
+}
+
+interface TeamGrabRequestRow {
+  id: string | number;
+  request_id: string;
+  grab_request_id?: string | null;
+  team_id: string | number;
+  trigger_user_id: string | number;
+  payer_user_id: string | number;
+  session_id: string | number;
+  ticket_type_id: string | number;
+  quantity: number;
+  strategy: TeamSeatStrategy;
+  fallback_strategy_json: TeamSeatStrategy[] | string | null;
+  matched_strategy: TeamSeatStrategy | null;
+  status: TeamGrabRequestRecord['status'];
+  order_id: string | number | null;
+  locked_seat_ids: number[] | string | null;
+  seat_labels: string[] | string | null;
+  fail_reason: string | null;
+  create_time: Date;
+  update_time: Date;
 }
 
 export function isUniqueViolation(error: unknown): boolean {
@@ -285,6 +309,114 @@ export class TeamGrabRepository {
     return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
   }
 
+  async listConfirmedMembers(teamId: number): Promise<TicketTeamMemberRecord[]> {
+    const result = await this.database.query<TicketTeamMemberRow>(
+      `select * from ticket_team_member
+       where team_id = $1 and status = 'CONFIRMED'
+       order by join_time asc, id asc`,
+      [teamId],
+    );
+    return result.rows.map((row) => this.mapMemberRow(row));
+  }
+
+  async createTeamGrabRequest(input: CreateTeamGrabRequestInput): Promise<TeamGrabRequestRecord> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `insert into team_grab_request (
+        request_id, grab_request_id, team_id, trigger_user_id, payer_user_id,
+        session_id, ticket_type_id, quantity, strategy, fallback_strategy_json
+      ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+      returning *`,
+      [
+        input.requestId,
+        input.grabRequestId,
+        input.teamId,
+        input.triggerUserId,
+        input.payerUserId,
+        input.sessionId,
+        input.ticketTypeId,
+        input.quantity,
+        input.strategy,
+        JSON.stringify(input.fallbacks),
+      ],
+    );
+    return this.mapTeamGrabRow(result.rows[0]);
+  }
+
+  async findTeamGrabByGrabRequestId(grabRequestId: string): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `select * from team_grab_request
+       where grab_request_id = $1
+       order by create_time desc
+       limit 1`,
+      [grabRequestId],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
+  async updateTeamGrabStatus(
+    requestId: string,
+    status: TeamGrabRequestRecord['status'],
+    allowedCurrentStatuses: TeamGrabRequestRecord['status'][],
+  ): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `update team_grab_request
+       set status = $2, update_time = now()
+       where request_id = $1
+         and status = any($3::varchar[])
+       returning *`,
+      [requestId, status, allowedCurrentStatuses],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
+  async persistLockedSeats(
+    requestId: string,
+    input: { lockedSeatIds: number[]; seatLabels: string[]; matchedStrategy: TeamSeatStrategy },
+  ): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `update team_grab_request
+       set locked_seat_ids = $2::jsonb,
+           seat_labels = $3::jsonb,
+           matched_strategy = $4,
+           status = 'LOCKED',
+           update_time = now()
+       where request_id = $1
+         and status in ('PENDING', 'GRABBING', 'LOCKED')
+       returning *`,
+      [requestId, JSON.stringify(input.lockedSeatIds), JSON.stringify(input.seatLabels), input.matchedStrategy],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
+  async markTeamGrabOrderCreated(requestId: string, orderId: number): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `update team_grab_request
+       set status = 'ORDER_CREATED',
+           order_id = $2,
+           fail_reason = null,
+           update_time = now()
+       where request_id = $1
+         and status in ('LOCKED', 'GRABBING')
+       returning *`,
+      [requestId, orderId],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
+  async markTeamGrabFailed(requestId: string, failReason: string): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `update team_grab_request
+       set status = 'FAILED',
+           fail_reason = $2,
+           update_time = now()
+       where request_id = $1
+         and status <> 'ORDER_CREATED'
+       returning *`,
+      [requestId, failReason],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
   async refreshTeamSize(teamId: number): Promise<TicketTeamRecord | null> {
     return this.refreshTeamSizeWithClient(this.database, teamId);
   }
@@ -383,12 +515,47 @@ export class TeamGrabRepository {
     };
   }
 
+  private mapTeamGrabRow(row: TeamGrabRequestRow): TeamGrabRequestRecord {
+    return {
+      id: Number(row.id),
+      requestId: row.request_id,
+      grabRequestId: row.grab_request_id ?? null,
+      teamId: Number(row.team_id),
+      triggerUserId: Number(row.trigger_user_id),
+      payerUserId: Number(row.payer_user_id),
+      sessionId: Number(row.session_id),
+      ticketTypeId: Number(row.ticket_type_id),
+      quantity: row.quantity,
+      strategy: row.strategy,
+      fallbacks: this.parseFallbacks(row.fallback_strategy_json),
+      matchedStrategy: row.matched_strategy,
+      status: row.status,
+      orderId: row.order_id == null ? null : Number(row.order_id),
+      lockedSeatIds: this.parseJsonArray<number>(row.locked_seat_ids),
+      seatLabels: this.parseJsonArray<string>(row.seat_labels),
+      failReason: row.fail_reason,
+      createTime: row.create_time,
+      updateTime: row.update_time,
+    };
+  }
+
   private parseFallbacks(value: TeamSeatStrategy[] | string | null | undefined): TeamSeatStrategy[] {
     if (Array.isArray(value)) return value;
     if (typeof value !== 'string' || !value.trim()) return [];
     try {
       const parsed = JSON.parse(value) as unknown;
       return Array.isArray(parsed) ? parsed.filter((item): item is TeamSeatStrategy => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private parseJsonArray<T>(value: T[] | string | null | undefined): T[] {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== 'string' || !value.trim()) return [];
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed as T[] : [];
     } catch {
       return [];
     }

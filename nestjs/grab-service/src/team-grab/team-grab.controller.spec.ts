@@ -195,6 +195,19 @@ describe('TeamGrabController', () => {
     expect(service.updateStrategy).toHaveBeenCalledWith(7, 100, 'SAME_TICKET_TYPE', ['FALLBACK']);
   });
 
+  it('triggers team grab as the authenticated user', async () => {
+    const response = { requestId: 'GRAB-1', queueSeq: 9, queueRank: 4, teamStatus: 'GRABBING' };
+    const service = { triggerTeamGrab: jest.fn().mockResolvedValue(response) };
+    const controller = createController(service);
+
+    await expect(controller.trigger(request(200), '7')).resolves.toEqual({
+      code: 200,
+      message: 'success',
+      data: response,
+    });
+    expect(service.triggerTeamGrab).toHaveBeenCalledWith(7, 200);
+  });
+
   it.each(['abc', ' 1', '1e2', '1.5', '0', '-1'])('rejects invalid team id %p', async (teamId) => {
     const service = { getTeamDetail: jest.fn() };
     const controller = createController(service);

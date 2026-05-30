@@ -670,4 +670,51 @@ describe('GrabWorkerService', () => {
     expect(repository.updateStatus).toHaveBeenCalledWith('GRAB1', GRAB_STATUS.SOLD_OUT, 'ticket type sold out');
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
+
+  it('delegates TEAM_GRAB processing after claim and uses processor ack result', async () => {
+    const record = queuedRecord({ requestType: 'TEAM_GRAB' });
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn(),
+    };
+    const orderClient: any = {};
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const teamProcessor: any = {
+      process: jest.fn().mockResolvedValue(true),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue, teamProcessor);
+
+    await service.processRequest('GRAB1');
+
+    expect(teamProcessor.process).toHaveBeenCalledWith(record);
+    expect(admission.admit).not.toHaveBeenCalled();
+    expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
+  });
+
+  it('does not ack TEAM_GRAB processing when the processor requests retry', async () => {
+    const record = queuedRecord({ requestType: 'TEAM_GRAB' });
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn(),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const teamProcessor: any = {
+      process: jest.fn().mockResolvedValue(false),
+    };
+    const service = new GrabWorkerService(repository, {} as any, {} as any, queue, teamProcessor);
+
+    await service.processRequest('GRAB1');
+
+    expect(teamProcessor.process).toHaveBeenCalledWith(record);
+    expect(queue.ackProcessed).not.toHaveBeenCalled();
+  });
 });

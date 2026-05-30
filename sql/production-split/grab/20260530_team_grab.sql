@@ -42,6 +42,7 @@ create unique index if not exists uk_ticket_team_member_active_session
 create table if not exists team_grab_request (
     id bigserial primary key,
     request_id varchar(64) not null,
+    grab_request_id varchar(64) not null,
     team_id bigint not null references ticket_team(id),
     trigger_user_id bigint not null,
     payer_user_id bigint not null,
@@ -59,6 +60,7 @@ create table if not exists team_grab_request (
     create_time timestamptz not null default now(),
     update_time timestamptz not null default now(),
     constraint uk_team_grab_request_request_id unique (request_id),
+    constraint uk_team_grab_request_grab_request_id unique (grab_request_id),
     constraint chk_team_grab_request_quantity check (quantity between 2 and 6),
     constraint chk_team_grab_request_status check (status in ('PENDING', 'GRABBING', 'LOCKED', 'ORDER_CREATED', 'FAILED', 'EXPIRED'))
 );
@@ -84,3 +86,4 @@ create index if not exists idx_ticket_team_leader on ticket_team(leader_user_id,
 create index if not exists idx_ticket_team_session on ticket_team(session_id, status);
 create index if not exists idx_ticket_team_member_team on ticket_team_member(team_id, status, join_time);
 create index if not exists idx_team_grab_request_order on team_grab_request(order_id);
+create index if not exists idx_team_grab_request_grab_request on team_grab_request(grab_request_id);

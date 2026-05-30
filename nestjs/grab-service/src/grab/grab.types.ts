@@ -94,6 +94,7 @@ export interface CreateQueuedGrabRequestInput {
   queueSeq: number;
   requestedTicketTypes: GrabTicketPreference[];
   allowAutoDowngrade: boolean;
+  requestType?: 'NORMAL_GRAB' | 'TEAM_GRAB' | 'WAITLIST_OFFER';
 }
 
 export interface FindActiveGrabIntentInput {

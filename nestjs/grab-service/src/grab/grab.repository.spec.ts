@@ -126,6 +126,31 @@ describe('GrabRepository', () => {
     expect(result.requestedTicketTypes).toEqual(preferences);
   });
 
+  it('persists TEAM_GRAB request type for queued team requests', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [{ ...baseRow, request_type: 'TEAM_GRAB' }] });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.createQueued({
+      requestId: 'GRAB-TEAM-1',
+      idempotencyKey: 'team-grab-1',
+      userId: 100,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 2,
+      seatIds: [],
+      allocateRandom: true,
+      expireTime: new Date('2026-05-27T12:15:00.000Z'),
+      queueSeq: 3,
+      requestedTicketTypes: [{ ticketTypeId: 202, name: 'VIP', maxPrice: 880 }],
+      allowAutoDowngrade: false,
+      requestType: 'TEAM_GRAB',
+    });
+
+    expect(query.mock.calls[0][1]).toContain('TEAM_GRAB');
+    expect(result.requestType).toBe('TEAM_GRAB');
+  });
+
+
   it('updates persisted progress fields', async () => {
     const attempts = [
       { ticketTypeId: 202, name: 'VIP', status: 'TRYING' as const, message: '尝试中' },

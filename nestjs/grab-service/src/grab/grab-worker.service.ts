@@ -1,5 +1,6 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { TeamGrabProcessorService } from '../team-grab/team-grab-processor.service';
 import { GrabAdmissionService } from './grab-admission.service';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository } from './grab.repository';
@@ -24,6 +25,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly admissionService: GrabAdmissionService,
     private readonly orderClient: OrderClientService,
     private readonly queueService: GrabQueueService,
+    @Optional() private readonly teamGrabProcessor?: TeamGrabProcessorService,
   ) {}
 
   onModuleInit(): void {
@@ -76,7 +78,9 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
 
     let shouldAck = true;
     try {
-      shouldAck = await this.processAttempts(record);
+      shouldAck = record.requestType === 'TEAM_GRAB'
+        ? await this.processTeamGrab(record)
+        : await this.processAttempts(record);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'grab processing failed';
       await this.repository.updateStatus(record.requestId, GRAB_STATUS.FAILED, message);
@@ -84,6 +88,11 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     } finally {
       if (shouldAck) await this.ackIfQueued(record);
     }
+  }
+
+  private async processTeamGrab(record: GrabRequestRecord): Promise<boolean> {
+    if (!this.teamGrabProcessor) throw new Error('team grab processor is not configured');
+    return this.teamGrabProcessor.process(record);
   }
 
   private async processAttempts(record: GrabRequestRecord): Promise<boolean> {

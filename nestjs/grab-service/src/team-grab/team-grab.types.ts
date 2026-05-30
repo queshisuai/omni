@@ -51,3 +51,45 @@ export interface CreateTeamInput extends CreateTeamDto {
   leaderUserId: number;
   inviteCode: string;
 }
+
+export interface TeamGrabRequestRecord {
+  id: number;
+  requestId: string;
+  grabRequestId: string | null;
+  teamId: number;
+  triggerUserId: number;
+  payerUserId: number;
+  sessionId: number;
+  ticketTypeId: number;
+  quantity: number;
+  strategy: TeamSeatStrategy;
+  fallbacks: TeamSeatStrategy[];
+  matchedStrategy: TeamSeatStrategy | null;
+  status: 'PENDING' | 'GRABBING' | 'LOCKED' | 'ORDER_CREATED' | 'FAILED' | 'EXPIRED';
+  orderId: number | null;
+  lockedSeatIds: number[];
+  seatLabels: string[];
+  failReason: string | null;
+  createTime: Date;
+  updateTime: Date;
+}
+
+export interface CreateTeamGrabRequestInput {
+  requestId: string;
+  grabRequestId: string;
+  teamId: number;
+  triggerUserId: number;
+  payerUserId: number;
+  sessionId: number;
+  ticketTypeId: number;
+  quantity: number;
+  strategy: TeamSeatStrategy;
+  fallbacks: TeamSeatStrategy[];
+}
+
+export interface TeamGrabTriggerResponse {
+  requestId: string;
+  queueSeq: number;
+  queueRank: number;
+  teamStatus: TeamStatus;
+}

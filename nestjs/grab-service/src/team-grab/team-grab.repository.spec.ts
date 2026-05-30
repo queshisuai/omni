@@ -27,6 +27,28 @@ const memberRow = {
   join_time: new Date('2026-05-30T12:00:00.000Z'),
 };
 
+const teamGrabRow = {
+  id: '7',
+  request_id: 'TEAM-GRAB-1',
+  grab_request_id: 'GRAB-QUEUED-1',
+  team_id: '1',
+  trigger_user_id: '200',
+  payer_user_id: '100',
+  session_id: '20',
+  ticket_type_id: '30',
+  quantity: 2,
+  strategy: 'SAME_BLOCK',
+  fallback_strategy_json: JSON.stringify(['SAME_TICKET_TYPE']),
+  matched_strategy: null,
+  status: 'PENDING',
+  order_id: null,
+  locked_seat_ids: JSON.stringify([]),
+  seat_labels: JSON.stringify([]),
+  fail_reason: null,
+  create_time: new Date('2026-05-30T12:00:00.000Z'),
+  update_time: new Date('2026-05-30T12:01:00.000Z'),
+};
+
 describe('TeamGrabRepository', () => {
   it('creates teams with parameterized strategy fallbacks and maps rows', async () => {
     const query = jest.fn()
@@ -234,5 +256,50 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[0][0]).toContain('status = any($3::varchar[])');
     expect(query.mock.calls[0][1]).toEqual([1, 'READY', []]);
     expect(result).toBeNull();
+  });
+
+  it('creates team grab requests with a distinct queued grab request association', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [teamGrabRow] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.createTeamGrabRequest({
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-QUEUED-1',
+      teamId: 1,
+      triggerUserId: 200,
+      payerUserId: 100,
+      sessionId: 20,
+      ticketTypeId: 30,
+      quantity: 2,
+      strategy: 'SAME_BLOCK',
+      fallbacks: ['SAME_TICKET_TYPE'],
+    });
+
+    expect(query.mock.calls[0][0]).toContain('grab_request_id');
+    expect(query.mock.calls[0][1]).toEqual([
+      'TEAM-GRAB-1',
+      'GRAB-QUEUED-1',
+      1,
+      200,
+      100,
+      20,
+      30,
+      2,
+      'SAME_BLOCK',
+      JSON.stringify(['SAME_TICKET_TYPE']),
+    ]);
+    expect(result.requestId).toBe('TEAM-GRAB-1');
+    expect(result.grabRequestId).toBe('GRAB-QUEUED-1');
+  });
+
+  it('finds team grab requests by queued grab request id', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [teamGrabRow] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.findTeamGrabByGrabRequestId('GRAB-QUEUED-1');
+
+    expect(query.mock.calls[0][0]).toContain('grab_request_id = $1');
+    expect(query.mock.calls[0][1]).toEqual(['GRAB-QUEUED-1']);
+    expect(result?.requestId).toBe('TEAM-GRAB-1');
   });
 });

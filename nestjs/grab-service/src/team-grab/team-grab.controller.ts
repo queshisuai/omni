@@ -5,6 +5,7 @@ import { TeamGrabService } from './team-grab.service';
 import type {
   CreateTeamDto,
   TeamDetailServiceResponse,
+  TeamGrabTriggerResponse,
   TeamSeatStrategy,
   TicketTeamMemberRecord,
   TicketTeamRecord,
@@ -85,6 +86,11 @@ export class TeamGrabController {
   @Post(':teamId/confirm')
   async confirm(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TicketTeamRecord>> {
     return success(await this.teamGrabService.confirmMember(parsePositiveInt(teamId, 'team'), request.user.userId));
+  }
+
+  @Post(':teamId/trigger')
+  async trigger(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TeamGrabTriggerResponse>> {
+    return success(await this.teamGrabService.triggerTeamGrab(parsePositiveInt(teamId, 'team'), request.user.userId));
   }
 
   @Post(':teamId/leave')

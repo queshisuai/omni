@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 import { TeamGrabRepository } from '../team-grab/team-grab.repository';
 import { TeamGrabController } from '../team-grab/team-grab.controller';
+import { TeamGrabProcessorService } from '../team-grab/team-grab-processor.service';
 import { TeamGrabService } from '../team-grab/team-grab.service';
 import { GrabAdmissionService } from './grab-admission.service';
 import { GrabCompensationService } from './grab-compensation.service';
@@ -32,6 +33,7 @@ import { VisibleStockService } from './visible-stock.service';
     VisibleStockService,
     TeamGrabRepository,
     TeamGrabService,
+    TeamGrabProcessorService,
   ],
   exports: [GrabService, TeamGrabService],
 })

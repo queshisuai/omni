@@ -20,6 +20,20 @@ export interface CreatedOrderResponse {
   amount: number;
 }
 
+export interface CreateTeamOrderWithLockedSeatsInput {
+  teamId: number;
+  userId: number;
+  payerUserId: number;
+  sessionId: number;
+  ticketTypeId: number;
+  quantity: number;
+  seats: Array<{ sessionSeatId: number; seatLabel: string }>;
+  teamGrabRequestId: string;
+  grabRequestId: string;
+  matchedStrategy: string | null;
+  authorizedMaxUnitPrice: number;
+}
+
 export interface GrabOrderLookupResponse {
   id: number;
   orderNo: string;
@@ -90,5 +104,22 @@ export class OrderClientService {
       throw new Error(result.message || 'order lookup failed');
     }
     return result.data ?? null;
+  }
+
+  async createTeamOrderWithLockedSeats(input: CreateTeamOrderWithLockedSeatsInput): Promise<CreatedOrderResponse> {
+    if (!this.internalToken) {
+      throw new Error('order internal token is not configured');
+    }
+
+    const response = await fetch(`${this.baseUrl}/api/order/internal/team/create-with-locked-seats`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': this.internalToken },
+      body: JSON.stringify(input),
+    });
+    const result = await response.json();
+    if (!response.ok || result.code !== 200) {
+      throw new Error(result.message || 'team order creation failed');
+    }
+    return result.data;
   }
 }

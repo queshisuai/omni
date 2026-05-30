@@ -140,7 +140,7 @@ export class GrabRepository {
         GRAB_STATUS.QUEUED,
         GRAB_STATUS.QUEUED,
         progressMessage,
-        'NORMAL_GRAB',
+        input.requestType ?? 'NORMAL_GRAB',
         input.queueSeq,
         JSON.stringify(input.requestedTicketTypes),
         input.allowAutoDowngrade,
