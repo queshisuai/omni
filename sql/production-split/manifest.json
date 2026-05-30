@@ -21,7 +21,8 @@
       "key": "order",
       "targetInstance": "pg-order",
       "targetDatabase": "omni_order",
-      "tables": ["order", "order_seat", "order_snapshot"]
+      "tables": ["order", "order_seat", "order_snapshot"],
+      "migrations": ["order/20260530_team_order_snapshot.sql"]
     },
     {
       "service": "java-payment",

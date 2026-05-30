@@ -7,12 +7,15 @@ import com.omni.order.client.TicketSalesInternalClient;
 import com.omni.order.client.UserInternalClient;
 import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
+import com.omni.order.dto.CreateTeamOrderRequest;
 import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.TicketSalesLockRequest;
 import com.omni.order.dto.TicketSalesQuoteResponse;
+import com.omni.order.dto.TicketSalesSeatLockResponse;
 import com.omni.order.entity.Order;
+import com.omni.order.entity.OrderSeat;
 import com.omni.order.entity.OrderSnapshot;
 import com.omni.order.mapper.OrderMapper;
 import com.omni.order.mapper.OrderSeatMapper;
@@ -39,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -190,6 +194,81 @@ class OrderServiceTest {
         verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
         verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void createTeamOrderUsesLeaderLimitAndDoesNotRelockSeats() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+
+        TicketSalesQuoteResponse quote = quoteWithLimit(2);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        when(orderMapper.sumEffectiveQuantityByUserAndActivity(2004L, 100L)).thenReturn(1);
+        when(ticketSalesInternalClient.validateTeamSeatLock(any(), anyString())).thenReturn(Result.success(validTeamLock()));
+        doAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(81L);
+            return 1;
+        }).when(orderMapper).insert(any(Order.class));
+
+        Order order = service.createTeamOrderWithLockedSeats(request);
+
+        assertEquals(2004L, order.getUserId());
+        assertEquals(2, order.getQuantity());
+        assertEquals(new BigDecimal("200.00"), order.getAmount());
+        verify(orderMapper).sumEffectiveQuantityByUserAndActivity(2004L, 100L);
+        ArgumentCaptor<TicketSalesLockRequest> validationCaptor = ArgumentCaptor.forClass(TicketSalesLockRequest.class);
+        verify(ticketSalesInternalClient).validateTeamSeatLock(validationCaptor.capture(), anyString());
+        assertEquals("TEAM-GRAB-1", validationCaptor.getValue().getLockRequestId());
+        assertEquals(List.of(301L, 302L), validationCaptor.getValue().getSeatIds());
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
+        verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
+    }
+
+    @Test
+    void createTeamOrderRejectsWhenTicketLockDoesNotBelongToRequest() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        TicketSalesSeatLockResponse invalid = new TicketSalesSeatLockResponse();
+        invalid.setValid(false);
+        invalid.setLockedSeatIds(List.of(301L));
+
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
+        when(ticketSalesInternalClient.validateTeamSeatLock(any(), anyString())).thenReturn(Result.success(invalid));
+
+        assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
+
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderSeatMapper, never()).insert(any(OrderSeat.class));
+        verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
+    }
+
+    @Test
+    void createTeamOrderStoresOrderOwnedSeatLabels() {
+        CreateTeamOrderRequest request = teamOrderRequest();
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quoteWithoutLimit(2)));
+        when(ticketSalesInternalClient.validateTeamSeatLock(any(), anyString())).thenReturn(Result.success(validTeamLock()));
+        doAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(82L);
+            return 1;
+        }).when(orderMapper).insert(any(Order.class));
+
+        service.createTeamOrderWithLockedSeats(request);
+
+        ArgumentCaptor<OrderSeat> seatCaptor = ArgumentCaptor.forClass(OrderSeat.class);
+        verify(orderSeatMapper, org.mockito.Mockito.times(2)).insert(seatCaptor.capture());
+        assertEquals(List.of("A-1", "A-2"), seatCaptor.getAllValues().stream()
+                .map(OrderSeat::getSeatLabel)
+                .collect(java.util.stream.Collectors.toList()));
+
+        ArgumentCaptor<OrderSnapshot> snapshotCaptor = ArgumentCaptor.forClass(OrderSnapshot.class);
+        verify(orderSnapshotMapper).insert(snapshotCaptor.capture());
+        assertEquals("A-1, A-2", snapshotCaptor.getValue().getSeatLabels());
+        assertEquals(7001L, snapshotCaptor.getValue().getTeamId());
+        assertEquals("TEAM-GRAB-1", snapshotCaptor.getValue().getTeamGrabRequestId());
+        assertEquals(Boolean.TRUE, snapshotCaptor.getValue().getTeamOrder());
     }
 
     @Test
@@ -345,6 +424,37 @@ class OrderServiceTest {
         quote.setUnitPrice(new BigDecimal("100.00"));
         quote.setQuantity(quantity);
         return quote;
+    }
+
+    private CreateTeamOrderRequest teamOrderRequest() {
+        CreateTeamOrderRequest request = new CreateTeamOrderRequest();
+        request.setTeamId(7001L);
+        request.setUserId(2004L);
+        request.setPayerUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(1L);
+        request.setQuantity(2);
+        request.setTeamGrabRequestId("TEAM-GRAB-1");
+        request.setGrabRequestId("GRAB-LEADER-1");
+        request.setMatchedStrategy("STRICT_CONTIGUOUS");
+        request.setAuthorizedMaxUnitPrice(new BigDecimal("100.00"));
+        request.setSeats(List.of(teamSeat(301L, "A-1"), teamSeat(302L, "A-2")));
+        return request;
+    }
+
+    private CreateTeamOrderRequest.TeamOrderSeatItem teamSeat(Long sessionSeatId, String seatLabel) {
+        CreateTeamOrderRequest.TeamOrderSeatItem seat = new CreateTeamOrderRequest.TeamOrderSeatItem();
+        seat.setSessionSeatId(sessionSeatId);
+        seat.setSeatLabel(seatLabel);
+        return seat;
+    }
+
+    private TicketSalesSeatLockResponse validTeamLock() {
+        TicketSalesSeatLockResponse response = new TicketSalesSeatLockResponse();
+        response.setValid(true);
+        response.setLockedSeatIds(List.of(301L, 302L));
+        response.setSeatLabels(List.of("ticket-label-1", "ticket-label-2"));
+        return response;
     }
 
     private InternalUserRefResponse activeUser() {

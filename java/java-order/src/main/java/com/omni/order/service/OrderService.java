@@ -13,9 +13,11 @@ import com.omni.order.client.TicketSalesInternalClient;
 import com.omni.order.client.UserInternalClient;
 import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
+import com.omni.order.dto.CreateTeamOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.MarkPartialRefundedRequest;
 import com.omni.order.dto.OrderListItemResponse;
+import com.omni.order.dto.OrderSeatItemResponse;
 import com.omni.order.dto.PaymentSyncDecisionResponse;
 import com.omni.order.dto.RefundOptionsResponse;
 import com.omni.order.dto.RefundSeatOptionResponse;
@@ -231,6 +233,63 @@ public class OrderService {
         return order;
     }
 
+    @GlobalTransactional(name = "omni-create-team-order-with-locked-seats", rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class)
+    public Order createTeamOrderWithLockedSeats(CreateTeamOrderRequest request) {
+        validateTeamOrderRequestBasics(request);
+        int quantity = requirePositiveQuantity(request.getQuantity());
+        List<CreateTeamOrderRequest.TeamOrderSeatItem> seats = request.getSeats();
+        if (seats == null || seats.size() != quantity) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team order seat quantity mismatch");
+        }
+
+        Map<Long, String> seatLabelsById = new LinkedHashMap<>();
+        for (CreateTeamOrderRequest.TeamOrderSeatItem seat : seats) {
+            if (seat == null || seat.getSessionSeatId() == null) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "team order seat id is required");
+            }
+            if (!StringUtils.hasText(seat.getSeatLabel())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "team order seat label is required");
+            }
+            if (seatLabelsById.put(seat.getSessionSeatId(), seat.getSeatLabel()) != null) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "team order seat ids must be unique");
+            }
+        }
+        List<Long> seatIds = new ArrayList<>(seatLabelsById.keySet());
+
+        validateUserExists(request.getUserId());
+        TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), seatIds, quantity);
+        validateTeamAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote);
+        validatePerUserLimit(request.getUserId(), quote, quantity);
+        validateTeamSeatLock(request, seatIds);
+
+        Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity, quote.getUnitPrice());
+        orderMapper.insert(order);
+
+        if (orderSeatMapper != null) {
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime expireTime = now.plusMinutes(15);
+            for (Long seatId : seatIds) {
+                OrderSeat orderSeat = new OrderSeat();
+                orderSeat.setOrderId(order.getId());
+                orderSeat.setSessionSeatId(seatId);
+                orderSeat.setSessionId(request.getSessionId());
+                orderSeat.setTicketTypeId(request.getTicketTypeId());
+                orderSeat.setStatus(ORDER_SEAT_LOCKED);
+                orderSeat.setSeatLabel(seatLabelsById.get(seatId));
+                orderSeat.setLockExpireTime(expireTime);
+                orderSeat.setCreateTime(now);
+                orderSeat.setUpdateTime(now);
+                orderSeatMapper.insert(orderSeat);
+            }
+        }
+
+        quote.setSeatLabels(String.join(", ", seatLabelsById.values()));
+        writeSnapshot(order, quote, request.getGrabRequestId(), null, request.getTicketTypeId(), false,
+                request.getTeamId(), request.getTeamGrabRequestId(), true);
+        return order;
+    }
+
     @GlobalTransactional(name = "omni-mark-refunded", rollbackFor = Exception.class)
     @Transactional(rollbackFor = Exception.class)
     public Order markRefunded(Long id) {
@@ -378,6 +437,17 @@ public class OrderService {
         response.setSessionId(seat.getSessionId());
         response.setTicketTypeId(seat.getTicketTypeId());
         response.setSeatLabel(seat.getSessionSeatId() != null ? String.valueOf(seat.getSessionSeatId()) : null);
+        return response;
+    }
+
+    private OrderSeatItemResponse toOrderSeatItemResponse(OrderSeat seat) {
+        OrderSeatItemResponse response = new OrderSeatItemResponse();
+        response.setOrderSeatId(seat.getId());
+        response.setSessionSeatId(seat.getSessionSeatId());
+        response.setSessionId(seat.getSessionId());
+        response.setTicketTypeId(seat.getTicketTypeId());
+        response.setStatus(seat.getStatus());
+        response.setSeatLabel(seat.getSeatLabel());
         return response;
     }
 
@@ -539,6 +609,19 @@ public class OrderService {
         return orderMapper.selectOrderListItemByGrabRequestId(grabRequestId);
     }
 
+    public List<OrderSeatItemResponse> listInternalOrderSeats(Long orderId) {
+        if (orderId == null) {
+            return Collections.emptyList();
+        }
+        List<OrderSeat> seats = orderSeatMapper.selectLockedAndSoldSeatsByOrderId(orderId);
+        if (seats == null || seats.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return seats.stream()
+                .map(this::toOrderSeatItemResponse)
+                .collect(Collectors.toList());
+    }
+
     @GlobalTransactional(name = "omni-cancel-order", rollbackFor = Exception.class)
     @Transactional(rollbackFor = Exception.class)
     public void cancelOrder(Long id) {
@@ -617,6 +700,19 @@ public class OrderService {
                                Long requestedTicketTypeId,
                                Long matchedTicketTypeId,
                                Boolean autoDowngraded) {
+        writeSnapshot(order, quote, grabRequestId, requestedTicketTypeId, matchedTicketTypeId, autoDowngraded,
+                null, null, false);
+    }
+
+    private void writeSnapshot(Order order,
+                               TicketSalesQuoteResponse quote,
+                               String grabRequestId,
+                               Long requestedTicketTypeId,
+                               Long matchedTicketTypeId,
+                               Boolean autoDowngraded,
+                               Long teamId,
+                               String teamGrabRequestId,
+                               Boolean teamOrder) {
         if (orderSnapshotMapper == null || order == null || quote == null) {
             return;
         }
@@ -639,6 +735,9 @@ public class OrderService {
         snapshot.setRequestedTicketTypeId(requestedTicketTypeId);
         snapshot.setMatchedTicketTypeId(matchedTicketTypeId);
         snapshot.setAutoDowngraded(Boolean.TRUE.equals(autoDowngraded));
+        snapshot.setTeamId(teamId);
+        snapshot.setTeamGrabRequestId(teamGrabRequestId);
+        snapshot.setTeamOrder(Boolean.TRUE.equals(teamOrder));
         LocalDateTime now = LocalDateTime.now();
         snapshot.setCreateTime(now);
         snapshot.setUpdateTime(now);
@@ -693,6 +792,29 @@ public class OrderService {
         if (quote.getUnitPrice().compareTo(authorizedMaxUnitPrice) > 0) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "ticket price exceeds authorized price");
         }
+    }
+
+    private void validateTeamOrderRequestBasics(CreateTeamOrderRequest request) {
+        if (request == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team order request is required");
+        }
+        if (request.getUserId() == null || request.getPayerUserId() == null
+                || !request.getUserId().equals(request.getPayerUserId())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "payerUserId must equal userId for leader-paid team order");
+        }
+        if (request.getSessionId() == null || request.getTicketTypeId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team order session and ticket type are required");
+        }
+        if (!StringUtils.hasText(request.getTeamGrabRequestId())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team grab request id is required");
+        }
+    }
+
+    private void validateTeamAuthorizedPrice(BigDecimal authorizedMaxUnitPrice, TicketSalesQuoteResponse quote) {
+        if (authorizedMaxUnitPrice == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "authorized price is required for team order");
+        }
+        validateAuthorizedPrice(authorizedMaxUnitPrice, quote, "team-order");
     }
 
     private TicketSalesQuoteResponse quoteTickets(Long sessionId, Long ticketTypeId, List<Long> seatIds, int quantity) {
@@ -756,6 +878,38 @@ public class OrderService {
             throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
         }
         return result.getData();
+    }
+
+    private void validateTeamSeatLock(CreateTeamOrderRequest request, List<Long> seatIds) {
+        String token = requireInternalApiToken("ticket sales internal token is not configured");
+        TicketSalesLockRequest validationRequest = new TicketSalesLockRequest();
+        validationRequest.setSessionId(request.getSessionId());
+        validationRequest.setTicketTypeId(request.getTicketTypeId());
+        validationRequest.setSeatIds(seatIds);
+        validationRequest.setLockRequestId(request.getTeamGrabRequestId());
+        Result<TicketSalesSeatLockResponse> result = callTicketSales(
+                () -> ticketSalesInternalClient.validateTeamSeatLock(validationRequest, token));
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "ticket service did not respond");
+        }
+        TicketSalesSeatLockResponse response = result.getData();
+        if (!Boolean.TRUE.equals(response.getValid()) || !sameSeatIds(seatIds, validatedSeatIds(response))) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock does not belong to request");
+        }
+    }
+
+    private List<Long> validatedSeatIds(TicketSalesSeatLockResponse response) {
+        if (response.getSeatIds() != null) {
+            return response.getSeatIds();
+        }
+        return response.getLockedSeatIds();
+    }
+
+    private boolean sameSeatIds(List<Long> expected, List<Long> actual) {
+        if (expected == null || actual == null || expected.size() != actual.size()) {
+            return false;
+        }
+        return new HashSet<>(expected).equals(new HashSet<>(actual));
     }
 
     private void confirmTicketsSold(Order order) {

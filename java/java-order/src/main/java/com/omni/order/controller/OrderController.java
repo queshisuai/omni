@@ -5,9 +5,11 @@ import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.omni.common.result.Result;
 import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
+import com.omni.order.dto.CreateTeamOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.MarkPartialRefundedRequest;
 import com.omni.order.dto.OrderListItemResponse;
+import com.omni.order.dto.OrderSeatItemResponse;
 import com.omni.order.dto.PaidOrderCountRequest;
 import com.omni.order.dto.PaidOrderCountResponse;
 import com.omni.order.dto.PaidOrdersBySessionsRequest;
@@ -102,6 +104,15 @@ public class OrderController {
     /**
      * 用户订单列表
      */
+    @PostMapping("/internal/team/create-with-locked-seats")
+    public Result<Order> createInternalTeamOrder(@RequestBody CreateTeamOrderRequest request,
+                                                 @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "forbidden");
+        }
+        return Result.success(orderService.createTeamOrderWithLockedSeats(request));
+    }
+
     @GetMapping("/user/{userId}")
     public Result<List<OrderListItemResponse>> listOrders(@PathVariable Long userId) {
         List<OrderListItemResponse> orders = orderService.listOrderItems(userId);
@@ -168,6 +179,15 @@ public class OrderController {
             return Result.fail(403, "无权限");
         }
         return Result.success(orderService.getRefundOptions(id));
+    }
+
+    @GetMapping("/internal/{id}/seats")
+    public Result<List<OrderSeatItemResponse>> listInternalOrderSeats(@PathVariable Long id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "forbidden");
+        }
+        return Result.success(orderService.listInternalOrderSeats(id));
     }
 
     @PostMapping("/internal/paid-by-sessions")

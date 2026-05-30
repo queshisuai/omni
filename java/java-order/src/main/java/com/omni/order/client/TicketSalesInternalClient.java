@@ -26,6 +26,10 @@ public interface TicketSalesInternalClient {
     Result<TicketSalesSeatLockResponse> lockSeats(@RequestBody TicketSalesLockRequest request,
                                                    @RequestHeader("X-Internal-Token") String internalToken);
 
+    @PostMapping("/api/ticket/internal/sales/validate-team-seat-lock")
+    Result<TicketSalesSeatLockResponse> validateTeamSeatLock(@RequestBody TicketSalesLockRequest request,
+                                                             @RequestHeader("X-Internal-Token") String internalToken);
+
     @PostMapping("/api/ticket/internal/sales/confirm-sold")
     Result<Void> confirmSold(@RequestBody TicketSalesOrderRequest request,
                              @RequestHeader("X-Internal-Token") String internalToken);

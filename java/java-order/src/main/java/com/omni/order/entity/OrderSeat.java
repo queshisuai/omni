@@ -18,6 +18,7 @@ public class OrderSeat {
     private Long sessionId;
     private Long ticketTypeId;
     private Integer status;
+    private String seatLabel;
     private LocalDateTime lockExpireTime;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
@@ -34,6 +35,8 @@ public class OrderSeat {
     public void setTicketTypeId(Long ticketTypeId) { this.ticketTypeId = ticketTypeId; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
+    public String getSeatLabel() { return seatLabel; }
+    public void setSeatLabel(String seatLabel) { this.seatLabel = seatLabel; }
     public LocalDateTime getLockExpireTime() { return lockExpireTime; }
     public void setLockExpireTime(LocalDateTime lockExpireTime) { this.lockExpireTime = lockExpireTime; }
     public LocalDateTime getCreateTime() { return createTime; }

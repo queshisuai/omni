@@ -75,6 +75,25 @@ class OrderListServiceTest {
     }
 
     @Test
+    void listOrderItemsReturnsTeamOrderSnapshotMetadata() {
+        OrderMapper orderMapper = mock(OrderMapper.class);
+        OrderListItemResponse item = new OrderListItemResponse();
+        item.setId(11L);
+        item.setTeamId(7001L);
+        item.setTeamGrabRequestId("TEAM-GRAB-1");
+        item.setTeamOrder(true);
+        when(orderMapper.selectVisibleOrderListItems(2004L)).thenReturn(Collections.singletonList(item));
+
+        OrderService service = new OrderService(orderMapper);
+
+        OrderListItemResponse result = service.listOrderItems(2004L).get(0);
+
+        assertEquals(7001L, result.getTeamId());
+        assertEquals("TEAM-GRAB-1", result.getTeamGrabRequestId());
+        assertEquals(Boolean.TRUE, result.getTeamOrder());
+    }
+
+    @Test
     void listOrderItemsExcludesTrashOrders() {
         OrderMapper orderMapper = mock(OrderMapper.class);
         when(orderMapper.selectVisibleOrderListItems(2004L)).thenReturn(List.of(new OrderListItemResponse()));

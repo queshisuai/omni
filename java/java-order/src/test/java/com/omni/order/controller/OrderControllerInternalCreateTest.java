@@ -4,7 +4,9 @@ import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
 import com.omni.common.result.Result;
 import com.omni.order.dto.CreateOrderRequest;
+import com.omni.order.dto.CreateTeamOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.OrderSeatItemResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
@@ -104,6 +106,46 @@ class OrderControllerInternalCreateTest {
         assertEquals(200, result.getCode());
         assertEquals(order, result.getData());
         verify(orderService).createOrderWithSeats(request);
+    }
+
+    @Test
+    void internalTeamCreateUsesExistingOrderServiceWhenTokenValid() {
+        CreateTeamOrderRequest request = new CreateTeamOrderRequest();
+        request.setUserId(2004L);
+        request.setPayerUserId(2004L);
+        request.setSessionId(7L);
+        request.setTicketTypeId(21L);
+        request.setQuantity(1);
+        Order order = new Order();
+        order.setId(16L);
+        when(orderService.createTeamOrderWithLockedSeats(request)).thenReturn(order);
+
+        Result<Order> result = controller.createInternalTeamOrder(request, "test-internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals(order, result.getData());
+        verify(orderService).createTeamOrderWithLockedSeats(request);
+    }
+
+    @Test
+    void internalOrderSeatsReturnsLockedAndSoldSeatsForAssignment() {
+        OrderSeatItemResponse locked = new OrderSeatItemResponse();
+        locked.setOrderSeatId(1001L);
+        locked.setSessionSeatId(301L);
+        locked.setStatus(1);
+        locked.setSeatLabel("A-1");
+        OrderSeatItemResponse sold = new OrderSeatItemResponse();
+        sold.setOrderSeatId(1002L);
+        sold.setSessionSeatId(302L);
+        sold.setStatus(2);
+        sold.setSeatLabel("A-2");
+        when(orderService.listInternalOrderSeats(16L)).thenReturn(List.of(locked, sold));
+
+        Result<List<OrderSeatItemResponse>> result = controller.listInternalOrderSeats(16L, "test-internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals(List.of(locked, sold), result.getData());
+        verify(orderService).listInternalOrderSeats(16L);
     }
 
     @Test

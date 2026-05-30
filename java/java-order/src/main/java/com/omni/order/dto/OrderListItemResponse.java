@@ -29,6 +29,9 @@ public class OrderListItemResponse {
     private Long requestedTicketTypeId;
     private Long matchedTicketTypeId;
     private Boolean autoDowngraded;
+    private Long teamId;
+    private String teamGrabRequestId;
+    private Boolean teamOrder;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -80,4 +83,10 @@ public class OrderListItemResponse {
     public void setMatchedTicketTypeId(Long matchedTicketTypeId) { this.matchedTicketTypeId = matchedTicketTypeId; }
     public Boolean getAutoDowngraded() { return autoDowngraded; }
     public void setAutoDowngraded(Boolean autoDowngraded) { this.autoDowngraded = autoDowngraded; }
+    public Long getTeamId() { return teamId; }
+    public void setTeamId(Long teamId) { this.teamId = teamId; }
+    public String getTeamGrabRequestId() { return teamGrabRequestId; }
+    public void setTeamGrabRequestId(String teamGrabRequestId) { this.teamGrabRequestId = teamGrabRequestId; }
+    public Boolean getTeamOrder() { return teamOrder; }
+    public void setTeamOrder(Boolean teamOrder) { this.teamOrder = teamOrder; }
 }
