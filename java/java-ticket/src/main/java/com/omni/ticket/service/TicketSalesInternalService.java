@@ -28,6 +28,7 @@ import com.omni.ticket.mapper.TicketGroupMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -50,6 +51,9 @@ public class TicketSalesInternalService {
     private static final String SAME_TICKET_TYPE = "SAME_TICKET_TYPE";
     private static final String FALLBACK = "FALLBACK";
     private static final int TEAM_LOCK_CANDIDATE_MULTIPLIER = 10;
+
+    @Value("${omni.ticket.team-lock.max-candidates:2000}")
+    private int teamLockMaxCandidates = 2000;
 
     private final TicketTypeMapper ticketTypeMapper;
     private final SessionMapper sessionMapper;
@@ -197,29 +201,41 @@ public class TicketSalesInternalService {
                     matchedExistingStrategy(existingLockedSeats, request.getQuantity(), strategies));
         }
 
+        requireFutureLockExpireTime(request.getLockExpireTime());
         requireSessionSellable(request.getSessionId());
         requireSellableTicketType(request.getSessionId(), request.getTicketTypeId());
 
-        List<SessionSeat> availableSeats = sortSeats(sessionSeatMapper.selectAvailableForTeamLock(
-                request.getSessionId(), request.getTicketTypeId(), teamLockCandidateLimit(request.getQuantity())));
-        for (String strategy : strategies) {
-            List<SessionSeat> selectedSeats = selectByStrategy(availableSeats, request.getQuantity(), strategy);
-            if (selectedSeats.size() != request.getQuantity()) {
-                continue;
+        int maxLimit = teamLockMaxCandidateLimit(request.getQuantity());
+        int limit = Math.min(teamLockCandidateLimit(request.getQuantity()), maxLimit);
+        while (true) {
+            List<SessionSeat> availableSeats = sortSeats(sessionSeatMapper.selectAvailableForTeamLock(
+                    request.getSessionId(), request.getTicketTypeId(), limit));
+            for (String strategy : strategies) {
+                List<SessionSeat> selectedSeats = selectByStrategy(availableSeats, request.getQuantity(), strategy);
+                if (selectedSeats.size() != request.getQuantity()) {
+                    continue;
+                }
+                List<Long> seatIds = selectedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList());
+                int updated = sessionSeatMapper.lockTeamSeatIds(
+                        request.getSessionId(),
+                        request.getTicketTypeId(),
+                        seatIds,
+                        request.getLockRequestId(),
+                        request.getLockExpireTime());
+                if (updated != request.getQuantity()) {
+                    throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock changed concurrently");
+                }
+                List<SessionSeat> lockedSeats = sessionSeatMapper.selectLockedByRequest(
+                        request.getSessionId(), request.getTicketTypeId(), seatIds, request.getLockRequestId());
+                if (lockedSeats.size() != request.getQuantity()) {
+                    throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock ownership validation failed");
+                }
+                return teamSeatLockResponse(lockedSeats, strategy);
             }
-            List<Long> seatIds = selectedSeats.stream().map(SessionSeat::getId).collect(Collectors.toList());
-            int updated = sessionSeatMapper.lockTeamSeatIds(
-                    request.getSessionId(),
-                    request.getTicketTypeId(),
-                    seatIds,
-                    request.getLockRequestId(),
-                    request.getLockExpireTime());
-            if (updated != request.getQuantity()) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock changed concurrently");
+            if (availableSeats.size() < limit || limit >= maxLimit) {
+                break;
             }
-            List<SessionSeat> lockedSeats = sessionSeatMapper.selectLockedByRequest(
-                    request.getSessionId(), request.getTicketTypeId(), seatIds, request.getLockRequestId());
-            return teamSeatLockResponse(lockedSeats, strategy);
+            limit = Math.min(maxLimit, Math.max(limit + 1, limit * 2));
         }
         throw new BusinessException(ResultCode.BAD_REQUEST, "no team seat strategy can satisfy quantity");
     }
@@ -280,6 +296,12 @@ public class TicketSalesInternalService {
         }
         if (request.getQuantity() < 2 || request.getQuantity() > 6) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock quantity must be between 2 and 6");
+        }
+    }
+
+    private void requireFutureLockExpireTime(LocalDateTime lockExpireTime) {
+        if (!lockExpireTime.isAfter(LocalDateTime.now())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock expire time must be in the future");
         }
     }
 
@@ -389,6 +411,10 @@ public class TicketSalesInternalService {
 
     private int teamLockCandidateLimit(int quantity) {
         return Math.max(quantity, quantity * TEAM_LOCK_CANDIDATE_MULTIPLIER);
+    }
+
+    private int teamLockMaxCandidateLimit(int quantity) {
+        return Math.max(quantity, teamLockMaxCandidates);
     }
 
     private TeamSeatLockResponse teamSeatLockResponse(List<SessionSeat> lockedSeats, String matchedStrategy) {

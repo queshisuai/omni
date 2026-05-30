@@ -78,7 +78,7 @@ $schemaColumns = @{
     "seat_block" = New-ColumnSet @("id")
     "seat_override" = New-ColumnSet @("id", "block_id")
     "session" = New-ColumnSet @("id", "activity_id", "venue_id")
-    "session_seat" = New-ColumnSet @("id", "session_id", "venue_id", "area_id", "venue_seat_id", "ticket_type_id", "layout_section_id", "lock_request_id")
+    "session_seat" = New-ColumnSet @("id", "session_id", "venue_id", "area_id", "venue_seat_id", "ticket_type_id", "layout_section_id", "seat_block_id", "status", "order_id", "lock_expire_time", "row_no", "seat_no", "lock_request_id")
     "session_seat_layout" = New-ColumnSet @("id", "session_id", "activity_layout_id")
     "session_seat_layout_section" = New-ColumnSet @("id", "session_layout_id", "activity_layout_section_id", "ticket_type_id")
     "sms_code" = New-ColumnSet @("id")
@@ -281,6 +281,18 @@ foreach ($file in $sqlFiles) {
             }
         }
     }
+}
+
+$teamSeatLockSql = Join-Path -Path $splitRoot -ChildPath "ticket/20260530_team_seat_lock.sql"
+if (-not (Test-Path -LiteralPath $teamSeatLockSql)) {
+    Write-Host "FAIL missing team seat lock production SQL: $teamSeatLockSql"
+    exit 1
+}
+$teamSeatLockContent = (Get-Content -Raw -LiteralPath $teamSeatLockSql).ToLower()
+$teamSeatLockIndexPattern = 'create\s+index\s+if\s+not\s+exists\s+idx_session_seat_team_lock_lookup\s+on\s+session_seat\s*\(\s*session_id\s*,\s*ticket_type_id\s*,\s*status\s*,\s*seat_block_id\s*,\s*\(case\s+when\s+seat_block_id\s+is\s+null\s+then\s+layout_section_id\s+end\)\s*,\s*row_no\s*,\s*seat_no\s*,\s*id\s*\)\s*where\s+order_id\s+is\s+null\s+and\s+lock_expire_time\s+is\s+null'
+if ($teamSeatLockContent -notmatch $teamSeatLockIndexPattern) {
+    Write-Host "FAIL team seat lock index must match candidate query ordering and partial predicate: $teamSeatLockSql"
+    exit 1
 }
 
 Write-Host "PASS production split SQL safety check"

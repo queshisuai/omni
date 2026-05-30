@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Update;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -75,6 +77,18 @@ class SessionSeatMapperSqlTest {
         assertTrue(releaseTeamSql.contains("lock_request_id = null"), releaseTeamSql);
         assertTrue(releaseTeamByRequestSql.contains("lock_request_id = null"), releaseTeamByRequestSql);
         assertTrue(soldSql.contains("lock_request_id = null"), soldSql);
+    }
+
+    @Test
+    void productionTeamSeatLockIndexMatchesHotCandidateQuery() throws Exception {
+        String sql = Files.readString(Path.of("..", "..", "sql", "production-split", "ticket", "20260530_team_seat_lock.sql"))
+                .toLowerCase();
+        String normalizedSql = sql.replaceAll("\\s+", " ");
+
+        assertTrue(normalizedSql.contains("session_id, ticket_type_id, status, seat_block_id"), sql);
+        assertTrue(normalizedSql.contains("case when seat_block_id is null then layout_section_id end"), sql);
+        assertTrue(normalizedSql.contains("row_no, seat_no, id"), sql);
+        assertTrue(normalizedSql.contains("where order_id is null and lock_expire_time is null"), sql);
     }
 
     private String annotationSql(Method method) {
