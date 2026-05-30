@@ -98,9 +98,8 @@ LEFT JOIN ticket_type tt ON tt.id = o.ticket_type_id
 LEFT JOIN (
     SELECT
         os.order_id,
-        STRING_AGG(COALESCE(ss.seat_label, ss.row_no::TEXT || '-' || ss.seat_no::TEXT), ', ' ORDER BY os.id) AS seat_labels
+        STRING_AGG(os.seat_label, ', ' ORDER BY os.id) AS seat_labels
     FROM order_seat os
-    LEFT JOIN session_seat ss ON ss.id = os.session_seat_id
     GROUP BY os.order_id
 ) seat_snapshot ON seat_snapshot.order_id = o.id
 ON CONFLICT (order_id) DO UPDATE SET

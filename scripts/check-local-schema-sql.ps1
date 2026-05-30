@@ -40,6 +40,11 @@ if ($sharedOrderSnapshotContent -notmatch "ALTER\s+TABLE\s+IF\s+EXISTS\s+order_s
     exit 1
 }
 
+if ($sharedOrderSnapshotContent -match "(?is)\bJOIN\s+session_seat\b") {
+    Write-Host "FAIL shared order snapshot SQL must not read seat labels from session_seat"
+    exit 1
+}
+
 $forbiddenPatterns = @(
     "DROP\s+TABLE",
     "DROP\s+COLUMN",
