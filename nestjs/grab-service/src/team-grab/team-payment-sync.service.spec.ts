@@ -50,8 +50,7 @@ function createService(overrides: any = {}) {
       member({ userId: 100, role: 'LEADER', joinTime: new Date('2026-05-30T12:00:00.000Z') }),
       member({ id: 2, userId: 200, role: 'MEMBER', joinTime: new Date('2026-05-30T12:01:00.000Z') }),
     ]),
-    insertSeatAssignments: jest.fn().mockResolvedValue(undefined),
-    markTeamPaid: jest.fn().mockResolvedValue(undefined),
+    assignPaidTeamSeats: jest.fn().mockResolvedValue(true),
     markTeamExpired: jest.fn().mockResolvedValue(undefined),
     ...overrides.repository,
   };
@@ -78,21 +77,27 @@ describe('TeamPaymentSyncService', () => {
 
     await service.syncLockedTeams();
 
-    expect(repository.insertSeatAssignments).toHaveBeenCalledWith(7, 9001, [
+    expect(repository.assignPaidTeamSeats).toHaveBeenCalledWith(7, 9001, [
       { userId: 100, orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1' },
       { userId: 200, orderSeatId: 7002, sessionSeatId: 502, seatLabel: 'A-2' },
     ]);
-    expect(repository.markTeamPaid).toHaveBeenCalledWith(7);
   });
 
-  it('does not create duplicate assignment rows when sync runs twice', async () => {
-    const { service, repository } = createService();
+  it('sends paid notifications only when this sync transitions the team to paid', async () => {
+    const { service, repository, notificationClient } = createService({
+      repository: {
+        assignPaidTeamSeats: jest.fn()
+          .mockResolvedValueOnce(true)
+          .mockResolvedValueOnce(false),
+      },
+    });
 
     await service.syncLockedTeams();
     await service.syncLockedTeams();
 
-    expect(repository.insertSeatAssignments).toHaveBeenCalledTimes(2);
-    expect(repository.insertSeatAssignments.mock.calls[0][2]).toEqual(repository.insertSeatAssignments.mock.calls[1][2]);
+    expect(repository.assignPaidTeamSeats).toHaveBeenCalledTimes(2);
+    expect(repository.assignPaidTeamSeats.mock.calls[0][2]).toEqual(repository.assignPaidTeamSeats.mock.calls[1][2]);
+    expect(notificationClient.sendPaid).toHaveBeenCalledTimes(2);
   });
 
   it('marks locked teams expired when the order is cancelled before payment', async () => {
@@ -103,7 +108,7 @@ describe('TeamPaymentSyncService', () => {
     await service.syncLockedTeams();
 
     expect(repository.markTeamExpired).toHaveBeenCalledWith(7, 'ORDER_CANCELLED');
-    expect(repository.insertSeatAssignments).not.toHaveBeenCalled();
+    expect(repository.assignPaidTeamSeats).not.toHaveBeenCalled();
     expect(notificationClient.sendExpired).toHaveBeenCalledWith(100, 9001);
     expect(notificationClient.sendExpired).toHaveBeenCalledWith(200, 9001);
   });
@@ -116,10 +121,18 @@ describe('TeamPaymentSyncService', () => {
     expect(notificationClient.sendPaid).toHaveBeenCalledTimes(2);
     expect(notificationClient.sendPaid).toHaveBeenNthCalledWith(1, 100, 9001);
     expect(notificationClient.sendPaid).toHaveBeenNthCalledWith(2, 200, 9001);
-    expect(repository.insertSeatAssignments.mock.invocationCallOrder[0])
+    expect(repository.assignPaidTeamSeats.mock.invocationCallOrder[0])
       .toBeLessThan(notificationClient.sendPaid.mock.invocationCallOrder[0]);
-    expect(repository.markTeamPaid.mock.invocationCallOrder[0])
-      .toBeLessThan(notificationClient.sendPaid.mock.invocationCallOrder[0]);
+  });
+
+  it('does not send paid notifications when paid assignment loses the locked-to-paid transition', async () => {
+    const { service, notificationClient } = createService({
+      repository: { assignPaidTeamSeats: jest.fn().mockResolvedValue(false) },
+    });
+
+    await service.syncLockedTeams();
+
+    expect(notificationClient.sendPaid).not.toHaveBeenCalled();
   });
 
   it('does not roll back paid state when paid notification fails', async () => {
@@ -129,8 +142,10 @@ describe('TeamPaymentSyncService', () => {
 
     await service.syncLockedTeams();
 
-    expect(repository.insertSeatAssignments).toHaveBeenCalled();
-    expect(repository.markTeamPaid).toHaveBeenCalledWith(7);
+    expect(repository.assignPaidTeamSeats).toHaveBeenCalledWith(7, 9001, [
+      { userId: 100, orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1' },
+      { userId: 200, orderSeatId: 7002, sessionSeatId: 502, seatLabel: 'A-2' },
+    ]);
   });
 
   it('leaves the locked team unchanged when paid order seats do not match confirmed members', async () => {
@@ -144,8 +159,7 @@ describe('TeamPaymentSyncService', () => {
 
     await service.syncLockedTeams();
 
-    expect(repository.insertSeatAssignments).not.toHaveBeenCalled();
-    expect(repository.markTeamPaid).not.toHaveBeenCalled();
+    expect(repository.assignPaidTeamSeats).not.toHaveBeenCalled();
     expect(repository.markTeamExpired).not.toHaveBeenCalled();
   });
 });

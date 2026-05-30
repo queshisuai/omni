@@ -63,6 +63,15 @@ interface TeamGrabRequestRow {
   update_time: Date;
 }
 
+interface TeamSeatAssignmentRow {
+  team_id: string | number;
+  user_id: string | number;
+  order_id: string | number;
+  order_seat_id: string | number;
+  session_seat_id: string | number;
+  seat_label: string | null;
+}
+
 export function isUniqueViolation(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505';
 }
@@ -499,6 +508,97 @@ export class TeamGrabRepository {
     });
   }
 
+  async assignPaidTeamSeats(
+    teamId: number,
+    orderId: number,
+    assignments: TeamSeatAssignmentInput[],
+  ): Promise<boolean> {
+    return this.database.withTransaction(async (client) => {
+      const lockedTeam = await client.query<{ id: string | number }>(
+        `select id
+         from ticket_team
+         where id = $1
+           and status = 'LOCKED'
+         for update`,
+        [teamId],
+      );
+      if (!lockedTeam.rows[0]) return false;
+
+      for (const assignment of assignments) {
+        const existingByOrderSeat = await client.query<TeamSeatAssignmentRow>(
+          `select team_id, user_id, order_id, order_seat_id, session_seat_id, seat_label
+           from team_seat_assignment
+           where order_seat_id = $1
+           for update`,
+          [assignment.orderSeatId],
+        );
+        if (
+          existingByOrderSeat.rows[0]
+          && !this.isSameSeatAssignment(existingByOrderSeat.rows[0], teamId, assignment.userId, orderId, assignment)
+        ) {
+          throw new Error('team seat assignment conflict');
+        }
+
+        const assignmentResult = await client.query<TeamSeatAssignmentRow>(
+          `insert into team_seat_assignment (
+             team_id, user_id, order_id, order_seat_id, session_seat_id, seat_label
+           ) values ($1, $2, $3, $4, $5, $6)
+           on conflict (team_id, user_id) do update
+           set order_id = excluded.order_id,
+               order_seat_id = excluded.order_seat_id,
+               session_seat_id = excluded.session_seat_id,
+               seat_label = excluded.seat_label,
+               update_time = now()
+           where team_seat_assignment.order_id = excluded.order_id
+             and team_seat_assignment.order_seat_id = excluded.order_seat_id
+             and team_seat_assignment.session_seat_id = excluded.session_seat_id
+             and team_seat_assignment.seat_label is not distinct from excluded.seat_label
+           returning team_id, user_id, order_id, order_seat_id, session_seat_id, seat_label`,
+          [
+            teamId,
+            assignment.userId,
+            orderId,
+            assignment.orderSeatId,
+            assignment.sessionSeatId,
+            assignment.seatLabel,
+          ],
+        );
+        if (
+          !assignmentResult.rows[0]
+          || !this.isSameSeatAssignment(assignmentResult.rows[0], teamId, assignment.userId, orderId, assignment)
+        ) {
+          throw new Error('team seat assignment conflict');
+        }
+
+        const memberResult = await client.query<TicketTeamMemberRow>(
+          `update ticket_team_member
+           set order_seat_id = $3,
+               seat_id = $4,
+               update_time = now()
+           where team_id = $1
+             and user_id = $2
+             and status = 'CONFIRMED'
+           returning *`,
+          [teamId, assignment.userId, assignment.orderSeatId, assignment.sessionSeatId],
+        );
+        if (!memberResult.rows[0]) {
+          throw new Error('team member not found for paid seat assignment');
+        }
+      }
+
+      const paid = await client.query<TicketTeamRow>(
+        `update ticket_team
+         set status = 'PAID',
+             update_time = now()
+         where id = $1
+           and status = 'LOCKED'
+         returning *`,
+        [teamId],
+      );
+      return paid.rows.length > 0;
+    });
+  }
+
   async markTeamPaid(teamId: number): Promise<TicketTeamRecord | null> {
     const result = await this.database.query<TicketTeamRow>(
       `update ticket_team
@@ -677,6 +777,21 @@ export class TeamGrabRepository {
       createTime: row.create_time,
       updateTime: row.update_time,
     };
+  }
+
+  private isSameSeatAssignment(
+    row: TeamSeatAssignmentRow,
+    teamId: number,
+    userId: number,
+    orderId: number,
+    assignment: TeamSeatAssignmentInput,
+  ): boolean {
+    return Number(row.team_id) === teamId
+      && Number(row.user_id) === userId
+      && Number(row.order_id) === orderId
+      && Number(row.order_seat_id) === assignment.orderSeatId
+      && Number(row.session_seat_id) === assignment.sessionSeatId
+      && (row.seat_label ?? null) === (assignment.seatLabel ?? null);
   }
 
   private parseFallbacks(value: TeamSeatStrategy[] | string | null | undefined): TeamSeatStrategy[] {

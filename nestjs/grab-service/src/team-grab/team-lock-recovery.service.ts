@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { GrabRepository } from '../grab/grab.repository';
 import { GrabQueueService } from '../grab/grab-queue.service';
+import { OrderClientService } from '../grab/order-client.service';
 import { GRAB_STATUS } from '../grab/grab-status';
 import { TicketClientService } from '../grab/ticket-client.service';
 import { NotificationClientService } from './notification-client.service';
@@ -19,6 +20,7 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly repository: TeamGrabRepository,
     private readonly grabRepository: GrabRepository,
+    private readonly orderClient: OrderClientService,
     private readonly ticketClient: TicketClientService,
     private readonly queueService: GrabQueueService,
     private readonly notificationClient: NotificationClientService,
@@ -45,6 +47,23 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async recoverTeamGrab(teamGrab: TeamGrabRequestRecord): Promise<void> {
+    if (teamGrab.grabRequestId) {
+      const existingOrder = await this.lookupOrder(teamGrab.grabRequestId);
+      if (existingOrder === 'UNKNOWN') return;
+      if (existingOrder) {
+        await this.repository.markTeamGrabOrderCreated(teamGrab.requestId, existingOrder.id);
+        await this.repository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING', 'LOCKED']);
+        await this.grabRepository.markOrderCreated(
+          teamGrab.grabRequestId,
+          existingOrder.id,
+          teamGrab.ticketTypeId,
+          [],
+          GRAB_STATUS.ORDER_CREATING,
+        );
+        return;
+      }
+    }
+
     await this.ticketClient.releaseTeamSeatLock(teamGrab.requestId, teamGrab.lockedSeatIds);
     await this.repository.markTeamFailed(teamGrab.teamId, teamGrab.requestId, ORDER_CREATE_TIMEOUT);
     if (teamGrab.grabRequestId) {
@@ -57,6 +76,15 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
     const members = await this.repository.listConfirmedMembers(teamGrab.teamId);
     for (const member of members) {
       await this.notificationClient.sendFailed(member.userId, null).catch((error) => this.logger.warn(error));
+    }
+  }
+
+  private async lookupOrder(grabRequestId: string): Promise<{ id: number } | null | 'UNKNOWN'> {
+    try {
+      return await this.orderClient.findByGrabRequestId(grabRequestId);
+    } catch (error) {
+      this.logger.warn(error);
+      return 'UNKNOWN';
     }
   }
 }

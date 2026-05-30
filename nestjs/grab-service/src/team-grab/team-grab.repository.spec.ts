@@ -352,6 +352,71 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[3][1]).toEqual([7, 200, 7002, 502]);
   });
 
+  it('assigns paid team seats and marks the team paid in one locked transaction', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ id: '7' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ team_id: '7', user_id: '100', order_id: '9001', order_seat_id: '7001', session_seat_id: '501', seat_label: 'A-1' }] })
+      .mockResolvedValueOnce({ rows: [{ ...memberRow, team_id: '7', user_id: '100', order_seat_id: '7001', seat_id: '501' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ team_id: '7', user_id: '200', order_id: '9001', order_seat_id: '7002', session_seat_id: '502', seat_label: 'A-2' }] })
+      .mockResolvedValueOnce({ rows: [{ ...memberRow, id: '10', team_id: '7', user_id: '200', order_seat_id: '7002', seat_id: '502' }] })
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, id: '7', status: 'PAID' }] });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ withTransaction } as any);
+
+    const transitioned = await repository.assignPaidTeamSeats(7, 9001, [
+      { userId: 100, orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1' },
+      { userId: 200, orderSeatId: 7002, sessionSeatId: 502, seatLabel: 'A-2' },
+    ]);
+
+    expect(transitioned).toBe(true);
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][0].toLowerCase()).toContain("status = 'locked'");
+    expect(query.mock.calls[0][0].toLowerCase()).toContain('for update');
+    expect(query.mock.calls[2][0]).toContain('on conflict (team_id, user_id) do update');
+    expect(query.mock.calls[2][0]).toContain('is not distinct from');
+    expect(query.mock.calls[3][0]).toContain('update ticket_team_member');
+    expect(query.mock.calls[7][0]).toContain("status = 'PAID'");
+    expect(query.mock.calls[7][0]).toContain("status = 'LOCKED'");
+  });
+
+  it('returns false without assignments when paid team assignment cannot lock a LOCKED team', async () => {
+    const query = jest.fn().mockResolvedValueOnce({ rows: [] });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ withTransaction } as any);
+
+    const transitioned = await repository.assignPaidTeamSeats(7, 9001, [
+      { userId: 100, orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1' },
+    ]);
+
+    expect(transitioned).toBe(false);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws before stamping members when a paid order seat belongs to another assignment', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ id: '7' }] })
+      .mockResolvedValueOnce({
+        rows: [{
+          team_id: '8',
+          user_id: '300',
+          order_id: '9002',
+          order_seat_id: '7001',
+          session_seat_id: '501',
+          seat_label: 'A-1',
+        }],
+      });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ withTransaction } as any);
+
+    await expect(repository.assignPaidTeamSeats(7, 9001, [
+      { userId: 100, orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1' },
+    ])).rejects.toThrow('team seat assignment conflict');
+
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
   it('marks teams paid, expired, and failed with guarded status transitions', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'PAID' }] })

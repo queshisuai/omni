@@ -143,7 +143,7 @@ describe('OrderClientService', () => {
     await expect(service.findByGrabRequestId('GRAB-MISSING')).resolves.toBeNull();
   });
 
-  it('loads order status from the current order detail endpoint', async () => {
+  it('loads order status from the internal order detail endpoint with token', async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
       json: jest.fn().mockResolvedValue({
@@ -155,8 +155,9 @@ describe('OrderClientService', () => {
 
     await expect(service.getOrder(9001)).resolves.toEqual({ id: 9001, status: 2, userId: 100, quantity: 2 });
 
-    expect(global.fetch).toHaveBeenCalledWith('http://order.local/api/order/9001', {
+    expect(global.fetch).toHaveBeenCalledWith('http://order.local/api/order/internal/9001', {
       method: 'GET',
+      headers: { 'X-Internal-Token': 'internal-token' },
     });
   });
 

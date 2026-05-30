@@ -77,8 +77,8 @@ export class TeamPaymentSyncService implements OnModuleInit, OnModuleDestroy {
     }
 
     const assignments = this.buildAssignments(members, paidSeats);
-    await this.repository.insertSeatAssignments(teamGrab.teamId, teamGrab.orderId, assignments);
-    await this.repository.markTeamPaid(teamGrab.teamId);
+    const transitioned = await this.repository.assignPaidTeamSeats(teamGrab.teamId, teamGrab.orderId, assignments);
+    if (!transitioned) return;
     await this.notifyMembers(members, (member) => this.notificationClient.sendPaid(member.userId, teamGrab.orderId as number));
   }
 

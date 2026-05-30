@@ -138,8 +138,13 @@ export class OrderClientService {
   }
 
   async getOrder(orderId: number): Promise<OrderStatusResponse> {
-    const response = await fetch(`${this.baseUrl}/api/order/${orderId}`, {
+    if (!this.internalToken) {
+      throw new Error('order internal token is not configured');
+    }
+
+    const response = await fetch(`${this.baseUrl}/api/order/internal/${orderId}`, {
       method: 'GET',
+      headers: { 'X-Internal-Token': this.internalToken },
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
