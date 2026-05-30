@@ -65,6 +65,21 @@ create table if not exists team_grab_request (
     constraint chk_team_grab_request_status check (status in ('PENDING', 'GRABBING', 'LOCKED', 'ORDER_CREATED', 'FAILED', 'EXPIRED'))
 );
 
+alter table team_grab_request
+    add column if not exists grab_request_id varchar(64);
+
+-- Existing Task 5 rows predate queued grab requests. Keep these synthetic ids
+-- distinct from request_id so they cannot be mistaken for order-service grab ids.
+update team_grab_request
+set grab_request_id = 'TEAM-GRAB-LEGACY-' || id::text
+where grab_request_id is null;
+
+alter table team_grab_request
+    alter column grab_request_id set not null;
+
+create unique index if not exists uk_team_grab_request_grab_request_id
+    on team_grab_request(grab_request_id);
+
 create unique index if not exists uk_team_grab_request_active_team
     on team_grab_request(team_id)
     where status in ('PENDING', 'GRABBING', 'LOCKED', 'ORDER_CREATED');

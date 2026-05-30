@@ -219,4 +219,40 @@ describe('TeamGrabProcessorService', () => {
     expect(teamRepository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'order service timeout');
     expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'FAILED', ['GRABBING', 'READY']);
   });
+
+  it('releases locked seats and marks failed when locked seats are not persisted', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue(teamGrab),
+      persistLockedSeats: jest.fn().mockResolvedValue(null),
+      markTeamGrabFailed: jest.fn().mockResolvedValue({ ...teamGrab, status: 'FAILED' }),
+      updateTeamStatus: jest.fn(),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn().mockResolvedValue({ ...record, status: GRAB_STATUS.FAILED }),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockResolvedValue({
+        lockedSeatIds: [501, 502],
+        seatLabels: ['A-1', 'A-2'],
+        matchedStrategy: 'SAME_BLOCK',
+      }),
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn(),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient });
+
+    await expect(processor.process(record)).resolves.toBe(true);
+
+    expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
+    expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', [501, 502]);
+    expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-QUEUED-1', GRAB_STATUS.FAILED, 'failed to persist team locked seats');
+    expect(teamRepository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'failed to persist team locked seats');
+    expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'FAILED', ['GRABBING', 'READY']);
+  });
 });

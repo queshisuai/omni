@@ -53,6 +53,9 @@ export class TeamGrabProcessorService {
         seatLabels: lock.seatLabels,
         matchedStrategy: lock.matchedStrategy as TeamSeatStrategy,
       });
+      if (!persisted) {
+        throw new Error('failed to persist team locked seats');
+      }
 
       const order = await this.orderClient.createTeamOrderWithLockedSeats({
         teamId: teamGrab.teamId,

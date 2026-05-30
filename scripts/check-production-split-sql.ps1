@@ -309,4 +309,27 @@ if (-not $hasSeatSelectionUpdate -or -not $hasTeamOrderInference -or -not $hasOr
     exit 1
 }
 
+$teamGrabSql = Join-Path -Path $splitRoot -ChildPath "grab/20260530_team_grab.sql"
+if (-not (Test-Path -LiteralPath $teamGrabSql)) {
+    Write-Host "FAIL missing team grab production SQL: $teamGrabSql"
+    exit 1
+}
+$teamGrabContent = (Get-Content -Raw -LiteralPath $teamGrabSql).ToLower()
+if ($teamGrabContent -notmatch 'alter\s+table\s+team_grab_request\s+add\s+column\s+if\s+not\s+exists\s+grab_request_id\s+varchar\s*\(\s*64\s*\)') {
+    Write-Host "FAIL team grab SQL must add grab_request_id for existing tables: $teamGrabSql"
+    exit 1
+}
+if ($teamGrabContent -notmatch "team-grab-legacy-") {
+    Write-Host "FAIL team grab SQL must backfill legacy grab_request_id values with a distinct prefix: $teamGrabSql"
+    exit 1
+}
+if ($teamGrabContent -notmatch 'alter\s+table\s+team_grab_request\s+alter\s+column\s+grab_request_id\s+set\s+not\s+null') {
+    Write-Host "FAIL team grab SQL must make grab_request_id not null after backfill: $teamGrabSql"
+    exit 1
+}
+if ($teamGrabContent -notmatch 'create\s+unique\s+index\s+if\s+not\s+exists\s+uk_team_grab_request_grab_request_id\s+on\s+team_grab_request\s*\(\s*grab_request_id\s*\)') {
+    Write-Host "FAIL team grab SQL must create an idempotent unique index for grab_request_id: $teamGrabSql"
+    exit 1
+}
+
 Write-Host "PASS production split SQL safety check"
