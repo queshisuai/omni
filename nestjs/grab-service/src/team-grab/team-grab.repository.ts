@@ -542,13 +542,12 @@ export class TeamGrabRepository {
         const assignmentResult = await client.query<TeamSeatAssignmentRow>(
           `insert into team_seat_assignment (
              team_id, user_id, order_id, order_seat_id, session_seat_id, seat_label
-           ) values ($1, $2, $3, $4, $5, $6)
-           on conflict (team_id, user_id) do update
+            ) values ($1, $2, $3, $4, $5, $6)
+            on conflict (team_id, user_id) do update
            set order_id = excluded.order_id,
                order_seat_id = excluded.order_seat_id,
                session_seat_id = excluded.session_seat_id,
-               seat_label = excluded.seat_label,
-               update_time = now()
+               seat_label = excluded.seat_label
            where team_seat_assignment.order_id = excluded.order_id
              and team_seat_assignment.order_seat_id = excluded.order_seat_id
              and team_seat_assignment.session_seat_id = excluded.session_seat_id

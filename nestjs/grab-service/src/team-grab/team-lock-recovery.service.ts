@@ -51,15 +51,17 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
       const existingOrder = await this.lookupOrder(teamGrab.grabRequestId);
       if (existingOrder === 'UNKNOWN') return;
       if (existingOrder) {
-        await this.repository.markTeamGrabOrderCreated(teamGrab.requestId, existingOrder.id);
-        await this.repository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING', 'LOCKED']);
-        await this.grabRepository.markOrderCreated(
+        const grabOrderCreated = await this.grabRepository.markOrderCreatedFromProgressStatuses(
           teamGrab.grabRequestId,
           existingOrder.id,
           teamGrab.ticketTypeId,
           [],
-          GRAB_STATUS.ORDER_CREATING,
+          [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
         );
+        if (!grabOrderCreated) return;
+
+        await this.repository.markTeamGrabOrderCreated(teamGrab.requestId, existingOrder.id);
+        await this.repository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING', 'LOCKED']);
         return;
       }
     }

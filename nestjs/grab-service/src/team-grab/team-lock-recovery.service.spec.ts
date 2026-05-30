@@ -50,7 +50,13 @@ describe('TeamLockRecoveryService', () => {
       listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
     };
     const grabRepository = {
-      markOrderCreated: jest.fn().mockResolvedValue(undefined),
+      markOrderCreatedFromProgressStatuses: jest.fn().mockResolvedValue({
+        requestId: 'GRAB-1',
+        status: GRAB_STATUS.ORDER_CREATED,
+        progressStatus: GRAB_STATUS.ORDER_CREATED,
+        orderId: 9001,
+      }),
+      markOrderCreated: jest.fn(),
       updateStatus: jest.fn().mockResolvedValue(undefined),
     };
     const orderClient = {
@@ -95,7 +101,13 @@ describe('TeamLockRecoveryService', () => {
       listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
     };
     const grabRepository = {
-      markOrderCreated: jest.fn().mockResolvedValue(undefined),
+      markOrderCreatedFromProgressStatuses: jest.fn().mockResolvedValue({
+        requestId: 'GRAB-1',
+        status: GRAB_STATUS.ORDER_CREATED,
+        progressStatus: GRAB_STATUS.ORDER_CREATED,
+        orderId: 9001,
+      }),
+      markOrderCreated: jest.fn(),
       updateStatus: jest.fn().mockResolvedValue(undefined),
     };
     const orderClient = {
@@ -124,7 +136,66 @@ describe('TeamLockRecoveryService', () => {
     expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB-1');
     expect(repository.markTeamGrabOrderCreated).toHaveBeenCalledWith('TEAM-GRAB-1', 9001);
     expect(repository.updateTeamStatus).toHaveBeenCalledWith(7, 'LOCKED', ['GRABBING', 'LOCKED']);
-    expect(grabRepository.markOrderCreated).toHaveBeenCalledWith('GRAB-1', 9001, 30, [], GRAB_STATUS.ORDER_CREATING);
+    expect(grabRepository.markOrderCreatedFromProgressStatuses).toHaveBeenCalledWith(
+      'GRAB-1',
+      9001,
+      30,
+      [],
+      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
+    );
+    expect(grabRepository.markOrderCreated).not.toHaveBeenCalled();
+    expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
+    expect(repository.markTeamFailed).not.toHaveBeenCalled();
+    expect(grabRepository.updateStatus).not.toHaveBeenCalled();
+    expect(queueService.removeQueuedRequest).not.toHaveBeenCalled();
+    expect(notificationClient.sendFailed).not.toHaveBeenCalled();
+  });
+
+  it('leaves stale locks untouched when found order cannot mark grab order created', async () => {
+    const repository = {
+      findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([staleTeamGrab]),
+      markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      updateTeamStatus: jest.fn().mockResolvedValue(undefined),
+      markTeamFailed: jest.fn().mockResolvedValue(undefined),
+      listConfirmedMembers: jest.fn().mockResolvedValue([member(100), member(200)]),
+    };
+    const grabRepository = {
+      markOrderCreatedFromProgressStatuses: jest.fn().mockResolvedValue(null),
+      markOrderCreated: jest.fn(),
+      updateStatus: jest.fn().mockResolvedValue(undefined),
+    };
+    const orderClient = {
+      findByGrabRequestId: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', status: 'PENDING', grabRequestId: 'GRAB-1' }),
+    };
+    const ticketClient = {
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
+    };
+    const queueService = {
+      removeQueuedRequest: jest.fn().mockResolvedValue(undefined),
+    };
+    const notificationClient = {
+      sendFailed: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new TeamLockRecoveryService(
+      repository as any,
+      grabRepository as any,
+      orderClient as any,
+      ticketClient as any,
+      queueService as any,
+      notificationClient as any,
+    );
+
+    await service.recoverStaleLocks();
+
+    expect(grabRepository.markOrderCreatedFromProgressStatuses).toHaveBeenCalledWith(
+      'GRAB-1',
+      9001,
+      30,
+      [],
+      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
+    );
+    expect(repository.markTeamGrabOrderCreated).not.toHaveBeenCalled();
+    expect(repository.updateTeamStatus).not.toHaveBeenCalled();
     expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
     expect(repository.markTeamFailed).not.toHaveBeenCalled();
     expect(grabRepository.updateStatus).not.toHaveBeenCalled();

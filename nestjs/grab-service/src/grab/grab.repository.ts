@@ -307,6 +307,24 @@ export class GrabRepository {
     expectedProgressStatus: GrabStatus = GRAB_STATUS.ORDER_CREATING,
     expectedWorkerId: string | null = null,
   ): Promise<GrabRequestRecord | null> {
+    return this.markOrderCreatedFromProgressStatuses(
+      requestId,
+      orderId,
+      matchedTicketTypeId,
+      attempts,
+      [expectedProgressStatus],
+      expectedWorkerId,
+    );
+  }
+
+  async markOrderCreatedFromProgressStatuses(
+    requestId: string,
+    orderId: number,
+    matchedTicketTypeId: number | null = null,
+    attempts: GrabAttemptSnapshot[] = [],
+    allowedProgressStatuses: readonly GrabStatus[] = [GRAB_STATUS.ORDER_CREATING],
+    expectedWorkerId: string | null = null,
+  ): Promise<GrabRequestRecord | null> {
     const result = await this.database.query<GrabRequestRow>(
       `update grab_request
        set status = $2,
@@ -318,10 +336,10 @@ export class GrabRepository {
            fail_reason = null,
            updated_at = now()
        where request_id = $1
-         and progress_status = $6
+         and progress_status = any($6::varchar[])
          and ($7::varchar is null or worker_id = $7)
        returning *`,
-      [requestId, GRAB_STATUS.ORDER_CREATED, orderId, matchedTicketTypeId, JSON.stringify(attempts), expectedProgressStatus, expectedWorkerId],
+      [requestId, GRAB_STATUS.ORDER_CREATED, orderId, matchedTicketTypeId, JSON.stringify(attempts), allowedProgressStatuses, expectedWorkerId],
     );
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
   }

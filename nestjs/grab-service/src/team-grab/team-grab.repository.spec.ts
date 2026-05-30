@@ -376,6 +376,7 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[0][0].toLowerCase()).toContain('for update');
     expect(query.mock.calls[2][0]).toContain('on conflict (team_id, user_id) do update');
     expect(query.mock.calls[2][0]).toContain('is not distinct from');
+    expect(query.mock.calls[2][0].toLowerCase()).not.toContain('update_time');
     expect(query.mock.calls[3][0]).toContain('update ticket_team_member');
     expect(query.mock.calls[7][0]).toContain("status = 'PAID'");
     expect(query.mock.calls[7][0]).toContain("status = 'LOCKED'");

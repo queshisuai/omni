@@ -304,7 +304,7 @@ describe('GrabRepository', () => {
       9001,
       202,
       JSON.stringify(attempts),
-      GRAB_STATUS.ORDER_CREATING,
+      [GRAB_STATUS.ORDER_CREATING],
       null,
     ]);
     expect(result?.status).toBe(GRAB_STATUS.ORDER_CREATED);
@@ -321,8 +321,43 @@ describe('GrabRepository', () => {
 
     const result = await repository.markOrderCreated('GRAB-EXPIRED', 9001, 203, []);
 
-    expect(query.mock.calls[0][0]).toContain('progress_status = $6');
+    expect(query.mock.calls[0][0]).toContain('progress_status = any($6::varchar[])');
     expect(result).toBeNull();
+  });
+
+  it('marks order created from any explicitly allowed progress status', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...baseRow,
+        status: GRAB_STATUS.ORDER_CREATED,
+        progress_status: GRAB_STATUS.ORDER_CREATED,
+        order_id: '9001',
+        matched_ticket_type_id: '202',
+        attempts_snapshot: JSON.stringify([]),
+        completed_at: new Date('2026-05-27T12:03:00.000Z'),
+      }],
+    });
+    const repository = new GrabRepository({ query } as any);
+
+    const result = await repository.markOrderCreatedFromProgressStatuses(
+      'GRAB202605270001',
+      9001,
+      202,
+      [],
+      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
+    );
+
+    expect(query.mock.calls[0][0]).toContain('progress_status = any($6::varchar[])');
+    expect(query.mock.calls[0][1]).toEqual([
+      'GRAB202605270001',
+      GRAB_STATUS.ORDER_CREATED,
+      9001,
+      202,
+      JSON.stringify([]),
+      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
+      null,
+    ]);
+    expect(result?.progressStatus).toBe(GRAB_STATUS.ORDER_CREATED);
   });
 
   it('falls back to original ticket type when legacy order creation omits matched ticket type', async () => {
@@ -348,7 +383,7 @@ describe('GrabRepository', () => {
       9001,
       null,
       JSON.stringify([]),
-      GRAB_STATUS.ORDER_CREATING,
+      [GRAB_STATUS.ORDER_CREATING],
       null,
     ]);
     expect(result?.matchedTicketTypeId).toBe(202);
