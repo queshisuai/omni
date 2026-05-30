@@ -1,0 +1,285 @@
+import { Injectable } from '@nestjs/common';
+import { DatabaseService } from '../database/database.service';
+import type {
+  CreateTeamInput,
+  TeamMemberRole,
+  TeamMemberStatus,
+  TeamSeatStrategy,
+  TeamStatus,
+  TicketTeamMemberRecord,
+  TicketTeamRecord,
+} from './team-grab.types';
+
+interface TicketTeamRow {
+  id: string | number;
+  invite_code: string;
+  leader_user_id: string | number;
+  activity_id: string | number;
+  session_id: string | number;
+  ticket_type_id: string | number;
+  size: number;
+  strategy: TeamSeatStrategy;
+  fallback_strategy_json: TeamSeatStrategy[] | string | null;
+  status: TeamStatus;
+  create_time: Date;
+  update_time: Date;
+}
+
+interface TicketTeamMemberRow {
+  id: string | number;
+  team_id: string | number;
+  session_id: string | number;
+  user_id: string | number;
+  role: TeamMemberRole;
+  status: TeamMemberStatus;
+  seat_id: string | number | null;
+  order_seat_id: string | number | null;
+  join_time: Date;
+}
+
+@Injectable()
+export class TeamGrabRepository {
+  constructor(private readonly database: DatabaseService) {}
+
+  async createTeam(input: CreateTeamInput): Promise<TicketTeamRecord> {
+    const result = await this.database.query<TicketTeamRow>(
+      `insert into ticket_team (
+        invite_code, leader_user_id, activity_id, session_id, ticket_type_id,
+        strategy, fallback_strategy_json, status
+      ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+      returning *`,
+      [
+        input.inviteCode,
+        input.leaderUserId,
+        input.activityId,
+        input.sessionId,
+        input.ticketTypeId,
+        input.strategy,
+        JSON.stringify(input.fallbacks),
+        'DRAFT',
+      ],
+    );
+    return this.mapTeamRow(result.rows[0]);
+  }
+
+  async insertLeaderMember(teamId: number, sessionId: number, leaderUserId: number): Promise<TicketTeamMemberRecord> {
+    const result = await this.database.query<TicketTeamMemberRow>(
+      `insert into ticket_team_member (team_id, session_id, user_id, role, status)
+       values ($1, $2, $3, $4, $5)
+       returning *`,
+      [teamId, sessionId, leaderUserId, 'LEADER', 'CONFIRMED'],
+    );
+    return this.mapMemberRow(result.rows[0]);
+  }
+
+  async findTeamById(teamId: number): Promise<TicketTeamRecord | null> {
+    const result = await this.database.query<TicketTeamRow>(
+      `select * from ticket_team where id = $1 limit 1`,
+      [teamId],
+    );
+    return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
+  }
+
+  async findTeamByInviteCode(inviteCode: string): Promise<TicketTeamRecord | null> {
+    const result = await this.database.query<TicketTeamRow>(
+      `select * from ticket_team where invite_code = $1 limit 1`,
+      [inviteCode],
+    );
+    return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
+  }
+
+  async findActiveTeamForUser(sessionId: number, userId: number): Promise<TicketTeamRecord | null> {
+    const result = await this.database.query<TicketTeamRow>(
+      `select t.*
+       from ticket_team t
+       join ticket_team_member m on m.team_id = t.id
+       where t.session_id = $1
+         and m.user_id = $2
+         and m.status in ('INVITED', 'JOINED', 'CONFIRMED')
+         and t.status in ('DRAFT', 'READY', 'GRABBING', 'LOCKED')
+       order by t.create_time desc
+       limit 1`,
+      [sessionId, userId],
+    );
+    return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
+  }
+
+  async listMembers(teamId: number): Promise<TicketTeamMemberRecord[]> {
+    const result = await this.database.query<TicketTeamMemberRow>(
+      `select * from ticket_team_member
+       where team_id = $1
+       order by join_time asc, id asc`,
+      [teamId],
+    );
+    return result.rows.map((row) => this.mapMemberRow(row));
+  }
+
+  async findMember(teamId: number, userId: number): Promise<TicketTeamMemberRecord | null> {
+    const result = await this.database.query<TicketTeamMemberRow>(
+      `select * from ticket_team_member
+       where team_id = $1 and user_id = $2
+       limit 1`,
+      [teamId, userId],
+    );
+    return result.rows[0] ? this.mapMemberRow(result.rows[0]) : null;
+  }
+
+  async insertMember(teamId: number, sessionId: number, userId: number): Promise<TicketTeamMemberRecord | null> {
+    const result = await this.database.query<TicketTeamMemberRow>(
+      `insert into ticket_team_member (team_id, session_id, user_id, role, status)
+       select $1, $2, $3, 'MEMBER', 'JOINED'
+       where exists (
+         select 1 from ticket_team t
+         where t.id = $1
+           and t.session_id = $2
+           and t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
+           and t.size < 6
+       )
+       on conflict (team_id, user_id) do update
+       set status = 'JOINED', update_time = now()
+       where ticket_team_member.status = 'LEFT'
+       returning *`,
+      [teamId, sessionId, userId],
+    );
+    return result.rows[0] ? this.mapMemberRow(result.rows[0]) : null;
+  }
+
+  async confirmMember(teamId: number, userId: number): Promise<TicketTeamMemberRecord | null> {
+    const result = await this.database.query<TicketTeamMemberRow>(
+      `update ticket_team_member
+       set status = 'CONFIRMED', update_time = now()
+       where team_id = $1
+         and user_id = $2
+         and status in ('INVITED', 'JOINED')
+         and exists (
+           select 1 from ticket_team t
+           where t.id = $1 and t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
+         )
+       returning *`,
+      [teamId, userId],
+    );
+    return result.rows[0] ? this.mapMemberRow(result.rows[0]) : null;
+  }
+
+  async leaveMember(teamId: number, userId: number): Promise<TicketTeamMemberRecord | null> {
+    const result = await this.database.query<TicketTeamMemberRow>(
+      `update ticket_team_member
+       set status = 'LEFT', update_time = now()
+       where team_id = $1
+         and user_id = $2
+         and status in ('JOINED', 'CONFIRMED')
+         and exists (
+           select 1 from ticket_team t
+           where t.id = $1 and t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
+         )
+       returning *`,
+      [teamId, userId],
+    );
+    return result.rows[0] ? this.mapMemberRow(result.rows[0]) : null;
+  }
+
+  async removeMember(teamId: number, userId: number): Promise<TicketTeamMemberRecord | null> {
+    const result = await this.database.query<TicketTeamMemberRow>(
+      `update ticket_team_member
+       set status = 'LEFT', update_time = now()
+       where team_id = $1
+         and user_id = $2
+         and role = 'MEMBER'
+         and status in ('INVITED', 'JOINED', 'CONFIRMED')
+         and exists (
+           select 1 from ticket_team t
+           where t.id = $1 and t.status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
+         )
+       returning *`,
+      [teamId, userId],
+    );
+    return result.rows[0] ? this.mapMemberRow(result.rows[0]) : null;
+  }
+
+  async updateStrategy(
+    teamId: number,
+    strategy: TeamSeatStrategy,
+    fallbacks: TeamSeatStrategy[],
+  ): Promise<TicketTeamRecord | null> {
+    const result = await this.database.query<TicketTeamRow>(
+      `update ticket_team
+       set strategy = $2,
+           fallback_strategy_json = $3::jsonb,
+           update_time = now()
+       where id = $1
+         and status in ('DRAFT', 'READY', 'FAILED', 'EXPIRED')
+       returning *`,
+      [teamId, strategy, JSON.stringify(fallbacks)],
+    );
+    return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
+  }
+
+  async updateTeamStatus(teamId: number, status: TeamStatus): Promise<TicketTeamRecord | null> {
+    const result = await this.database.query<TicketTeamRow>(
+      `update ticket_team
+       set status = $2, update_time = now()
+       where id = $1
+       returning *`,
+      [teamId, status],
+    );
+    return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
+  }
+
+  async refreshTeamSize(teamId: number): Promise<TicketTeamRecord | null> {
+    const result = await this.database.query<TicketTeamRow>(
+      `update ticket_team
+       set size = (
+         select count(*)::int
+         from ticket_team_member m
+         where m.team_id = $1 and m.status = 'CONFIRMED'
+       ),
+       update_time = now()
+       where id = $1
+       returning *`,
+      [teamId],
+    );
+    return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
+  }
+
+  private mapTeamRow(row: TicketTeamRow): TicketTeamRecord {
+    return {
+      id: Number(row.id),
+      inviteCode: row.invite_code,
+      leaderUserId: Number(row.leader_user_id),
+      activityId: Number(row.activity_id),
+      sessionId: Number(row.session_id),
+      ticketTypeId: Number(row.ticket_type_id),
+      size: row.size,
+      strategy: row.strategy,
+      fallbacks: this.parseFallbacks(row.fallback_strategy_json),
+      status: row.status,
+      createTime: row.create_time,
+      updateTime: row.update_time,
+    };
+  }
+
+  private mapMemberRow(row: TicketTeamMemberRow): TicketTeamMemberRecord {
+    return {
+      id: Number(row.id),
+      teamId: Number(row.team_id),
+      sessionId: Number(row.session_id),
+      userId: Number(row.user_id),
+      role: row.role,
+      status: row.status,
+      seatId: row.seat_id == null ? null : Number(row.seat_id),
+      orderSeatId: row.order_seat_id == null ? null : Number(row.order_seat_id),
+      joinTime: row.join_time,
+    };
+  }
+
+  private parseFallbacks(value: TeamSeatStrategy[] | string | null | undefined): TeamSeatStrategy[] {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== 'string' || !value.trim()) return [];
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((item): item is TeamSeatStrategy => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+}
