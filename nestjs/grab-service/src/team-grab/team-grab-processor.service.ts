@@ -3,6 +3,7 @@ import { GRAB_STATUS } from '../grab/grab-status';
 import { GrabRepository } from '../grab/grab.repository';
 import type { GrabRequestRecord } from '../grab/grab.types';
 import { OrderClientService } from '../grab/order-client.service';
+import type { CreateTeamOrderWithLockedSeatsInput } from '../grab/order-client.service';
 import { TicketClientService } from '../grab/ticket-client.service';
 import { TeamGrabRepository } from './team-grab.repository';
 import type { TeamGrabRequestRecord, TeamSeatStrategy } from './team-grab.types';
@@ -39,6 +40,7 @@ export class TeamGrabProcessorService {
     if (!grabbing) return false;
 
     let lockedSeatIds: number[] = [];
+    let orderInput: CreateTeamOrderWithLockedSeatsInput;
     try {
       const lock = await this.ticketClient.lockTeamSeats({
         sessionId: teamGrab.sessionId,
@@ -61,7 +63,7 @@ export class TeamGrabProcessorService {
       }
 
       const authorizedMaxUnitPrice = await this.authorizedMaxUnitPrice(teamGrab);
-      const order = await this.orderClient.createTeamOrderWithLockedSeats({
+      orderInput = {
         teamId: teamGrab.teamId,
         userId: teamGrab.payerUserId,
         payerUserId: teamGrab.payerUserId,
@@ -76,9 +78,7 @@ export class TeamGrabProcessorService {
         grabRequestId: record.requestId,
         matchedStrategy: lock.matchedStrategy,
         authorizedMaxUnitPrice,
-      });
-
-      return await this.finishOrderCreated(record, teamGrab, order.id);
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'team grab processing failed';
       if (lockedSeatIds.length > 0) {
@@ -89,6 +89,14 @@ export class TeamGrabProcessorService {
       }
       await this.markFailed(record, teamGrab, message);
       return true;
+    }
+
+    try {
+      const order = await this.orderClient.createTeamOrderWithLockedSeats(orderInput);
+      return await this.finishOrderCreated(record, teamGrab, order.id);
+    } catch (error) {
+      this.logger.error(error);
+      return await this.recoverAmbiguousOrderCreation(record, teamGrab);
     }
   }
 
@@ -143,6 +151,23 @@ export class TeamGrabProcessorService {
       attempts: record.attemptsSnapshot,
       workerId: record.workerId,
     }).catch((error) => this.logger.error(error));
+  }
+
+  private async recoverAmbiguousOrderCreation(
+    record: GrabRequestRecord,
+    teamGrab: TeamGrabRequestRecord,
+  ): Promise<boolean> {
+    try {
+      const order = await this.orderClient.findByGrabRequestId(record.requestId);
+      if (order?.id != null) {
+        return await this.finishOrderCreated(record, teamGrab, order.id);
+      }
+    } catch (lookupError) {
+      this.logger.error(lookupError);
+    }
+
+    await this.markPendingRecovery(record, teamGrab);
+    return false;
   }
 
   private formatLocalDateTime(date: Date): string {
