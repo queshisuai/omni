@@ -64,7 +64,8 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
     @Update({"<script>",
             "UPDATE session_seat SET status = 3, order_id = #{orderId}, update_time = CURRENT_TIMESTAMP, ",
             "lock_request_id = NULL ",
-            "WHERE id = #{seatId} AND session_id = #{sessionId} AND ticket_type_id = #{ticketTypeId} AND status = 2 ",
+            "WHERE id = #{seatId} AND session_id = #{sessionId} AND ticket_type_id = #{ticketTypeId} AND (",
+            "(status = 2 ",
             "<choose>",
             "<when test='lockRequestId != null and lockRequestId != \"\"'>",
             "AND lock_request_id = #{lockRequestId}",
@@ -73,6 +74,7 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
             "AND lock_request_id IS NULL",
             "</otherwise>",
             "</choose>",
+            ") OR (status = 3 AND order_id = #{orderId}))",
             "</script>"})
     int markSeatSold(@Param("seatId") Long seatId,
                      @Param("sessionId") Long sessionId,

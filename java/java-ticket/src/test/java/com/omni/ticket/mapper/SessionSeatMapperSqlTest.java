@@ -114,6 +114,15 @@ class SessionSeatMapperSqlTest {
     }
 
     @Test
+    void confirmSeatSqlAllowsAlreadySoldSameOrderButNotAvailableSeat() throws Exception {
+        String soldSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "markSeatSold", Long.class, Long.class, Long.class, Long.class, String.class)).toLowerCase();
+
+        assertTrue(soldSql.contains("status = 3 and order_id = #{orderid}"), soldSql);
+        assertFalse(soldSql.contains("status = 1"), soldSql);
+    }
+
+    @Test
     void productionTeamSeatLockIndexMatchesHotCandidateQuery() throws Exception {
         String sql = Files.readString(Path.of("..", "..", "sql", "production-split", "ticket", "20260530_team_seat_lock.sql"))
                 .toLowerCase();

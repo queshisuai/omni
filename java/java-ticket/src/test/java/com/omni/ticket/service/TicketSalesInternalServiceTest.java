@@ -736,6 +736,23 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
+    void confirmSoldTreatsAlreadySoldSameOrderMapperOneAsNoOpSuccess() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.markSeatSold(501L, 3001L, 4001L, 88L, null)).thenReturn(1);
+
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setOrderId(88L);
+        request.setSessionId(3001L);
+        request.setTicketTypeId(4001L);
+        request.setSeatIds(List.of(501L));
+
+        service.confirmSold(request);
+
+        verify(sessionSeatMapper).markSeatSold(501L, 3001L, 4001L, 88L, null);
+    }
+
+    @Test
     void confirmSoldUsesLockRequestIdFenceAndFailsOnPartialSeatUpdate() {
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
         TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
