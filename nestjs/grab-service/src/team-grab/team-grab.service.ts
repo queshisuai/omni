@@ -129,13 +129,24 @@ export class TeamGrabService {
 
   async getTeamDetail(teamId: number, userId: number): Promise<TeamDetailServiceResponse> {
     const team = await this.getExistingTeam(teamId);
-    if (team.leaderUserId !== userId) {
-      const member = await this.repository.findMember(teamId, userId);
-      if (!member || member.status === 'LEFT') throw new ForbiddenException('cannot view another team');
-    }
+    const members = await this.repository.listMembers(teamId);
+    const currentMember = members.find((member) => member.userId === userId && member.status !== 'LEFT') ?? null;
+    if (team.leaderUserId !== userId && !currentMember) throw new ForbiddenException('cannot view another team');
+
+    const confirmedMembers = members.filter((member) => member.status === 'CONFIRMED');
+    const latestGrabRequest = await this.repository.findLatestTeamGrabRequestByTeamId(teamId);
+    const latestOrderId = latestGrabRequest?.orderId ?? null;
+
     return {
       team,
-      members: await this.repository.listMembers(teamId),
+      members,
+      canTriggerGrab: TRIGGERABLE_TEAM_STATUSES.includes(team.status)
+        && currentMember?.status === 'CONFIRMED'
+        && confirmedMembers.length >= 2
+        && confirmedMembers.length <= 6,
+      canPay: team.status === 'LOCKED' && team.leaderUserId === userId && latestOrderId != null,
+      latestGrabRequestId: latestGrabRequest?.grabRequestId ?? null,
+      latestOrderId,
     };
   }
 

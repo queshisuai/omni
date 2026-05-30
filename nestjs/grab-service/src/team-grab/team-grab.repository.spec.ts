@@ -303,6 +303,25 @@ describe('TeamGrabRepository', () => {
     expect(result?.requestId).toBe('TEAM-GRAB-1');
   });
 
+  it('finds latest team grab request for a team by update time and id', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [{ ...teamGrabRow, order_id: '9001' }] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.findLatestTeamGrabRequestByTeamId(1);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain('from team_grab_request');
+    expect(sql).toContain('where team_id = $1');
+    expect(sql).toContain('order by update_time desc, id desc');
+    expect(sql).toContain('limit 1');
+    expect(query.mock.calls[0][1]).toEqual([1]);
+    expect(result).toMatchObject({
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-QUEUED-1',
+      orderId: 9001,
+    });
+  });
+
   it('finds locked team grab requests with created orders', async () => {
     const query = jest.fn().mockResolvedValue({ rows: [{ ...teamGrabRow, status: 'ORDER_CREATED', order_id: '9001' }] });
     const repository = new TeamGrabRepository({ query } as any);

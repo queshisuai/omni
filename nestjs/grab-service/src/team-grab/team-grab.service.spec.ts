@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { TeamGrabService } from './team-grab.service';
-import type { TeamSeatStrategy, TicketTeamMemberRecord, TicketTeamRecord } from './team-grab.types';
+import type { TeamGrabRequestRecord, TeamSeatStrategy, TicketTeamMemberRecord, TicketTeamRecord } from './team-grab.types';
 
 const now = new Date('2026-05-30T12:00:00.000Z');
 
@@ -33,6 +33,31 @@ function member(overrides: Partial<TicketTeamMemberRecord> = {}): TicketTeamMemb
     seatId: null,
     orderSeatId: null,
     joinTime: now,
+    ...overrides,
+  };
+}
+
+function teamGrabRequest(overrides: Partial<TeamGrabRequestRecord> = {}): TeamGrabRequestRecord {
+  return {
+    id: 7,
+    requestId: 'TEAM-GRAB-1',
+    grabRequestId: 'GRAB-QUEUED-1',
+    teamId: 1,
+    triggerUserId: 200,
+    payerUserId: 100,
+    sessionId: 20,
+    ticketTypeId: 30,
+    quantity: 2,
+    strategy: 'SAME_BLOCK',
+    fallbacks: [],
+    matchedStrategy: null,
+    status: 'ORDER_CREATED',
+    orderId: 9001,
+    lockedSeatIds: [],
+    seatLabels: [],
+    failReason: null,
+    createTime: now,
+    updateTime: now,
     ...overrides,
   };
 }
@@ -188,6 +213,126 @@ describe('TeamGrabService', () => {
     expect(repository.refreshTeamReadiness).toHaveBeenCalledWith(1);
     expect(repository.findTeamById).toHaveBeenCalledTimes(2);
     expect(result.status).toBe('LOCKED');
+  });
+
+  it('returns canPay and latest order for a leader viewing a locked team with a latest order', async () => {
+    const lockedTeam = team({ leaderUserId: 100, status: 'LOCKED' });
+    const members = [
+      member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+      member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+    ];
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(lockedTeam),
+      listMembers: jest.fn().mockResolvedValue(members),
+      findLatestTeamGrabRequestByTeamId: jest.fn().mockResolvedValue(teamGrabRequest({
+        grabRequestId: 'GRAB-QUEUED-9',
+        orderId: 9001,
+      })),
+    };
+    const service = createService(repository);
+
+    const result = await service.getTeamDetail(1, 100);
+
+    expect(repository.findMember).toBeUndefined();
+    expect(repository.listMembers).toHaveBeenCalledTimes(1);
+    expect(repository.findLatestTeamGrabRequestByTeamId).toHaveBeenCalledWith(1);
+    expect(result).toMatchObject({
+      team: lockedTeam,
+      members,
+      canPay: true,
+      canTriggerGrab: false,
+      latestGrabRequestId: 'GRAB-QUEUED-9',
+      latestOrderId: 9001,
+    });
+  });
+
+  it('returns canTriggerGrab for a confirmed member viewing a ready team with 2-6 confirmed members', async () => {
+    const readyTeam = team({ leaderUserId: 100, status: 'READY', size: 2 });
+    const members = [
+      member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+      member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+      member({ userId: 300, role: 'MEMBER', status: 'JOINED' }),
+    ];
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(readyTeam),
+      listMembers: jest.fn().mockResolvedValue(members),
+      findLatestTeamGrabRequestByTeamId: jest.fn().mockResolvedValue(null),
+    };
+    const service = createService(repository);
+
+    const result = await service.getTeamDetail(1, 200);
+
+    expect(repository.listMembers).toHaveBeenCalledTimes(1);
+    expect(result.canTriggerGrab).toBe(true);
+    expect(result.canPay).toBe(false);
+    expect(result.latestGrabRequestId).toBeNull();
+    expect(result.latestOrderId).toBeNull();
+  });
+
+  it.each([
+    {
+      name: 'unconfirmed member',
+      userId: 200,
+      members: [
+        member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+        member({ userId: 200, role: 'MEMBER', status: 'JOINED' }),
+      ],
+    },
+    {
+      name: 'insufficient confirmed count',
+      userId: 100,
+      members: [
+        member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+        member({ userId: 200, role: 'MEMBER', status: 'JOINED' }),
+      ],
+    },
+  ])('returns canTriggerGrab=false for $name', async ({ userId, members }) => {
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(team({ leaderUserId: 100, status: 'READY' })),
+      listMembers: jest.fn().mockResolvedValue(members),
+      findLatestTeamGrabRequestByTeamId: jest.fn().mockResolvedValue(null),
+    };
+    const service = createService(repository);
+
+    const result = await service.getTeamDetail(1, userId);
+
+    expect(repository.listMembers).toHaveBeenCalledTimes(1);
+    expect(result.canTriggerGrab).toBe(false);
+  });
+
+  it('rejects a non-member viewing team detail', async () => {
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(team({ leaderUserId: 100, status: 'READY' })),
+      listMembers: jest.fn().mockResolvedValue([
+        member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+        member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+      ]),
+      findLatestTeamGrabRequestByTeamId: jest.fn(),
+    };
+    const service = createService(repository);
+
+    await expect(service.getTeamDetail(1, 300)).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(repository.listMembers).toHaveBeenCalledTimes(1);
+    expect(repository.findLatestTeamGrabRequestByTeamId).not.toHaveBeenCalled();
+  });
+
+  it('returns canPay=false for a non-leader viewing a locked team order', async () => {
+    const members = [
+      member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+      member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+    ];
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(team({ leaderUserId: 100, status: 'LOCKED' })),
+      listMembers: jest.fn().mockResolvedValue(members),
+      findLatestTeamGrabRequestByTeamId: jest.fn().mockResolvedValue(teamGrabRequest({ orderId: 9001 })),
+    };
+    const service = createService(repository);
+
+    const result = await service.getTeamDetail(1, 200);
+
+    expect(result.canPay).toBe(false);
+    expect(result.latestOrderId).toBe(9001);
   });
 
   it('turns active capacity insert failures into conflict when joining a full team', async () => {

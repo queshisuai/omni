@@ -367,6 +367,17 @@ export class TeamGrabRepository {
     return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
   }
 
+  async findLatestTeamGrabRequestByTeamId(teamId: number): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `select * from team_grab_request
+       where team_id = $1
+       order by update_time desc, id desc
+       limit 1`,
+      [teamId],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
   async findLockedTeamGrabRequests(limit: number): Promise<TeamGrabRequestRecord[]> {
     const result = await this.database.query<TeamGrabRequestRow>(
       `select r.*
