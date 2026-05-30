@@ -53,6 +53,9 @@ describe('TeamLockRecoveryService', () => {
     const ticketClient = {
       releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
     };
+    const queueService = {
+      removeQueuedRequest: jest.fn().mockResolvedValue(undefined),
+    };
     const notificationClient = {
       sendFailed: jest.fn().mockResolvedValue(undefined),
     };
@@ -60,6 +63,7 @@ describe('TeamLockRecoveryService', () => {
       repository as any,
       grabRepository as any,
       ticketClient as any,
+      queueService as any,
       notificationClient as any,
     );
 
@@ -69,6 +73,7 @@ describe('TeamLockRecoveryService', () => {
     expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', [501, 502]);
     expect(repository.markTeamFailed).toHaveBeenCalledWith(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT');
     expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-1', GRAB_STATUS.FAILED, 'ORDER_CREATE_TIMEOUT');
+    expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
     expect(notificationClient.sendFailed).toHaveBeenCalledWith(100, null);
     expect(notificationClient.sendFailed).toHaveBeenCalledWith(200, null);
   });

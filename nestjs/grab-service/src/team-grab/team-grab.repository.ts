@@ -389,7 +389,7 @@ export class TeamGrabRepository {
     const result = await this.database.query<TeamGrabRequestRow>(
       `select *
        from team_grab_request
-       where status = 'GRABBING'
+       where status in ('GRABBING', 'LOCKED')
          and order_id is null
          and jsonb_array_length(coalesce(locked_seat_ids, '[]'::jsonb)) > 0
          and update_time < now() - ($2::int * interval '1 second')

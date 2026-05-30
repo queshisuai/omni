@@ -322,7 +322,7 @@ describe('TeamGrabRepository', () => {
     const result = await repository.findStalePreOrderTeamGrabRequests(25, 30);
 
     const sql = query.mock.calls[0][0].toLowerCase();
-    expect(sql).toContain("status = 'grabbing'");
+    expect(sql).toContain("status in ('grabbing', 'locked')");
     expect(sql).toContain('order_id is null');
     expect(sql).toContain('jsonb_array_length');
     expect(sql).toContain('interval');

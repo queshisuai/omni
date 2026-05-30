@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { GrabRepository } from '../grab/grab.repository';
+import { GrabQueueService } from '../grab/grab-queue.service';
 import { GRAB_STATUS } from '../grab/grab-status';
 import { TicketClientService } from '../grab/ticket-client.service';
 import { NotificationClientService } from './notification-client.service';
@@ -19,6 +20,7 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
     private readonly repository: TeamGrabRepository,
     private readonly grabRepository: GrabRepository,
     private readonly ticketClient: TicketClientService,
+    private readonly queueService: GrabQueueService,
     private readonly notificationClient: NotificationClientService,
   ) {}
 
@@ -47,6 +49,9 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
     await this.repository.markTeamFailed(teamGrab.teamId, teamGrab.requestId, ORDER_CREATE_TIMEOUT);
     if (teamGrab.grabRequestId) {
       await this.grabRepository.updateStatus(teamGrab.grabRequestId, GRAB_STATUS.FAILED, ORDER_CREATE_TIMEOUT);
+      await this.queueService
+        .removeQueuedRequest(teamGrab.sessionId, teamGrab.grabRequestId)
+        .catch((error) => this.logger.warn(error));
     }
 
     const members = await this.repository.listConfirmedMembers(teamGrab.teamId);
