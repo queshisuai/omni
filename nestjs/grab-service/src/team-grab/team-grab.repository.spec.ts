@@ -302,4 +302,77 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[0][1]).toEqual(['GRAB-QUEUED-1']);
     expect(result?.requestId).toBe('TEAM-GRAB-1');
   });
+
+  it('finds locked team grab requests with created orders', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [{ ...teamGrabRow, status: 'ORDER_CREATED', order_id: '9001' }] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.findLockedTeamGrabRequests(50);
+
+    expect(query.mock.calls[0][0]).toContain("t.status = 'LOCKED'");
+    expect(query.mock.calls[0][0]).toContain('r.order_id is not null');
+    expect(query.mock.calls[0][1]).toEqual([50]);
+    expect(result[0]).toMatchObject({ requestId: 'TEAM-GRAB-1', orderId: 9001 });
+  });
+
+  it('finds stale pre-order team grab requests with locked seats and no order', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [{ ...teamGrabRow, status: 'GRABBING', locked_seat_ids: JSON.stringify([501]) }] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.findStalePreOrderTeamGrabRequests(25, 30);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain("status = 'grabbing'");
+    expect(sql).toContain('order_id is null');
+    expect(sql).toContain('jsonb_array_length');
+    expect(sql).toContain('interval');
+    expect(query.mock.calls[0][1]).toEqual([25, 30]);
+    expect(result[0].lockedSeatIds).toEqual([501]);
+  });
+
+  it('inserts seat assignments idempotently and updates member seat fields in one transaction', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ withTransaction } as any);
+
+    await repository.insertSeatAssignments(7, 9001, [
+      { userId: 100, orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1' },
+      { userId: 200, orderSeatId: 7002, sessionSeatId: 502, seatLabel: 'A-2' },
+    ]);
+
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(query.mock.calls[0][0]).toContain('insert into team_seat_assignment');
+    expect(query.mock.calls[0][0].toLowerCase()).toContain('on conflict do nothing');
+    expect(query.mock.calls[1][0]).toContain('update ticket_team_member');
+    expect(query.mock.calls[1][1]).toEqual([7, 100, 7001, 501]);
+    expect(query.mock.calls[3][1]).toEqual([7, 200, 7002, 502]);
+  });
+
+  it('marks teams paid, expired, and failed with guarded status transitions', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'PAID' }] })
+      .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'EXPIRED' }] })
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'EXPIRED' }] })
+      .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'FAILED' }] })
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'FAILED' }] });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ query, withTransaction } as any);
+
+    await repository.markTeamPaid(7);
+    await repository.markTeamExpired(7, 'ORDER_CANCELLED');
+    await repository.markTeamFailed(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT');
+
+    expect(query.mock.calls[0][0]).toContain("status = 'PAID'");
+    expect(query.mock.calls[0][0]).toContain("status = 'LOCKED'");
+    expect(query.mock.calls[0][1]).toEqual([7]);
+    expect(withTransaction).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1][0]).toContain("status = 'EXPIRED'");
+    expect(query.mock.calls[1][1]).toEqual([7, 'ORDER_CANCELLED']);
+    expect(query.mock.calls[3][0]).toContain("status = 'FAILED'");
+    expect(query.mock.calls[3][1]).toEqual(['TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT']);
+  });
 });

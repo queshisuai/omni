@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { GRAB_STATUS } from '../grab/grab-status';
 import { GrabRepository } from '../grab/grab.repository';
 import type { GrabRequestRecord } from '../grab/grab.types';
 import { OrderClientService } from '../grab/order-client.service';
 import type { CreateTeamOrderWithLockedSeatsInput } from '../grab/order-client.service';
 import { TicketClientService } from '../grab/ticket-client.service';
+import { NotificationClientService } from './notification-client.service';
 import { TeamGrabRepository } from './team-grab.repository';
 import type { TeamGrabRequestRecord, TeamSeatStrategy } from './team-grab.types';
 
@@ -17,6 +18,7 @@ export class TeamGrabProcessorService {
     private readonly grabRepository: GrabRepository,
     private readonly ticketClient: TicketClientService,
     private readonly orderClient: OrderClientService,
+    @Optional() private readonly notificationClient?: NotificationClientService,
   ) {}
 
   async process(record: GrabRequestRecord): Promise<boolean> {
@@ -122,6 +124,7 @@ export class TeamGrabProcessorService {
       );
       if (!grabOrderCreated) throw new Error('failed to persist grab order');
 
+      await this.notifyLocked(teamGrab, orderId);
       return true;
     } catch (error) {
       this.logger.error(error);
@@ -181,5 +184,17 @@ export class TeamGrabProcessorService {
       pad(date.getMinutes()),
       pad(date.getSeconds()),
     ].join(':')}`;
+  }
+
+  private async notifyLocked(teamGrab: TeamGrabRequestRecord, orderId: number): Promise<void> {
+    if (!this.notificationClient) return;
+    try {
+      const members = await this.teamRepository.listConfirmedMembers(teamGrab.teamId);
+      for (const member of members) {
+        await this.notificationClient.sendLocked(member.userId, orderId).catch((error) => this.logger.warn(error));
+      }
+    } catch (error) {
+      this.logger.warn(error);
+    }
   }
 }

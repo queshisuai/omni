@@ -1,12 +1,14 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'crypto';
 import { GrabQueueService } from '../grab/grab-queue.service';
 import { GrabRepository } from '../grab/grab.repository';
 import { GRAB_STATUS } from '../grab/grab-status';
 import { isUniqueViolation, TeamGrabRepository } from './team-grab.repository';
+import { TeamPaymentSyncService } from './team-payment-sync.service';
 import type {
   CreateTeamDto,
   TeamDetailServiceResponse,
+  TeamPaymentSyncResponse,
   TeamSeatStrategy,
   TeamGrabTriggerResponse,
   TeamStatus,
@@ -31,6 +33,7 @@ export class TeamGrabService {
     private readonly repository: TeamGrabRepository,
     private readonly grabRepository: GrabRepository,
     private readonly queueService: GrabQueueService,
+    @Optional() private readonly paymentSyncService?: TeamPaymentSyncService,
   ) {}
 
   async createTeam(leaderUserId: number, dto: CreateTeamDto): Promise<TicketTeamRecord> {
@@ -239,6 +242,12 @@ export class TeamGrabService {
       await this.queueService.releaseTeamTriggerLock(team.id, team.sessionId, team.ticketTypeId, queuedGrabRequestId).catch(() => undefined);
       this.throwConflictOnUniqueViolation(error, 'team grab is already in progress');
     }
+  }
+
+  async syncPaidTeam(teamId: number, userId: number): Promise<TeamPaymentSyncResponse> {
+    await this.getTeamDetail(teamId, userId);
+    if (!this.paymentSyncService) throw new Error('team payment sync service is not configured');
+    return this.paymentSyncService.syncTeam(teamId);
   }
 
   private async getExistingTeam(teamId: number): Promise<TicketTeamRecord> {

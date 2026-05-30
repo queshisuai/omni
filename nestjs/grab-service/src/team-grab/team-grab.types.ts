@@ -93,3 +93,15 @@ export interface TeamGrabTriggerResponse {
   queueRank: number;
   teamStatus: TeamStatus;
 }
+
+export interface TeamSeatAssignmentInput {
+  userId: number;
+  orderSeatId: number;
+  sessionSeatId: number;
+  seatLabel: string | null;
+}
+
+export interface TeamPaymentSyncResponse {
+  teamId: number;
+  synced: boolean;
+}

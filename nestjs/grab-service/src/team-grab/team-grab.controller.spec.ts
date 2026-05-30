@@ -208,6 +208,19 @@ describe('TeamGrabController', () => {
     expect(service.triggerTeamGrab).toHaveBeenCalledWith(7, 200);
   });
 
+  it('triggers explicit paid sync as the authenticated user', async () => {
+    const response = { teamId: 7, synced: true };
+    const service = { syncPaidTeam: jest.fn().mockResolvedValue(response) };
+    const controller = createController(service);
+
+    await expect(controller.syncPaid(request(200), '7')).resolves.toEqual({
+      code: 200,
+      message: 'success',
+      data: response,
+    });
+    expect(service.syncPaidTeam).toHaveBeenCalledWith(7, 200);
+  });
+
   it.each(['abc', ' 1', '1e2', '1.5', '0', '-1'])('rejects invalid team id %p', async (teamId) => {
     const service = { getTeamDetail: jest.fn() };
     const controller = createController(service);

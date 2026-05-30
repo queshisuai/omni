@@ -6,6 +6,7 @@ import type {
   CreateTeamDto,
   TeamDetailServiceResponse,
   TeamGrabTriggerResponse,
+  TeamPaymentSyncResponse,
   TeamSeatStrategy,
   TicketTeamMemberRecord,
   TicketTeamRecord,
@@ -91,6 +92,11 @@ export class TeamGrabController {
   @Post(':teamId/trigger')
   async trigger(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TeamGrabTriggerResponse>> {
     return success(await this.teamGrabService.triggerTeamGrab(parsePositiveInt(teamId, 'team'), request.user.userId));
+  }
+
+  @Post(':teamId/sync-paid')
+  async syncPaid(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TeamPaymentSyncResponse>> {
+    return success(await this.teamGrabService.syncPaidTeam(parsePositiveInt(teamId, 'team'), request.user.userId));
   }
 
   @Post(':teamId/leave')

@@ -41,6 +41,20 @@ export interface GrabOrderLookupResponse {
   grabRequestId: string | null;
 }
 
+export interface OrderStatusResponse {
+  id: number;
+  status: number;
+  userId: number;
+  quantity: number;
+}
+
+export interface OrderSeatResponse {
+  orderSeatId: number;
+  sessionSeatId: number;
+  seatLabel: string | null;
+  status: number;
+}
+
 @Injectable()
 export class OrderClientService {
   private readonly baseUrl = process.env.ORDER_SERVICE_URL || 'http://localhost:8088';
@@ -121,5 +135,32 @@ export class OrderClientService {
       throw new Error(result.message || 'team order creation failed');
     }
     return result.data;
+  }
+
+  async getOrder(orderId: number): Promise<OrderStatusResponse> {
+    const response = await fetch(`${this.baseUrl}/api/order/${orderId}`, {
+      method: 'GET',
+    });
+    const result = await response.json();
+    if (!response.ok || result.code !== 200) {
+      throw new Error(result.message || 'order lookup failed');
+    }
+    return result.data;
+  }
+
+  async listOrderSeats(orderId: number): Promise<OrderSeatResponse[]> {
+    if (!this.internalToken) {
+      throw new Error('order internal token is not configured');
+    }
+
+    const response = await fetch(`${this.baseUrl}/api/order/internal/${orderId}/seats`, {
+      method: 'GET',
+      headers: { 'X-Internal-Token': this.internalToken },
+    });
+    const result = await response.json();
+    if (!response.ok || result.code !== 200) {
+      throw new Error(result.message || 'order seat lookup failed');
+    }
+    return Array.isArray(result.data) ? result.data : [];
   }
 }

@@ -143,6 +143,47 @@ describe('OrderClientService', () => {
     await expect(service.findByGrabRequestId('GRAB-MISSING')).resolves.toBeNull();
   });
 
+  it('loads order status from the current order detail endpoint', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        code: 200,
+        data: { id: 9001, status: 2, userId: 100, quantity: 2 },
+      }),
+    } as any);
+    const service = new OrderClientService();
+
+    await expect(service.getOrder(9001)).resolves.toEqual({ id: 9001, status: 2, userId: 100, quantity: 2 });
+
+    expect(global.fetch).toHaveBeenCalledWith('http://order.local/api/order/9001', {
+      method: 'GET',
+    });
+  });
+
+  it('loads order seats from the internal endpoint with token', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        code: 200,
+        data: [
+          { orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1', status: 2 },
+          { orderSeatId: 7002, sessionSeatId: 502, seatLabel: 'A-2', status: 2 },
+        ],
+      }),
+    } as any);
+    const service = new OrderClientService();
+
+    await expect(service.listOrderSeats(9001)).resolves.toEqual([
+      { orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1', status: 2 },
+      { orderSeatId: 7002, sessionSeatId: 502, seatLabel: 'A-2', status: 2 },
+    ]);
+
+    expect(global.fetch).toHaveBeenCalledWith('http://order.local/api/order/internal/9001/seats', {
+      method: 'GET',
+      headers: { 'X-Internal-Token': 'internal-token' },
+    });
+  });
+
   it('fails before calling order service when internal token is missing', async () => {
     delete process.env.INTERNAL_API_TOKEN;
     const service = new OrderClientService();

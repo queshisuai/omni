@@ -7,6 +7,7 @@ import type {
   TeamMemberRole,
   TeamMemberStatus,
   TeamGrabRequestRecord,
+  TeamSeatAssignmentInput,
   TeamSeatStrategy,
   TeamStatus,
   TicketTeamMemberRecord,
@@ -353,6 +354,52 @@ export class TeamGrabRepository {
     return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
   }
 
+  async findLockedTeamGrabRequests(limit: number): Promise<TeamGrabRequestRecord[]> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `select r.*
+       from team_grab_request r
+       join ticket_team t on t.id = r.team_id
+       where t.status = 'LOCKED'
+         and r.order_id is not null
+         and r.status in ('ORDER_CREATED', 'LOCKED')
+       order by r.update_time asc
+       limit $1`,
+      [limit],
+    );
+    return result.rows.map((row) => this.mapTeamGrabRow(row));
+  }
+
+  async findLockedTeamGrabRequestByTeamId(teamId: number): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `select r.*
+       from team_grab_request r
+       join ticket_team t on t.id = r.team_id
+       where t.id = $1
+         and t.status = 'LOCKED'
+         and r.order_id is not null
+         and r.status in ('ORDER_CREATED', 'LOCKED')
+       order by r.update_time asc
+       limit 1`,
+      [teamId],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
+  async findStalePreOrderTeamGrabRequests(limit: number, olderThanSeconds: number): Promise<TeamGrabRequestRecord[]> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `select *
+       from team_grab_request
+       where status = 'GRABBING'
+         and order_id is null
+         and jsonb_array_length(coalesce(locked_seat_ids, '[]'::jsonb)) > 0
+         and update_time < now() - ($2::int * interval '1 second')
+       order by update_time asc
+       limit $1`,
+      [limit, olderThanSeconds],
+    );
+    return result.rows.map((row) => this.mapTeamGrabRow(row));
+  }
+
   async updateTeamGrabStatus(
     requestId: string,
     status: TeamGrabRequestRecord['status'],
@@ -415,6 +462,99 @@ export class TeamGrabRepository {
       [requestId, failReason],
     );
     return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
+  async insertSeatAssignments(
+    teamId: number,
+    orderId: number,
+    assignments: TeamSeatAssignmentInput[],
+  ): Promise<void> {
+    await this.database.withTransaction(async (client) => {
+      for (const assignment of assignments) {
+        await client.query(
+          `insert into team_seat_assignment (
+             team_id, user_id, order_id, order_seat_id, session_seat_id, seat_label
+           ) values ($1, $2, $3, $4, $5, $6)
+           on conflict do nothing`,
+          [
+            teamId,
+            assignment.userId,
+            orderId,
+            assignment.orderSeatId,
+            assignment.sessionSeatId,
+            assignment.seatLabel,
+          ],
+        );
+        await client.query(
+          `update ticket_team_member
+           set order_seat_id = $3,
+               seat_id = $4,
+               update_time = now()
+           where team_id = $1
+             and user_id = $2
+             and status = 'CONFIRMED'`,
+          [teamId, assignment.userId, assignment.orderSeatId, assignment.sessionSeatId],
+        );
+      }
+    });
+  }
+
+  async markTeamPaid(teamId: number): Promise<TicketTeamRecord | null> {
+    const result = await this.database.query<TicketTeamRow>(
+      `update ticket_team
+       set status = 'PAID',
+           update_time = now()
+       where id = $1
+         and status = 'LOCKED'
+       returning *`,
+      [teamId],
+    );
+    return result.rows[0] ? this.mapTeamRow(result.rows[0]) : null;
+  }
+
+  async markTeamExpired(teamId: number, reason: string): Promise<void> {
+    await this.database.withTransaction(async (client) => {
+      await client.query(
+        `update team_grab_request
+         set status = 'EXPIRED',
+             fail_reason = $2,
+             update_time = now()
+         where team_id = $1
+           and order_id is not null
+           and status in ('ORDER_CREATED', 'LOCKED')`,
+        [teamId, reason],
+      );
+      await client.query(
+        `update ticket_team
+         set status = 'EXPIRED',
+             update_time = now()
+         where id = $1
+           and status = 'LOCKED'`,
+        [teamId],
+      );
+    });
+  }
+
+  async markTeamFailed(teamId: number, requestId: string, reason: string): Promise<void> {
+    await this.database.withTransaction(async (client) => {
+      await client.query(
+        `update team_grab_request
+         set status = 'FAILED',
+             fail_reason = $2,
+             update_time = now()
+         where request_id = $1
+           and status <> 'ORDER_CREATED'`,
+        [requestId, reason],
+      );
+      await client.query(
+        `update ticket_team
+         set status = 'FAILED',
+             update_time = now()
+         where id = $1
+           and status in ('GRABBING', 'LOCKED', 'READY')`,
+        [teamId],
+      );
+    });
   }
 
   async refreshTeamSize(teamId: number): Promise<TicketTeamRecord | null> {
