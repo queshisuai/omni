@@ -13,6 +13,10 @@ export interface EnqueueResult {
   queueRank: number;
 }
 
+export interface PublishReservedRequest extends EnqueueRequest {
+  queueSeq: number;
+}
+
 export interface QueueRequestMetadata {
   requestId: string;
   sessionId: number | null;
@@ -25,6 +29,45 @@ export interface QueueRequestMetadata {
 @Injectable()
 export class GrabQueueService {
   constructor(private readonly redis: RedisService) {}
+
+  async reserveQueueSeq(sessionId: number): Promise<EnqueueResult> {
+    const queueSeq = Number(await this.redis.eval(`return redis.call('INCR', KEYS[1])`, [this.queueSeqKey(sessionId)], []));
+    const queueRank = await this.calculateQueueRank(sessionId, queueSeq);
+    return { queueSeq, queueRank };
+  }
+
+  async publishReserved(request: PublishReservedRequest): Promise<void> {
+    const sessionId = String(request.sessionId);
+    const script = `
+      redis.call('HSET', KEYS[1],
+        'requestId', ARGV[1],
+        'sessionId', ARGV[2],
+        'userId', ARGV[3],
+        'queueSeq', ARGV[4],
+        'status', ARGV[5]
+      )
+      local ttl = tonumber(ARGV[6])
+      if ttl and ttl > 0 then
+        redis.call('EXPIRE', KEYS[1], ttl)
+      end
+      redis.call('RPUSH', KEYS[2], ARGV[1])
+      redis.call('SADD', KEYS[3], ARGV[2])
+      return 1
+    `;
+
+    await this.redis.eval(
+      script,
+      [this.requestKey(request.requestId), this.queueKey(request.sessionId), this.activeSessionsKey()],
+      [
+        request.requestId,
+        sessionId,
+        String(request.userId),
+        String(request.queueSeq),
+        'QUEUED',
+        String(this.metadataTtlSeconds(request.ttlSeconds)),
+      ],
+    );
+  }
 
   async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
     const sessionId = String(request.sessionId);

@@ -25,7 +25,7 @@ export class TeamGrabProcessorService {
       return true;
     }
 
-    await this.grabRepository.updateProgress(record.requestId, {
+    const progressed = await this.grabRepository.updateProgress(record.requestId, {
       status: GRAB_STATUS.ORDER_CREATING,
       message: 'locking team seats',
       currentTicketTypeId: record.ticketTypeId,
@@ -33,7 +33,10 @@ export class TeamGrabProcessorService {
       attempts: record.attemptsSnapshot,
       workerId: record.workerId,
     });
-    await this.teamRepository.updateTeamGrabStatus(teamGrab.requestId, 'GRABBING', ['PENDING', 'GRABBING']);
+    if (!progressed) return false;
+
+    const grabbing = await this.teamRepository.updateTeamGrabStatus(teamGrab.requestId, 'GRABBING', ['PENDING', 'GRABBING']);
+    if (!grabbing) return false;
 
     let lockedSeatIds: number[] = [];
     try {
@@ -44,7 +47,7 @@ export class TeamGrabProcessorService {
         strategy: teamGrab.strategy,
         fallbacks: teamGrab.fallbacks,
         lockRequestId: teamGrab.requestId,
-        lockExpireTime: record.expireTime.toISOString(),
+        lockExpireTime: this.formatLocalDateTime(record.expireTime),
       });
       lockedSeatIds = lock.lockedSeatIds;
 
@@ -57,6 +60,7 @@ export class TeamGrabProcessorService {
         throw new Error('failed to persist team locked seats');
       }
 
+      const authorizedMaxUnitPrice = await this.authorizedMaxUnitPrice(teamGrab);
       const order = await this.orderClient.createTeamOrderWithLockedSeats({
         teamId: teamGrab.teamId,
         userId: teamGrab.payerUserId,
@@ -71,20 +75,10 @@ export class TeamGrabProcessorService {
         teamGrabRequestId: teamGrab.requestId,
         grabRequestId: record.requestId,
         matchedStrategy: lock.matchedStrategy,
-        authorizedMaxUnitPrice: await this.authorizedMaxUnitPrice(teamGrab),
+        authorizedMaxUnitPrice,
       });
 
-      await this.grabRepository.markOrderCreated(
-        record.requestId,
-        order.id,
-        teamGrab.ticketTypeId,
-        record.attemptsSnapshot,
-        GRAB_STATUS.ORDER_CREATING,
-        record.workerId,
-      );
-      await this.teamRepository.markTeamGrabOrderCreated(teamGrab.requestId, order.id);
-      await this.teamRepository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING']);
-      return true;
+      return await this.finishOrderCreated(record, teamGrab, order.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'team grab processing failed';
       if (lockedSeatIds.length > 0) {
@@ -95,6 +89,36 @@ export class TeamGrabProcessorService {
       }
       await this.markFailed(record, teamGrab, message);
       return true;
+    }
+  }
+
+  private async finishOrderCreated(
+    record: GrabRequestRecord,
+    teamGrab: TeamGrabRequestRecord,
+    orderId: number,
+  ): Promise<boolean> {
+    try {
+      const teamOrderCreated = await this.teamRepository.markTeamGrabOrderCreated(teamGrab.requestId, orderId);
+      if (!teamOrderCreated) throw new Error('failed to persist team grab order');
+
+      const lockedTeam = await this.teamRepository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING']);
+      if (!lockedTeam) throw new Error('failed to mark team locked');
+
+      const grabOrderCreated = await this.grabRepository.markOrderCreated(
+        record.requestId,
+        orderId,
+        teamGrab.ticketTypeId,
+        record.attemptsSnapshot,
+        GRAB_STATUS.ORDER_CREATING,
+        record.workerId,
+      );
+      if (!grabOrderCreated) throw new Error('failed to persist grab order');
+
+      return true;
+    } catch (error) {
+      this.logger.error(error);
+      await this.markPendingRecovery(record, teamGrab);
+      return false;
     }
   }
 
@@ -109,5 +133,28 @@ export class TeamGrabProcessorService {
     await this.grabRepository.updateStatus(record.requestId, GRAB_STATUS.FAILED, message);
     await this.teamRepository.markTeamGrabFailed(teamGrab.requestId, message);
     await this.teamRepository.updateTeamStatus(teamGrab.teamId, 'FAILED', ['GRABBING', 'READY']);
+  }
+
+  private async markPendingRecovery(record: GrabRequestRecord, teamGrab: TeamGrabRequestRecord): Promise<void> {
+    await this.grabRepository.markPendingRecovery(record.requestId, {
+      message: 'team order confirmation pending',
+      currentTicketTypeId: teamGrab.ticketTypeId,
+      currentAttemptIndex: 0,
+      attempts: record.attemptsSnapshot,
+      workerId: record.workerId,
+    }).catch((error) => this.logger.error(error));
+  }
+
+  private formatLocalDateTime(date: Date): string {
+    const pad = (value: number) => value.toString().padStart(2, '0');
+    return [
+      date.getFullYear(),
+      pad(date.getMonth() + 1),
+      pad(date.getDate()),
+    ].join('-') + `T${[
+      pad(date.getHours()),
+      pad(date.getMinutes()),
+      pad(date.getSeconds()),
+    ].join(':')}`;
   }
 }

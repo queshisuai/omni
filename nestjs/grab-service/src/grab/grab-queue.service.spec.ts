@@ -36,6 +36,41 @@ describe('GrabQueueService', () => {
     expect(result).toEqual({ queueSeq: 12, queueRank: 4 });
   });
 
+  it('reserves a queue sequence without publishing a queue item', async () => {
+    const redis: any = {
+      eval: jest.fn().mockResolvedValue(12),
+      get: jest.fn().mockResolvedValue('7'),
+    };
+    const service = new GrabQueueService(redis);
+
+    await expect(service.reserveQueueSeq(101)).resolves.toEqual({ queueSeq: 12, queueRank: 4 });
+
+    expect(redis.eval).toHaveBeenCalledWith("return redis.call('INCR', KEYS[1])", ['grab:queue:seq:101'], []);
+  });
+
+  it('publishes a reserved queue sequence without incrementing again', async () => {
+    const redis: any = {
+      eval: jest.fn().mockResolvedValue(1),
+    };
+    const service = new GrabQueueService(redis);
+
+    await service.publishReserved({
+      requestId: 'GRAB1',
+      sessionId: 101,
+      userId: 2004,
+      queueSeq: 12,
+      ttlSeconds: 900,
+    });
+
+    const [script, keys, args] = redis.eval.mock.calls[0];
+    expect(script).not.toContain("redis.call('INCR'");
+    expect(script).toContain("redis.call('HSET', KEYS[1]");
+    expect(script).toContain("redis.call('RPUSH', KEYS[2], ARGV[1])");
+    expect(script).toContain("redis.call('SADD', KEYS[3], ARGV[2])");
+    expect(keys).toEqual(['grab:req:GRAB1', 'grab:queue:101', 'grab:active-sessions']);
+    expect(args).toEqual(['GRAB1', '101', '2004', '12', 'QUEUED', '1800']);
+  });
+
   it('marks processed sequence with an atomic monotonic Redis script', async () => {
     const redis: any = {
       eval: jest.fn().mockResolvedValue(0),

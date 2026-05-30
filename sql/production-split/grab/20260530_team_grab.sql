@@ -74,6 +74,26 @@ update team_grab_request
 set grab_request_id = 'TEAM-GRAB-LEGACY-' || id::text
 where grab_request_id is null;
 
+do $$
+begin
+    if exists (
+        select 1
+        from team_grab_request
+        where grab_request_id is null
+    ) then
+        raise exception 'team_grab_request.grab_request_id still contains null values';
+    end if;
+
+    if exists (
+        select 1
+        from team_grab_request
+        group by grab_request_id
+        having count(*) > 1
+    ) then
+        raise exception 'team_grab_request.grab_request_id contains duplicate values';
+    end if;
+end $$;
+
 alter table team_grab_request
     alter column grab_request_id set not null;
 

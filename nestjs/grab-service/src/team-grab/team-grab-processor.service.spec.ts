@@ -91,7 +91,7 @@ describe('TeamGrabProcessorService', () => {
         matchedStrategy: 'SAME_BLOCK',
       }),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...teamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
-      updateTeamStatus: jest.fn().mockResolvedValue(null),
+      updateTeamStatus: jest.fn().mockResolvedValue({ id: 1, status: 'LOCKED' }),
     };
     const grabRepository: any = {
       updateProgress: jest.fn().mockResolvedValue(record),
@@ -120,6 +120,9 @@ describe('TeamGrabProcessorService', () => {
       strategy: 'SAME_BLOCK',
       fallbacks: ['SAME_TICKET_TYPE'],
     }));
+    const lockInput = ticketClient.lockTeamSeats.mock.calls[0][0];
+    expect(lockInput.lockExpireTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+    expect(lockInput.lockExpireTime).not.toMatch(/Z$/);
     expect(teamRepository.persistLockedSeats).toHaveBeenCalledWith('TEAM-GRAB-1', {
       lockedSeatIds: [501, 502],
       seatLabels: ['A-1', 'A-2'],
@@ -148,6 +151,148 @@ describe('TeamGrabProcessorService', () => {
     expect(grabRepository.markOrderCreated).toHaveBeenCalledWith('GRAB-QUEUED-1', 9001, 30, [], GRAB_STATUS.ORDER_CREATING, 'worker-1');
     expect(teamRepository.markTeamGrabOrderCreated).toHaveBeenCalledWith('TEAM-GRAB-1', 9001);
     expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'LOCKED', ['GRABBING']);
+  });
+
+  it('does not lock seats or create order when grab progress update loses worker fencing', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn(),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(null),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn(),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn(),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient });
+
+    await expect(processor.process(record)).resolves.toBe(false);
+
+    expect(teamRepository.updateTeamGrabStatus).not.toHaveBeenCalled();
+    expect(ticketClient.lockTeamSeats).not.toHaveBeenCalled();
+    expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
+  });
+
+  it('does not lock seats or create order when team grab status update fails', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue(null),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn(),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn(),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient });
+
+    await expect(processor.process(record)).resolves.toBe(false);
+
+    expect(ticketClient.lockTeamSeats).not.toHaveBeenCalled();
+    expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
+  });
+
+  it('keeps locked seats and returns false when order is created but grab order persistence returns null', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue({ ...teamGrab, status: 'GRABBING' }),
+      persistLockedSeats: jest.fn().mockResolvedValue({
+        ...teamGrab,
+        lockedSeatIds: [501, 502],
+        seatLabels: ['A-1', 'A-2'],
+        matchedStrategy: 'SAME_BLOCK',
+      }),
+      markTeamGrabFailed: jest.fn(),
+      markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...teamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      updateTeamStatus: jest.fn().mockResolvedValue({ id: 1, status: 'LOCKED' }),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn().mockResolvedValue(null),
+      markPendingRecovery: jest.fn().mockResolvedValue({ ...record, progressStatus: GRAB_STATUS.PENDING_RECOVERY }),
+      updateStatus: jest.fn(),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockResolvedValue({
+        lockedSeatIds: [501, 502],
+        seatLabels: ['A-1', 'A-2'],
+        matchedStrategy: 'SAME_BLOCK',
+      }),
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 30, name: 'VIP', price: 880, remainStock: 10 }]),
+      releaseTeamSeatLock: jest.fn(),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'TO1', amount: 1760 }),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient });
+
+    await expect(processor.process(record)).resolves.toBe(false);
+
+    expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
+    expect(teamRepository.markTeamGrabFailed).not.toHaveBeenCalled();
+    expect(grabRepository.markOrderCreated).toHaveBeenCalledWith('GRAB-QUEUED-1', 9001, 30, [], GRAB_STATUS.ORDER_CREATING, 'worker-1');
+    expect(grabRepository.updateStatus).not.toHaveBeenCalledWith('GRAB-QUEUED-1', GRAB_STATUS.FAILED, expect.any(String));
+    expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
+      message: 'team order confirmation pending',
+      currentTicketTypeId: 30,
+      workerId: 'worker-1',
+    }));
+  });
+
+  it('keeps locked seats and returns false when order is created but grab order persistence throws', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue({ ...teamGrab, status: 'GRABBING' }),
+      persistLockedSeats: jest.fn().mockResolvedValue({
+        ...teamGrab,
+        lockedSeatIds: [501, 502],
+        seatLabels: ['A-1', 'A-2'],
+        matchedStrategy: 'SAME_BLOCK',
+      }),
+      markTeamGrabFailed: jest.fn(),
+      markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...teamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      updateTeamStatus: jest.fn().mockResolvedValue({ id: 1, status: 'LOCKED' }),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn().mockRejectedValue(new Error('database unavailable')),
+      markPendingRecovery: jest.fn().mockResolvedValue({ ...record, progressStatus: GRAB_STATUS.PENDING_RECOVERY }),
+      updateStatus: jest.fn(),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockResolvedValue({
+        lockedSeatIds: [501, 502],
+        seatLabels: ['A-1', 'A-2'],
+        matchedStrategy: 'SAME_BLOCK',
+      }),
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 30, name: 'VIP', price: 880, remainStock: 10 }]),
+      releaseTeamSeatLock: jest.fn(),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'TO1', amount: 1760 }),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient });
+
+    await expect(processor.process(record)).resolves.toBe(false);
+
+    expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
+    expect(teamRepository.markTeamGrabFailed).not.toHaveBeenCalled();
+    expect(grabRepository.markOrderCreated).toHaveBeenCalledWith('GRAB-QUEUED-1', 9001, 30, [], GRAB_STATUS.ORDER_CREATING, 'worker-1');
+    expect(grabRepository.markPendingRecovery).toHaveBeenCalled();
   });
 
   it('marks grab and team failed when ticket lock fails', async () => {

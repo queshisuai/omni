@@ -323,6 +323,12 @@ if ($teamGrabContent -notmatch "team-grab-legacy-") {
     Write-Host "FAIL team grab SQL must backfill legacy grab_request_id values with a distinct prefix: $teamGrabSql"
     exit 1
 }
+$hasGrabRequestIdNullPreflight = $teamGrabContent -match '(?is)if\s+exists\s*\(\s*select\s+1\s+from\s+team_grab_request\s+where\s+grab_request_id\s+is\s+null\s*\)'
+$hasGrabRequestIdDuplicatePreflight = $teamGrabContent -match '(?is)if\s+exists\s*\(\s*select\s+1\s+from\s+team_grab_request\s+group\s+by\s+grab_request_id\s+having\s+count\s*\(\s*\*\s*\)\s*>\s*1\s*\)'
+if (-not $hasGrabRequestIdNullPreflight -or -not $hasGrabRequestIdDuplicatePreflight) {
+    Write-Host "FAIL team grab SQL must preflight null and duplicate grab_request_id values before enforcing not null/unique index: $teamGrabSql"
+    exit 1
+}
 if ($teamGrabContent -notmatch 'alter\s+table\s+team_grab_request\s+alter\s+column\s+grab_request_id\s+set\s+not\s+null') {
     Write-Host "FAIL team grab SQL must make grab_request_id not null after backfill: $teamGrabSql"
     exit 1

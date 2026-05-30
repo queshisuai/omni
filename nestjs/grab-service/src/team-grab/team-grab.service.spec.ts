@@ -291,10 +291,11 @@ describe('TeamGrabService', () => {
       updateTeamStatus: jest.fn().mockResolvedValue(team({ status: 'GRABBING' })),
     };
     const grabRepository: any = {
-      createQueued: jest.fn().mockResolvedValue({ requestId: 'GRAB-1' }),
+      createQueued: jest.fn(async (input: any) => ({ requestId: input.requestId })),
     };
     const queueService: any = {
-      enqueue: jest.fn().mockResolvedValue({ queueSeq: 9, queueRank: 4 }),
+      reserveQueueSeq: jest.fn().mockResolvedValue({ queueSeq: 9, queueRank: 4 }),
+      publishReserved: jest.fn().mockResolvedValue(undefined),
       acquireTeamTriggerLock: jest.fn().mockResolvedValue(true),
       releaseTeamTriggerLock: jest.fn(),
     };
@@ -311,16 +312,30 @@ describe('TeamGrabService', () => {
       queueSeq: 9,
       allowAutoDowngrade: false,
     }));
+    const queuedRequestId = grabRepository.createQueued.mock.calls[0][0].requestId;
     expect(repository.createTeamGrabRequest).toHaveBeenCalledWith(expect.objectContaining({
       teamId: 1,
       triggerUserId: 200,
       payerUserId: 100,
       quantity: 3,
-      grabRequestId: 'GRAB-1',
+      grabRequestId: queuedRequestId,
     }));
-    expect(repository.createTeamGrabRequest.mock.calls[0][0].requestId).not.toBe('GRAB-1');
+    expect(repository.createTeamGrabRequest.mock.calls[0][0].requestId).not.toBe(queuedRequestId);
     expect(repository.updateTeamStatus).toHaveBeenCalledWith(1, 'GRABBING', ['READY', 'FAILED', 'EXPIRED']);
-    expect(result).toEqual({ requestId: 'GRAB-1', queueSeq: 9, queueRank: 4, teamStatus: 'GRABBING' });
+    expect(queueService.publishReserved).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: queuedRequestId,
+      sessionId: 20,
+      userId: 100,
+      queueSeq: 9,
+      ttlSeconds: 900,
+    }));
+    expect(grabRepository.createQueued.mock.invocationCallOrder[0])
+      .toBeLessThan(repository.createTeamGrabRequest.mock.invocationCallOrder[0]);
+    expect(repository.createTeamGrabRequest.mock.invocationCallOrder[0])
+      .toBeLessThan(repository.updateTeamStatus.mock.invocationCallOrder[0]);
+    expect(repository.updateTeamStatus.mock.invocationCallOrder[0])
+      .toBeLessThan(queueService.publishReserved.mock.invocationCallOrder[0]);
+    expect(result).toEqual({ requestId: queuedRequestId, queueSeq: 9, queueRank: 4, teamStatus: 'GRABBING' });
   });
 
   it('creates only one active team grab request when members trigger concurrently', async () => {
@@ -336,10 +351,11 @@ describe('TeamGrabService', () => {
       updateTeamStatus: jest.fn().mockResolvedValue(team({ status: 'GRABBING' })),
     };
     const grabRepository: any = {
-      createQueued: jest.fn().mockResolvedValue({ requestId: 'GRAB-1' }),
+      createQueued: jest.fn(async (input: any) => ({ requestId: input.requestId })),
     };
     const queueService: any = {
-      enqueue: jest.fn().mockResolvedValue({ queueSeq: 1, queueRank: 0 }),
+      reserveQueueSeq: jest.fn().mockResolvedValue({ queueSeq: 1, queueRank: 0 }),
+      publishReserved: jest.fn().mockResolvedValue(undefined),
       acquireTeamTriggerLock: jest.fn()
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(false),
@@ -358,7 +374,7 @@ describe('TeamGrabService', () => {
     expect(repository.createTeamGrabRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('cleans up queued grab state when team grab insert fails after enqueue', async () => {
+  it('fails queued grab and releases lock when team grab insert fails before publish', async () => {
     const readyTeam = team({ status: 'READY', size: 2 });
     const members = [
       member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
@@ -371,11 +387,12 @@ describe('TeamGrabService', () => {
       updateTeamStatus: jest.fn(),
     };
     const grabRepository: any = {
-      createQueued: jest.fn().mockResolvedValue({ requestId: 'GRAB-1' }),
+      createQueued: jest.fn(async (input: any) => ({ requestId: input.requestId })),
       updateStatus: jest.fn().mockResolvedValue(null),
     };
     const queueService: any = {
-      enqueue: jest.fn().mockResolvedValue({ queueSeq: 1, queueRank: 0 }),
+      reserveQueueSeq: jest.fn().mockResolvedValue({ queueSeq: 1, queueRank: 0 }),
+      publishReserved: jest.fn(),
       acquireTeamTriggerLock: jest.fn().mockResolvedValue(true),
       removeQueuedRequest: jest.fn().mockResolvedValue(undefined),
       releaseTeamTriggerLock: jest.fn().mockResolvedValue(undefined),
@@ -385,8 +402,81 @@ describe('TeamGrabService', () => {
     await expect(service.triggerTeamGrab(1, 100)).rejects.toThrow('duplicate active team grab');
 
     const queuedRequestId = grabRepository.createQueued.mock.calls[0][0].requestId;
-    expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, queuedRequestId);
+    expect(queueService.publishReserved).not.toHaveBeenCalled();
+    expect(queueService.removeQueuedRequest).not.toHaveBeenCalled();
     expect(grabRepository.updateStatus).toHaveBeenCalledWith(queuedRequestId, 'FAILED', 'duplicate active team grab');
     expect(queueService.releaseTeamTriggerLock).toHaveBeenCalledWith(1, 20, 30, queuedRequestId);
+  });
+
+  it('marks created team grab failed and releases lock when team status update fails', async () => {
+    const readyTeam = team({ status: 'READY', size: 2 });
+    const members = [
+      member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+      member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+    ];
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(readyTeam),
+      listMembers: jest.fn().mockResolvedValue(members),
+      createTeamGrabRequest: jest.fn().mockResolvedValue({ requestId: 'TEAM-GRAB-1' }),
+      updateTeamStatus: jest.fn().mockResolvedValue(null),
+      markTeamGrabFailed: jest.fn().mockResolvedValue({ requestId: 'TEAM-GRAB-1', status: 'FAILED' }),
+    };
+    const grabRepository: any = {
+      createQueued: jest.fn(async (input: any) => ({ requestId: input.requestId })),
+      updateStatus: jest.fn().mockResolvedValue(null),
+    };
+    const queueService: any = {
+      reserveQueueSeq: jest.fn().mockResolvedValue({ queueSeq: 1, queueRank: 0 }),
+      publishReserved: jest.fn(),
+      acquireTeamTriggerLock: jest.fn().mockResolvedValue(true),
+      releaseTeamTriggerLock: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = createService(repository, { grabRepository, queueService });
+
+    await expect(service.triggerTeamGrab(1, 100)).rejects.toThrow('team grab is already in progress');
+
+    expect(queueService.publishReserved).not.toHaveBeenCalled();
+    expect(repository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'team grab is already in progress');
+    expect(grabRepository.updateStatus).toHaveBeenCalledWith(expect.any(String), 'FAILED', 'team grab is already in progress');
+    expect(queueService.releaseTeamTriggerLock).toHaveBeenCalledWith(1, 20, 30, expect.any(String));
+  });
+
+  it('marks grab and team grab failed when reserved publish fails after team becomes grabbing', async () => {
+    const readyTeam = team({ status: 'READY', size: 2 });
+    const members = [
+      member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+      member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+    ];
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(readyTeam),
+      listMembers: jest.fn().mockResolvedValue(members),
+      createTeamGrabRequest: jest.fn().mockResolvedValue({ requestId: 'TEAM-GRAB-1' }),
+      updateTeamStatus: jest
+        .fn()
+        .mockResolvedValueOnce(team({ status: 'GRABBING' }))
+        .mockResolvedValueOnce(team({ status: 'FAILED' })),
+      markTeamGrabFailed: jest.fn().mockResolvedValue({ requestId: 'TEAM-GRAB-1', status: 'FAILED' }),
+    };
+    const grabRepository: any = {
+      createQueued: jest.fn(async (input: any) => ({ requestId: input.requestId })),
+      updateStatus: jest.fn().mockResolvedValue(null),
+    };
+    const queueService: any = {
+      reserveQueueSeq: jest.fn().mockResolvedValue({ queueSeq: 1, queueRank: 0 }),
+      publishReserved: jest.fn().mockRejectedValue(new Error('redis unavailable')),
+      acquireTeamTriggerLock: jest.fn().mockResolvedValue(true),
+      removeQueuedRequest: jest.fn().mockResolvedValue(undefined),
+      releaseTeamTriggerLock: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = createService(repository, { grabRepository, queueService });
+
+    await expect(service.triggerTeamGrab(1, 100)).rejects.toThrow('redis unavailable');
+
+    const queuedRequestId = grabRepository.createQueued.mock.calls[0][0].requestId;
+    expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, queuedRequestId);
+    expect(grabRepository.updateStatus).toHaveBeenCalledWith(queuedRequestId, 'FAILED', 'redis unavailable');
+    expect(repository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'redis unavailable');
+    expect(repository.updateTeamStatus).toHaveBeenLastCalledWith(1, 'FAILED', ['GRABBING']);
+    expect(queueService.releaseTeamTriggerLock).toHaveBeenCalledWith(1, 20, 30, expect.any(String));
   });
 });
