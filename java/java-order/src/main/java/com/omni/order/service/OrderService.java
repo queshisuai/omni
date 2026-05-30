@@ -216,13 +216,25 @@ public class OrderService {
         lockRequest.setLockExpireTime(LocalDateTime.now().plusMinutes(15));
         lockRequest.setAllocateRandom(!hasSeatIds);
         TicketSalesSeatLockResponse lockResponse = lockSeats(lockRequest);
-        List<Long> lockedSeatIds = lockResponse.getLockedSeatIds() != null ? lockResponse.getLockedSeatIds() : request.getSeatIds();
-        Map<Long, String> lockedSeatLabelsById = buildSeatLabelMap(lockedSeatIds, lockResponse.getSeatLabels(),
-                "ticket seat lock labels do not match locked seats");
-        if (!lockedSeatLabelsById.isEmpty()) {
-            quote.setSeatLabels(String.join(", ", lockResponse.getSeatLabels()));
+        List<Long> lockedSeatIds = lockResponse.getLockedSeatIds();
+        List<String> lockSeatLabels = lockResponse.getSeatLabels();
+        boolean hasLockedSeatIds = lockedSeatIds != null && !lockedSeatIds.isEmpty();
+        boolean hasAggregateSeatLabels = lockSeatLabels != null && !lockSeatLabels.isEmpty();
+        Map<Long, String> lockedSeatLabelsById = Collections.emptyMap();
+        if (hasLockedSeatIds) {
+            if (lockedSeatIds.size() != quantity) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "ticket seat lock count does not match requested quantity");
+            }
+            if (hasSeatIds && !sameSeatIds(request.getSeatIds(), lockedSeatIds)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "ticket seat lock does not match requested seats");
+            }
+            lockedSeatLabelsById = buildSeatLabelMap(lockedSeatIds, lockSeatLabels,
+                    "ticket seat lock labels do not match locked seats");
+            quote.setSeatLabels(!lockedSeatLabelsById.isEmpty() ? String.join(", ", lockSeatLabels) : null);
+        } else if (hasAggregateSeatLabels) {
+            quote.setSeatLabels(String.join(", ", lockSeatLabels));
         } else {
-            quote.setSeatLabels(null);
+            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket seat lock did not return locked seats or labels");
         }
         Order order = buildPendingOrder(
                 request.getUserId(),
