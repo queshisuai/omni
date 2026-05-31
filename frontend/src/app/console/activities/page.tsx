@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getToken, getUser } from '@/lib/auth'
 import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
+import { getRealNameRequirementLabel } from '@/lib/activity-flags'
 import { Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
 import type { ActivityEntity, RefundImpactResponse, UserRole } from '@/types/api'
@@ -482,6 +483,11 @@ export default function ActivitiesPage() {
                   </td>
                   <td className="p-3">
                     <div className="font-medium text-[#333]">{a.name}</div>
+                    {!isTour && (
+                      <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[12px] ${a.realNameRequired ? 'bg-[#fff7ed] text-[#f97316]' : 'bg-[#f5f5f5] text-[#999]'}`}>
+                        {getRealNameRequirementLabel(a.realNameRequired)}
+                      </span>
+                    )}
                     {a.artistName ? <div className="mt-1 text-[12px] font-normal text-[#999]">阵容：{a.artistName}</div> : null}
                   </td>
                   <td className="p-3">

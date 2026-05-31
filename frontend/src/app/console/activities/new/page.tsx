@@ -40,6 +40,7 @@ export default function NewActivityPage() {
   const [activityMode, setActivityMode] = useState<ActivityMode>('single')
   const [seatMapVisibility, setSeatMapVisibility] = useState<SeatMapVisibility>('hidden')
   const [perUserLimit, setPerUserLimit] = useState('')
+  const [realNameRequired, setRealNameRequired] = useState(false)
 
   // 步骤2：站点配置。普通活动一个站点，巡演多个站点。
   const [stationConfig, setStationConfig] = useState(() => createEmptyStationVenueApprovalValue())
@@ -224,6 +225,7 @@ export default function NewActivityPage() {
         poster,
         seatMapVisibility,
         perUserLimit: limitText ? Number(limitText) : null,
+        realNameRequired,
       })
 
       let version
@@ -374,6 +376,15 @@ export default function NewActivityPage() {
               <input type="number" min={1} value={perUserLimit} onChange={e => setPerUserLimit(e.target.value)} className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空表示不限购，例如 2" />
               <p className="mt-1 text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</p>
             </div>
+            {activityMode === 'single' && (
+              <label className="mb-4 flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
+                <input type="checkbox" checked={realNameRequired} onChange={e => setRealNameRequired(e.target.checked)} className="mt-0.5 accent-[#ff1268]" />
+                <span>
+                  <span className="font-medium">实名制购票</span>
+                  <span className="mt-1 block text-[#999]">开启后，用户下单和候补时需要选择对应数量的实名观演人。</span>
+                </span>
+              </label>
+            )}
             <div className="mt-4 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4">
               <div className="mb-2 text-[14px] font-semibold text-[#1a1a2e]">座位图展示策略</div>
               <div className="space-y-2 text-[13px] text-[#333]">
@@ -461,6 +472,7 @@ export default function NewActivityPage() {
               <div className="grid gap-1 text-[13px] text-[#666] sm:grid-cols-2">
                 <div>活动名称：{name.trim() || '未填写'}</div>
                 <div>活动类型：{activityMode === 'tour' ? '巡演活动' : '普通活动'}</div>
+                {activityMode === 'single' && <div>实名制购票：{realNameRequired ? '开启' : '关闭'}</div>}
                 {activityMode === 'tour' ? (
                   <>
                     <div className="sm:col-span-2">城市站点：{tourStations.map(item => item.value.city.trim()).filter(Boolean).join('、') || '未填写'}</div>

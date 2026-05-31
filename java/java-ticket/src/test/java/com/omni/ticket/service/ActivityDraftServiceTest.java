@@ -74,6 +74,7 @@ class ActivityDraftServiceTest {
                 "artists", artists,
                 "seatMapVisibility", "published",
                 "perUserLimit", "2",
+                "realNameRequired", true,
                 "venueApprovalNo", "NO-1",
                 "venueApprovalFileUrl", "https://example.test/proof.pdf",
                 "venueApprovalNote", "无需写入"
@@ -90,6 +91,7 @@ class ActivityDraftServiceTest {
         assertEquals(2003L, activity.getOrganizerId());
         assertEquals("published", activity.getSeatMapVisibility());
         assertEquals(2, activity.getPerUserLimit());
+        assertEquals(Boolean.TRUE, activity.getRealNameRequired());
         assertNull(activity.getVenueApplicationId());
         assertNull(activity.getVenueApprovalNo());
         assertNull(activity.getVenueApprovalFileUrl());
@@ -171,6 +173,7 @@ class ActivityDraftServiceTest {
         ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
         verify(activityMapper).insert(captor.capture());
         assertEquals("hidden", captor.getValue().getSeatMapVisibility());
+        assertEquals(Boolean.FALSE, captor.getValue().getRealNameRequired());
     }
 
     @Test

@@ -862,6 +862,7 @@ public class AdminController {
         } catch (IllegalArgumentException e) {
             return Result.fail(400, e.getMessage());
         }
+        activity.setRealNameRequired(parseBooleanFlag(safeBody.get("realNameRequired")));
         activity.setName(name);
         activity.setDescription(safeBody.get("description") != null ? safeBody.get("description").toString() : null);
         activity.setPoster(safeBody.get("poster") != null ? safeBody.get("poster").toString() : null);
@@ -933,6 +934,9 @@ public class AdminController {
             } catch (IllegalArgumentException e) {
                 return Result.fail(400, e.getMessage());
             }
+        }
+        if (body.containsKey("realNameRequired")) {
+            activity.setRealNameRequired(parseBooleanFlag(body.get("realNameRequired")));
         }
         activityMapper.updateById(activity);
         return Result.success(activity);
@@ -1131,6 +1135,17 @@ public class AdminController {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("个人限购张数必须为数字");
         }
+    }
+
+    private Boolean parseBooleanFlag(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value == null) {
+            return false;
+        }
+        String text = value.toString().trim();
+        return "true".equalsIgnoreCase(text) || "1".equals(text);
     }
 
     @DeleteMapping("/activities/{id}")

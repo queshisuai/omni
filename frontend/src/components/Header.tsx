@@ -259,10 +259,22 @@ export function Header() {
                     账号设置
                   </button>
                   <button
+                    onClick={() => { setShowUserDropdown(false); router.push("/profile/attendees") }}
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
+                  >
+                    实名观演人
+                  </button>
+                  <button
                     onClick={() => { setShowUserDropdown(false); router.push("/orders") }}
                     className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                   >
                     订单管理
+                  </button>
+                  <button
+                    onClick={() => { setShowUserDropdown(false); router.push("/waitlist") }}
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
+                  >
+                    我的候补
                   </button>
                   {(role === 'admin' || role === 'organizer') && (
                     <button

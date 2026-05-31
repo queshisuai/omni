@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, Mail, Phone, CalendarDays, ShieldCheck, Ticket, Settings2, Image as ImageIcon, Loader2 } from 'lucide-react'
+import { User, Mail, Phone, CalendarDays, ShieldCheck, Ticket, Settings2, Image as ImageIcon, Loader2, Users, Clock3 } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { getUserInfo } from '@/lib/api'
@@ -70,6 +70,20 @@ export default function ProfilePage() {
               >
                 <Ticket className="h-4 w-4" />
                 订单管理
+              </button>
+              <button
+                onClick={() => router.push('/waitlist')}
+                className="inline-flex items-center gap-2 rounded-full border border-[#ff1268] px-4 py-2 text-sm font-medium text-[#ff1268] transition-colors hover:bg-[#fff0f5]"
+              >
+                <Clock3 className="h-4 w-4" />
+                我的候补
+              </button>
+              <button
+                onClick={() => router.push('/profile/attendees')}
+                className="inline-flex items-center gap-2 rounded-full border border-[#ff1268] px-4 py-2 text-sm font-medium text-[#ff1268] transition-colors hover:bg-[#fff0f5]"
+              >
+                <Users className="h-4 w-4" />
+                实名观演人
               </button>
               <button
                 onClick={() => router.push('/profile/account')}

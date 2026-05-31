@@ -1110,6 +1110,21 @@ class AdminControllerTest {
     }
 
     @Test
+    void createActivityStoresRealNameRequirement() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Map<String, Object> body = validCreateActivityBody();
+        body.put("realNameRequired", true);
+
+        Result<Activity> result = controller.createActivity(organizerToken(), body);
+
+        ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityMapper).insert(captor.capture());
+        assertEquals(200, result.getCode());
+        assertEquals(Boolean.TRUE, captor.getValue().getRealNameRequired());
+    }
+
+    @Test
     void createActivityRejectsNonNumericPerUserLimit() {
         AdminController controller = controller();
         when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
@@ -1139,6 +1154,26 @@ class AdminControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals(5, result.getData().getPerUserLimit());
+        verify(activityMapper).updateById(activity);
+    }
+
+    @Test
+    void updateActivityStoresRealNameRequirement() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setOrganizerId(2003L);
+        activity.setRealNameRequired(false);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+
+        Result<Activity> result = controller.updateActivity(10L, organizerToken(), Map.of(
+                "userId", 2003L,
+                "realNameRequired", true
+        ));
+
+        assertEquals(200, result.getCode());
+        assertEquals(Boolean.TRUE, result.getData().getRealNameRequired());
         verify(activityMapper).updateById(activity);
     }
 

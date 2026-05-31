@@ -16,3 +16,13 @@ export function getWaitlistStatusLabel(status: string) {
   }
   return labels[status] ?? '未知状态'
 }
+
+export function canCancelWaitlistEntry(status: string | null | undefined) {
+  return status === 'WAITING'
+}
+
+export function getWaitlistPrimaryAction(status: string | null | undefined, offerOrderId: number | null | undefined) {
+  if (canCancelWaitlistEntry(status)) return '取消候补'
+  if (status === 'OFFERED' && offerOrderId) return '去支付'
+  return null
+}

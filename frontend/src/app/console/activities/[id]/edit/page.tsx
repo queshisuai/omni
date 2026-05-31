@@ -17,6 +17,7 @@ type ActivityForm = {
   poster: string
   description: string
   perUserLimit: string
+  realNameRequired: boolean
 }
 
 const emptyForm: ActivityForm = {
@@ -26,6 +27,7 @@ const emptyForm: ActivityForm = {
   poster: '',
   description: '',
   perUserLimit: '',
+  realNameRequired: false,
 }
 
 export default function EditActivityPage() {
@@ -80,6 +82,7 @@ export default function EditActivityPage() {
         poster: activity.poster || '',
         description: activity.description || '',
         perUserLimit: activity.perUserLimit == null ? '' : String(activity.perUserLimit),
+        realNameRequired: Boolean(activity.realNameRequired),
       })
       setCategories(categoryList)
       setSessions(sessionPage.records || [])
@@ -142,6 +145,7 @@ export default function EditActivityPage() {
         poster: form.poster.trim() || null,
         description: form.description.trim() || null,
         perUserLimit: limitText ? Number(limitText) : null,
+        realNameRequired: form.realNameRequired,
       })
       setMessage(role === 'admin' ? '平台活动基础信息已保存' : '我的活动基础信息已保存')
     } catch (err) {
@@ -344,6 +348,13 @@ export default function EditActivityPage() {
             个人限购
             <input type="number" min={1} value={form.perUserLimit} onChange={event => setForm({ ...form, perUserLimit: event.target.value })} className="mt-1.5 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空表示不限购，例如 2" />
             <span className="mt-1 block text-[12px] font-normal text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
+            <input type="checkbox" checked={form.realNameRequired} onChange={event => setForm({ ...form, realNameRequired: event.target.checked })} className="mt-0.5 accent-[#ff1268]" />
+            <span>
+              <span className="font-medium">实名制购票</span>
+              <span className="mt-1 block text-[#999]">开启后，用户下单和候补时需要选择对应数量的实名观演人。</span>
+            </span>
           </label>
         </div>
 

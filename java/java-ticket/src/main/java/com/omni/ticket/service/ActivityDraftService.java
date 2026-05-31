@@ -76,6 +76,7 @@ public class ActivityDraftService {
         activity.setPublishStatus("draft");
         activity.setSeatMapVisibility(seatMapVisibility);
         activity.setPerUserLimit(parsePerUserLimit(body.get("perUserLimit")));
+        activity.setRealNameRequired(parseBooleanFlag(body.get("realNameRequired")));
         activity.setStatus(1);
         activity.setOrganizerId(userId);
         activity.setCreateTime(now);
@@ -173,5 +174,16 @@ public class ActivityDraftService {
         }
         String text = value.toString().trim();
         return text.isEmpty() ? null : text;
+    }
+
+    private Boolean parseBooleanFlag(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        if (value == null) {
+            return false;
+        }
+        String text = value.toString().trim();
+        return "true".equalsIgnoreCase(text) || "1".equals(text);
     }
 }
