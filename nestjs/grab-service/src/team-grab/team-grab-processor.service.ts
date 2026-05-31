@@ -90,11 +90,13 @@ export class TeamGrabProcessorService {
       if (lockedSeatIds.length > 0) {
         const released = await this.releaseLockedSeats(teamGrab.requestId, lockedSeatIds);
         if (!released) {
-          await this.teamRepository.markTeamGrabReleasePending(teamGrab.requestId, {
+          const releasePending = await this.markReleasePendingOrRetry(teamGrab, {
             lockedSeatIds,
             seatLabels: lockedSeatLabels,
             matchedStrategy: matchedStrategy ?? teamGrab.strategy,
-          }).catch((pendingError) => this.logger.error(pendingError));
+          });
+          if (!releasePending) return false;
+
           await this.markPendingRecovery(record, teamGrab);
           return false;
         }
@@ -115,6 +117,31 @@ export class TeamGrabProcessorService {
       this.logger.error(error);
       return await this.recoverAmbiguousOrderCreation(record, teamGrab);
     }
+  }
+
+  private async markReleasePendingOrRetry(
+    teamGrab: TeamGrabRequestRecord,
+    input: { lockedSeatIds: number[]; seatLabels: string[]; matchedStrategy: TeamSeatStrategy },
+  ): Promise<boolean> {
+    try {
+      const pending = await this.teamRepository.markTeamGrabReleasePending(teamGrab.requestId, input);
+      if (!pending) {
+        this.logger.warn(`failed to persist team grab release pending for ${teamGrab.requestId}`);
+        return false;
+      }
+      if (pending.status !== 'LOCKED' || !this.sameLockedSeats(pending.lockedSeatIds, input.lockedSeatIds)) {
+        this.logger.warn(`team grab release pending persisted incomplete lock state for ${teamGrab.requestId}`);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.logger.error(error);
+      return false;
+    }
+  }
+
+  private sameLockedSeats(left: number[], right: number[]): boolean {
+    return left.length === right.length && left.every((seatId, index) => seatId === right[index]);
   }
 
   private async releaseLockedSeats(requestId: string, lockedSeatIds: number[]): Promise<boolean> {

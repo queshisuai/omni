@@ -143,7 +143,12 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    await this.ticketClient.releaseTeamSeatLock(releaseClaim.requestId, releaseClaim.lockedSeatIds);
+    const released = await this.ticketClient.releaseTeamSeatLock(releaseClaim.requestId, releaseClaim.lockedSeatIds);
+    if (!released) {
+      this.logger.warn(`team seat lock recovery release returned false for ${releaseClaim.requestId}`);
+      return;
+    }
+
     const transitioned = await this.repository.markTeamFailed(
       releaseClaim.teamId,
       releaseClaim.requestId,
