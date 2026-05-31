@@ -84,7 +84,7 @@ export function NotificationBell() {
     fetchTokenRef.current = token
     setLoading(true)
     setError('')
-    listMyNotifications(userId)
+    listMyNotifications()
       .then((data) => {
         if (fetchTokenRef.current !== token) return
         setItems(data || [])

@@ -100,7 +100,6 @@ export default function OrdersPage() {
   const [trashOrders, setTrashOrders] = useState<EnrichedOrder[]>([])
   const [hiding, setHiding] = useState<number | null>(null)
   const [restoring, setRestoring] = useState<number | null>(null)
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null)
   const [page, setPage] = useState(1)
   const loadOrdersRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
@@ -117,15 +116,13 @@ export default function OrdersPage() {
       router.replace('/login?ru=/orders')
       return
     }
-    setCurrentUserId(user.userId)
-
     ;(async () => {
       setLoading(true)
       setError('')
       try {
         const [orderData, trashData] = await Promise.all([
-          listOrders(user.userId),
-          listTrashOrders(user.userId),
+          listOrders(),
+          listTrashOrders(),
         ])
         setOrders(enrichOrders(orderData))
         setTrashOrders(enrichOrders(trashData))
@@ -199,10 +196,10 @@ export default function OrdersPage() {
   }
 
   const handleHide = async (orderId: number) => {
-    if (!currentUserId || !(await globalConfirm('确定删除该订单吗？删除后 7 天内可在回收站恢复。'))) return
+    if (!(await globalConfirm('确定删除该订单吗？删除后 7 天内可在回收站恢复。'))) return
     setHiding(orderId)
     try {
-      await hideOrder(orderId, currentUserId)
+      await hideOrder(orderId)
       const target = orders.find((order) => order.id === orderId)
       setOrders((prev) => prev.filter((order) => order.id !== orderId))
       if (target) {
@@ -221,10 +218,9 @@ export default function OrdersPage() {
   }
 
   const handleRestore = async (orderId: number) => {
-    if (!currentUserId) return
     setRestoring(orderId)
     try {
-      await restoreOrder(orderId, currentUserId)
+      await restoreOrder(orderId)
       const target = trashOrders.find((order) => order.id === orderId)
       setTrashOrders((prev) => prev.filter((order) => order.id !== orderId))
       if (target) {
@@ -315,7 +311,7 @@ export default function OrdersPage() {
     setSelectedOrderSeatIds([])
     setRefundOptionsLoading(true)
     try {
-      const options = await getRefundOptions(order.id, user.userId)
+      const options = await getRefundOptions(order.id)
       if (refundOptionsRequestIdRef.current !== requestId || refundTargetIdRef.current !== order.id) return
       setRefundOptions(options)
       setRefundQuantity(Math.min(1, options.refundableQuantity))

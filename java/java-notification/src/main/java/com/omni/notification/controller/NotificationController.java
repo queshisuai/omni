@@ -4,10 +4,14 @@ import com.omni.common.result.Result;
 import com.omni.notification.dto.InternalNotificationRequest;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.service.NotificationService;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -20,11 +24,14 @@ public class NotificationController {
 
     private final NotificationService notificationService;
     private final String internalApiToken;
+    private final String jwtSecret;
 
     public NotificationController(NotificationService notificationService,
-                                  @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+                                  @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
+                                  @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
         this.notificationService = notificationService;
         this.internalApiToken = internalApiToken;
+        this.jwtSecret = jwtSecret;
     }
 
     @PostMapping("/internal/messages")
@@ -40,8 +47,12 @@ public class NotificationController {
      * 发送短信通知
      */
     @PostMapping("/send-sms")
-    public Result<Void> sendSms(@RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+    public Result<Void> sendSms(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                @RequestBody Map<String, Object> body) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
         Long orderId = body.get("orderId") != null ? Long.valueOf(body.get("orderId").toString()) : null;
         String content = body.get("content").toString();
         notificationService.sendSms(userId, orderId, content);
@@ -52,8 +63,12 @@ public class NotificationController {
      * 发送邮件通知
      */
     @PostMapping("/send-email")
-    public Result<Void> sendEmail(@RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+    public Result<Void> sendEmail(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                  @RequestBody Map<String, Object> body) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
         Long orderId = body.get("orderId") != null ? Long.valueOf(body.get("orderId").toString()) : null;
         String content = body.get("content").toString();
         notificationService.sendEmail(userId, orderId, content);
@@ -64,8 +79,36 @@ public class NotificationController {
      * 用户通知列表
      */
     @GetMapping("/list")
-    public Result<List<Notification>> listNotifications(@RequestParam Long userId) {
+    public Result<List<Notification>> listNotifications(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
         List<Notification> notifications = notificationService.listNotifications(userId);
         return Result.success(notifications);
+    }
+
+    private Long requireAuthenticatedUserId(String authorization) {
+        if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
+            return null;
+        }
+        try {
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
+                    .build()
+                    .parseClaimsJws(authorization.substring("Bearer ".length()))
+                    .getBody();
+            Object userId = claims.get("userId");
+            if (userId == null) {
+                userId = claims.getSubject();
+            }
+            if (userId == null) {
+                return null;
+            }
+            return Long.valueOf(String.valueOf(userId));
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 }

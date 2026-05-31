@@ -90,7 +90,7 @@ export default function ActivitiesPage() {
     setLoading(true)
     setError('')
     Promise.all([
-      listAdminActivities(u.userId, {
+      listAdminActivities({
         page: 1,
         size: ADMIN_FETCH_SIZE,
         keyword,

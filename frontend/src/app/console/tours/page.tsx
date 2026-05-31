@@ -67,7 +67,7 @@ export default function ToursPage() {
     setLoading(true)
     setError('')
     Promise.all([
-      listAdminActivities(user.userId, { page: 1, size: ADMIN_FETCH_SIZE }),
+      listAdminActivities({ page: 1, size: ADMIN_FETCH_SIZE }),
       listAdminTours(user.userId, { page: 1, size: ADMIN_FETCH_SIZE }),
     ])
       .then(([activityRes, tourRes]) => {

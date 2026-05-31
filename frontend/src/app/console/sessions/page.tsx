@@ -89,7 +89,7 @@ function SessionsPageContent() {
     if (!u) return
     setUserId(u.userId)
     setActivityFilter(currentActivityId)
-    listAdminActivities(u.userId, { page: 1, size: 100 }).then(res => setActivities(res.records)).catch(() => {})
+    listAdminActivities({ page: 1, size: 100 }).then(res => setActivities(res.records)).catch(() => {})
     listAdminVenues(u.userId).then(setVenues).catch(() => {})
     loadSessions(1, currentActivityId)
   }, [currentActivityId])

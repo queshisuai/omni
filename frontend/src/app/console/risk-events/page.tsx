@@ -56,8 +56,8 @@ export default function OrganizerRiskEventsPage() {
     setError('')
     try {
       const [activitiesPage, resolutionList] = await Promise.all([
-        listAdminActivities(uid, { page: 1, size: 100 }),
-        listActivityRiskResolutions(uid),
+        listAdminActivities({ page: 1, size: 100 }),
+        listActivityRiskResolutions(),
       ])
       const items = (activitiesPage.records || []).filter((a) => a.publishStatus === 'risk_suspended')
       setSuspended(items)

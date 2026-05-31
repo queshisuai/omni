@@ -729,6 +729,10 @@ public class OrderService {
         return order;
     }
 
+    public Order getUserOrderDetail(Long id, Long userId) {
+        return getUserOwnedOrder(id, userId);
+    }
+
     public OrderListItemResponse getOrderItemDetail(Long id) {
         OrderListItemResponse order = orderMapper.selectOrderListItemById(id);
         if (order == null) {
@@ -767,7 +771,20 @@ public class OrderService {
     @GlobalTransactional(name = "omni-cancel-order", rollbackFor = Exception.class)
     @Transactional(rollbackFor = Exception.class)
     public void cancelOrder(Long id) {
+        cancelOrderInternal(id, null);
+    }
+
+    @GlobalTransactional(name = "omni-cancel-user-order", rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelUserOrder(Long id, Long userId) {
+        cancelOrderInternal(id, userId);
+    }
+
+    private void cancelOrderInternal(Long id, Long userId) {
         Order order = orderMapper.selectById(id);
+        if (userId != null && order != null && !userId.equals(order.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "鏃犳潈闄愭搷浣滆璁㈠崟");
+        }
         if (order == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
         }

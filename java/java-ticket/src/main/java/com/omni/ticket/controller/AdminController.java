@@ -87,6 +87,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -211,14 +212,24 @@ public class AdminController {
     }
 
     @GetMapping("/seatcraft/{ownerType}/{ownerId}/draft")
-    public Result<SeatCraftBlockDtos.LayoutRequest> getSeatCraftDraft(@PathVariable String ownerType,
+    public Result<SeatCraftBlockDtos.LayoutRequest> getSeatCraftDraft(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                       @PathVariable String ownerType,
                                                                        @PathVariable Long ownerId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
         return Result.success(seatCraftLayoutVersionService.getDraft(ownerType, ownerId));
     }
 
     @GetMapping("/seatcraft/{ownerType}/{ownerId}/versions")
-    public Result<List<SeatCraftBlockDtos.VersionSummary>> listSeatCraftVersions(@PathVariable String ownerType,
+    public Result<List<SeatCraftBlockDtos.VersionSummary>> listSeatCraftVersions(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                                 @PathVariable String ownerType,
                                                                                  @PathVariable Long ownerId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
         return Result.success(seatCraftLayoutVersionService.listVersions(ownerType, ownerId));
     }
 
@@ -276,18 +287,15 @@ public class AdminController {
 
     @PostMapping("/assets")
     public Result<AssetUploadResponse> uploadAsset(@RequestHeader(value = "Authorization", required = false) String authorization,
-                                                   @RequestParam Long userId,
+                                                   @RequestParam(required = false) Long userId,
                                                    @RequestParam String bizType,
                                                    @RequestParam MultipartFile file) {
         Long operatorId = parseOperatorId(authorization);
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
-        if (!operatorId.equals(userId)) {
-            return Result.fail(ResultCode.FORBIDDEN);
-        }
-        checkRole(userId);
-        return Result.success(ticketAssetService.upload(userId, bizType, file));
+        checkRole(operatorId);
+        return Result.success(ticketAssetService.upload(operatorId, bizType, file));
     }
 
     @PostMapping("/private-assets")
@@ -343,7 +351,17 @@ public class AdminController {
     }
 
     @GetMapping("/artists/search")
-    public Result<List<ArtistSearchResponse>> searchArtists(@RequestParam(required = false) String keyword) {
+    public Result<List<ArtistSearchResponse>> searchArtists(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) String keyword) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        String role = checkRole(operatorId);
+        if (role == null) {
+            return Result.fail(ResultCode.FORBIDDEN);
+        }
         return Result.success(artistAdminService.search(keyword));
     }
 
@@ -496,37 +514,78 @@ public class AdminController {
 
     @PostMapping("/activities/{id}/risk-resolution")
     public Result<ActivityRiskResolutionResponse> submitRiskResolution(@PathVariable Long id,
+                                                                       @RequestHeader(value = "Authorization", required = false) String authorization,
                                                                        @RequestBody ActivityRiskResolutionRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        if (request == null) {
+            request = new ActivityRiskResolutionRequest();
+        }
+        request.setUserId(operatorId);
         return Result.success(activityRiskResponseService.submitResolution(id, request));
     }
 
     @GetMapping("/risk-resolutions")
-    public Result<List<ActivityRiskResolutionResponse>> listRiskResolutions(@RequestParam Long userId,
-                                                                            @RequestParam(required = false) String status) {
+    public Result<List<ActivityRiskResolutionResponse>> listRiskResolutions(
+                                                                             @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                             @RequestParam(required = false) Long userId,
+                                                                             @RequestParam(required = false) String status) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        userId = operatorId;
         return Result.success(activityRiskResponseService.listResolutions(userId, status));
     }
 
     @PostMapping("/risk-resolutions/{id}/review")
     public Result<ActivityRiskResolutionResponse> reviewRiskResolution(@PathVariable Long id,
+                                                                       @RequestHeader(value = "Authorization", required = false) String authorization,
                                                                        @RequestBody ActivityRiskResolutionReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        if (request == null) {
+            request = new ActivityRiskResolutionReviewRequest();
+        }
+        request.setUserId(operatorId);
         return Result.success(activityRiskResponseService.reviewResolution(id, request));
     }
 
     @PostMapping("/activities/{id}/suspend")
     public Result<ActivityRiskResolutionResponse> suspendActivityForRisk(@PathVariable Long id,
+                                                                          @RequestHeader(value = "Authorization", required = false) String authorization,
                                                                           @RequestBody Map<String, Object> body) {
-        Long userId = body.get("userId") == null ? null : Long.valueOf(body.get("userId").toString());
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         String reason = body.get("reason") == null ? null : body.get("reason").toString();
         return Result.success(activityRiskResponseService.adminSuspendActivity(id, userId, reason));
     }
 
     @GetMapping("/risk-cases")
-    public Result<List<ActivityRiskCaseResponse>> listRiskCases(@RequestParam Long userId) {
+    public Result<List<ActivityRiskCaseResponse>> listRiskCases(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Long userId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        userId = operatorId;
         return Result.success(activityRiskResponseService.listRiskCases(userId));
     }
 
     @GetMapping("/summary")
-    public Result<AdminSummaryResponse> getAdminSummary(@RequestParam Long userId) {
+    public Result<AdminSummaryResponse> getAdminSummary(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Long userId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        userId = operatorId;
         return Result.success(adminSummaryService.getSummary(userId));
     }
 
@@ -652,50 +711,80 @@ public class AdminController {
     }
 
     @PostMapping("/tours/draft")
-    public Result<Tour> createTourDraft(@RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
-        return Result.success(tourStationService.createTourDraft(userId, body));
+    public Result<Tour> createTourDraft(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                        @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        Map<String, Object> safeBody = withOperatorUserId(body, userId);
+        return Result.success(tourStationService.createTourDraft(userId, safeBody));
     }
 
     @GetMapping("/tours")
-    public Result<Page<Tour>> listTours(@RequestParam Long userId,
+    public Result<Page<Tour>> listTours(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                         @RequestParam(required = false) Long userId,
                                          @RequestParam(defaultValue = "1") Integer page,
                                          @RequestParam(defaultValue = "10") Integer size) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(tourStationService.listManageableTours(userId, page, size));
     }
 
     @GetMapping("/tours/{tourId}")
-    public Result<Map<String, Object>> getTour(@PathVariable Long tourId, @RequestParam Long userId) {
+    public Result<Map<String, Object>> getTour(@PathVariable Long tourId,
+                                               @RequestHeader(value = "Authorization", required = false) String authorization,
+                                               @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(tourStationService.getManageableTourDetail(userId, tourId));
     }
 
     @DeleteMapping("/tours/{tourId}")
-    public Result<Void> deleteTourDraft(@PathVariable Long tourId, @RequestParam Long userId) {
+    public Result<Void> deleteTourDraft(@PathVariable Long tourId,
+                                        @RequestHeader(value = "Authorization", required = false) String authorization,
+                                        @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         tourStationService.deleteTourDraft(userId, tourId);
         return Result.success();
     }
 
     @PostMapping("/tours/{tourId}/announce")
-    public Result<Tour> announceTourCities(@PathVariable Long tourId, @RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
+    public Result<Tour> announceTourCities(@PathVariable Long tourId,
+                                           @RequestHeader(value = "Authorization", required = false) String authorization,
+                                           @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(tourStationService.announceTourCities(userId, tourId));
     }
 
     @PostMapping("/tours/{tourId}/deactivate")
     public Result<RefundImpactResponse> deactivateTour(@PathVariable Long tourId,
+                                                       @RequestHeader(value = "Authorization", required = false) String authorization,
                                                        @RequestBody DeactivateActivityRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        if (request == null) request = new DeactivateActivityRequest();
+        request.setUserId(operatorId);
         return Result.success(tourStationService.deactivateTour(tourId, request));
     }
 
     @PostMapping("/tours/{tourId}/stations/draft")
-    public Result<Station> createStationDraft(@PathVariable Long tourId, @RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
-        return Result.success(tourStationService.createStationDraft(userId, tourId, body));
+    public Result<Station> createStationDraft(@PathVariable Long tourId,
+                                              @RequestHeader(value = "Authorization", required = false) String authorization,
+                                              @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        Map<String, Object> safeBody = withOperatorUserId(body, userId);
+        return Result.success(tourStationService.createStationDraft(userId, tourId, safeBody));
     }
 
     @PostMapping("/stations/{stationId}/publish")
-    public Result<Map<String, Object>> publishStation(@PathVariable Long stationId, @RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body == null ? null : body.get("userId"));
+    public Result<Map<String, Object>> publishStation(@PathVariable Long stationId,
+                                                      @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                      @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        body = withOperatorUserId(body, userId);
         return Result.success(tourStationService.publishStation(userId, stationId, body));
     }
 
@@ -732,47 +821,50 @@ public class AdminController {
 
     @Transactional
     @PostMapping("/activities")
-    public Result<Activity> createActivity(@RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body.get("userId"));
+    public Result<Activity> createActivity(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                           @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        Map<String, Object> safeBody = withOperatorUserId(body, userId);
         if (userId == null) return Result.fail(400, "用户ID不正确");
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
-        Long categoryId = parsePositiveLong(body.get("categoryId"));
+        Long categoryId = parsePositiveLong(safeBody.get("categoryId"));
         if (categoryId == null) return Result.fail(400, "分类ID不正确");
-        List<ActivityArtistDto> artists = parseArtists(body.get("artists"));
+        List<ActivityArtistDto> artists = parseArtists(safeBody.get("artists"));
         Long artistId = artists.stream()
                 .filter(a -> Boolean.TRUE.equals(a.getPrimary()))
                 .map(ActivityArtistDto::getArtistId)
                 .findFirst()
-                .orElseGet(() -> resolveArtistId(body));
+                .orElseGet(() -> resolveArtistId(safeBody));
         if (artistId == null && !artists.isEmpty()) artistId = artists.get(0).getArtistId();
         if (artistId == null) return Result.fail(400, "艺人/团队名称不能为空");
-        String name = parseNonBlankString(body.get("name"));
+        String name = parseNonBlankString(safeBody.get("name"));
         if (name == null) return Result.fail(400, "活动名称不能为空");
 
         Activity activity = new Activity();
         activity.setCategoryId(categoryId);
         activity.setArtistId(artistId);
-        activity.setTourId(parsePositiveLong(body.get("tourId")));
-        activity.setStationId(parsePositiveLong(body.get("stationId")));
-        activity.setVenueApplicationId(parsePositiveLong(body.get("venueApplicationId")));
-        activity.setVenueApprovalNo(parseNonBlankString(body.get("venueApprovalNo")));
-        String venueApprovalFileUrl = parseNonBlankString(body.get("venueApprovalFileUrl"));
+        activity.setTourId(parsePositiveLong(safeBody.get("tourId")));
+        activity.setStationId(parsePositiveLong(safeBody.get("stationId")));
+        activity.setVenueApplicationId(parsePositiveLong(safeBody.get("venueApplicationId")));
+        activity.setVenueApprovalNo(parseNonBlankString(safeBody.get("venueApprovalNo")));
+        String venueApprovalFileUrl = parseNonBlankString(safeBody.get("venueApprovalFileUrl"));
         activity.setVenueApprovalFileUrl(venueApprovalFileUrl);
-        activity.setVenueApprovalNote(parseNonBlankString(body.get("venueApprovalNote")));
-        activity.setPublishStatus(body.get("publishStatus") != null ? body.get("publishStatus").toString() : "draft");
-        String seatMapVisibility = parseSeatMapVisibility(body.get("seatMapVisibility"), SEAT_MAP_VISIBILITY_HIDDEN);
+        activity.setVenueApprovalNote(parseNonBlankString(safeBody.get("venueApprovalNote")));
+        activity.setPublishStatus(safeBody.get("publishStatus") != null ? safeBody.get("publishStatus").toString() : "draft");
+        String seatMapVisibility = parseSeatMapVisibility(safeBody.get("seatMapVisibility"), SEAT_MAP_VISIBILITY_HIDDEN);
         if (seatMapVisibility == null) return Result.fail(400, "座位图展示策略不正确");
         activity.setSeatMapVisibility(seatMapVisibility);
         try {
-            activity.setPerUserLimit(parsePerUserLimit(body.get("perUserLimit")));
+            activity.setPerUserLimit(parsePerUserLimit(safeBody.get("perUserLimit")));
         } catch (IllegalArgumentException e) {
             return Result.fail(400, e.getMessage());
         }
         activity.setName(name);
-        activity.setDescription(body.get("description") != null ? body.get("description").toString() : null);
-        activity.setPoster(body.get("poster") != null ? body.get("poster").toString() : null);
+        activity.setDescription(safeBody.get("description") != null ? safeBody.get("description").toString() : null);
+        activity.setPoster(safeBody.get("poster") != null ? safeBody.get("poster").toString() : null);
         activity.setStatus(1);
         activity.setOrganizerId(userId); // 记录创建者
         activityMapper.insert(activity);
@@ -781,9 +873,13 @@ public class AdminController {
     }
 
     @PutMapping("/activities/{id}")
-    public Result<Activity> updateActivity(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+    public Result<Activity> updateActivity(@PathVariable Long id,
+                                           @RequestHeader(value = "Authorization", required = false) String authorization,
+                                           @RequestBody Map<String, Object> body) {
         if (id == null || id <= 0) return Result.fail(400, "活动ID不正确");
-        Long userId = parsePositiveLong(body.get("userId"));
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        body = withOperatorUserId(body, userId);
         if (userId == null) return Result.fail(400, "用户ID不正确");
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
@@ -843,7 +939,12 @@ public class AdminController {
     }
 
     @GetMapping("/activities/{id}")
-    public Result<Activity> getAdminActivity(@PathVariable Long id, @RequestParam Long userId) {
+    public Result<Activity> getAdminActivity(@PathVariable Long id,
+                                             @RequestHeader(value = "Authorization", required = false) String authorization,
+                                             @RequestParam(required = false) Long userId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        userId = operatorId;
         if (id == null || id <= 0) return Result.fail(400, "活动ID不正确");
         if (userId == null || userId <= 0) return Result.fail(400, "用户ID不正确");
         String role = checkRole(userId);
@@ -900,38 +1001,57 @@ public class AdminController {
     }
 
     @PutMapping("/activities/{id}/status")
-    public Result<Void> updateActivityStatus(@PathVariable Long id, @RequestBody UpdateActivityStatusRequest request) {
+    public Result<Void> updateActivityStatus(@PathVariable Long id,
+                                             @RequestHeader(value = "Authorization", required = false) String authorization,
+                                             @RequestBody UpdateActivityStatusRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        if (request == null) request = new UpdateActivityStatusRequest();
+        request.setUserId(operatorId);
         activityAdminService.updateActivityStatus(id, request);
         return Result.success();
     }
 
     @PostMapping("/activities/{id}/deactivate")
     public Result<RefundImpactResponse> deactivateActivity(@PathVariable Long id,
+                                                             @RequestHeader(value = "Authorization", required = false) String authorization,
                                                              @RequestBody DeactivateActivityRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        if (request == null) request = new DeactivateActivityRequest();
+        request.setUserId(operatorId);
         return Result.success(activityAdminService.deactivateActivity(id, request));
     }
 
     @GetMapping("/activities/{activityId}/seat-layout")
     public Result<SeatCraftLayoutDtos.LayoutResponse> getActivitySeatLayout(@PathVariable Long activityId,
-                                                                             @RequestParam Long userId) {
+                                                                             @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                             @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(activitySeatLayoutService.getLayout(userId, activityId));
     }
 
     @PostMapping("/activities/{activityId}/seat-layout/blank")
     public Result<SeatCraftLayoutDtos.LayoutResponse> createBlankActivitySeatLayout(@PathVariable Long activityId,
-                                                                              @RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body.get("userId"));
-        if (userId == null) return Result.fail(400, "用户ID不正确");
+                                                                                   @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                                   @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(activitySeatLayoutService.createBlankLayout(userId, activityId));
     }
 
     @PutMapping("/activities/{activityId}/seat-layout")
     public Result<SeatCraftLayoutDtos.LayoutResponse> updateActivitySeatLayout(@PathVariable Long activityId,
-                                                                                @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
+                                                                               @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                               @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         if (request == null) {
             return Result.fail(400, "座位图参数不能为空");
         }
-        return Result.success(activitySeatLayoutService.updateLayout(request.getUserId(), activityId, request.getLayout()));
+        request.setUserId(operatorId);
+        return Result.success(activitySeatLayoutService.updateLayout(operatorId, activityId, request.getLayout()));
     }
 
     @PostMapping("/organizers/deactivate")
@@ -959,6 +1079,12 @@ public class AdminController {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private Map<String, Object> withOperatorUserId(Map<String, Object> body, Long operatorId) {
+        Map<String, Object> next = body == null ? new HashMap<>() : new HashMap<>(body);
+        next.put("userId", operatorId);
+        return next;
     }
 
     private Long parsePositiveLong(Object value) {
@@ -1009,8 +1135,13 @@ public class AdminController {
 
     @DeleteMapping("/activities/{id}")
     public Result<DeleteActivityResponse> deleteActivity(@PathVariable Long id,
+                                                         @RequestHeader(value = "Authorization", required = false) String authorization,
                                                          @RequestBody DeleteActivityRequest request) {
-        if (request == null || request.getUserId() == null || request.getUserId() <= 0) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        if (request == null) request = new DeleteActivityRequest();
+        request.setUserId(operatorId);
+        if (request.getUserId() == null || request.getUserId() <= 0) {
             return Result.fail(400, "用户ID不正确");
         }
         if (!StringUtils.hasText(request.getReason())) {
@@ -1021,11 +1152,15 @@ public class AdminController {
 
     @GetMapping("/activities")
     public Result<Page<Activity>> listAdminActivities(
-            @RequestParam Long userId,
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Long userId,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Integer status) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        userId = operatorId;
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
@@ -1067,68 +1202,99 @@ public class AdminController {
     // ========== 场次管理（权限继承自活动） ==========
 
     @PostMapping("/sessions")
-    public Result<Session> createSession(@RequestBody Map<String, Object> body) {
-        return Result.success(sessionAdminService.createSession(body));
+    public Result<Session> createSession(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                         @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        Map<String, Object> safeBody = withOperatorUserId(body, userId);
+        return Result.success(sessionAdminService.createSession(safeBody));
     }
 
     @PutMapping("/sessions/{id}")
-    public Result<Session> updateSession(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-        return Result.success(sessionAdminService.updateSession(id, body));
+    public Result<Session> updateSession(@PathVariable Long id,
+                                         @RequestHeader(value = "Authorization", required = false) String authorization,
+                                         @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        Map<String, Object> safeBody = withOperatorUserId(body, userId);
+        return Result.success(sessionAdminService.updateSession(id, safeBody));
     }
 
     @DeleteMapping("/sessions/{id}")
-    public Result<Void> deleteSession(@RequestParam Long userId, @PathVariable Long id) {
+    public Result<Void> deleteSession(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                      @RequestParam(required = false) Long userId,
+                                      @PathVariable Long id) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         sessionAdminService.deleteSession(userId, id);
         return Result.success();
     }
 
     @GetMapping("/sessions")
     public Result<Page<SessionAdminResponse>> listAdminSessions(
-            @RequestParam Long userId,
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Long userId,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(required = false) Long activityId,
             @RequestParam(required = false) Long venueId,
             @RequestParam(required = false) Integer status) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(sessionAdminService.listSessions(userId, page, size, activityId, venueId, status));
     }
 
     @GetMapping("/sessions/{sessionId}/seat-layout")
     public Result<SeatCraftLayoutDtos.LayoutResponse> getSessionSeatLayout(@PathVariable Long sessionId,
-                                                                             @RequestParam Long userId) {
+                                                                              @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                              @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(sessionSeatLayoutService.getLayout(userId, sessionId));
     }
 
     @PostMapping("/sessions/{sessionId}/seat-layout/blank")
     public Result<SeatCraftLayoutDtos.LayoutResponse> createBlankSessionSeatLayout(@PathVariable Long sessionId,
-                                                                              @RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body.get("userId"));
-        if (userId == null) return Result.fail(400, "用户ID不正确");
+                                                                               @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                               @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(sessionSeatLayoutService.createBlankLayout(userId, sessionId));
     }
 
     @PutMapping("/sessions/{sessionId}/seat-layout")
     public Result<SeatCraftLayoutDtos.LayoutResponse> updateSessionSeatLayout(@PathVariable Long sessionId,
-                                                                                 @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
+                                                                                  @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                                  @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         if (request == null) {
             return Result.fail(400, "座位图参数不能为空");
         }
-        return Result.success(sessionSeatLayoutService.updateLayout(request.getUserId(), sessionId, request.getLayout()));
+        request.setUserId(operatorId);
+        return Result.success(sessionSeatLayoutService.updateLayout(operatorId, sessionId, request.getLayout()));
     }
 
     @PutMapping("/sessions/{sessionId}/ticket-bindings")
     public Result<Void> updateSessionTicketBindings(@PathVariable Long sessionId,
+                                                     @RequestHeader(value = "Authorization", required = false) String authorization,
                                                      @RequestBody TicketBindingUpdateRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         if (request == null) {
             return Result.fail(400, "票档绑定参数不能为空");
         }
-        sessionSeatLayoutService.updateTicketBindings(request.getUserId(), sessionId, request.getBindings());
+        request.setUserId(operatorId);
+        sessionSeatLayoutService.updateTicketBindings(operatorId, sessionId, request.getBindings());
         return Result.success();
     }
 
     @GetMapping("/sessions/{sessionId}/seat-layout/ticket-drafts")
     public Result<List<SeatCraftLayoutDtos.SectionResponse>> getTicketDrafts(@PathVariable Long sessionId,
-                                                                               @RequestParam Long userId) {
+                                                                               @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                               @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(sessionSeatLayoutService.buildTicketDraftsForSession(userId, sessionId));
     }
 
@@ -1136,8 +1302,11 @@ public class AdminController {
 
     @Transactional
     @PostMapping("/ticket-types")
-    public Result<TicketType> createTicketType(@RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+    public Result<TicketType> createTicketType(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                               @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        body = withOperatorUserId(body, userId);
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
@@ -1190,8 +1359,12 @@ public class AdminController {
     }
 
     @PutMapping("/ticket-types/{id}")
-    public Result<TicketType> updateTicketType(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+    public Result<TicketType> updateTicketType(@PathVariable Long id,
+                                               @RequestHeader(value = "Authorization", required = false) String authorization,
+                                               @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        body = withOperatorUserId(body, userId);
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
@@ -1215,7 +1388,11 @@ public class AdminController {
     }
 
     @DeleteMapping("/ticket-types/{id}")
-    public Result<Void> deleteTicketType(@RequestParam Long userId, @PathVariable Long id) {
+    public Result<Void> deleteTicketType(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                         @RequestParam(required = false) Long userId,
+                                         @PathVariable Long id) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
@@ -1258,8 +1435,11 @@ public class AdminController {
     // ========== 场馆记录（admin全权限，organizer只读） ==========
 
     @PostMapping("/venues")
-    public Result<Venue> createVenue(@RequestBody Map<String, Object> body) {
-        Long userId = parsePositiveLong(body.get("userId"));
+    public Result<Venue> createVenue(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                     @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        body = withOperatorUserId(body, userId);
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         if ("organizer".equals(role)) return Result.fail(403, "仅平台管理员可创建场馆");
@@ -1282,8 +1462,12 @@ public class AdminController {
     }
 
     @PutMapping("/venues/{id}")
-    public Result<Venue> updateVenue(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-        Long userId = Long.valueOf(body.get("userId").toString());
+    public Result<Venue> updateVenue(@PathVariable Long id,
+                                     @RequestHeader(value = "Authorization", required = false) String authorization,
+                                     @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        body = withOperatorUserId(body, userId);
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         if ("organizer".equals(role)) return Result.fail(403, "仅平台管理员可修改场馆");
@@ -1299,7 +1483,11 @@ public class AdminController {
     }
 
     @DeleteMapping("/venues/{id}")
-    public Result<Void> deleteVenue(@PathVariable Long id, @RequestParam Long userId) {
+    public Result<Void> deleteVenue(@PathVariable Long id,
+                                    @RequestHeader(value = "Authorization", required = false) String authorization,
+                                    @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         if ("organizer".equals(role)) return Result.fail(403, "仅平台管理员可删除场馆记录");
@@ -1317,7 +1505,10 @@ public class AdminController {
     }
 
     @GetMapping("/venues")
-    public Result<List<Venue>> listAdminVenues(@RequestParam Long userId) {
+    public Result<List<Venue>> listAdminVenues(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                               @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         String role = checkRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         return Result.success(venueMapper.selectList(new QueryWrapper<Venue>()
@@ -1328,7 +1519,12 @@ public class AdminController {
     }
 
     @PostMapping("/venues/{id}/areas")
-    public Result<SeatTemplateResponse> createVenueArea(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+    public Result<SeatTemplateResponse> createVenueArea(@PathVariable Long id,
+                                                        @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                        @RequestBody Map<String, Object> body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        body = withOperatorUserId(body, userId);
         body.put("venueId", id);
         SeatTemplateResponse response = seatTemplateService.createArea(body);
         response.setSyncResult(sessionSeatService.syncVenueSessions(id));
@@ -1336,39 +1532,62 @@ public class AdminController {
     }
 
     @GetMapping("/venues/{id}/areas")
-    public Result<List<VenueArea>> listVenueAreas(@PathVariable Long id, @RequestParam Long userId) {
+    public Result<List<VenueArea>> listVenueAreas(@PathVariable Long id,
+                                                  @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                  @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(seatTemplateService.listAreas(userId, id));
     }
 
     @GetMapping("/venues/{id}/seats")
-    public Result<List<VenueSeat>> listVenueSeats(@PathVariable Long id, @RequestParam Long userId) {
+    public Result<List<VenueSeat>> listVenueSeats(@PathVariable Long id,
+                                                  @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                  @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(seatTemplateService.listSeats(userId, id));
     }
 
     @GetMapping("/venues/{venueId}/default-layout")
-    public Result<SeatCraftLayoutDtos.LayoutResponse> getVenueDefaultLayout(@PathVariable Long venueId) {
+    public Result<SeatCraftLayoutDtos.LayoutResponse> getVenueDefaultLayout(@PathVariable Long venueId,
+                                                                            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         SeatCraftLayoutDtos.LayoutResponse layout = venueDefaultLayoutService.getLayout(venueId);
         return Result.success(layout);
     }
 
     @PutMapping("/venues/{venueId}/default-layout")
     public Result<SeatCraftLayoutDtos.LayoutResponse> updateVenueDefaultLayout(@PathVariable Long venueId,
-                                                                                 @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
-        return Result.success(venueDefaultLayoutService.saveLayout(request.getUserId(), venueId, request.getLayout()));
+                                                                                  @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                                  @RequestBody SeatCraftLayoutDtos.LayoutSaveRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        if (request == null) return Result.fail(400, "\u5ea7\u4f4d\u56fe\u53c2\u6570\u4e0d\u80fd\u4e3a\u7a7a");
+        request.setUserId(operatorId);
+        return Result.success(venueDefaultLayoutService.saveLayout(operatorId, venueId, request.getLayout()));
     }
 
     @GetMapping("/venues/{venueId}/seat-layout-templates")
     public Result<List<SeatLayoutTemplateCandidateResponse>> listVenueSeatLayoutTemplates(@PathVariable Long venueId,
-                                                                                           @RequestParam Long userId) {
+                                                                                            @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                                            @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(venueApplicationService.listSeatLayoutTemplates(userId, venueId));
     }
 
     @PostMapping("/venues/{id}/seats")
     public Result<SeatTemplateSyncResponse> createVenueSeat(@PathVariable Long id,
+                                                            @RequestHeader(value = "Authorization", required = false) String authorization,
                                                             @RequestBody VenueSeatRequest request) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         if (request == null) {
             return Result.fail(400, "座位参数不能为空");
         }
+        request.setUserId(userId);
         request.setVenueId(id);
         seatTemplateService.createSeat(request);
         return Result.success(sessionSeatService.syncVenueSessions(id));
@@ -1376,13 +1595,24 @@ public class AdminController {
 
     @PutMapping("/venue-seats/{seatId}")
     public Result<SeatTemplateSyncResponse> updateVenueSeat(@PathVariable Long seatId,
+                                                            @RequestHeader(value = "Authorization", required = false) String authorization,
                                                             @RequestBody VenueSeatRequest request) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        if (request == null) {
+            return Result.fail(400, "搴т綅鍙傛暟涓嶈兘涓虹┖");
+        }
+        request.setUserId(userId);
         VenueSeat seat = seatTemplateService.updateSeat(seatId, request);
         return Result.success(sessionSeatService.syncVenueSessions(seat.getVenueId()));
     }
 
     @DeleteMapping("/venue-seats/{seatId}")
-    public Result<SeatTemplateSyncResponse> deleteVenueSeat(@PathVariable Long seatId, @RequestParam Long userId) {
+    public Result<SeatTemplateSyncResponse> deleteVenueSeat(@PathVariable Long seatId,
+                                                            @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                            @RequestParam(required = false) Long userId) {
+        userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         VenueSeat seat = seatTemplateService.deleteSeat(userId, seatId);
         sessionSeatService.disableAvailableSeatsByVenueSeatId(seat.getId());
         return Result.success(sessionSeatService.syncVenueSessions(seat.getVenueId()));

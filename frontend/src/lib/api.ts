@@ -365,48 +365,48 @@ export async function updateAdminArtistRisk(id: number, params: import('@/types/
 
 export async function submitActivityRiskResolution(id: number, params: import('@/types/api').ActivityRiskResolutionRequest) {
   assertPositiveInteger(id, 'activityId')
+  const { userId: _userId, ...safeParams } = params
   return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/activities/${id}/risk-resolution`, {
     method: 'POST',
-    body: JSON.stringify(params),
+    body: JSON.stringify(safeParams),
   })
 }
 
-export async function listActivityRiskResolutions(userId: number, status?: string) {
-  assertPositiveInteger(userId, 'userId')
-  const params = new URLSearchParams({ userId: String(userId) })
+export async function listActivityRiskResolutions(status?: string) {
+  const params = new URLSearchParams()
   if (status) params.set('status', status)
-  return request<import('@/types/api').ActivityRiskResolutionVO[]>(`/api/ticket/admin/risk-resolutions?${params.toString()}`)
+  const qs = params.toString()
+  return request<import('@/types/api').ActivityRiskResolutionVO[]>(`/api/ticket/admin/risk-resolutions${qs ? `?${qs}` : ''}`)
 }
 
-export async function listMyNotifications(userId: number) {
-  assertPositiveInteger(userId, 'userId')
-  return request<import('@/types/api').NotificationVO[]>(`/api/notification/list?userId=${userId}`)
+export async function listMyNotifications() {
+  return request<import('@/types/api').NotificationVO[]>('/api/notification/list')
 }
 
 export async function suspendActivityForRisk(id: number, params: { userId: number; reason?: string }) {
   assertPositiveInteger(id, 'activityId')
+  const { userId: _userId, ...safeParams } = params
   return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/activities/${id}/suspend`, {
     method: 'POST',
-    body: JSON.stringify(params),
+    body: JSON.stringify(safeParams),
   })
 }
 
-export async function listAdminRiskCases(userId: number) {
-  assertPositiveInteger(userId, 'userId')
-  return request<import('@/types/api').ActivityRiskCaseVO[]>(`/api/ticket/admin/risk-cases?userId=${userId}`)
+export async function listAdminRiskCases() {
+  return request<import('@/types/api').ActivityRiskCaseVO[]>('/api/ticket/admin/risk-cases')
 }
 
 export async function reviewActivityRiskResolution(id: number, params: import('@/types/api').ActivityRiskResolutionReviewRequest) {
   assertPositiveInteger(id, 'resolutionId')
+  const { userId: _userId, ...safeParams } = params
   return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/risk-resolutions/${id}/review`, {
     method: 'POST',
-    body: JSON.stringify(params),
+    body: JSON.stringify(safeParams),
   })
 }
 
 export async function uploadTicketAsset(params: { userId: number; bizType: string; file: File }) {
   const formData = new FormData()
-  formData.append('userId', String(params.userId))
   formData.append('bizType', params.bizType)
   formData.append('file', params.file)
   return multipartRequest<AssetUploadVO>('/api/ticket/admin/assets', formData)
@@ -414,7 +414,6 @@ export async function uploadTicketAsset(params: { userId: number; bizType: strin
 
 export async function uploadPrivateAsset(params: { userId: number; bizType: string; file: File }) {
   const formData = new FormData()
-  formData.append('userId', String(params.userId))
   formData.append('bizType', params.bizType)
   formData.append('file', params.file)
   return multipartRequest<PrivateAssetVO>('/api/ticket/admin/private-assets', formData)
@@ -425,15 +424,15 @@ export function privateAssetDownloadUrl(id: number) {
   return `${BASE_URL}/api/ticket/admin/private-assets/${id}/download`
 }
 
-export async function createReservation(userId: number, sessionId: number) {
+export async function createReservation(_userId: number, sessionId: number) {
   return request<void>('/api/ticket/reservations', {
     method: 'POST',
-    body: JSON.stringify({ userId, sessionId }),
+    body: JSON.stringify({ sessionId }),
   })
 }
 
-export async function listReservations(userId: number) {
-  return request<import('@/types/api').ReservationEntity[]>(`/api/ticket/reservations?userId=${userId}`)
+export async function listReservations(_userId: number) {
+  return request<import('@/types/api').ReservationEntity[]>('/api/ticket/reservations')
 }
 
 // ========== 订单服务 ==========
@@ -552,26 +551,26 @@ export async function syncTeamGrabPaid(teamId: number): Promise<TeamPaymentSyncR
   })
 }
 
-export async function createOrder(params: { userId: number; sessionId: number; ticketTypeId: number; quantity: number; unitPrice?: number; attendeeIds?: number[] }) {
+export async function createOrder(params: { sessionId: number; ticketTypeId: number; quantity: number; unitPrice?: number; attendeeIds?: number[] }) {
   return request<{ id: number; orderNo: string; amount: number }>('/api/order/create', {
     method: 'POST',
     body: JSON.stringify(params),
   })
 }
 
-export async function createOrderWithSeats(params: { userId: number; sessionId: number; ticketTypeId: number; seatIds?: number[]; quantity?: number; unitPrice?: number; attendeeIds?: number[] }) {
+export async function createOrderWithSeats(params: { sessionId: number; ticketTypeId: number; seatIds?: number[]; quantity?: number; unitPrice?: number; attendeeIds?: number[] }) {
   return request<{ id: number; orderNo: string; amount: number }>('/api/order/create-with-seats', {
     method: 'POST',
     body: JSON.stringify(params),
   })
 }
 
-export async function listOrders(userId: number) {
-  return request<import('@/types/api').OrderEntity[]>(`/api/order/user/${userId}`)
+export async function listOrders() {
+  return request<import('@/types/api').OrderEntity[]>('/api/order/my')
 }
 
-export async function listTrashOrders(userId: number) {
-  return request<import('@/types/api').OrderEntity[]>(`/api/order/user/${userId}/trash`)
+export async function listTrashOrders() {
+  return request<import('@/types/api').OrderEntity[]>('/api/order/my/trash')
 }
 
 export async function getOrderDetail(id: number) {
@@ -582,12 +581,12 @@ export async function cancelOrder(id: number) {
   return request<void>(`/api/order/${id}`, { method: 'DELETE' })
 }
 
-export async function hideOrder(id: number, userId: number) {
-  return request<void>(`/api/order/${id}/hide?userId=${userId}`, { method: 'POST' })
+export async function hideOrder(id: number) {
+  return request<void>(`/api/order/${id}/hide`, { method: 'POST' })
 }
 
-export async function restoreOrder(id: number, userId: number) {
-  return request<void>(`/api/order/${id}/restore?userId=${userId}`, { method: 'POST' })
+export async function restoreOrder(id: number) {
+  return request<void>(`/api/order/${id}/restore`, { method: 'POST' })
 }
 
 export async function payOrder(id: number) {
@@ -612,8 +611,8 @@ export async function syncAlipayPayment(orderId: number) {
   return request<import('@/types/api').PaymentStatusResponse>(`/api/payment/alipay/sync/${orderId}`)
 }
 
-export async function getRefundOptions(orderId: number, userId: number) {
-  return request<import('@/types/api').RefundOptionsVO>(`/api/order/${orderId}/refund-options?userId=${userId}`)
+export async function getRefundOptions(orderId: number) {
+  return request<import('@/types/api').RefundOptionsVO>(`/api/order/${orderId}/refund-options`)
 }
 
 export async function applyRefund(
@@ -670,8 +669,8 @@ export function submitPayForm(payForm: string) {
 
 // ========== B端管理接口 ==========
 
-export async function getAdminSummary(userId: number) {
-  return request<import('@/types/api').AdminSummaryVO>(`/api/ticket/admin/summary?userId=${userId}`)
+export async function getAdminSummary() {
+  return request<import('@/types/api').AdminSummaryVO>('/api/ticket/admin/summary')
 }
 
 export async function listConsoleOrders(params: { paidOnly?: boolean } = {}) {
@@ -681,7 +680,7 @@ export async function listConsoleOrders(params: { paidOnly?: boolean } = {}) {
 }
 
 export async function listAdminTours(userId: number, params: { page?: number; size?: number } = {}) {
-  const searchParams = new URLSearchParams({ userId: String(userId) })
+  const searchParams = new URLSearchParams()
   searchParams.set('page', String(params.page || 1))
   searchParams.set('size', String(params.size || 10))
   return request<import('@/types/api').PageResult<import('@/types/api').TourEntity>>(
@@ -690,13 +689,13 @@ export async function listAdminTours(userId: number, params: { page?: number; si
 }
 
 export async function getAdminTourDetail(userId: number, tourId: number) {
-  return request<import('@/types/api').TourAdminDetailVO>(`/api/ticket/admin/tours/${tourId}?userId=${userId}`)
+  return request<import('@/types/api').TourAdminDetailVO>(`/api/ticket/admin/tours/${tourId}`)
 }
 
 export async function deleteTourDraft(userId: number, tourId: number) {
   assertPositiveInteger(userId, '用户ID')
   assertPositiveInteger(tourId, '巡演ID')
-  return request<void>(`/api/ticket/admin/tours/${tourId}?userId=${userId}`, { method: 'DELETE' })
+  return request<void>(`/api/ticket/admin/tours/${tourId}`, { method: 'DELETE' })
 }
 
 export async function announceTourCities(userId: number, tourId: number) {
@@ -704,7 +703,7 @@ export async function announceTourCities(userId: number, tourId: number) {
   assertPositiveInteger(tourId, '巡演ID')
   return request<import('@/types/api').TourEntity>(`/api/ticket/admin/tours/${tourId}/announce`, {
     method: 'POST',
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({}),
   })
 }
 
@@ -713,19 +712,19 @@ export async function deactivateTour(tourId: number, body: { userId: number; con
   assertPositiveInteger(body.userId, '用户ID')
   return request<import('@/types/api').RefundImpactResponse>(`/api/ticket/admin/tours/${tourId}/deactivate`, {
     method: 'POST',
-    body: JSON.stringify(body),
+    body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function createTourDraft(body: Record<string, unknown>) {
   return request<import('@/types/api').TourEntity>('/api/ticket/admin/tours/draft', {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function createStationDraft(tourId: number, body: Record<string, unknown>) {
   return request<import('@/types/api').StationEntity>(`/api/ticket/admin/tours/${tourId}/stations/draft`, {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
@@ -796,7 +795,7 @@ export async function rejectStationConfigVersion(versionId: number, body: { revi
 
 export async function publishStation(stationId: number, body: Record<string, unknown> & { perUserLimit?: number | null }) {
   return request<Record<string, unknown>>(`/api/ticket/admin/stations/${stationId}/publish`, {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
@@ -804,8 +803,8 @@ export async function getTourDetail(id: number) {
   return request<import('@/types/api').TourDetailVO>(`/api/ticket/tours/${id}`)
 }
 
-export async function listAdminActivities(userId: number, params: { page?: number; size?: number; keyword?: string; status?: number } = {}) {
-  const searchParams = new URLSearchParams({ userId: String(userId) })
+export async function listAdminActivities(params: { page?: number; size?: number; keyword?: string; status?: number } = {}) {
+  const searchParams = new URLSearchParams()
   searchParams.set('page', String(params.page || 1))
   searchParams.set('size', String(params.size || 10))
   if (params.keyword?.trim()) searchParams.set('keyword', params.keyword.trim())
@@ -815,25 +814,27 @@ export async function listAdminActivities(userId: number, params: { page?: numbe
   )
 }
 
-export async function getAdminActivity(id: number, userId: number) {
-  return request<import('@/types/api').ActivityEntity>(`/api/ticket/admin/activities/${id}?userId=${userId}`)
+export async function getAdminActivity(id: number) {
+  return request<import('@/types/api').ActivityEntity>(`/api/ticket/admin/activities/${id}`)
 }
 
 export async function createAdminActivity(body: Record<string, unknown> & { perUserLimit?: number | null }) {
+  const { userId: _userId, ...safeBody } = body
   return request<import('@/types/api').ActivityEntity>('/api/ticket/admin/activities', {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify(safeBody),
   })
 }
 
 export async function updateAdminActivity(id: number, body: Record<string, unknown> & { perUserLimit?: number | null }) {
+  const { userId: _userId, ...safeBody } = body
   return request<import('@/types/api').ActivityEntity>(`/api/ticket/admin/activities/${id}`, {
-    method: 'PUT', body: JSON.stringify(body),
+    method: 'PUT', body: JSON.stringify(safeBody),
   })
 }
 
 export async function updateActivityStatus(id: number, body: Record<string, unknown>) {
   return request<void>(`/api/ticket/admin/activities/${id}/status`, {
-    method: 'PUT', body: JSON.stringify(body),
+    method: 'PUT', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
@@ -852,18 +853,18 @@ export async function deactivateOrganizer(body: import('@/types/api').Deactivate
 export async function deleteAdminActivity(id: number, body: { userId: number; reason: string }) {
   return request<import('@/types/api').DeleteActivityResponse>(`/api/ticket/admin/activities/${id}`, {
     method: 'DELETE',
-    body: JSON.stringify(body),
+    body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function createAdminSession(body: Record<string, unknown>) {
   return request<import('@/types/api').SessionEntity>('/api/ticket/admin/sessions', {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function listAdminSessions(userId: number, params: { page?: number; size?: number; activityId?: number; venueId?: number; status?: number } = {}) {
-  const searchParams = new URLSearchParams({ userId: String(userId) })
+  const searchParams = new URLSearchParams()
   searchParams.set('page', String(params.page || 1))
   searchParams.set('size', String(params.size || 10))
   if (params.activityId) searchParams.set('activityId', String(params.activityId))
@@ -876,12 +877,12 @@ export async function listAdminSessions(userId: number, params: { page?: number;
 
 export async function updateAdminSession(id: number, body: Record<string, unknown>) {
   return request<import('@/types/api').SessionEntity>(`/api/ticket/admin/sessions/${id}`, {
-    method: 'PUT', body: JSON.stringify(body),
+    method: 'PUT', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function deleteAdminSession(id: number, userId: number) {
-  return request<void>(`/api/ticket/admin/sessions/${id}?userId=${userId}`, { method: 'DELETE' })
+  return request<void>(`/api/ticket/admin/sessions/${id}`, { method: 'DELETE' })
 }
 
 export async function createAdminTicketType(body: import('@/types/api').AdminTicketTypeCreateRequest) {
@@ -897,63 +898,63 @@ export async function updateAdminTicketType(id: number, body: Record<string, unk
 }
 
 export async function deleteAdminTicketType(id: number, userId: number) {
-  return request<void>(`/api/ticket/admin/ticket-types/${id}?userId=${userId}`, { method: 'DELETE' })
+  return request<void>(`/api/ticket/admin/ticket-types/${id}`, { method: 'DELETE' })
 }
 
 export async function listAdminVenues(userId: number) {
-  return request<import('@/types/api').VenueEntity[]>(`/api/ticket/admin/venues?userId=${userId}`)
+  return request<import('@/types/api').VenueEntity[]>('/api/ticket/admin/venues')
 }
 
 export async function createAdminVenue(body: Record<string, unknown>) {
   return request<import('@/types/api').VenueEntity>('/api/ticket/admin/venues', {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function updateAdminVenue(id: number, body: Record<string, unknown>) {
   return request<import('@/types/api').VenueEntity>(`/api/ticket/admin/venues/${id}`, {
-    method: 'PUT', body: JSON.stringify(body),
+    method: 'PUT', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function deleteAdminVenue(id: number, userId: number) {
-  return request<void>(`/api/ticket/admin/venues/${id}?userId=${userId}`, { method: 'DELETE' })
+  return request<void>(`/api/ticket/admin/venues/${id}`, { method: 'DELETE' })
 }
 
 export async function createVenueArea(id: number, body: Record<string, unknown>) {
   return request<import('@/types/api').SeatTemplateResponse>(`/api/ticket/admin/venues/${id}/areas`, {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function listVenueAreas(id: number, userId: number) {
-  return request<import('@/types/api').VenueAreaVO[]>(`/api/ticket/admin/venues/${id}/areas?userId=${userId}`)
+  return request<import('@/types/api').VenueAreaVO[]>(`/api/ticket/admin/venues/${id}/areas`)
 }
 
 export async function listVenueSeats(venueId: number, userId: number) {
-  return request<import('@/types/api').VenueSeatVO[]>(`/api/ticket/admin/venues/${venueId}/seats?userId=${userId}`)
+  return request<import('@/types/api').VenueSeatVO[]>(`/api/ticket/admin/venues/${venueId}/seats`)
 }
 
 export async function createVenueSeat(venueId: number, body: import('@/types/api').VenueSeatRequest) {
   return request<import('@/types/api').SeatTemplateSyncResponseVO>(`/api/ticket/admin/venues/${venueId}/seats`, {
-    method: 'POST', body: JSON.stringify(body),
+    method: 'POST', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function updateVenueSeat(seatId: number, body: import('@/types/api').VenueSeatRequest) {
   return request<import('@/types/api').SeatTemplateSyncResponseVO>(`/api/ticket/admin/venue-seats/${seatId}`, {
-    method: 'PUT', body: JSON.stringify(body),
+    method: 'PUT', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
 }
 
 export async function deleteVenueSeat(seatId: number, userId: number) {
-  return request<import('@/types/api').SeatTemplateSyncResponseVO>(`/api/ticket/admin/venue-seats/${seatId}?userId=${userId}`, { method: 'DELETE' })
+  return request<import('@/types/api').SeatTemplateSyncResponseVO>(`/api/ticket/admin/venue-seats/${seatId}`, { method: 'DELETE' })
 }
 
 export async function getActivitySeatLayout(activityId: number, userId: number) {
   assertPositiveInteger(activityId, '活动ID')
   assertPositiveInteger(userId, '用户ID')
-  return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/activities/${activityId}/seat-layout?userId=${userId}`)
+  return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/activities/${activityId}/seat-layout`)
 }
 
 export async function createBlankActivitySeatLayout(activityId: number, userId: number) {
@@ -961,12 +962,12 @@ export async function createBlankActivitySeatLayout(activityId: number, userId: 
   assertPositiveInteger(userId, '用户ID')
   return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/activities/${activityId}/seat-layout/blank`, {
     method: 'POST',
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({}),
   })
 }
 
 export async function updateActivitySeatLayout(activityId: number, body: { userId: number; layout: import('@/types/api').SeatCraftLayoutVO }) {
-  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/activities/${activityId}/seat-layout`, { method: 'PUT', body: JSON.stringify(body) })
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/activities/${activityId}/seat-layout`, { method: 'PUT', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)) })
 }
 
 export type SeatCraftOwnerType = 'activity' | 'session' | 'station'
@@ -1024,19 +1025,19 @@ export async function getVenueDefaultLayout(venueId: number) {
 }
 
 export async function updateVenueDefaultLayout(venueId: number, body: { userId: number; layout: import('@/types/api').SeatCraftLayoutVO }) {
-  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/venues/${venueId}/default-layout`, { method: 'PUT', body: JSON.stringify(body) })
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/venues/${venueId}/default-layout`, { method: 'PUT', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)) })
 }
 
 export async function listVenueSeatLayoutTemplates(venueId: number, userId: number) {
   assertPositiveInteger(venueId, '地点ID')
   assertPositiveInteger(userId, '用户ID')
-  return request<import('@/types/api').SeatLayoutTemplateCandidateVO[]>(`/api/ticket/admin/venues/${venueId}/seat-layout-templates?userId=${userId}`)
+  return request<import('@/types/api').SeatLayoutTemplateCandidateVO[]>(`/api/ticket/admin/venues/${venueId}/seat-layout-templates`)
 }
 
 export async function getSessionSeatLayout(sessionId: number, userId: number) {
   assertPositiveInteger(sessionId, '场次ID')
   assertPositiveInteger(userId, '用户ID')
-  return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/sessions/${sessionId}/seat-layout?userId=${userId}`)
+  return request<import('@/types/api').SeatCraftLayoutVO | null>(`/api/ticket/admin/sessions/${sessionId}/seat-layout`)
 }
 
 export async function createBlankSessionSeatLayout(sessionId: number, userId: number) {
@@ -1044,12 +1045,12 @@ export async function createBlankSessionSeatLayout(sessionId: number, userId: nu
   assertPositiveInteger(userId, '用户ID')
   return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/sessions/${sessionId}/seat-layout/blank`, {
     method: 'POST',
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({}),
   })
 }
 
 export async function updateSessionSeatLayout(sessionId: number, body: { userId: number; layout: import('@/types/api').SeatCraftLayoutVO }) {
-  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/sessions/${sessionId}/seat-layout`, { method: 'PUT', body: JSON.stringify(body) })
+  return request<import('@/types/api').SeatCraftLayoutVO>(`/api/ticket/admin/sessions/${sessionId}/seat-layout`, { method: 'PUT', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)) })
 }
 
 export async function updateSessionTicketBindings(sessionId: number, body: import('@/types/api').SessionTicketBindingRequest) {
@@ -1062,7 +1063,7 @@ export async function updateSessionTicketBindings(sessionId: number, body: impor
 export async function getSessionTicketDrafts(sessionId: number, userId: number) {
   assertPositiveInteger(sessionId, '场次ID')
   assertPositiveInteger(userId, '用户ID')
-  return request<import('@/types/api').SeatCraftSectionVO[]>(`/api/ticket/admin/sessions/${sessionId}/seat-layout/ticket-drafts?userId=${userId}`)
+  return request<import('@/types/api').SeatCraftSectionVO[]>(`/api/ticket/admin/sessions/${sessionId}/seat-layout/ticket-drafts`)
 }
 
 export async function submitVenueApplication(body: Record<string, unknown>) {

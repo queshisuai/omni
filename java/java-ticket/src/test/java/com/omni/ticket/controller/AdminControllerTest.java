@@ -14,8 +14,12 @@ import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.ActivityArtistDto;
 import com.omni.ticket.dto.ActivityDraftResponse;
+import com.omni.ticket.dto.ActivityRiskResolutionRequest;
+import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
+import com.omni.ticket.dto.ActivityRiskResolutionResponse;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
+import com.omni.ticket.dto.ArtistSearchResponse;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.dto.ArtistUpdateRequest;
 import com.omni.ticket.dto.AssetUploadResponse;
@@ -25,18 +29,23 @@ import com.omni.ticket.dto.PrivateAssetResponse;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
+import com.omni.ticket.dto.SeatTemplateResponse;
 import com.omni.ticket.dto.StationConfigVersionRequest;
 import com.omni.ticket.dto.StationConfigVersionResponse;
 import com.omni.ticket.dto.StationConfigVersionReviewRequest;
+import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.dto.VenueApplicationReviewRequest;
 import com.omni.ticket.dto.VenueApplicationResponse;
+import com.omni.ticket.dto.VenueSeatRequest;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Artist;
+import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueApplication;
+import com.omni.ticket.entity.VenueSeat;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
@@ -166,13 +175,36 @@ class AdminControllerTest {
         when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
         when(venueMapper.selectList(any())).thenReturn(Collections.emptyList());
 
-        controller.listAdminVenues(2002L);
+        controller.listAdminVenues(adminToken(), 9999L);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<QueryWrapper<Venue>> captor = ArgumentCaptor.forClass(QueryWrapper.class);
         verify(venueMapper).selectList(captor.capture());
         String sqlSegment = captor.getValue().getSqlSegment().trim();
         assertEquals("(status = #{ew.paramNameValuePairs.MPGENVAL1}) ORDER BY city ASC,name ASC,id ASC", sqlSegment);
+    }
+
+    @Test
+    void searchArtistsRequiresAuthorizationToken() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(artistAdminService.search("周")).thenReturn(List.of(new ArtistSearchResponse()));
+
+        Result<List<ArtistSearchResponse>> result = controller.searchArtists(organizerToken(), "周");
+
+        assertEquals(200, result.getCode());
+        assertEquals(1, result.getData().size());
+        verify(artistAdminService).search("周");
+    }
+
+    @Test
+    void searchArtistsRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<List<ArtistSearchResponse>> result = controller.searchArtists(null, "周");
+
+        assertEquals(401, result.getCode());
+        verify(artistAdminService, never()).search(any());
     }
 
     @Test
@@ -184,7 +216,7 @@ class AdminControllerTest {
         when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
         when(venueMapper.selectById(13L)).thenReturn(venue);
 
-        Result<Void> result = controller.deleteVenue(13L, 2002L);
+        Result<Void> result = controller.deleteVenue(13L, adminToken(), 9999L);
 
         assertEquals(200, result.getCode());
         verify(venueMapper).deleteById(13L);
@@ -432,16 +464,17 @@ class AdminControllerTest {
     void deactivateTourDelegatesToTourStationService() {
         AdminController controller = controller();
         DeactivateActivityRequest request = new DeactivateActivityRequest();
-        request.setUserId(2003L);
+        request.setUserId(9999L);
         request.setConfirmRefund(true);
         RefundImpactResponse response = new RefundImpactResponse();
         response.setActivityId(10L);
         when(tourStationService.deactivateTour(10L, request)).thenReturn(response);
 
-        Result<RefundImpactResponse> result = controller.deactivateTour(10L, request);
+        Result<RefundImpactResponse> result = controller.deactivateTour(10L, organizerToken(), request);
 
         assertEquals(200, result.getCode());
         assertEquals(10L, result.getData().getActivityId());
+        assertEquals(2003L, request.getUserId());
         verify(tourStationService).deactivateTour(10L, request);
     }
 
@@ -449,7 +482,7 @@ class AdminControllerTest {
     void createVenueSeatRejectsEmptyRequestBody() {
         AdminController controller = controller();
 
-        Result<?> result = controller.createVenueSeat(1L, null);
+        Result<?> result = controller.createVenueSeat(1L, adminToken(), null);
 
         assertEquals(400, result.getCode());
         assertEquals("座位参数不能为空", result.getMessage());
@@ -457,24 +490,160 @@ class AdminControllerTest {
     }
 
     @Test
+    void createVenueUsesAuthorizationToken() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", 9999L);
+        body.put("name", "venue");
+
+        Result<Venue> result = controller.createVenue(adminToken(), body);
+
+        assertEquals(200, result.getCode());
+        verify(userAccessService).requireAdminOrOrganizerRole(2002L);
+        verify(userAccessService, never()).requireAdminOrOrganizerRole(9999L);
+    }
+
+    @Test
+    void updateVenueUsesAuthorizationToken() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        Venue venue = new Venue();
+        venue.setId(13L);
+        when(venueMapper.selectById(13L)).thenReturn(venue);
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", 9999L);
+        body.put("name", "updated-venue");
+
+        Result<Venue> result = controller.updateVenue(13L, adminToken(), body);
+
+        assertEquals(200, result.getCode());
+        verify(userAccessService).requireAdminOrOrganizerRole(2002L);
+        verify(userAccessService, never()).requireAdminOrOrganizerRole(9999L);
+    }
+
+    @Test
+    void createVenueAreaUsesAuthorizationToken() {
+        AdminController controller = controller();
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", 9999L);
+        when(seatTemplateService.createArea(any())).thenReturn(new SeatTemplateResponse(null, 0));
+
+        Result<SeatTemplateResponse> result = controller.createVenueArea(8L, adminToken(), body);
+
+        assertEquals(200, result.getCode());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(seatTemplateService).createArea(captor.capture());
+        assertEquals(2002L, captor.getValue().get("userId"));
+        assertEquals(8L, captor.getValue().get("venueId"));
+    }
+
+    @Test
+    void createVenueSeatUsesAuthorizationToken() {
+        AdminController controller = controller();
+        VenueSeatRequest request = new VenueSeatRequest();
+        request.setUserId(9999L);
+
+        Result<?> result = controller.createVenueSeat(8L, adminToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(2002L, request.getUserId());
+        assertEquals(8L, request.getVenueId());
+        verify(seatTemplateService).createSeat(request);
+    }
+
+    @Test
+    void updateVenueSeatUsesAuthorizationToken() {
+        AdminController controller = controller();
+        VenueSeatRequest request = new VenueSeatRequest();
+        request.setUserId(9999L);
+        VenueSeat seat = new VenueSeat();
+        seat.setVenueId(8L);
+        when(seatTemplateService.updateSeat(77L, request)).thenReturn(seat);
+
+        Result<?> result = controller.updateVenueSeat(77L, adminToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(2002L, request.getUserId());
+        verify(seatTemplateService).updateSeat(77L, request);
+    }
+
+    @Test
     void deleteSessionDelegatesToService() {
         AdminController controller = controller();
 
-        Result<Void> result = controller.deleteSession(2003L, 50L);
+        Result<Void> result = controller.deleteSession(organizerToken(), 9999L, 50L);
 
         assertEquals(200, result.getCode());
+        verify(sessionAdminService).deleteSession(2003L, 50L);
+    }
+
+    @Test
+    void createSessionUsesAuthorizationToken() {
+        AdminController controller = controller();
+        when(sessionAdminService.createSession(any())).thenReturn(new Session());
+
+        Result<Session> result = controller.createSession(organizerToken(), Map.of(
+                "userId", 9999L,
+                "activityId", 10L
+        ));
+
+        assertEquals(200, result.getCode());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(sessionAdminService).createSession(captor.capture());
+        assertEquals(2003L, captor.getValue().get("userId"));
+    }
+
+    @Test
+    void createSessionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<Session> result = controller.createSession(null, Map.of(
+                "userId", 9999L,
+                "activityId", 10L
+        ));
+
+        assertEquals(401, result.getCode());
+        verify(sessionAdminService, never()).createSession(any());
+    }
+
+    @Test
+    void updateSessionUsesAuthorizationToken() {
+        AdminController controller = controller();
+        when(sessionAdminService.updateSession(eq(50L), any())).thenReturn(new Session());
+
+        Result<Session> result = controller.updateSession(50L, organizerToken(), Map.of("userId", 9999L));
+
+        assertEquals(200, result.getCode());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(sessionAdminService).updateSession(eq(50L), captor.capture());
+        assertEquals(2003L, captor.getValue().get("userId"));
+    }
+
+    @Test
+    void updateSessionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<Session> result = controller.updateSession(50L, null, Map.of("userId", 9999L));
+
+        assertEquals(401, result.getCode());
+        verify(sessionAdminService, never()).updateSession(any(), any());
     }
 
     @Test
     void deleteActivityRejectsBlankReason() {
         AdminController controller = controller();
         DeleteActivityRequest request = new DeleteActivityRequest();
-        request.setUserId(2003L);
+        request.setUserId(9999L);
         request.setReason(" ");
 
-        Result<?> result = controller.deleteActivity(10L, request);
+        Result<?> result = controller.deleteActivity(10L, organizerToken(), request);
 
         assertEquals(400, result.getCode());
+        assertEquals(2003L, request.getUserId());
         assertEquals("删除原因不能为空", result.getMessage());
         verify(activityAdminService, never()).deleteActivity(any(), any());
     }
@@ -483,16 +652,17 @@ class AdminControllerTest {
     void deleteActivityDelegatesToService() {
         AdminController controller = controller();
         DeleteActivityRequest request = new DeleteActivityRequest();
-        request.setUserId(2003L);
+        request.setUserId(9999L);
         request.setReason("演出计划取消");
         DeleteActivityResponse response = new DeleteActivityResponse();
         response.setActivityId(10L);
         when(activityAdminService.deleteActivity(10L, request)).thenReturn(response);
 
-        Result<DeleteActivityResponse> result = controller.deleteActivity(10L, request);
+        Result<DeleteActivityResponse> result = controller.deleteActivity(10L, organizerToken(), request);
 
         assertEquals(200, result.getCode());
         assertEquals(10L, result.getData().getActivityId());
+        assertEquals(2003L, request.getUserId());
         verify(activityAdminService).deleteActivity(10L, request);
     }
 
@@ -508,8 +678,8 @@ class AdminControllerTest {
         mockActivity.setOrganizerId(2003L);
         when(activityMapper.selectById(10L)).thenReturn(mockActivity);
 
-        Result<TicketType> result = controller.createTicketType(Map.of(
-                "userId", 2003L, "sessionId", 1L, "name", "VIP", "price", "500", "totalStock", "100", "layoutSectionIds", Collections.emptyList()
+        Result<TicketType> result = controller.createTicketType(organizerToken(), Map.of(
+                "userId", 9999L, "sessionId", 1L, "name", "VIP", "price", "500", "totalStock", "100", "layoutSectionIds", Collections.emptyList()
         ));
 
         assertEquals(400, result.getCode());
@@ -537,7 +707,7 @@ class AdminControllerTest {
         protectedSeat.setTicketTypeId(900L);
         when(sessionSeatService.listBySession(99L)).thenReturn(List.of(protectedSeat));
 
-        Result<Void> result = controller.deleteTicketType(2003L, 900L);
+        Result<Void> result = controller.deleteTicketType(organizerToken(), 9999L, 900L);
 
         assertEquals(400, result.getCode());
         assertEquals("该票档已有购票订单，请先完成退款后再删除。", result.getMessage());
@@ -552,28 +722,97 @@ class AdminControllerTest {
         tour.setId(20L);
         when(tourStationService.createTourDraft(any(), any())).thenReturn(tour);
 
-        Result<Tour> result = controller.createTourDraft(Map.of("userId", 2003L, "title", "巡演"));
+        Result<Tour> result = controller.createTourDraft(organizerToken(), Map.of("userId", 9999L, "title", "巡演"));
 
         assertEquals(200, result.getCode());
         assertEquals(20L, result.getData().getId());
-        verify(tourStationService).createTourDraft(2003L, Map.of("userId", 2003L, "title", "巡演"));
+        verify(tourStationService).createTourDraft(eq(2003L), any());
     }
 
     @Test
     void updateSessionSeatLayoutDelegatesToService() {
         AdminController controller = controller();
         SeatCraftLayoutDtos.LayoutSaveRequest request = new SeatCraftLayoutDtos.LayoutSaveRequest();
-        request.setUserId(2003L);
+        request.setUserId(9999L);
         SeatCraftLayoutDtos.LayoutResponse layout = new SeatCraftLayoutDtos.LayoutResponse();
         layout.setName("场次 SeatCraft 座位图");
         request.setLayout(layout);
         when(sessionSeatLayoutService.updateLayout(2003L, 10L, layout)).thenReturn(layout);
 
-        Result<SeatCraftLayoutDtos.LayoutResponse> result = controller.updateSessionSeatLayout(10L, request);
+        Result<SeatCraftLayoutDtos.LayoutResponse> result = controller.updateSessionSeatLayout(10L, organizerToken(), request);
 
         assertEquals(200, result.getCode());
+        assertEquals(2003L, request.getUserId());
         assertEquals("场次 SeatCraft 座位图", result.getData().getName());
         verify(sessionSeatLayoutService).updateLayout(2003L, 10L, layout);
+    }
+
+    @Test
+    void deactivateActivityUsesAuthorizationToken() {
+        AdminController controller = controller();
+        DeactivateActivityRequest request = new DeactivateActivityRequest();
+        request.setUserId(9999L);
+        request.setConfirmRefund(true);
+        RefundImpactResponse response = new RefundImpactResponse();
+        response.setActivityId(10L);
+        when(activityAdminService.deactivateActivity(10L, request)).thenReturn(response);
+
+        Result<RefundImpactResponse> result = controller.deactivateActivity(10L, organizerToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(10L, result.getData().getActivityId());
+        assertEquals(2003L, request.getUserId());
+        verify(activityAdminService).deactivateActivity(10L, request);
+    }
+
+    @Test
+    void getActivitySeatLayoutUsesAuthorizationToken() {
+        AdminController controller = controller();
+        SeatCraftLayoutDtos.LayoutResponse layout = new SeatCraftLayoutDtos.LayoutResponse();
+        layout.setName("activity-layout");
+        when(activitySeatLayoutService.getLayout(2003L, 10L)).thenReturn(layout);
+
+        Result<SeatCraftLayoutDtos.LayoutResponse> result = controller.getActivitySeatLayout(10L, organizerToken(), 9999L);
+
+        assertEquals(200, result.getCode());
+        assertEquals("activity-layout", result.getData().getName());
+        verify(activitySeatLayoutService).getLayout(2003L, 10L);
+        verify(activitySeatLayoutService, never()).getLayout(9999L, 10L);
+    }
+
+    @Test
+    void createBlankActivitySeatLayoutUsesAuthorizationToken() {
+        AdminController controller = controller();
+        SeatCraftLayoutDtos.LayoutResponse layout = new SeatCraftLayoutDtos.LayoutResponse();
+        layout.setName("blank-activity-layout");
+        when(activitySeatLayoutService.createBlankLayout(2003L, 10L)).thenReturn(layout);
+
+        Result<SeatCraftLayoutDtos.LayoutResponse> result =
+                controller.createBlankActivitySeatLayout(10L, organizerToken(), Map.of("userId", 9999L));
+
+        assertEquals(200, result.getCode());
+        assertEquals("blank-activity-layout", result.getData().getName());
+        verify(activitySeatLayoutService).createBlankLayout(2003L, 10L);
+        verify(activitySeatLayoutService, never()).createBlankLayout(9999L, 10L);
+    }
+
+    @Test
+    void updateActivitySeatLayoutUsesAuthorizationToken() {
+        AdminController controller = controller();
+        SeatCraftLayoutDtos.LayoutSaveRequest request = new SeatCraftLayoutDtos.LayoutSaveRequest();
+        request.setUserId(9999L);
+        SeatCraftLayoutDtos.LayoutResponse layout = new SeatCraftLayoutDtos.LayoutResponse();
+        layout.setName("updated-activity-layout");
+        request.setLayout(layout);
+        when(activitySeatLayoutService.updateLayout(2003L, 10L, layout)).thenReturn(layout);
+
+        Result<SeatCraftLayoutDtos.LayoutResponse> result = controller.updateActivitySeatLayout(10L, organizerToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals("updated-activity-layout", result.getData().getName());
+        assertEquals(2003L, request.getUserId());
+        verify(activitySeatLayoutService).updateLayout(2003L, 10L, layout);
+        verify(activitySeatLayoutService, never()).updateLayout(eq(9999L), eq(10L), any());
     }
 
     @Test
@@ -583,7 +822,7 @@ class AdminControllerTest {
         layout.setName("版本草稿");
         when(seatCraftLayoutVersionService.getDraft("activity", 10L)).thenReturn(layout);
 
-        Result<SeatCraftBlockDtos.LayoutRequest> result = controller.getSeatCraftDraft("activity", 10L);
+        Result<SeatCraftBlockDtos.LayoutRequest> result = controller.getSeatCraftDraft(organizerToken(), "activity", 10L);
 
         assertEquals(200, result.getCode());
         assertEquals("版本草稿", result.getData().getName());
@@ -595,7 +834,7 @@ class AdminControllerTest {
         AdminController controller = controller();
         when(seatCraftLayoutVersionService.getDraft("activity", 10L)).thenReturn(null);
 
-        Result<SeatCraftBlockDtos.LayoutRequest> result = controller.getSeatCraftDraft("activity", 10L);
+        Result<SeatCraftBlockDtos.LayoutRequest> result = controller.getSeatCraftDraft(organizerToken(), "activity", 10L);
 
         assertEquals(200, result.getCode());
         assertNull(result.getData());
@@ -612,13 +851,33 @@ class AdminControllerTest {
         summary.setName("正式版本");
         when(seatCraftLayoutVersionService.listVersions("activity", 10L)).thenReturn(List.of(summary));
 
-        Result<List<SeatCraftBlockDtos.VersionSummary>> result = controller.listSeatCraftVersions("activity", 10L);
+        Result<List<SeatCraftBlockDtos.VersionSummary>> result = controller.listSeatCraftVersions(organizerToken(), "activity", 10L);
 
         assertEquals(200, result.getCode());
         assertEquals(1, result.getData().size());
         assertEquals(100L, result.getData().get(0).getId());
         assertEquals(4, result.getData().get(0).getVersionNo());
         verify(seatCraftLayoutVersionService).listVersions("activity", 10L);
+    }
+
+    @Test
+    void getSeatCraftDraftRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<SeatCraftBlockDtos.LayoutRequest> result = controller.getSeatCraftDraft(null, "activity", 10L);
+
+        assertEquals(401, result.getCode());
+        verify(seatCraftLayoutVersionService, never()).getDraft(any(), any());
+    }
+
+    @Test
+    void listSeatCraftVersionsRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<List<SeatCraftBlockDtos.VersionSummary>> result = controller.listSeatCraftVersions(null, "activity", 10L);
+
+        assertEquals(401, result.getCode());
+        verify(seatCraftLayoutVersionService, never()).listVersions(any(), any());
     }
 
     @Test
@@ -701,7 +960,7 @@ class AdminControllerTest {
         AdminController controller = controller();
         when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
 
-        Result<Activity> result = controller.createActivity(Map.of(
+        Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
                 "userId", 2003L,
                 "categoryId", 1L,
                 "artistId", 1L,
@@ -720,6 +979,63 @@ class AdminControllerTest {
     }
 
     @Test
+    void createActivityUsesAuthorizationToken() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+
+        Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
+                "userId", 9999L,
+                "categoryId", 1L,
+                "artistId", 1L,
+                "name", "auth activity"
+        ));
+
+        ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityMapper).insert(captor.capture());
+        assertEquals(200, result.getCode());
+        assertEquals(2003L, captor.getValue().getOrganizerId());
+        verify(userAccessService).requireAdminOrOrganizerRole(2003L);
+        verify(userAccessService, never()).requireAdminOrOrganizerRole(9999L);
+    }
+
+    @Test
+    void updateActivityUsesAuthorizationToken() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setOrganizerId(2003L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+
+        Result<Activity> result = controller.updateActivity(10L, organizerToken(), Map.of(
+                "userId", 9999L,
+                "name", "updated auth activity"
+        ));
+
+        assertEquals(200, result.getCode());
+        assertEquals("updated auth activity", result.getData().getName());
+        verify(userAccessService).requireAdminOrOrganizerRole(2003L);
+        verify(userAccessService, never()).requireAdminOrOrganizerRole(9999L);
+    }
+
+    @Test
+    void suspendActivityForRiskUsesAuthorizationToken() {
+        AdminController controller = controller();
+        ActivityRiskResolutionResponse response = new ActivityRiskResolutionResponse();
+        response.setActivityId(10L);
+        when(activityRiskResponseService.adminSuspendActivity(10L, 2002L, "risk")).thenReturn(response);
+
+        Result<ActivityRiskResolutionResponse> result = controller.suspendActivityForRisk(
+                10L,
+                adminToken(),
+                Map.of("userId", 9999L, "reason", "risk"));
+
+        assertEquals(200, result.getCode());
+        verify(activityRiskResponseService).adminSuspendActivity(10L, 2002L, "risk");
+        verify(activityRiskResponseService, never()).adminSuspendActivity(10L, 9999L, "risk");
+    }
+
+    @Test
     void createActivityStoresPrivateVenueApprovalProofReferenceWithoutBindingAsApplicationProof() {
         AdminController controller = controller();
         when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
@@ -729,7 +1045,7 @@ class AdminControllerTest {
             return 1;
         });
 
-        Result<Activity> result = controller.createActivity(Map.of(
+        Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
                 "userId", 2003L,
                 "categoryId", 1L,
                 "artistId", 1L,
@@ -747,7 +1063,7 @@ class AdminControllerTest {
         AdminController controller = controller();
         when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
 
-        Result<Activity> result = controller.createActivity(Map.of(
+        Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
                 "userId", 2003L,
                 "categoryId", 1L,
                 "artistId", 1L,
@@ -768,7 +1084,7 @@ class AdminControllerTest {
         Map<String, Object> body = validCreateActivityBody();
         body.put("perUserLimit", 0);
 
-        Result<Activity> result = controller.createActivity(body);
+        Result<Activity> result = controller.createActivity(organizerToken(), body);
 
         assertEquals(400, result.getCode());
         assertEquals("个人限购张数必须大于0", result.getMessage());
@@ -787,7 +1103,7 @@ class AdminControllerTest {
             return 1;
         });
 
-        Result<Activity> result = controller.createActivity(body);
+        Result<Activity> result = controller.createActivity(organizerToken(), body);
 
         assertEquals(200, result.getCode());
         assertEquals(3, result.getData().getPerUserLimit());
@@ -800,7 +1116,7 @@ class AdminControllerTest {
         Map<String, Object> body = validCreateActivityBody();
         body.put("perUserLimit", "abc");
 
-        Result<Activity> result = controller.createActivity(body);
+        Result<Activity> result = controller.createActivity(organizerToken(), body);
 
         assertEquals(400, result.getCode());
         assertEquals("个人限购张数必须为数字", result.getMessage());
@@ -816,7 +1132,7 @@ class AdminControllerTest {
         activity.setOrganizerId(2003L);
         when(activityMapper.selectById(10L)).thenReturn(activity);
 
-        Result<Activity> result = controller.updateActivity(10L, Map.of(
+        Result<Activity> result = controller.updateActivity(10L, organizerToken(), Map.of(
                 "userId", 2003L,
                 "perUserLimit", 5
         ));
@@ -839,7 +1155,7 @@ class AdminControllerTest {
         body.put("userId", 2003L);
         body.put("perUserLimit", " ");
 
-        Result<Activity> result = controller.updateActivity(10L, body);
+        Result<Activity> result = controller.updateActivity(10L, organizerToken(), body);
 
         assertEquals(200, result.getCode());
         assertNull(result.getData().getPerUserLimit());
@@ -856,7 +1172,7 @@ class AdminControllerTest {
             return 1;
         });
 
-        Result<Activity> result = controller.createActivity(Map.of(
+        Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
                 "userId", 2003L,
                 "categoryId", 1L,
                 "artistName", "新乐队",
@@ -886,7 +1202,7 @@ class AdminControllerTest {
         artist.setName("新乐队");
         when(artistMapper.selectById(88L)).thenReturn(artist);
 
-        Result<Activity> result = controller.getAdminActivity(10L, 2003L);
+        Result<Activity> result = controller.getAdminActivity(10L, organizerToken(), 9999L);
 
         assertEquals(200, result.getCode());
         assertEquals("新乐队", result.getData().getArtistName());
@@ -907,7 +1223,7 @@ class AdminControllerTest {
             return 1;
         });
 
-        Result<Activity> result = controller.updateActivity(10L, Map.of(
+        Result<Activity> result = controller.updateActivity(10L, organizerToken(), Map.of(
                 "userId", 2003L,
                 "artistName", "新组合"
         ));
@@ -923,7 +1239,7 @@ class AdminControllerTest {
         AdminController controller = controller();
         when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
 
-        Result<Activity> result = controller.createActivity(Map.of(
+        Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
                 "userId", 2003L,
                 "categoryId", 1L,
                 "name", "多艺人活动",
@@ -958,7 +1274,7 @@ class AdminControllerTest {
         hidden.setVisibility("hidden");
         when(activityArtistService.listAdminLineup(10L)).thenReturn(List.of(visible, hidden));
 
-        Result<Activity> result = controller.getAdminActivity(10L, 2003L);
+        Result<Activity> result = controller.getAdminActivity(10L, organizerToken(), 9999L);
 
         assertEquals(200, result.getCode());
         assertEquals(2, result.getData().getArtists().size());
@@ -983,7 +1299,8 @@ class AdminControllerTest {
         second.setVisibility("public");
         when(activityArtistService.listAdminLineup(10L)).thenReturn(List.of(first, second));
 
-        Result<com.baomidou.mybatisplus.extension.plugins.pagination.Page<Activity>> result = controller.listAdminActivities(2003L, 1, 10, null, null);
+        Result<com.baomidou.mybatisplus.extension.plugins.pagination.Page<Activity>> result =
+                controller.listAdminActivities(organizerToken(), 9999L, 1, 10, null, null);
 
         assertEquals(200, result.getCode());
         assertEquals("周杰伦、五月天", result.getData().getRecords().get(0).getArtistName());
@@ -997,7 +1314,7 @@ class AdminControllerTest {
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<Activity> page = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10, 0);
         when(activityMapper.selectPage(any(), any())).thenReturn(page);
 
-        controller.listAdminActivities(2003L, 1, 10, null, null);
+        controller.listAdminActivities(organizerToken(), 9999L, 1, 10, null, null);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<LambdaQueryWrapper<Activity>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
@@ -1018,7 +1335,7 @@ class AdminControllerTest {
         activity.setArtistId(9L);
         when(activityMapper.selectById(10L)).thenReturn(activity);
 
-        Result<Activity> result = controller.updateActivity(10L, Map.of(
+        Result<Activity> result = controller.updateActivity(10L, organizerToken(), Map.of(
                 "userId", 2003L,
                 "artists", List.of(
                         Map.of("artistId", 1L, "isPrimary", false, "sort", 1, "visibility", "public"),
@@ -1040,7 +1357,7 @@ class AdminControllerTest {
         candidate.setSourceId(7L);
         when(venueApplicationService.listSeatLayoutTemplates(2003L, 99L)).thenReturn(List.of(candidate));
 
-        Result<List<SeatLayoutTemplateCandidateResponse>> result = controller.listVenueSeatLayoutTemplates(99L, 2003L);
+        Result<List<SeatLayoutTemplateCandidateResponse>> result = controller.listVenueSeatLayoutTemplates(99L, organizerToken(), 9999L);
 
         assertEquals(200, result.getCode());
         assertEquals("legacy_venue_default", result.getData().get(0).getSourceType());
@@ -1059,7 +1376,7 @@ class AdminControllerTest {
 
         Result<AssetUploadResponse> result = controller.uploadAsset(
                 "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer"),
-                2003L,
+                9999L,
                 "activity-poster",
                 file);
 
@@ -1070,17 +1387,17 @@ class AdminControllerTest {
     }
 
     @Test
-    void uploadAssetRejectsMismatchedTokenUserId() {
+    void uploadAssetRejectsMissingAuthorization() {
         AdminController controller = controller();
         MockMultipartFile file = new MockMultipartFile("file", "poster.png", "image/png", new byte[] {1, 2, 3});
 
         Result<AssetUploadResponse> result = controller.uploadAsset(
-                "Bearer " + JwtUtil.generateToken(2002L, "13800000001", "admin"),
-                2003L,
+                null,
+                9999L,
                 "activity-poster",
                 file);
 
-        assertEquals(403, result.getCode());
+        assertEquals(401, result.getCode());
         verify(userAccessService, never()).requireAdminOrOrganizerRole(any());
         verify(ticketAssetService, never()).upload(any(), any(), any());
     }
@@ -1648,6 +1965,146 @@ class AdminControllerTest {
 
         assertEquals(401, result.getCode());
         verify(orderAdminQueryService, never()).listOrders(anyLong(), any());
+    }
+
+    @Test
+    void getAdminSummaryUsesAuthorizationToken() {
+        AdminController controller = controller();
+
+        controller.getAdminSummary(adminToken(), 9999L);
+
+        verify(adminSummaryService).getSummary(2002L);
+        verify(adminSummaryService, never()).getSummary(9999L);
+    }
+
+    @Test
+    void listRiskCasesUsesAuthorizationToken() {
+        AdminController controller = controller();
+
+        controller.listRiskCases(adminToken(), 9999L);
+
+        verify(activityRiskResponseService).listRiskCases(2002L);
+        verify(activityRiskResponseService, never()).listRiskCases(9999L);
+    }
+
+    @Test
+    void listRiskResolutionsUsesAuthorizationToken() {
+        AdminController controller = controller();
+
+        controller.listRiskResolutions(adminToken(), 9999L, "pending");
+
+        verify(activityRiskResponseService).listResolutions(2002L, "pending");
+        verify(activityRiskResponseService, never()).listResolutions(9999L, "pending");
+    }
+
+    @Test
+    void submitRiskResolutionUsesAuthorizationToken() {
+        AdminController controller = controller();
+        ActivityRiskResolutionRequest request = new ActivityRiskResolutionRequest();
+        request.setUserId(9999L);
+        request.setResolutionNote("resolved");
+        ActivityRiskResolutionResponse response = new ActivityRiskResolutionResponse();
+        when(activityRiskResponseService.submitResolution(10L, request)).thenReturn(response);
+
+        Result<ActivityRiskResolutionResponse> result = controller.submitRiskResolution(10L, organizerToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(2003L, request.getUserId());
+        verify(activityRiskResponseService).submitResolution(10L, request);
+    }
+
+    @Test
+    void submitRiskResolutionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+        ActivityRiskResolutionRequest request = new ActivityRiskResolutionRequest();
+        request.setUserId(9999L);
+
+        Result<ActivityRiskResolutionResponse> result = controller.submitRiskResolution(10L, null, request);
+
+        assertEquals(401, result.getCode());
+        assertEquals(9999L, request.getUserId());
+        verify(activityRiskResponseService, never()).submitResolution(any(), any());
+    }
+
+    @Test
+    void reviewRiskResolutionUsesAuthorizationToken() {
+        AdminController controller = controller();
+        ActivityRiskResolutionReviewRequest request = new ActivityRiskResolutionReviewRequest();
+        request.setUserId(9999L);
+        request.setAction("approve");
+        ActivityRiskResolutionResponse response = new ActivityRiskResolutionResponse();
+        when(activityRiskResponseService.reviewResolution(77L, request)).thenReturn(response);
+
+        Result<ActivityRiskResolutionResponse> result = controller.reviewRiskResolution(77L, adminToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(2002L, request.getUserId());
+        verify(activityRiskResponseService).reviewResolution(77L, request);
+    }
+
+    @Test
+    void reviewRiskResolutionRejectsMissingAuthorization() {
+        AdminController controller = controller();
+        ActivityRiskResolutionReviewRequest request = new ActivityRiskResolutionReviewRequest();
+        request.setUserId(9999L);
+
+        Result<ActivityRiskResolutionResponse> result = controller.reviewRiskResolution(77L, null, request);
+
+        assertEquals(401, result.getCode());
+        assertEquals(9999L, request.getUserId());
+        verify(activityRiskResponseService, never()).reviewResolution(any(), any());
+    }
+
+    @Test
+    void updateActivityStatusUsesAuthorizationToken() {
+        AdminController controller = controller();
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(9999L);
+        request.setStatus(1);
+
+        Result<Void> result = controller.updateActivityStatus(10L, organizerToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(2003L, request.getUserId());
+        verify(activityAdminService).updateActivityStatus(10L, request);
+    }
+
+    @Test
+    void updateActivityStatusRejectsMissingAuthorization() {
+        AdminController controller = controller();
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(9999L);
+        request.setStatus(1);
+
+        Result<Void> result = controller.updateActivityStatus(10L, null, request);
+
+        assertEquals(401, result.getCode());
+        assertEquals(9999L, request.getUserId());
+        verify(activityAdminService, never()).updateActivityStatus(any(), any());
+    }
+
+    @Test
+    void getVenueDefaultLayoutRequiresAuthorizationToken() {
+        AdminController controller = controller();
+        SeatCraftLayoutDtos.LayoutResponse response = new SeatCraftLayoutDtos.LayoutResponse();
+        response.setName("default-layout");
+        when(venueDefaultLayoutService.getLayout(8L)).thenReturn(response);
+
+        Result<SeatCraftLayoutDtos.LayoutResponse> result = controller.getVenueDefaultLayout(8L, adminToken());
+
+        assertEquals(200, result.getCode());
+        assertEquals("default-layout", result.getData().getName());
+        verify(venueDefaultLayoutService).getLayout(8L);
+    }
+
+    @Test
+    void getVenueDefaultLayoutRejectsMissingAuthorization() {
+        AdminController controller = controller();
+
+        Result<SeatCraftLayoutDtos.LayoutResponse> result = controller.getVenueDefaultLayout(8L, null);
+
+        assertEquals(401, result.getCode());
+        verify(venueDefaultLayoutService, never()).getLayout(any());
     }
 
     private AdminController controller() {

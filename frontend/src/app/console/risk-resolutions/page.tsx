@@ -43,12 +43,11 @@ function RiskResolutionsContent() {
   const status = normalizeStatus(searchParams.get('status'))
   const activityId = searchParams.get('activityId') || ''
 
-  const loadData = async (id = userId, nextStatus = status) => {
-    if (!id) return
+  const loadData = async (nextStatus = status) => {
     setLoading(true)
     setError('')
     try {
-      const data = await listActivityRiskResolutions(id, nextStatus || undefined)
+      const data = await listActivityRiskResolutions(nextStatus || undefined)
       const visible = activityId ? data.filter(item => String(item.activityId) === activityId) : data
       setItems(visible)
       setPage(1)
@@ -66,7 +65,7 @@ function RiskResolutionsContent() {
       return
     }
     setUserId(user.userId)
-    void loadData(user.userId, status)
+    void loadData(status)
   }, [router, status, activityId])
 
   const setStatus = (nextStatus: ResolutionStatus) => {
@@ -90,7 +89,7 @@ function RiskResolutionsContent() {
         delete next[id]
         return next
       })
-      await loadData(userId, status)
+      await loadData(status)
     } catch (err) {
       setError(err instanceof Error ? err.message : '审核恢复申请失败')
     } finally {

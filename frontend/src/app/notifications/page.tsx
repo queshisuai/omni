@@ -54,7 +54,7 @@ export default function NotificationsPage() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    listMyNotifications(Number(user.userId))
+    listMyNotifications()
       .then((items) => { if (!cancelled) setNotifications(items || []) })
       .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : '加载通知失败') })
       .finally(() => { if (!cancelled) setLoading(false) })

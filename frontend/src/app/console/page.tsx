@@ -18,7 +18,7 @@ export default function ConsoleHome() {
     if (u) {
       setStats(null)
       setStatsError('')
-      getAdminSummary(u.userId)
+      getAdminSummary()
         .then(res => {
           setStats(res)
         })

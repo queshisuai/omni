@@ -118,25 +118,57 @@ public class OrderController {
         return Result.fail(429, "系统繁忙，请稍后重试");
     }
 
-    @GetMapping("/user/{userId}")
-    public Result<List<OrderListItemResponse>> listOrders(@PathVariable Long userId) {
+    @GetMapping("/my")
+    public Result<List<OrderListItemResponse>> listOrders(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
         List<OrderListItemResponse> orders = orderService.listOrderItems(userId);
         return Result.success(orders);
     }
 
-    @GetMapping("/user/{userId}/trash")
-    public Result<List<OrderListItemResponse>> listTrashOrders(@PathVariable Long userId) {
+    @GetMapping("/user/{userId}")
+    public Result<List<OrderListItemResponse>> listOrders(@PathVariable Long userId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        return listOrders(authorization);
+    }
+
+    @GetMapping("/my/trash")
+    public Result<List<OrderListItemResponse>> listTrashOrders(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
         return Result.success(orderService.listTrashOrderItems(userId));
     }
 
+    @GetMapping("/user/{userId}/trash")
+    public Result<List<OrderListItemResponse>> listTrashOrders(@PathVariable Long userId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        return listTrashOrders(authorization);
+    }
+
     @PostMapping("/{id}/hide")
-    public Result<Void> hideOrder(@PathVariable Long id, @RequestParam Long userId) {
+    public Result<Void> hideOrder(@PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
         orderService.hideOrder(id, userId);
         return Result.success();
     }
 
     @PostMapping("/{id}/restore")
-    public Result<Void> restoreOrder(@PathVariable Long id, @RequestParam Long userId) {
+    public Result<Void> restoreOrder(@PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
         orderService.restoreOrder(id, userId);
         return Result.success();
     }
@@ -145,13 +177,23 @@ public class OrderController {
      * 订单详情
      */
     @GetMapping("/{id}")
-    public Result<Order> getOrderDetail(@PathVariable Long id) {
-        Order order = orderService.getOrderDetail(id);
+    public Result<Order> getOrderDetail(@PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
+        Order order = orderService.getUserOrderDetail(id, userId);
         return Result.success(order);
     }
 
     @GetMapping("/{id}/refund-options")
-    public Result<RefundOptionsResponse> getRefundOptions(@PathVariable Long id, @RequestParam Long userId) {
+    public Result<RefundOptionsResponse> getRefundOptions(@PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
         return Result.success(orderService.getUserRefundOptions(id, userId));
     }
 
@@ -233,8 +275,13 @@ public class OrderController {
      * 取消订单
      */
     @DeleteMapping("/{id}")
-    public Result<Void> cancelOrder(@PathVariable Long id) {
-        orderService.cancelOrder(id);
+    public Result<Void> cancelOrder(@PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
+        orderService.cancelUserOrder(id, userId);
         return Result.success();
     }
 
@@ -308,6 +355,10 @@ public class OrderController {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private <T> Result<T> unauthorized() {
+        return Result.fail(401, "未登录");
     }
 
     private boolean isValidInternalToken(String token) {

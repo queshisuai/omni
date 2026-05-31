@@ -67,7 +67,7 @@ export default function EditActivityPage() {
     setRole(u.role || 'user')
     setLoading(true)
     Promise.all([
-      getAdminActivity(activityId, u.userId),
+      getAdminActivity(activityId),
       listCategories().catch(() => [] as CategoryVO[]),
       listAdminSessions(u.userId, { activityId, size: 50 }).catch(() => ({ records: [] as SessionAdminVO[] })),
       getActivityStation(activityId).catch(() => null),

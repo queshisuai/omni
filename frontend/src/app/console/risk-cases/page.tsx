@@ -24,18 +24,17 @@ function formatDate(value?: string | null): string {
 }
 
 export default function RiskCasesPage() {
-  const [userId, setUserId] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [cases, setCases] = useState<ActivityRiskCaseVO[]>([])
   const [filter, setFilter] = useState<'all' | 'awaiting_response' | 'pending' | 'approved' | 'rejected'>('all')
   const [page, setPage] = useState(1)
 
-  const load = async (uid: number) => {
+  const load = async () => {
     setLoading(true)
     setError('')
     try {
-      const data = await listAdminRiskCases(uid)
+      const data = await listAdminRiskCases()
       setCases(data || [])
       setPage(1)
     } catch (err: unknown) {
@@ -48,8 +47,7 @@ export default function RiskCasesPage() {
   useEffect(() => {
     const user = getUser()
     if (!user) return
-    setUserId(user.userId)
-    load(user.userId)
+    load()
   }, [])
 
   const visible = useMemo(() => {
@@ -66,7 +64,7 @@ export default function RiskCasesPage() {
           <p className="mt-1 text-[13px] text-[#999]">管理由风险艺人引发或平台主动停售的活动，配合恢复售票审核使用。</p>
         </div>
         <button
-          onClick={() => load(userId)}
+          onClick={() => load()}
           className="flex items-center gap-1.5 rounded-lg border border-[#e5e5e5] bg-white px-3 py-1.5 text-[13px] text-[#333] hover:border-[#ff1268] hover:text-[#ff1268]"
         >
           <RefreshCw className="h-4 w-4" /> 刷新
