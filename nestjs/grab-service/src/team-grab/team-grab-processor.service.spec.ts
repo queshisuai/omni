@@ -502,6 +502,84 @@ describe('TeamGrabProcessorService', () => {
     expect(notificationClient.sendFailed).not.toHaveBeenCalled();
   });
 
+  it('does not mark pending recovery when zero-seat request-id marker returns null', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue(teamGrab),
+      markTeamGrabRequestIdReleasePending: jest.fn().mockResolvedValue(null),
+      markTeamGrabFailed: jest.fn(),
+      updateTeamStatus: jest.fn(),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn(),
+      markPendingRecovery: jest.fn().mockResolvedValue({ ...record, progressStatus: GRAB_STATUS.PENDING_RECOVERY }),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockRejectedValue(new Error('ticket service timeout')),
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(false),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn(),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient });
+
+    await expect(processor.process(record)).resolves.toBe(false);
+
+    expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
+    expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', []);
+    expect(teamRepository.markTeamGrabRequestIdReleasePending).toHaveBeenCalledWith('TEAM-GRAB-1');
+    expect(grabRepository.markPendingRecovery).not.toHaveBeenCalled();
+    expect(grabRepository.updateStatus).not.toHaveBeenCalledWith(
+      'GRAB-QUEUED-1',
+      GRAB_STATUS.FAILED,
+      expect.any(String),
+    );
+    expect(teamRepository.markTeamGrabFailed).not.toHaveBeenCalled();
+    expect(teamRepository.updateTeamStatus).not.toHaveBeenCalledWith(1, 'FAILED', expect.any(Array));
+  });
+
+  it('does not mark pending recovery when zero-seat request-id marker throws', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue(teamGrab),
+      markTeamGrabRequestIdReleasePending: jest.fn().mockRejectedValue(new Error('request-id marker failed')),
+      markTeamGrabFailed: jest.fn(),
+      updateTeamStatus: jest.fn(),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn(),
+      markPendingRecovery: jest.fn().mockResolvedValue({ ...record, progressStatus: GRAB_STATUS.PENDING_RECOVERY }),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockRejectedValue(new Error('ticket service timeout')),
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(false),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn(),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient });
+
+    await expect(processor.process(record)).resolves.toBe(false);
+
+    expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
+    expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', []);
+    expect(teamRepository.markTeamGrabRequestIdReleasePending).toHaveBeenCalledWith('TEAM-GRAB-1');
+    expect(grabRepository.markPendingRecovery).not.toHaveBeenCalled();
+    expect(grabRepository.updateStatus).not.toHaveBeenCalledWith(
+      'GRAB-QUEUED-1',
+      GRAB_STATUS.FAILED,
+      expect.any(String),
+    );
+    expect(teamRepository.markTeamGrabFailed).not.toHaveBeenCalled();
+    expect(teamRepository.updateTeamStatus).not.toHaveBeenCalledWith(1, 'FAILED', expect.any(Array));
+  });
+
   it('marks failed when ticket lock timeout is cleared by request-id release', async () => {
     const record = grabRecord();
     const teamGrab = teamGrabRecord();
