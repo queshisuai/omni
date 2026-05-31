@@ -262,10 +262,14 @@ public class TicketSalesInternalService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock release parameters are required");
         }
         if (request.getSeatIds() == null || request.getSeatIds().isEmpty()) {
-            return sessionSeatMapper.releaseTeamSeatLockByRequestId(request.getLockRequestId()) > 0;
+            sessionSeatMapper.releaseTeamSeatLockByRequestId(request.getLockRequestId());
+            return sessionSeatMapper.countTeamSeatLocksByRequestId(request.getLockRequestId()) == 0;
         }
         int released = sessionSeatMapper.releaseTeamSeatLockByRequest(request.getLockRequestId(), request.getSeatIds());
-        return released == request.getSeatIds().size();
+        if (released == request.getSeatIds().size()) {
+            return true;
+        }
+        return sessionSeatMapper.countTeamSeatLocksByRequest(request.getLockRequestId(), request.getSeatIds()) == 0;
     }
 
     private void requireSeatlessStandingTicketType(Long sessionId, Long ticketTypeId) {

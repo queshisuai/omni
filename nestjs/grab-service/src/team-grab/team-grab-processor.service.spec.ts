@@ -423,6 +423,7 @@ describe('TeamGrabProcessorService', () => {
     };
     const ticketClient: any = {
       lockTeamSeats: jest.fn().mockRejectedValue(new Error('no team seat strategy can satisfy quantity')),
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
     };
     const orderClient: any = {
       createTeamOrderWithLockedSeats: jest.fn(),
@@ -432,8 +433,107 @@ describe('TeamGrabProcessorService', () => {
     await expect(processor.process(record)).resolves.toBe(true);
 
     expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
+    expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', []);
     expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-QUEUED-1', GRAB_STATUS.FAILED, 'no team seat strategy can satisfy quantity');
     expect(teamRepository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'no team seat strategy can satisfy quantity');
+    expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'FAILED', ['GRABBING', 'READY']);
+  });
+
+  it('marks pending recovery when ticket lock timeout leaves unknown request-id locks', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue(teamGrab),
+      markTeamGrabReleasePending: jest.fn(),
+      markTeamGrabRequestIdReleasePending: jest.fn().mockResolvedValue({
+        ...teamGrab,
+        status: 'GRABBING',
+        lockedSeatIds: [],
+        seatLabels: [],
+        failReason: 'ORDER_CREATE_RELEASE_PENDING',
+      }),
+      markTeamGrabFailed: jest.fn(),
+      updateTeamStatus: jest.fn().mockResolvedValue({ id: 1, status: 'FAILED' }),
+      listConfirmedMembers: jest.fn().mockResolvedValue([{ userId: 100, status: 'CONFIRMED' }]),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn(),
+      markPendingRecovery: jest.fn().mockResolvedValue({ ...record, progressStatus: GRAB_STATUS.PENDING_RECOVERY }),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockRejectedValue(new Error('ticket service timeout')),
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(false),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn(),
+    };
+    const notificationClient: any = {
+      sendFailed: jest.fn(),
+    };
+    const { processor } = createProcessor({
+      teamRepository,
+      grabRepository,
+      ticketClient,
+      orderClient,
+      notificationClient,
+    });
+
+    await expect(processor.process(record)).resolves.toBe(false);
+
+    expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
+    expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', []);
+    expect(teamRepository.markTeamGrabReleasePending).not.toHaveBeenCalled();
+    expect(teamRepository.markTeamGrabRequestIdReleasePending).toHaveBeenCalledWith('TEAM-GRAB-1');
+    expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
+      message: 'team order confirmation pending',
+      currentTicketTypeId: 30,
+      workerId: 'worker-1',
+    }));
+    expect(grabRepository.updateStatus).not.toHaveBeenCalledWith(
+      'GRAB-QUEUED-1',
+      GRAB_STATUS.FAILED,
+      expect.any(String),
+    );
+    expect(teamRepository.markTeamGrabFailed).not.toHaveBeenCalled();
+    expect(teamRepository.updateTeamStatus).not.toHaveBeenCalledWith(1, 'FAILED', expect.any(Array));
+    expect(teamRepository.listConfirmedMembers).not.toHaveBeenCalled();
+    expect(notificationClient.sendFailed).not.toHaveBeenCalled();
+  });
+
+  it('marks failed when ticket lock timeout is cleared by request-id release', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue(teamGrab),
+      markTeamGrabRequestIdReleasePending: jest.fn(),
+      markTeamGrabFailed: jest.fn().mockResolvedValue({ ...teamGrab, status: 'FAILED' }),
+      updateTeamStatus: jest.fn().mockResolvedValue({ id: 1, status: 'FAILED' }),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      updateStatus: jest.fn().mockResolvedValue({ ...record, status: GRAB_STATUS.FAILED }),
+      markPendingRecovery: jest.fn(),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockRejectedValue(new Error('ticket service timeout')),
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn(),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient });
+
+    await expect(processor.process(record)).resolves.toBe(true);
+
+    expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
+    expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', []);
+    expect(teamRepository.markTeamGrabRequestIdReleasePending).not.toHaveBeenCalled();
+    expect(grabRepository.markPendingRecovery).not.toHaveBeenCalled();
+    expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-QUEUED-1', GRAB_STATUS.FAILED, 'ticket service timeout');
+    expect(teamRepository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'ticket service timeout');
     expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'FAILED', ['GRABBING', 'READY']);
   });
 
@@ -456,6 +556,7 @@ describe('TeamGrabProcessorService', () => {
     };
     const ticketClient: any = {
       lockTeamSeats: jest.fn().mockRejectedValue(new Error('no team seat strategy can satisfy quantity')),
+      releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
     };
     const orderClient: any = {
       createTeamOrderWithLockedSeats: jest.fn(),
@@ -499,6 +600,7 @@ describe('TeamGrabProcessorService', () => {
       };
       const ticketClient: any = {
         lockTeamSeats: jest.fn().mockRejectedValue(new Error('no team seat strategy can satisfy quantity')),
+        releaseTeamSeatLock: jest.fn().mockResolvedValue(true),
       };
       const orderClient: any = {
         createTeamOrderWithLockedSeats: jest.fn(),

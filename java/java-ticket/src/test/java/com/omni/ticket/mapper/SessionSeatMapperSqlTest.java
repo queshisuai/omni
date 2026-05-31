@@ -95,6 +95,22 @@ class SessionSeatMapperSqlTest {
     }
 
     @Test
+    void teamSeatLockCountSqlUsesLockedStatusAndRequestFencing() throws Exception {
+        String countBySeatsSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "countTeamSeatLocksByRequest", String.class, List.class)).toLowerCase();
+        String countByRequestSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
+                "countTeamSeatLocksByRequestId", String.class)).toLowerCase();
+
+        assertTrue(countBySeatsSql.contains("status = 2"), countBySeatsSql);
+        assertTrue(countBySeatsSql.contains("lock_request_id = #{lockrequestid}"), countBySeatsSql);
+        assertTrue(countBySeatsSql.contains("id in"), countBySeatsSql);
+        assertTrue(countBySeatsSql.contains("<foreach collection='seatids'"), countBySeatsSql);
+
+        assertTrue(countByRequestSql.contains("status = 2"), countByRequestSql);
+        assertTrue(countByRequestSql.contains("lock_request_id = #{lockrequestid}"), countByRequestSql);
+    }
+
+    @Test
     void confirmAndReleaseSeatSqlUseTicketTypeLockRequestAndLockedStatusFencing() throws Exception {
         String soldSql = annotationSql(SessionSeatMapper.class.getDeclaredMethod(
                 "markSeatSold", Long.class, Long.class, Long.class, Long.class, String.class)).toLowerCase();

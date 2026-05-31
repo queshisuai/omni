@@ -103,6 +103,13 @@ export class TeamGrabProcessorService {
           await this.markPendingRecovery(record, teamGrab);
           return false;
         }
+      } else {
+        const released = await this.releaseLockedSeats(teamGrab.requestId, []);
+        if (!released) {
+          await this.markRequestIdReleasePendingOrRetry(teamGrab);
+          await this.markPendingRecovery(record, teamGrab);
+          return false;
+        }
       }
       await this.markFailed(record, teamGrab, message);
       return true;

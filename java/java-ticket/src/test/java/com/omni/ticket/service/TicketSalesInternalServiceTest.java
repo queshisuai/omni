@@ -679,18 +679,49 @@ class TicketSalesInternalServiceTest {
         request.setSeatIds(List.of(501L, 502L));
 
         assertEquals(true, service.releaseTeamSeatLock(request));
+        verify(sessionSeatMapper, never()).countTeamSeatLocksByRequest(any(), any());
     }
 
     @Test
-    void releaseTeamSeatLockReturnsFalseWhenOnlySomeSeatsAreReleased() {
+    void releaseTeamSeatLockReturnsFalseWhenOnlySomeRequestedSeatsRemainLocked() {
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
         TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
         when(sessionSeatMapper.releaseTeamSeatLockByRequest("team-lock-1", List.of(501L, 502L))).thenReturn(1);
+        when(sessionSeatMapper.countTeamSeatLocksByRequest("team-lock-1", List.of(501L, 502L))).thenReturn(1);
         TeamSeatLockReleaseRequest request = new TeamSeatLockReleaseRequest();
         request.setLockRequestId("team-lock-1");
         request.setSeatIds(List.of(501L, 502L));
 
         assertEquals(false, service.releaseTeamSeatLock(request));
+        verify(sessionSeatMapper).countTeamSeatLocksByRequest("team-lock-1", List.of(501L, 502L));
+    }
+
+    @Test
+    void releaseTeamSeatLockTreatsPartialReleaseWithNoRemainingRequestedLocksAsSuccess() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.releaseTeamSeatLockByRequest("team-lock-1", List.of(501L, 502L))).thenReturn(1);
+        when(sessionSeatMapper.countTeamSeatLocksByRequest("team-lock-1", List.of(501L, 502L))).thenReturn(0);
+        TeamSeatLockReleaseRequest request = new TeamSeatLockReleaseRequest();
+        request.setLockRequestId("team-lock-1");
+        request.setSeatIds(List.of(501L, 502L));
+
+        assertEquals(true, service.releaseTeamSeatLock(request));
+        verify(sessionSeatMapper).countTeamSeatLocksByRequest("team-lock-1", List.of(501L, 502L));
+    }
+
+    @Test
+    void releaseTeamSeatLockTreatsZeroReleaseWithNoRemainingRequestedLocksAsSuccess() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.releaseTeamSeatLockByRequest("team-lock-1", List.of(501L, 502L))).thenReturn(0);
+        when(sessionSeatMapper.countTeamSeatLocksByRequest("team-lock-1", List.of(501L, 502L))).thenReturn(0);
+        TeamSeatLockReleaseRequest request = new TeamSeatLockReleaseRequest();
+        request.setLockRequestId("team-lock-1");
+        request.setSeatIds(List.of(501L, 502L));
+
+        assertEquals(true, service.releaseTeamSeatLock(request));
+        verify(sessionSeatMapper).countTeamSeatLocksByRequest("team-lock-1", List.of(501L, 502L));
     }
 
     @Test
@@ -698,24 +729,43 @@ class TicketSalesInternalServiceTest {
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
         TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
         when(sessionSeatMapper.releaseTeamSeatLockByRequestId("team-lock-1")).thenReturn(2);
+        when(sessionSeatMapper.countTeamSeatLocksByRequestId("team-lock-1")).thenReturn(0);
         TeamSeatLockReleaseRequest request = new TeamSeatLockReleaseRequest();
         request.setLockRequestId("team-lock-1");
 
         assertEquals(true, service.releaseTeamSeatLock(request));
         verify(sessionSeatMapper).releaseTeamSeatLockByRequestId("team-lock-1");
+        verify(sessionSeatMapper).countTeamSeatLocksByRequestId("team-lock-1");
         verify(sessionSeatMapper, never()).releaseTeamSeatLockByRequest(any(), any());
     }
 
     @Test
-    void releaseTeamSeatLockWithoutSeatIdsReturnsFalseWhenNoRowsAreReleased() {
+    void releaseTeamSeatLockWithoutSeatIdsTreatsNoRemainingLocksAsSuccess() {
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
         TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
         when(sessionSeatMapper.releaseTeamSeatLockByRequestId("team-lock-1")).thenReturn(0);
+        when(sessionSeatMapper.countTeamSeatLocksByRequestId("team-lock-1")).thenReturn(0);
+        TeamSeatLockReleaseRequest request = new TeamSeatLockReleaseRequest();
+        request.setLockRequestId("team-lock-1");
+
+        assertEquals(true, service.releaseTeamSeatLock(request));
+        verify(sessionSeatMapper).releaseTeamSeatLockByRequestId("team-lock-1");
+        verify(sessionSeatMapper).countTeamSeatLocksByRequestId("team-lock-1");
+        verify(sessionSeatMapper, never()).releaseTeamSeatLockByRequest(any(), any());
+    }
+
+    @Test
+    void releaseTeamSeatLockWithoutSeatIdsReturnsFalseWhenRemainingLocksExist() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.releaseTeamSeatLockByRequestId("team-lock-1")).thenReturn(0);
+        when(sessionSeatMapper.countTeamSeatLocksByRequestId("team-lock-1")).thenReturn(1);
         TeamSeatLockReleaseRequest request = new TeamSeatLockReleaseRequest();
         request.setLockRequestId("team-lock-1");
 
         assertEquals(false, service.releaseTeamSeatLock(request));
         verify(sessionSeatMapper).releaseTeamSeatLockByRequestId("team-lock-1");
+        verify(sessionSeatMapper).countTeamSeatLocksByRequestId("team-lock-1");
         verify(sessionSeatMapper, never()).releaseTeamSeatLockByRequest(any(), any());
     }
 

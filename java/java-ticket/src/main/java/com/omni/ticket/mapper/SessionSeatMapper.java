@@ -163,6 +163,18 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
             "WHERE status = 2 AND lock_request_id = #{lockRequestId}")
     int releaseTeamSeatLockByRequestId(@Param("lockRequestId") String lockRequestId);
 
+    @Select({"<script>",
+            "SELECT COUNT(*) FROM session_seat WHERE status = 2 ",
+            "AND lock_request_id = #{lockRequestId} AND id IN ",
+            "<foreach collection='seatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int countTeamSeatLocksByRequest(@Param("lockRequestId") String lockRequestId,
+                                    @Param("seatIds") List<Long> seatIds);
+
+    @Select("SELECT COUNT(*) FROM session_seat WHERE status = 2 " +
+            "AND lock_request_id = #{lockRequestId}")
+    int countTeamSeatLocksByRequestId(@Param("lockRequestId") String lockRequestId);
+
     @Update("UPDATE session_seat SET status = 1, order_id = NULL, lock_expire_time = NULL, update_time = CURRENT_TIMESTAMP " +
             "WHERE id = #{seatId} AND session_id = #{sessionId} AND status = 3")
     int restoreSoldSeat(@Param("seatId") Long seatId,
