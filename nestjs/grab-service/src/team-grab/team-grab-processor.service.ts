@@ -6,7 +6,7 @@ import { OrderClientService } from '../grab/order-client.service';
 import type { CreateTeamOrderWithLockedSeatsInput } from '../grab/order-client.service';
 import { TicketClientService } from '../grab/ticket-client.service';
 import { NotificationClientService } from './notification-client.service';
-import { TeamGrabRepository } from './team-grab.repository';
+import { ORDER_CREATE_RELEASE_PENDING, TeamGrabRepository } from './team-grab.repository';
 import type { TeamGrabRequestRecord, TeamSeatStrategy } from './team-grab.types';
 
 @Injectable()
@@ -95,7 +95,10 @@ export class TeamGrabProcessorService {
             seatLabels: lockedSeatLabels,
             matchedStrategy: matchedStrategy ?? teamGrab.strategy,
           });
-          if (!releasePending) return false;
+          if (!releasePending) {
+            const requestIdReleasePending = await this.markRequestIdReleasePendingOrRetry(teamGrab);
+            if (!requestIdReleasePending) return false;
+          }
 
           await this.markPendingRecovery(record, teamGrab);
           return false;
@@ -116,6 +119,24 @@ export class TeamGrabProcessorService {
     } catch (error) {
       this.logger.error(error);
       return await this.recoverAmbiguousOrderCreation(record, teamGrab);
+    }
+  }
+
+  private async markRequestIdReleasePendingOrRetry(teamGrab: TeamGrabRequestRecord): Promise<boolean> {
+    try {
+      const pending = await this.teamRepository.markTeamGrabRequestIdReleasePending(teamGrab.requestId);
+      if (!pending) {
+        this.logger.warn(`failed to persist team grab request-id release pending for ${teamGrab.requestId}`);
+        return false;
+      }
+      if (pending.failReason !== ORDER_CREATE_RELEASE_PENDING || pending.lockedSeatIds.length > 0) {
+        this.logger.warn(`team grab request-id release pending persisted unexpected state for ${teamGrab.requestId}`);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.logger.error(error);
+      return false;
     }
   }
 

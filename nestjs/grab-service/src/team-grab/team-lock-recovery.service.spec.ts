@@ -350,8 +350,13 @@ describe('TeamLockRecoveryService', () => {
     expect(notificationClient.sendFailed).not.toHaveBeenCalled();
   });
 
-  it('claims stale order-creating team grabs with missing locked seats for request-id release later', async () => {
-    const missingLockedSeats = { ...staleTeamGrab, lockedSeatIds: [], seatLabels: [] };
+  it('claims request-id release markers with missing locked seats for release later', async () => {
+    const missingLockedSeats = {
+      ...staleTeamGrab,
+      lockedSeatIds: [],
+      seatLabels: [],
+      failReason: 'ORDER_CREATE_RELEASE_PENDING',
+    };
     const repository = {
       findStaleUnpublishedTeamGrabRequests: jest.fn().mockResolvedValue([]),
       findStalePreOrderTeamGrabRequests: jest.fn().mockResolvedValue([missingLockedSeats]),

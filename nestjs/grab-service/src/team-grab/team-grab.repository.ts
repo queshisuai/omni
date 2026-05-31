@@ -21,6 +21,7 @@ import type {
 } from './team-grab.types';
 
 export const ORDER_CREATE_IN_PROGRESS = 'ORDER_CREATE_IN_PROGRESS';
+export const ORDER_CREATE_RELEASE_PENDING = 'ORDER_CREATE_RELEASE_PENDING';
 export const ORDER_CREATE_TIMEOUT_CLAIMED = 'ORDER_CREATE_TIMEOUT_CLAIMED';
 export const ORDER_CREATE_TIMEOUT_RELEASING = 'ORDER_CREATE_TIMEOUT_RELEASING';
 
@@ -568,14 +569,10 @@ export class TeamGrabRepository {
          and r.order_id is null
          and (
            jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
-           or exists (
-             select 1
-             from grab_request g
-             where g.request_id = r.grab_request_id
-               and g.request_type = 'TEAM_GRAB'
-               and g.status = '${GRAB_STATUS.ORDER_CREATING}'
-               and g.progress_status = '${GRAB_STATUS.ORDER_CREATING}'
-               and g.order_id is null
+           or r.fail_reason in (
+             '${ORDER_CREATE_RELEASE_PENDING}',
+             '${ORDER_CREATE_TIMEOUT_CLAIMED}',
+             '${ORDER_CREATE_TIMEOUT_RELEASING}'
            )
          )
          and r.update_time < now() - ($2::int * interval '1 second')
@@ -636,18 +633,14 @@ export class TeamGrabRepository {
          and r.order_id is null
          and (
            jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
-           or exists (
-             select 1
-             from grab_request g
-             where g.request_id = r.grab_request_id
-               and g.request_type = 'TEAM_GRAB'
-               and g.status = '${GRAB_STATUS.ORDER_CREATING}'
-               and g.progress_status = '${GRAB_STATUS.ORDER_CREATING}'
-               and g.order_id is null
-           )
+           or r.fail_reason = '${ORDER_CREATE_RELEASE_PENDING}'
          )
          and r.update_time < now() - ($2::int * interval '1 second')
-         and (r.fail_reason is null or r.fail_reason = '${ORDER_CREATE_IN_PROGRESS}')
+         and (
+           (jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
+             and (r.fail_reason is null or r.fail_reason = '${ORDER_CREATE_IN_PROGRESS}'))
+           or r.fail_reason = '${ORDER_CREATE_RELEASE_PENDING}'
+         )
          and t.status in ('GRABBING', 'LOCKED')
        returning r.*`,
       [requestId, olderThanSeconds],
@@ -667,15 +660,7 @@ export class TeamGrabRepository {
          and r.order_id is null
          and (
            jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
-           or exists (
-             select 1
-             from grab_request g
-             where g.request_id = r.grab_request_id
-               and g.request_type = 'TEAM_GRAB'
-               and g.status = '${GRAB_STATUS.ORDER_CREATING}'
-               and g.progress_status = '${GRAB_STATUS.ORDER_CREATING}'
-               and g.order_id is null
-           )
+           or r.fail_reason in ('${ORDER_CREATE_TIMEOUT_CLAIMED}', '${ORDER_CREATE_TIMEOUT_RELEASING}')
          )
          and r.update_time < now() - ($2::int * interval '1 second')
          and r.fail_reason in ('${ORDER_CREATE_TIMEOUT_CLAIMED}', '${ORDER_CREATE_TIMEOUT_RELEASING}')
@@ -738,6 +723,21 @@ export class TeamGrabRepository {
          and order_id is null
        returning *`,
       [requestId, JSON.stringify(input.lockedSeatIds), JSON.stringify(input.seatLabels), input.matchedStrategy],
+    );
+    return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
+  async markTeamGrabRequestIdReleasePending(requestId: string): Promise<TeamGrabRequestRecord | null> {
+    const result = await this.database.query<TeamGrabRequestRow>(
+      `update team_grab_request
+       set fail_reason = '${ORDER_CREATE_RELEASE_PENDING}',
+           update_time = now()
+       where request_id = $1
+         and status in ('GRABBING', 'LOCKED')
+         and order_id is null
+         and jsonb_array_length(coalesce(locked_seat_ids, '[]'::jsonb)) = 0
+       returning *`,
+      [requestId],
     );
     return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
   }
