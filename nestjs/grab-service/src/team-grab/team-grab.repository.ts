@@ -562,13 +562,24 @@ export class TeamGrabRepository {
 
   async findStalePreOrderTeamGrabRequests(limit: number, olderThanSeconds: number): Promise<TeamGrabRequestRecord[]> {
     const result = await this.database.query<TeamGrabRequestRow>(
-      `select *
-       from team_grab_request
-       where status in ('GRABBING', 'LOCKED')
-         and order_id is null
-         and jsonb_array_length(coalesce(locked_seat_ids, '[]'::jsonb)) > 0
-         and update_time < now() - ($2::int * interval '1 second')
-       order by update_time asc
+      `select r.*
+       from team_grab_request r
+       where r.status in ('GRABBING', 'LOCKED')
+         and r.order_id is null
+         and (
+           jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
+           or exists (
+             select 1
+             from grab_request g
+             where g.request_id = r.grab_request_id
+               and g.request_type = 'TEAM_GRAB'
+               and g.status = '${GRAB_STATUS.ORDER_CREATING}'
+               and g.progress_status = '${GRAB_STATUS.ORDER_CREATING}'
+               and g.order_id is null
+           )
+         )
+         and r.update_time < now() - ($2::int * interval '1 second')
+       order by r.update_time asc
        limit $1`,
       [limit, olderThanSeconds],
     );
@@ -623,7 +634,18 @@ export class TeamGrabRepository {
          and t.id = r.team_id
          and r.status in ('GRABBING', 'LOCKED')
          and r.order_id is null
-         and jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
+         and (
+           jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
+           or exists (
+             select 1
+             from grab_request g
+             where g.request_id = r.grab_request_id
+               and g.request_type = 'TEAM_GRAB'
+               and g.status = '${GRAB_STATUS.ORDER_CREATING}'
+               and g.progress_status = '${GRAB_STATUS.ORDER_CREATING}'
+               and g.order_id is null
+           )
+         )
          and r.update_time < now() - ($2::int * interval '1 second')
          and (r.fail_reason is null or r.fail_reason = '${ORDER_CREATE_IN_PROGRESS}')
          and t.status in ('GRABBING', 'LOCKED')
@@ -643,7 +665,18 @@ export class TeamGrabRepository {
          and t.id = r.team_id
          and r.status in ('GRABBING', 'LOCKED')
          and r.order_id is null
-         and jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
+         and (
+           jsonb_array_length(coalesce(r.locked_seat_ids, '[]'::jsonb)) > 0
+           or exists (
+             select 1
+             from grab_request g
+             where g.request_id = r.grab_request_id
+               and g.request_type = 'TEAM_GRAB'
+               and g.status = '${GRAB_STATUS.ORDER_CREATING}'
+               and g.progress_status = '${GRAB_STATUS.ORDER_CREATING}'
+               and g.order_id is null
+           )
+         )
          and r.update_time < now() - ($2::int * interval '1 second')
          and r.fail_reason in ('${ORDER_CREATE_TIMEOUT_CLAIMED}', '${ORDER_CREATE_TIMEOUT_RELEASING}')
          and t.status in ('GRABBING', 'LOCKED')

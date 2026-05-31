@@ -460,6 +460,23 @@ describe('TeamGrabRepository', () => {
     expect(result[0].lockedSeatIds).toEqual([501]);
   });
 
+  it('finds stale order-creating team grabs without persisted locked seats for request-id recovery', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [{ ...teamGrabRow, status: 'GRABBING', locked_seat_ids: JSON.stringify([]) }] });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.findStalePreOrderTeamGrabRequests(25, 30);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain('exists');
+    expect(sql).toContain('from grab_request g');
+    expect(sql).toContain("g.request_type = 'team_grab'");
+    expect(sql).toContain("g.status = 'order_creating'");
+    expect(sql).toContain("g.progress_status = 'order_creating'");
+    expect(sql).toContain('g.order_id is null');
+    expect(query.mock.calls[0][1]).toEqual([25, 30]);
+    expect(result[0].lockedSeatIds).toEqual([]);
+  });
+
   it('finds stale unpublished queued team grab requests before seat locks are acquired', async () => {
     const expireTime = new Date('2026-05-30T12:15:00.000Z');
     const query = jest.fn().mockResolvedValue({
@@ -542,6 +559,36 @@ describe('TeamGrabRepository', () => {
     });
   });
 
+  it('claims stale order-creating team grabs without persisted locked seats for request-id release', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...teamGrabRow,
+        status: 'GRABBING',
+        locked_seat_ids: JSON.stringify([]),
+        fail_reason: 'ORDER_CREATE_TIMEOUT_CLAIMED',
+      }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.claimStalePreOrderRecovery('TEAM-GRAB-1', 30);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain("fail_reason = 'order_create_timeout_claimed'");
+    expect(sql).toContain('exists');
+    expect(sql).toContain('from grab_request g');
+    expect(sql).toContain("g.request_type = 'team_grab'");
+    expect(sql).toContain("g.status = 'order_creating'");
+    expect(sql).toContain("g.progress_status = 'order_creating'");
+    expect(sql).toContain('g.order_id is null');
+    expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 30]);
+    expect(result).toMatchObject({
+      requestId: 'TEAM-GRAB-1',
+      status: 'GRABBING',
+      lockedSeatIds: [],
+      failReason: 'ORDER_CREATE_TIMEOUT_CLAIMED',
+    });
+  });
+
   it('marks a failed release compensation as stale pre-order recoverable with locked seats', async () => {
     const query = jest.fn().mockResolvedValue({
       rows: [{
@@ -607,6 +654,37 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 30]);
     expect(result).toMatchObject({
       requestId: 'TEAM-GRAB-1',
+      failReason: 'ORDER_CREATE_TIMEOUT_RELEASING',
+    });
+  });
+
+  it('claims request-id release for stale team grabs without persisted locked seats', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{
+        ...teamGrabRow,
+        status: 'GRABBING',
+        locked_seat_ids: JSON.stringify([]),
+        fail_reason: 'ORDER_CREATE_TIMEOUT_RELEASING',
+      }],
+    });
+    const repository = new TeamGrabRepository({ query } as any);
+
+    const result = await repository.claimStalePreOrderRelease('TEAM-GRAB-1', 30);
+
+    const sql = query.mock.calls[0][0].toLowerCase();
+    expect(sql).toContain("fail_reason = 'order_create_timeout_releasing'");
+    expect(sql).toContain("r.fail_reason in ('order_create_timeout_claimed', 'order_create_timeout_releasing')");
+    expect(sql).toContain('exists');
+    expect(sql).toContain('from grab_request g');
+    expect(sql).toContain("g.request_type = 'team_grab'");
+    expect(sql).toContain("g.status = 'order_creating'");
+    expect(sql).toContain("g.progress_status = 'order_creating'");
+    expect(sql).toContain('g.order_id is null');
+    expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 30]);
+    expect(result).toMatchObject({
+      requestId: 'TEAM-GRAB-1',
+      status: 'GRABBING',
+      lockedSeatIds: [],
       failReason: 'ORDER_CREATE_TIMEOUT_RELEASING',
     });
   });
