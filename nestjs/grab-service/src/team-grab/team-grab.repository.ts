@@ -920,12 +920,23 @@ export class TeamGrabRepository {
            and request_type = 'TEAM_GRAB'
            and progress_status = any($4::varchar[])
            and (order_id is null or order_id = $2)
+           and exists (
+             select 1
+             from team_grab_request r
+             where r.request_id = $5
+               and r.team_id = $6
+               and r.grab_request_id = grab_request.request_id
+               and (r.order_id is null or r.order_id = $2)
+               and r.status in ('LOCKED', 'GRABBING', 'ORDER_CREATED')
+           )
          returning request_id`,
         [
           input.grabRequestId,
           input.orderId,
           input.ticketTypeId,
           [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY, GRAB_STATUS.ORDER_CREATED],
+          input.requestId,
+          input.teamId,
         ],
       );
       if (!grabResult.rows[0]) return null;
@@ -933,20 +944,21 @@ export class TeamGrabRepository {
       const teamGrabResult = await client.query<TeamGrabRequestRow>(
         `update team_grab_request
          set status = 'ORDER_CREATED',
-             order_id = $3,
+             order_id = $4,
              fail_reason = null,
              update_time = now()
          where request_id = $1
            and team_id = $2
+           and grab_request_id = $3
            and status in ('LOCKED', 'GRABBING', 'ORDER_CREATED')
-           and (order_id is null or order_id = $3)
+           and (order_id is null or order_id = $4)
            and (
              fail_reason is null
              or fail_reason like 'ORDER_CREATE_%'
-             or order_id = $3
+             or order_id = $4
            )
          returning *`,
-        [input.requestId, input.teamId, input.orderId],
+        [input.requestId, input.teamId, input.grabRequestId, input.orderId],
       );
       const teamGrab = teamGrabResult.rows[0];
       if (!teamGrab) throw new Error('failed to recover found team grab order');
@@ -957,8 +969,18 @@ export class TeamGrabRepository {
              update_time = now()
          where id = $1
            and status in ('GRABBING', 'LOCKED')
+           and exists (
+             select 1
+             from team_grab_request r
+             where r.request_id = $2
+               and r.team_id = ticket_team.id
+               and r.team_id = $1
+               and r.grab_request_id = $3
+               and r.order_id = $4
+               and r.status = 'ORDER_CREATED'
+           )
          returning *`,
-        [input.teamId],
+        [input.teamId, input.requestId, input.grabRequestId, input.orderId],
       );
       if (!teamResult.rows[0]) {
         throw new Error('failed to mark team locked');

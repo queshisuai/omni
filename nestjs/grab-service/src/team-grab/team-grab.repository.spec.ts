@@ -888,11 +888,20 @@ describe('TeamGrabRepository', () => {
     expect(grabSql).toContain("request_type = 'team_grab'");
     expect(grabSql).toContain('progress_status = any($4::varchar[])');
     expect(grabSql).toContain('(order_id is null or order_id = $2)');
+    expect(grabSql).toContain('exists (');
+    expect(grabSql).toContain('from team_grab_request r');
+    expect(grabSql).toContain('r.request_id = $5');
+    expect(grabSql).toContain('r.team_id = $6');
+    expect(grabSql).toContain('r.grab_request_id = grab_request.request_id');
+    expect(grabSql).toContain('(r.order_id is null or r.order_id = $2)');
+    expect(grabSql).toContain("r.status in ('locked', 'grabbing', 'order_created')");
     expect(query.mock.calls[0][1]).toEqual([
       'GRAB-1',
       9001,
       30,
       [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY, GRAB_STATUS.ORDER_CREATED],
+      'TEAM-GRAB-1',
+      7,
     ]);
 
     const teamGrabSql = query.mock.calls[1][0].toLowerCase();
@@ -900,16 +909,51 @@ describe('TeamGrabRepository', () => {
     expect(teamGrabSql).toContain("status = 'order_created'");
     expect(teamGrabSql).toContain('request_id = $1');
     expect(teamGrabSql).toContain('team_id = $2');
-    expect(teamGrabSql).toContain('(order_id is null or order_id = $3)');
+    expect(teamGrabSql).toContain('grab_request_id = $3');
+    expect(teamGrabSql).toContain('(order_id is null or order_id = $4)');
     expect(teamGrabSql).toContain("fail_reason like 'order_create_%'");
-    expect(query.mock.calls[1][1]).toEqual(['TEAM-GRAB-1', 7, 9001]);
+    expect(query.mock.calls[1][1]).toEqual(['TEAM-GRAB-1', 7, 'GRAB-1', 9001]);
 
     const teamSql = query.mock.calls[2][0].toLowerCase();
     expect(teamSql).toContain('update ticket_team');
     expect(teamSql).toContain("set status = 'locked'");
     expect(teamSql).toContain('where id = $1');
     expect(teamSql).toContain("status in ('grabbing', 'locked')");
-    expect(query.mock.calls[2][1]).toEqual([7]);
+    expect(teamSql).toContain('exists (');
+    expect(teamSql).toContain('from team_grab_request r');
+    expect(teamSql).toContain('r.request_id = $2');
+    expect(teamSql).toContain('r.team_id = ticket_team.id');
+    expect(teamSql).toContain('r.team_id = $1');
+    expect(teamSql).toContain('r.grab_request_id = $3');
+    expect(teamSql).toContain('r.order_id = $4');
+    expect(teamSql).toContain("r.status = 'order_created'");
+    expect(query.mock.calls[2][1]).toEqual([7, 'TEAM-GRAB-1', 'GRAB-1', 9001]);
+  });
+
+  it('rejects found-order recovery before locking the team when the team grab fence misses', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce({
+        rows: [{
+          request_id: 'GRAB-1',
+          status: 'ORDER_CREATED',
+          progress_status: 'ORDER_CREATED',
+          order_id: '9001',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ withTransaction } as any);
+
+    await expect(repository.recoverFoundOrderAndLockTeam({
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-1',
+      teamId: 7,
+      orderId: 9001,
+      ticketTypeId: 30,
+    })).rejects.toThrow('failed to recover found team grab order');
+
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('rejects recovered order-created repair when the team cannot be locked', async () => {
