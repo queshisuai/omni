@@ -172,30 +172,13 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
   private async recoverFoundOrder(teamGrab: TeamGrabRequestRecord, orderId: number): Promise<void> {
     if (!teamGrab.grabRequestId) return;
 
-    const grabOrderCreated = await this.grabRepository.markOrderCreatedFromProgressStatuses(
-      teamGrab.grabRequestId,
+    await this.repository.recoverFoundOrderAndLockTeam({
+      requestId: teamGrab.requestId,
+      grabRequestId: teamGrab.grabRequestId,
+      teamId: teamGrab.teamId,
       orderId,
-      teamGrab.ticketTypeId,
-      [],
-      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
-    );
-    if (!grabOrderCreated) {
-      const existingGrab = await this.grabRepository.findByRequestId(teamGrab.grabRequestId);
-      if (
-        !existingGrab
-        || existingGrab.orderId !== orderId
-        || existingGrab.progressStatus !== GRAB_STATUS.ORDER_CREATED
-      ) {
-        return;
-      }
-    }
-
-    const teamOrderCreated = await this.repository.repairTeamGrabOrderCreatedAndLockTeam(
-      teamGrab.requestId,
-      teamGrab.teamId,
-      orderId,
-    );
-    if (!teamOrderCreated) return;
+      ticketTypeId: teamGrab.ticketTypeId,
+    });
   }
 
   private async lookupOrder(grabRequestId: string): Promise<{ id: number } | null | 'UNKNOWN'> {

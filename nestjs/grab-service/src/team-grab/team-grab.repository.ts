@@ -24,6 +24,7 @@ export const ORDER_CREATE_IN_PROGRESS = 'ORDER_CREATE_IN_PROGRESS';
 export const ORDER_CREATE_RELEASE_PENDING = 'ORDER_CREATE_RELEASE_PENDING';
 export const ORDER_CREATE_TIMEOUT_CLAIMED = 'ORDER_CREATE_TIMEOUT_CLAIMED';
 export const ORDER_CREATE_TIMEOUT_RELEASING = 'ORDER_CREATE_TIMEOUT_RELEASING';
+const TEAM_ORDER_PAID_PROGRESS_MESSAGE = '组队订单已支付/座位已分配';
 
 interface TicketTeamRow {
   id: string | number;
@@ -94,6 +95,14 @@ interface TeamSeatAssignmentRow {
   order_seat_id: string | number;
   session_seat_id: string | number;
   seat_label: string | null;
+}
+
+interface RecoverFoundOrderAndLockTeamInput {
+  requestId: string;
+  grabRequestId: string;
+  teamId: number;
+  orderId: number;
+  ticketTypeId: number;
 }
 
 export function isUniqueViolation(error: unknown): boolean {
@@ -895,6 +904,70 @@ export class TeamGrabRepository {
     });
   }
 
+  async recoverFoundOrderAndLockTeam(input: RecoverFoundOrderAndLockTeamInput): Promise<TeamGrabRequestRecord | null> {
+    return this.database.withTransaction(async (client) => {
+      const grabResult = await client.query(
+        `update grab_request
+         set status = 'ORDER_CREATED',
+             progress_status = 'ORDER_CREATED',
+             order_id = $2,
+             matched_ticket_type_id = coalesce($3, ticket_type_id),
+             attempts_snapshot = '[]'::jsonb,
+             completed_at = coalesce(completed_at, now()),
+             fail_reason = null,
+             updated_at = now()
+         where request_id = $1
+           and request_type = 'TEAM_GRAB'
+           and progress_status = any($4::varchar[])
+           and (order_id is null or order_id = $2)
+         returning request_id`,
+        [
+          input.grabRequestId,
+          input.orderId,
+          input.ticketTypeId,
+          [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY, GRAB_STATUS.ORDER_CREATED],
+        ],
+      );
+      if (!grabResult.rows[0]) return null;
+
+      const teamGrabResult = await client.query<TeamGrabRequestRow>(
+        `update team_grab_request
+         set status = 'ORDER_CREATED',
+             order_id = $3,
+             fail_reason = null,
+             update_time = now()
+         where request_id = $1
+           and team_id = $2
+           and status in ('LOCKED', 'GRABBING', 'ORDER_CREATED')
+           and (order_id is null or order_id = $3)
+           and (
+             fail_reason is null
+             or fail_reason like 'ORDER_CREATE_%'
+             or order_id = $3
+           )
+         returning *`,
+        [input.requestId, input.teamId, input.orderId],
+      );
+      const teamGrab = teamGrabResult.rows[0];
+      if (!teamGrab) throw new Error('failed to recover found team grab order');
+
+      const teamResult = await client.query<TicketTeamRow>(
+        `update ticket_team
+         set status = 'LOCKED',
+             update_time = now()
+         where id = $1
+           and status in ('GRABBING', 'LOCKED')
+         returning *`,
+        [input.teamId],
+      );
+      if (!teamResult.rows[0]) {
+        throw new Error('failed to mark team locked');
+      }
+
+      return this.mapTeamGrabRow(teamGrab);
+    });
+  }
+
   async markTeamGrabFailed(requestId: string, failReason: string): Promise<TeamGrabRequestRecord | null> {
     const result = await this.database.query<TeamGrabRequestRow>(
       `update team_grab_request
@@ -1030,7 +1103,29 @@ export class TeamGrabRepository {
          returning *`,
         [teamId],
       );
-      return paid.rows.length > 0;
+      if (paid.rows.length === 0) return false;
+
+      const grabProgress = await client.query(
+        `update grab_request g
+         set progress_message = $3,
+             fail_reason = null,
+             updated_at = now()
+         from team_grab_request r
+         where r.grab_request_id = g.request_id
+           and r.team_id = $1
+           and r.order_id = $2
+           and r.status = 'ORDER_CREATED'
+           and g.request_type = 'TEAM_GRAB'
+           and g.order_id = $2
+           and g.progress_status = 'ORDER_CREATED'
+         returning g.request_id`,
+        [teamId, orderId, TEAM_ORDER_PAID_PROGRESS_MESSAGE],
+      );
+      if (!grabProgress.rows[0]) {
+        throw new Error('failed to update paid team grab progress');
+      }
+
+      return true;
     });
   }
 
@@ -1070,6 +1165,32 @@ export class TeamGrabRepository {
            and status in ('ORDER_CREATED', 'LOCKED')`,
         [teamId, reason],
       );
+
+      const grabResult = await client.query(
+        `update grab_request g
+         set status = 'EXPIRED',
+             progress_status = 'EXPIRED',
+             fail_reason = $2,
+             completed_at = coalesce(completed_at, now()),
+             updated_at = now()
+         from team_grab_request r
+         where r.grab_request_id = g.request_id
+           and r.team_id = $1
+           and r.status = 'EXPIRED'
+           and r.fail_reason = $2
+           and r.order_id is not null
+           and g.request_type = 'TEAM_GRAB'
+           and g.progress_status = any($3::varchar[])
+         returning g.request_id`,
+        [
+          teamId,
+          reason,
+          [GRAB_STATUS.ORDER_CREATED, GRAB_STATUS.PENDING_RECOVERY, GRAB_STATUS.ORDER_CREATING],
+        ],
+      );
+      if (!grabResult.rows[0]) {
+        throw new Error('failed to expire team grab request');
+      }
       return true;
     });
   }

@@ -689,6 +689,7 @@ describe('TeamLockRecoveryService', () => {
       claimStalePreOrderRelease: jest.fn(),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       markClaimedTeamGrabOrderCreated: jest.fn(),
+      recoverFoundOrderAndLockTeam: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       repairTeamGrabOrderCreatedAndLockTeam: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       repairTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
@@ -731,17 +732,19 @@ describe('TeamLockRecoveryService', () => {
 
     expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB-1');
     expect(repository.claimStalePreOrderRecovery).not.toHaveBeenCalled();
-    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).toHaveBeenCalledWith('TEAM-GRAB-1', 7, 9001);
+    expect(repository.recoverFoundOrderAndLockTeam).toHaveBeenCalledWith({
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-1',
+      teamId: 7,
+      orderId: 9001,
+      ticketTypeId: 30,
+    });
+    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).not.toHaveBeenCalled();
     expect(repository.repairTeamGrabOrderCreated).not.toHaveBeenCalled();
     expect(repository.markClaimedTeamGrabOrderCreated).not.toHaveBeenCalled();
     expect(repository.updateTeamStatus).not.toHaveBeenCalled();
-    expect(grabRepository.markOrderCreatedFromProgressStatuses).toHaveBeenCalledWith(
-      'GRAB-1',
-      9001,
-      30,
-      [],
-      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
-    );
+    expect(grabRepository.markOrderCreatedFromProgressStatuses).not.toHaveBeenCalled();
+    expect(grabRepository.findByRequestId).not.toHaveBeenCalled();
     expect(grabRepository.markOrderCreated).not.toHaveBeenCalled();
     expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
     expect(repository.markTeamFailed).not.toHaveBeenCalled();
@@ -758,6 +761,7 @@ describe('TeamLockRecoveryService', () => {
       claimStalePreOrderRelease: jest.fn(),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       markClaimedTeamGrabOrderCreated: jest.fn(),
+      recoverFoundOrderAndLockTeam: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       repairTeamGrabOrderCreatedAndLockTeam: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       repairTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
@@ -798,16 +802,17 @@ describe('TeamLockRecoveryService', () => {
 
     await service.recoverStaleLocks();
 
-    expect(grabRepository.markOrderCreatedFromProgressStatuses).toHaveBeenCalledWith(
-      'GRAB-1',
-      9001,
-      30,
-      [],
-      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY],
-    );
-    expect(grabRepository.findByRequestId).toHaveBeenCalledWith('GRAB-1');
+    expect(grabRepository.markOrderCreatedFromProgressStatuses).not.toHaveBeenCalled();
+    expect(grabRepository.findByRequestId).not.toHaveBeenCalled();
     expect(repository.claimStalePreOrderRecovery).not.toHaveBeenCalled();
-    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).toHaveBeenCalledWith('TEAM-GRAB-1', 7, 9001);
+    expect(repository.recoverFoundOrderAndLockTeam).toHaveBeenCalledWith({
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-1',
+      teamId: 7,
+      orderId: 9001,
+      ticketTypeId: 30,
+    });
+    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).not.toHaveBeenCalled();
     expect(repository.repairTeamGrabOrderCreated).not.toHaveBeenCalled();
     expect(repository.updateTeamStatus).not.toHaveBeenCalled();
     expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
@@ -825,6 +830,7 @@ describe('TeamLockRecoveryService', () => {
       claimStalePreOrderRelease: jest.fn(),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue(null),
       markClaimedTeamGrabOrderCreated: jest.fn(),
+      recoverFoundOrderAndLockTeam: jest.fn().mockResolvedValue(null),
       repairTeamGrabOrderCreatedAndLockTeam: jest.fn().mockResolvedValue(null),
       repairTeamGrabOrderCreated: jest.fn().mockResolvedValue(null),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
@@ -865,9 +871,18 @@ describe('TeamLockRecoveryService', () => {
 
     await service.recoverStaleLocks();
 
-    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).toHaveBeenCalledWith('TEAM-GRAB-1', 7, 9001);
+    expect(repository.recoverFoundOrderAndLockTeam).toHaveBeenCalledWith({
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-1',
+      teamId: 7,
+      orderId: 9001,
+      ticketTypeId: 30,
+    });
+    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).not.toHaveBeenCalled();
     expect(repository.repairTeamGrabOrderCreated).not.toHaveBeenCalled();
     expect(repository.updateTeamStatus).not.toHaveBeenCalled();
+    expect(grabRepository.markOrderCreatedFromProgressStatuses).not.toHaveBeenCalled();
+    expect(grabRepository.findByRequestId).not.toHaveBeenCalled();
     expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
     expect(repository.markTeamFailed).not.toHaveBeenCalled();
     expect(grabRepository.updateStatus).not.toHaveBeenCalled();
@@ -883,6 +898,7 @@ describe('TeamLockRecoveryService', () => {
       claimStalePreOrderRelease: jest.fn(),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue(null),
       markClaimedTeamGrabOrderCreated: jest.fn(),
+      recoverFoundOrderAndLockTeam: jest.fn().mockRejectedValue(new Error('failed to mark team locked')),
       repairTeamGrabOrderCreatedAndLockTeam: jest.fn().mockRejectedValue(new Error('failed to mark team locked')),
       repairTeamGrabOrderCreated: jest.fn(),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
@@ -923,9 +939,18 @@ describe('TeamLockRecoveryService', () => {
 
     await service.recoverStaleLocks();
 
-    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).toHaveBeenCalledWith('TEAM-GRAB-1', 7, 9001);
+    expect(repository.recoverFoundOrderAndLockTeam).toHaveBeenCalledWith({
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-1',
+      teamId: 7,
+      orderId: 9001,
+      ticketTypeId: 30,
+    });
+    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).not.toHaveBeenCalled();
     expect(repository.repairTeamGrabOrderCreated).not.toHaveBeenCalled();
     expect(repository.updateTeamStatus).not.toHaveBeenCalled();
+    expect(grabRepository.markOrderCreatedFromProgressStatuses).not.toHaveBeenCalled();
+    expect(grabRepository.findByRequestId).not.toHaveBeenCalled();
     expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
     expect(repository.markTeamFailed).not.toHaveBeenCalled();
     expect(grabRepository.updateStatus).not.toHaveBeenCalled();
@@ -994,6 +1019,7 @@ describe('TeamLockRecoveryService', () => {
       claimStalePreOrderRelease: jest.fn().mockResolvedValueOnce(releasingTeamGrab),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       markClaimedTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      recoverFoundOrderAndLockTeam: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       repairTeamGrabOrderCreatedAndLockTeam: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       repairTeamGrabOrderCreated: jest.fn().mockResolvedValue({ ...staleTeamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
@@ -1040,9 +1066,18 @@ describe('TeamLockRecoveryService', () => {
 
     expect(orderClient.findByGrabRequestId).toHaveBeenCalledTimes(3);
     expect(repository.claimStalePreOrderRelease).toHaveBeenCalledWith('TEAM-GRAB-1', 30);
-    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).toHaveBeenCalledWith('TEAM-GRAB-1', 7, 9001);
+    expect(repository.recoverFoundOrderAndLockTeam).toHaveBeenCalledWith({
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-1',
+      teamId: 7,
+      orderId: 9001,
+      ticketTypeId: 30,
+    });
+    expect(repository.repairTeamGrabOrderCreatedAndLockTeam).not.toHaveBeenCalled();
     expect(repository.repairTeamGrabOrderCreated).not.toHaveBeenCalled();
     expect(repository.updateTeamStatus).not.toHaveBeenCalled();
+    expect(grabRepository.markOrderCreatedFromProgressStatuses).not.toHaveBeenCalled();
+    expect(grabRepository.findByRequestId).not.toHaveBeenCalled();
     expect(ticketClient.releaseTeamSeatLock).not.toHaveBeenCalled();
     expect(repository.markTeamFailed).not.toHaveBeenCalled();
     expect(grabRepository.updateStatus).not.toHaveBeenCalled();

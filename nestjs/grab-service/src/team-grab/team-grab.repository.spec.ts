@@ -1,4 +1,5 @@
 import { TeamGrabRepository } from './team-grab.repository';
+import { GRAB_STATUS } from '../grab/grab-status';
 
 const teamRow = {
   id: '1',
@@ -847,6 +848,70 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[1][1]).toEqual([7]);
   });
 
+  it('recovers found orders by repairing grab, team grab, and team rows in one transaction', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce({
+        rows: [{
+          request_id: 'GRAB-1',
+          status: 'ORDER_CREATED',
+          progress_status: 'ORDER_CREATED',
+          order_id: '9001',
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ ...teamGrabRow, team_id: '7', status: 'ORDER_CREATED', order_id: '9001', fail_reason: null }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ ...teamRow, id: '7', status: 'LOCKED' }],
+      });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ withTransaction } as any);
+
+    const result = await repository.recoverFoundOrderAndLockTeam({
+      requestId: 'TEAM-GRAB-1',
+      grabRequestId: 'GRAB-1',
+      teamId: 7,
+      orderId: 9001,
+      ticketTypeId: 30,
+    });
+
+    expect(result).toMatchObject({ requestId: 'TEAM-GRAB-1', status: 'ORDER_CREATED', orderId: 9001 });
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(3);
+
+    const grabSql = query.mock.calls[0][0].toLowerCase();
+    expect(grabSql).toContain('update grab_request');
+    expect(grabSql).toContain("status = 'order_created'");
+    expect(grabSql).toContain('progress_status =');
+    expect(grabSql).toContain('order_id = $2');
+    expect(grabSql).toContain('request_id = $1');
+    expect(grabSql).toContain("request_type = 'team_grab'");
+    expect(grabSql).toContain('progress_status = any($4::varchar[])');
+    expect(grabSql).toContain('(order_id is null or order_id = $2)');
+    expect(query.mock.calls[0][1]).toEqual([
+      'GRAB-1',
+      9001,
+      30,
+      [GRAB_STATUS.ORDER_CREATING, GRAB_STATUS.PENDING_RECOVERY, GRAB_STATUS.ORDER_CREATED],
+    ]);
+
+    const teamGrabSql = query.mock.calls[1][0].toLowerCase();
+    expect(teamGrabSql).toContain('update team_grab_request');
+    expect(teamGrabSql).toContain("status = 'order_created'");
+    expect(teamGrabSql).toContain('request_id = $1');
+    expect(teamGrabSql).toContain('team_id = $2');
+    expect(teamGrabSql).toContain('(order_id is null or order_id = $3)');
+    expect(teamGrabSql).toContain("fail_reason like 'order_create_%'");
+    expect(query.mock.calls[1][1]).toEqual(['TEAM-GRAB-1', 7, 9001]);
+
+    const teamSql = query.mock.calls[2][0].toLowerCase();
+    expect(teamSql).toContain('update ticket_team');
+    expect(teamSql).toContain("set status = 'locked'");
+    expect(teamSql).toContain('where id = $1');
+    expect(teamSql).toContain("status in ('grabbing', 'locked')");
+    expect(query.mock.calls[2][1]).toEqual([7]);
+  });
+
   it('rejects recovered order-created repair when the team cannot be locked', async () => {
     const query = jest.fn()
       .mockResolvedValueOnce({
@@ -894,7 +959,8 @@ describe('TeamGrabRepository', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ team_id: '7', user_id: '200', order_id: '9001', order_seat_id: '7002', session_seat_id: '502', seat_label: 'A-2' }] })
       .mockResolvedValueOnce({ rows: [{ ...memberRow, id: '10', team_id: '7', user_id: '200', order_seat_id: '7002', seat_id: '502' }] })
-      .mockResolvedValueOnce({ rows: [{ ...teamRow, id: '7', status: 'PAID' }] });
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, id: '7', status: 'PAID' }] })
+      .mockResolvedValueOnce({ rows: [{ request_id: 'GRAB-QUEUED-1' }] });
     const withTransaction = jest.fn((callback) => callback({ query }));
     const repository = new TeamGrabRepository({ withTransaction } as any);
 
@@ -913,6 +979,15 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[3][0]).toContain('update ticket_team_member');
     expect(query.mock.calls[7][0]).toContain("status = 'PAID'");
     expect(query.mock.calls[7][0]).toContain("status = 'LOCKED'");
+    const grabProgressSql = query.mock.calls[8][0].toLowerCase();
+    expect(grabProgressSql).toContain('update grab_request');
+    expect(grabProgressSql).toContain('from team_grab_request');
+    expect(grabProgressSql).toContain('progress_message');
+    expect(grabProgressSql).toContain('fail_reason = null');
+    expect(grabProgressSql).toContain("g.request_type = 'team_grab'");
+    expect(grabProgressSql).toContain("g.progress_status = 'order_created'");
+    expect(grabProgressSql).not.toContain("status = 'paid'");
+    expect(query.mock.calls[8][1]).toEqual([7, 9001, '组队订单已支付/座位已分配']);
   });
 
   it('returns false without assignments when paid team assignment cannot lock a LOCKED team', async () => {
@@ -956,6 +1031,7 @@ describe('TeamGrabRepository', () => {
       .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'PAID' }] })
       .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'EXPIRED' }] })
       .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'EXPIRED' }] })
+      .mockResolvedValueOnce({ rows: [{ request_id: 'GRAB-QUEUED-1' }] })
       .mockResolvedValueOnce({ rows: [{ ...teamRow, status: 'FAILED' }] })
       .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'FAILED' }] });
     const withTransaction = jest.fn((callback) => callback({ query }));
@@ -974,11 +1050,22 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[1][1]).toEqual([7]);
     expect(query.mock.calls[2][0]).toContain("status = 'EXPIRED'");
     expect(query.mock.calls[2][1]).toEqual([7, 'ORDER_CANCELLED']);
-    expect(query.mock.calls[3][0]).toContain("status = 'FAILED'");
-    expect(query.mock.calls[3][0]).toContain("status in ('GRABBING', 'LOCKED', 'READY')");
-    expect(query.mock.calls[3][1]).toEqual([7]);
+    const expiredGrabSql = query.mock.calls[3][0].toLowerCase();
+    expect(expiredGrabSql).toContain('update grab_request');
+    expect(expiredGrabSql).toContain('from team_grab_request');
+    expect(expiredGrabSql).toContain("status = 'expired'");
+    expect(expiredGrabSql).toContain("g.request_type = 'team_grab'");
+    expect(expiredGrabSql).toContain('g.progress_status = any($3::varchar[])');
+    expect(query.mock.calls[3][1]).toEqual([
+      7,
+      'ORDER_CANCELLED',
+      [GRAB_STATUS.ORDER_CREATED, GRAB_STATUS.PENDING_RECOVERY, GRAB_STATUS.ORDER_CREATING],
+    ]);
     expect(query.mock.calls[4][0]).toContain("status = 'FAILED'");
-    expect(query.mock.calls[4][1]).toEqual(['TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT']);
+    expect(query.mock.calls[4][0]).toContain("status in ('GRABBING', 'LOCKED', 'READY')");
+    expect(query.mock.calls[4][1]).toEqual([7]);
+    expect(query.mock.calls[5][0]).toContain("status = 'FAILED'");
+    expect(query.mock.calls[5][1]).toEqual(['TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT']);
     expect(expired).toBe(true);
     expect(failed).toBe(true);
   });

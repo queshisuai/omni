@@ -682,6 +682,18 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
+    void releaseTeamSeatLockReturnsFalseWhenOnlySomeSeatsAreReleased() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.releaseTeamSeatLockByRequest("team-lock-1", List.of(501L, 502L))).thenReturn(1);
+        TeamSeatLockReleaseRequest request = new TeamSeatLockReleaseRequest();
+        request.setLockRequestId("team-lock-1");
+        request.setSeatIds(List.of(501L, 502L));
+
+        assertEquals(false, service.releaseTeamSeatLock(request));
+    }
+
+    @Test
     void releaseTeamSeatLockWithoutSeatIdsReleasesAllSeatsForRequest() {
         SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
         TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
@@ -690,6 +702,19 @@ class TicketSalesInternalServiceTest {
         request.setLockRequestId("team-lock-1");
 
         assertEquals(true, service.releaseTeamSeatLock(request));
+        verify(sessionSeatMapper).releaseTeamSeatLockByRequestId("team-lock-1");
+        verify(sessionSeatMapper, never()).releaseTeamSeatLockByRequest(any(), any());
+    }
+
+    @Test
+    void releaseTeamSeatLockWithoutSeatIdsReturnsFalseWhenNoRowsAreReleased() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.releaseTeamSeatLockByRequestId("team-lock-1")).thenReturn(0);
+        TeamSeatLockReleaseRequest request = new TeamSeatLockReleaseRequest();
+        request.setLockRequestId("team-lock-1");
+
+        assertEquals(false, service.releaseTeamSeatLock(request));
         verify(sessionSeatMapper).releaseTeamSeatLockByRequestId("team-lock-1");
         verify(sessionSeatMapper, never()).releaseTeamSeatLockByRequest(any(), any());
     }

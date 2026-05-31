@@ -262,11 +262,10 @@ public class TicketSalesInternalService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock release parameters are required");
         }
         if (request.getSeatIds() == null || request.getSeatIds().isEmpty()) {
-            sessionSeatMapper.releaseTeamSeatLockByRequestId(request.getLockRequestId());
-            return true;
+            return sessionSeatMapper.releaseTeamSeatLockByRequestId(request.getLockRequestId()) > 0;
         }
-        sessionSeatMapper.releaseTeamSeatLockByRequest(request.getLockRequestId(), request.getSeatIds());
-        return true;
+        int released = sessionSeatMapper.releaseTeamSeatLockByRequest(request.getLockRequestId(), request.getSeatIds());
+        return released == request.getSeatIds().size();
     }
 
     private void requireSeatlessStandingTicketType(Long sessionId, Long ticketTypeId) {
