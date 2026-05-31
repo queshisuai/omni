@@ -10,6 +10,7 @@ import com.omni.ticket.dto.TicketSalesLockRequest;
 import com.omni.ticket.dto.TicketSalesOrderRequest;
 import com.omni.ticket.dto.TicketSalesQuoteRequest;
 import com.omni.ticket.dto.TicketSalesQuoteResponse;
+import com.omni.ticket.dto.TicketSalesReleaseResponse;
 import com.omni.ticket.dto.TicketSalesSeatLockResponse;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.SeatBlock;
@@ -123,7 +124,7 @@ class TicketSalesInternalServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class, () -> service.quote(request));
 
-        assertEquals("session is not sellable", exception.getMessage());
+        assertEquals("当前场次不可售", exception.getMessage());
         verify(sessionMapper, never()).selectById(3001L);
     }
 
@@ -164,7 +165,7 @@ class TicketSalesInternalServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class, () -> service.lockStock(lockRequest(null, 2)));
 
-        assertEquals("session is not sellable", exception.getMessage());
+        assertEquals("当前场次不可售", exception.getMessage());
         verify(ticketTypeMapper, never()).decreaseRemainStockIfEnough(4001L, 2);
     }
 
@@ -191,7 +192,7 @@ class TicketSalesInternalServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class, () -> service.lockSeats(lockRequest(List.of(501L), 1)));
 
-        assertEquals("session is not sellable", exception.getMessage());
+        assertEquals("当前场次不可售", exception.getMessage());
         verify(sessionSeatMapper, never()).lockSeat(any(), any(), any(), any());
     }
 
@@ -235,7 +236,7 @@ class TicketSalesInternalServiceTest {
         standingGroup.setActivityPrice(new BigDecimal("280.00"));
         when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType);
         when(sessionSeatMapper.selectRandomAvailableSeatIds(3001L, 4001L, 2)).thenReturn(List.of());
-        when(seatBlockMapper.selectById(7001L)).thenReturn(standingBlock);
+        when(seatBlockMapper.selectSalesBindingById(7001L)).thenReturn(standingBlock);
         when(ticketGroupMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(standingGroup);
         when(ticketTypeMapper.decreaseRemainStockIfEnough(4001L, 2)).thenReturn(1);
 
@@ -247,6 +248,7 @@ class TicketSalesInternalServiceTest {
         assertEquals(List.of(), response.getLockedSeatIds());
         assertEquals(List.of("系统分配站区票 x2"), response.getSeatLabels());
         verify(ticketTypeMapper).decreaseRemainStockIfEnough(4001L, 2);
+        verify(seatBlockMapper, never()).selectById(7001L);
         verify(sessionSeatMapper, never()).lockSeat(any(), any(), any(), any());
     }
 
@@ -570,7 +572,7 @@ class TicketSalesInternalServiceTest {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.lockTeamSeats(teamLockRequest(2, "SAME_BLOCK", List.of())));
 
-        assertEquals("no team seat strategy can satisfy quantity", exception.getMessage());
+        assertEquals("没有可满足数量的组队锁座策略", exception.getMessage());
         verify(sessionSeatMapper, never()).lockTeamSeatIds(any(), any(), any(), any(), any());
     }
 
@@ -590,7 +592,7 @@ class TicketSalesInternalServiceTest {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.lockTeamSeats(teamLockRequest(3, "STRICT_CONTIGUOUS", List.of())));
 
-        assertEquals("team seat lock changed concurrently", exception.getMessage());
+        assertEquals("组队锁座状态已变化，请重试", exception.getMessage());
         verify(sessionSeatMapper, never()).selectLockedByRequest(any(), any(), any(), any());
     }
 
@@ -604,7 +606,7 @@ class TicketSalesInternalServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class, () -> service.lockTeamSeats(request));
 
-        assertEquals("team seat lock expire time must be in the future", exception.getMessage());
+        assertEquals("组队锁座过期时间必须晚于当前时间", exception.getMessage());
         verify(sessionSeatMapper, never()).selectAvailableForTeamLock(any(), any(), any());
         verify(sessionSeatMapper, never()).lockTeamSeatIds(any(), any(), any(), any(), any());
     }
@@ -629,7 +631,7 @@ class TicketSalesInternalServiceTest {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.lockTeamSeats(teamLockRequest(3, "STRICT_CONTIGUOUS", List.of())));
 
-        assertEquals("team seat lock ownership validation failed", exception.getMessage());
+        assertEquals("组队锁座归属校验失败", exception.getMessage());
     }
 
     @Test
@@ -645,7 +647,7 @@ class TicketSalesInternalServiceTest {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.lockTeamSeats(teamLockRequest(3, "STRICT_CONTIGUOUS", List.of("SAME_BLOCK"))));
 
-        assertEquals("no team seat strategy can satisfy quantity", exception.getMessage());
+        assertEquals("没有可满足数量的组队锁座策略", exception.getMessage());
         verify(sessionSeatMapper, never()).lockTeamSeatIds(any(), any(), any(), any(), any());
     }
 
@@ -869,6 +871,65 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
+    void releaseReturnsReleasedSeatDetails() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.releaseLockedSeat(501L, 3001L, 4001L, null)).thenReturn(1);
+
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setSessionId(3001L);
+        request.setTicketTypeId(4001L);
+        request.setSeatIds(List.of(501L));
+        request.setQuantity(1);
+
+        TicketSalesReleaseResponse response = service.release(request);
+
+        assertEquals(3001L, response.getSessionId());
+        assertEquals(4001L, response.getTicketTypeId());
+        assertEquals(1, response.getQuantity());
+        assertEquals(1, response.getRestoredQuantity());
+        assertEquals(List.of(501L), response.getSeatIds());
+    }
+
+    @Test
+    void releaseTreatsAlreadyAvailableSeatAsIdempotentSuccess() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.releaseLockedSeat(501L, 3001L, 4001L, null)).thenReturn(0);
+        when(sessionSeatMapper.countAvailableBySeatIds(3001L, 4001L, List.of(501L))).thenReturn(1);
+
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setSessionId(3001L);
+        request.setTicketTypeId(4001L);
+        request.setSeatIds(List.of(501L));
+        request.setQuantity(1);
+
+        TicketSalesReleaseResponse response = service.release(request);
+
+        assertEquals(1, response.getQuantity());
+        assertEquals(1, response.getRestoredQuantity());
+        assertEquals(List.of(501L), response.getSeatIds());
+    }
+
+    @Test
+    void refundReturnsZeroRestoredQuantityWhenRefundedSeatsCannotResell() {
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(mock(TicketTypeMapper.class), sessionSeatMapper);
+        when(sessionSeatMapper.restoreSoldSeat(501L, 3001L)).thenReturn(0);
+
+        TicketSalesOrderRequest request = new TicketSalesOrderRequest();
+        request.setSessionId(3001L);
+        request.setTicketTypeId(4001L);
+        request.setSeatIds(List.of(501L));
+        request.setQuantity(1);
+
+        TicketSalesReleaseResponse response = service.refund(request);
+
+        assertEquals(0, response.getRestoredQuantity());
+        assertEquals(List.of(501L), response.getSeatIds());
+    }
+
+    @Test
     void quoteReturnsTourStationAndSeatLabels() {
         TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
         SessionMapper sessionMapper = mock(SessionMapper.class);
@@ -959,6 +1020,45 @@ class TicketSalesInternalServiceTest {
         TicketSalesQuoteResponse response = service.quote(request);
 
         assertEquals(2, response.getPerUserLimit());
+    }
+
+    @Test
+    void quoteReturnsRealNameRequiredFromActivity() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionMapper sessionMapper = mock(SessionMapper.class);
+        ActivityMapper activityMapper = mock(ActivityMapper.class);
+        VenueMapper venueMapper = mock(VenueMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = new TicketSalesInternalService(
+                ticketTypeMapper, sessionMapper, activityMapper, venueMapper, sessionSeatMapper);
+
+        TicketType ticketType = new TicketType();
+        ticketType.setId(3001L);
+        ticketType.setSessionId(2001L);
+        ticketType.setName("A");
+        ticketType.setPrice(new BigDecimal("380.00"));
+        ticketType.setStatus(1);
+        when(ticketTypeMapper.selectById(3001L)).thenReturn(ticketType);
+        when(sessionSeatMapper.selectSessionSellable(2001L)).thenReturn(true);
+
+        Session session = new Session();
+        session.setId(2001L);
+        session.setActivityId(1001L);
+        when(sessionMapper.selectById(2001L)).thenReturn(session);
+
+        Activity activity = new Activity();
+        activity.setId(1001L);
+        activity.setRealNameRequired(true);
+        when(activityMapper.selectById(1001L)).thenReturn(activity);
+
+        TicketSalesQuoteRequest request = new TicketSalesQuoteRequest();
+        request.setSessionId(2001L);
+        request.setTicketTypeId(3001L);
+        request.setQuantity(1);
+
+        TicketSalesQuoteResponse response = service.quote(request);
+
+        assertEquals(true, response.getRealNameRequired());
     }
 
     private TicketSalesInternalService service(TicketTypeMapper ticketTypeMapper, SessionSeatMapper sessionSeatMapper) {

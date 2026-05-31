@@ -29,7 +29,7 @@ describe('NotificationClientService', () => {
         userId: 200,
         orderId: 9001,
         type: 'TEAM_PAID',
-        content: 'Team tickets issued',
+        content: '小队订单已支付成功。',
       }),
     });
   });
@@ -38,7 +38,7 @@ describe('NotificationClientService', () => {
     delete process.env.INTERNAL_API_TOKEN;
     const service = new NotificationClientService();
 
-    await expect(service.sendExpired(200, 9001)).rejects.toThrow('notification internal token is not configured');
+    await expect(service.sendExpired(200, 9001)).rejects.toThrow('通知内部接口令牌未配置');
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });

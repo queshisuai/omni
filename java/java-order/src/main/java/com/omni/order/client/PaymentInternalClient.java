@@ -19,6 +19,6 @@ public interface PaymentInternalClient {
 }
 
 @Configuration
-@EnableFeignClients(clients = { PaymentInternalClient.class, TicketSalesInternalClient.class, UserInternalClient.class })
+@EnableFeignClients(clients = { PaymentInternalClient.class, TicketSalesInternalClient.class, UserInternalClient.class, WaitlistInternalClient.class })
 class OrderFeignClientConfiguration {
 }

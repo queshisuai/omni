@@ -60,7 +60,7 @@ export class TeamPaymentSyncService implements OnModuleInit, OnModuleDestroy {
 
     if (order.status === ORDER_STATUS_CANCELLED) {
       const members = await this.orderedConfirmedMembers(teamGrab.teamId);
-      const transitioned = await this.repository.markTeamExpired(teamGrab.teamId, 'ORDER_CANCELLED');
+      const transitioned = await this.repository.markTeamExpired(teamGrab.teamId, '订单已取消');
       if (!transitioned) return;
       await this.notifyMembers(members, (member) => this.notificationClient.sendExpired(member.userId, teamGrab.orderId));
     }
@@ -73,7 +73,7 @@ export class TeamPaymentSyncService implements OnModuleInit, OnModuleDestroy {
     const orderSeats = await this.orderClient.listOrderSeats(teamGrab.orderId);
     const paidSeats = orderSeats.filter((seat) => seat.status === PAID_SEAT_STATUS);
     if (orderQuantity !== members.length || paidSeats.length !== members.length) {
-      this.logger.warn(`team ${teamGrab.teamId} paid order seat count mismatch`);
+      this.logger.warn(`小队 ${teamGrab.teamId} 已支付订单座位数量不一致`);
       return;
     }
 

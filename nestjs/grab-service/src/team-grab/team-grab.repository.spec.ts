@@ -776,7 +776,7 @@ describe('TeamGrabRepository', () => {
     const repository = new TeamGrabRepository({ withTransaction } as any);
 
     await expect(repository.markTeamGrabOrderCreatedAndLockTeam('TEAM-GRAB-1', 1, 9001))
-      .rejects.toThrow('failed to mark team locked');
+      .rejects.toThrow('小队锁定状态更新失败');
 
     expect(withTransaction).toHaveBeenCalledTimes(1);
     expect(query).toHaveBeenCalledTimes(2);
@@ -950,7 +950,7 @@ describe('TeamGrabRepository', () => {
       teamId: 7,
       orderId: 9001,
       ticketTypeId: 30,
-    })).rejects.toThrow('failed to recover found team grab order');
+    })).rejects.toThrow('恢复小队抢票订单失败');
 
     expect(withTransaction).toHaveBeenCalledTimes(1);
     expect(query).toHaveBeenCalledTimes(2);
@@ -966,7 +966,7 @@ describe('TeamGrabRepository', () => {
     const repository = new TeamGrabRepository({ withTransaction } as any);
 
     await expect(repository.repairTeamGrabOrderCreatedAndLockTeam('TEAM-GRAB-1', 7, 9001))
-      .rejects.toThrow('failed to mark team locked');
+      .rejects.toThrow('小队锁定状态更新失败');
 
     expect(withTransaction).toHaveBeenCalledTimes(1);
     expect(query).toHaveBeenCalledTimes(2);
@@ -1065,7 +1065,7 @@ describe('TeamGrabRepository', () => {
 
     await expect(repository.assignPaidTeamSeats(7, 9001, [
       { userId: 100, orderSeatId: 7001, sessionSeatId: 501, seatLabel: 'A-1' },
-    ])).rejects.toThrow('team seat assignment conflict');
+    ])).rejects.toThrow('小队座位分配冲突');
 
     expect(query).toHaveBeenCalledTimes(2);
   });

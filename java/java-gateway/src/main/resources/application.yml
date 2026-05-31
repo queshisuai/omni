@@ -55,6 +55,10 @@ spring:
           uri: lb://java-notification
           predicates:
             - Path=/api/notification/**
+        - id: waitlist-service
+          uri: http://localhost:3001
+          predicates:
+            - Path=/api/waitlist/**
         - id: grab-service
           uri: http://localhost:3001
           predicates:

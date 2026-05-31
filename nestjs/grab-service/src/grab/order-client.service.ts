@@ -7,6 +7,7 @@ export interface CreateOrderInput {
   quantity: number;
   seatIds: number[];
   allocateRandom: boolean;
+  attendeeIds?: number[];
   authorizedMaxUnitPrice?: number | null;
   grabRequestId?: string | null;
   requestedTicketTypeId?: number | null;
@@ -62,7 +63,7 @@ export class OrderClientService {
 
   async createOrder(input: CreateOrderInput): Promise<CreatedOrderResponse> {
     if (!this.internalToken) {
-      throw new Error('order internal token is not configured');
+      throw new Error('订单内部接口令牌未配置');
     }
 
     const usesSeatEndpoint = input.seatIds.length > 0 || input.allocateRandom;
@@ -74,6 +75,7 @@ export class OrderClientService {
       matchedTicketTypeId: input.matchedTicketTypeId,
       autoDowngraded: Boolean(input.autoDowngraded),
     };
+    const attendeePayload = input.attendeeIds?.length ? { attendeeIds: input.attendeeIds } : {};
     const body = usesSeatEndpoint
       ? {
           userId: input.userId,
@@ -81,6 +83,7 @@ export class OrderClientService {
           ticketTypeId: input.ticketTypeId,
           seatIds: input.seatIds,
           quantity: input.quantity,
+          ...attendeePayload,
           ...grabMetadata,
         }
       : {
@@ -88,6 +91,7 @@ export class OrderClientService {
           sessionId: input.sessionId,
           ticketTypeId: input.ticketTypeId,
           quantity: input.quantity,
+          ...attendeePayload,
           ...grabMetadata,
         };
 
@@ -98,14 +102,14 @@ export class OrderClientService {
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || 'order creation failed');
+      throw new Error(result.message || '订单创建失败');
     }
     return result.data;
   }
 
   async findByGrabRequestId(grabRequestId: string): Promise<GrabOrderLookupResponse | null> {
     if (!this.internalToken) {
-      throw new Error('order internal token is not configured');
+      throw new Error('订单内部接口令牌未配置');
     }
 
     const response = await fetch(`${this.baseUrl}/api/order/internal/grab-requests/${encodeURIComponent(grabRequestId)}`, {
@@ -115,14 +119,37 @@ export class OrderClientService {
     if (response.status === 404) return null;
     const result = await response.json();
     if (!response.ok || (result.code !== 200 && result.code !== 404)) {
-      throw new Error(result.message || 'order lookup failed');
+      throw new Error(result.message || '订单查询失败');
     }
     return result.data ?? null;
   }
 
+  async createWaitlistOfferOrder(input: {
+    userId: number;
+    sessionId: number;
+    ticketTypeId: number;
+    quantity: number;
+    attendeeIds?: number[];
+    grabRequestId: string;
+  }): Promise<CreatedOrderResponse> {
+    return this.createOrder({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      ticketTypeId: input.ticketTypeId,
+      quantity: input.quantity,
+      attendeeIds: input.attendeeIds,
+      seatIds: [],
+      allocateRandom: true,
+      grabRequestId: input.grabRequestId,
+      requestedTicketTypeId: input.ticketTypeId,
+      matchedTicketTypeId: input.ticketTypeId,
+      autoDowngraded: false,
+    });
+  }
+
   async createTeamOrderWithLockedSeats(input: CreateTeamOrderWithLockedSeatsInput): Promise<CreatedOrderResponse> {
     if (!this.internalToken) {
-      throw new Error('order internal token is not configured');
+      throw new Error('订单内部接口令牌未配置');
     }
 
     const response = await fetch(`${this.baseUrl}/api/order/internal/team/create-with-locked-seats`, {
@@ -132,14 +159,14 @@ export class OrderClientService {
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || 'team order creation failed');
+      throw new Error(result.message || '组队订单创建失败');
     }
     return result.data;
   }
 
   async getOrder(orderId: number): Promise<OrderStatusResponse> {
     if (!this.internalToken) {
-      throw new Error('order internal token is not configured');
+      throw new Error('订单内部接口令牌未配置');
     }
 
     const response = await fetch(`${this.baseUrl}/api/order/internal/${orderId}`, {
@@ -148,14 +175,14 @@ export class OrderClientService {
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || 'order lookup failed');
+      throw new Error(result.message || '订单查询失败');
     }
     return result.data;
   }
 
   async listOrderSeats(orderId: number): Promise<OrderSeatResponse[]> {
     if (!this.internalToken) {
-      throw new Error('order internal token is not configured');
+      throw new Error('订单内部接口令牌未配置');
     }
 
     const response = await fetch(`${this.baseUrl}/api/order/internal/${orderId}/seats`, {
@@ -164,7 +191,7 @@ export class OrderClientService {
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || 'order seat lookup failed');
+      throw new Error(result.message || '订单座位查询失败');
     }
     return Array.isArray(result.data) ? result.data : [];
   }

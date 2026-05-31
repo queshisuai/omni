@@ -29,7 +29,7 @@ export class TicketClientService {
   private readonly internalToken = process.env.INTERNAL_API_TOKEN;
 
   async listVisibleTicketTypes(sessionId: number, ticketTypeIds: number[]): Promise<TicketTypeVisibleInfo[]> {
-    if (!this.internalToken) throw new Error('ticket internal token is not configured');
+    if (!this.internalToken) throw new Error('票务内部接口令牌未配置');
     const response = await fetch(`${this.baseUrl}/api/ticket/internal/sales/ticket-types-visible`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Internal-Token': this.internalToken },
@@ -37,13 +37,13 @@ export class TicketClientService {
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || 'ticket service unavailable');
+      throw new Error(result.message || '票务服务暂不可用');
     }
     return Array.isArray(result.data) ? result.data : [];
   }
 
   async lockTeamSeats(input: LockTeamSeatsInput): Promise<TeamSeatLockResponse> {
-    if (!this.internalToken) throw new Error('ticket internal token is not configured');
+    if (!this.internalToken) throw new Error('票务内部接口令牌未配置');
     const response = await fetch(`${this.baseUrl}/api/ticket/internal/sales/lock-team-seats`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Internal-Token': this.internalToken },
@@ -51,13 +51,13 @@ export class TicketClientService {
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || 'team seat lock failed');
+      throw new Error(result.message || '组队座位锁定失败');
     }
     return result.data;
   }
 
   async releaseTeamSeatLock(lockRequestId: string, seatIds: number[]): Promise<boolean> {
-    if (!this.internalToken) throw new Error('ticket internal token is not configured');
+    if (!this.internalToken) throw new Error('票务内部接口令牌未配置');
     const response = await fetch(`${this.baseUrl}/api/ticket/internal/sales/release-team-seat-lock`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Internal-Token': this.internalToken },
@@ -65,7 +65,7 @@ export class TicketClientService {
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || 'team seat lock release failed');
+      throw new Error(result.message || '组队座位锁释放失败');
     }
     return Boolean(result.data);
   }

@@ -62,7 +62,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.create(request(100), dto)).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: created,
     });
     expect(service.createTeam).toHaveBeenCalledWith(100, dto);
@@ -85,7 +85,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.get(request(100), '7')).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: {
         team: currentTeam,
         members,
@@ -106,7 +106,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.get(request(100), '7')).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: {
         team: currentTeam,
         members,
@@ -135,7 +135,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.join(request(200), '7', { inviteCode: ' TEAM1234 ' })).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: joined,
     });
     expect(service.joinTeam).toHaveBeenCalledWith(7, 200, ' TEAM1234 ');
@@ -148,7 +148,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.confirm(request(200), '7')).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: confirmed,
     });
     expect(service.confirmMember).toHaveBeenCalledWith(7, 200);
@@ -161,7 +161,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.leave(request(200), '7')).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: remaining,
     });
     expect(service.leaveTeam).toHaveBeenCalledWith(7, 200);
@@ -174,7 +174,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.removeMember(request(100), '7', '200')).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: updated,
     });
     expect(service.removeMember).toHaveBeenCalledWith(7, 100, 200);
@@ -190,7 +190,7 @@ describe('TeamGrabController', () => {
       fallbacks: ['FALLBACK'],
     })).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: updated,
     });
     expect(service.updateStrategy).toHaveBeenCalledWith(7, 100, 'SAME_TICKET_TYPE', ['FALLBACK']);
@@ -203,7 +203,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.trigger(request(200), '7')).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: response,
     });
     expect(service.triggerTeamGrab).toHaveBeenCalledWith(7, 200);
@@ -233,7 +233,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.progress(request(200), '7', 'GRAB-1')).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: response,
     });
     expect(service.getTeamGrabProgress).toHaveBeenCalledWith(7, 200, 'GRAB-1');
@@ -246,7 +246,7 @@ describe('TeamGrabController', () => {
 
     await expect(controller.syncPaid(request(200), '7')).resolves.toEqual({
       code: 200,
-      message: 'success',
+      message: '成功',
       data: response,
     });
     expect(service.syncPaidTeam).toHaveBeenCalledWith(7, 200);

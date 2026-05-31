@@ -36,7 +36,7 @@ class GatewaySentinelConfigTest {
 
     @Test
     void gatewayApiDefinitionsOnlyIncludeHotspotResources() throws Exception {
-        GatewaySentinelConfig config = new GatewaySentinelConfig(20, 50, 30, 40, 120);
+        GatewaySentinelConfig config = new GatewaySentinelConfig(20, 18, 50, 30, 40, 120);
 
         config.afterPropertiesSet();
 
@@ -44,6 +44,7 @@ class GatewaySentinelConfigTest {
                 .stream()
                 .collect(Collectors.toMap(ApiDefinition::getApiName, definition -> definition));
         assertTrue(definitions.containsKey(GatewaySentinelConfig.GRAB_API));
+        assertTrue(definitions.containsKey(GatewaySentinelConfig.WAITLIST_API));
         assertTrue(definitions.containsKey(GatewaySentinelConfig.ORDER_CREATE_API));
         assertTrue(definitions.containsKey(GatewaySentinelConfig.PAYMENT_CRITICAL_API));
         assertTrue(definitions.containsKey(GatewaySentinelConfig.USER_AUTH_API));
@@ -52,6 +53,7 @@ class GatewaySentinelConfigTest {
         assertFalse(definitions.containsKey("gateway-api-payment"));
         assertFalse(definitions.containsKey("gateway-api-ticket"));
 
+        assertPatterns(definitions.get(GatewaySentinelConfig.WAITLIST_API), "/api/waitlist");
         assertPatterns(definitions.get(GatewaySentinelConfig.ORDER_CREATE_API), "/api/order/create", "/api/order/create-with-seats");
         assertPatterns(definitions.get(GatewaySentinelConfig.PAYMENT_CRITICAL_API), "/api/payment/alipay/sync", "/api/payment/alipay/notify");
         assertPatterns(definitions.get(GatewaySentinelConfig.USER_AUTH_API), "/api/user/login", "/api/user/send-code");
@@ -69,7 +71,7 @@ class GatewaySentinelConfigTest {
         GatewayApiDefinitionManager.loadApiDefinitions(Set.of(unrelatedDefinition));
         GatewayFlowRule unrelatedRule = new GatewayFlowRule("unrelated-api").setCount(7);
         GatewayRuleManager.loadRules(Set.of(unrelatedRule));
-        GatewaySentinelConfig config = new GatewaySentinelConfig(20, 50, 30, 40, 120);
+        GatewaySentinelConfig config = new GatewaySentinelConfig(20, 18, 50, 30, 40, 120);
 
         config.afterPropertiesSet();
 
@@ -84,11 +86,13 @@ class GatewaySentinelConfigTest {
         assertTrue(rules.containsKey("unrelated-api"));
         assertEquals(7, rules.get("unrelated-api").getCount());
         assertTrue(rules.containsKey(GatewaySentinelConfig.GRAB_API));
+        assertTrue(rules.containsKey(GatewaySentinelConfig.WAITLIST_API));
+        assertEquals(18, rules.get(GatewaySentinelConfig.WAITLIST_API).getCount());
     }
 
     @Test
     void gatewayBlockRequestHandlerReturnsTooManyRequestsJson() {
-        GatewaySentinelConfig config = new GatewaySentinelConfig(20, 50, 30, 40, 120);
+        GatewaySentinelConfig config = new GatewaySentinelConfig(20, 18, 50, 30, 40, 120);
         MockServerWebExchange exchange = MockServerWebExchange.from(
                 MockServerHttpRequest.get("/api/grab/requests").build()
         );

@@ -40,7 +40,7 @@ export class TeamGrabService {
     this.validateCreateTeamDto(dto);
     const fallbacks = this.normalizeFallbacks(dto.strategy, dto.fallbacks);
     const active = await this.repository.findActiveTeamForUser(dto.sessionId, leaderUserId);
-    if (active) throw new ConflictException('user already has an active team for this session');
+    if (active) throw new ConflictException('你已在该场次创建或加入小队');
 
     try {
       return await this.repository.createTeam({
@@ -50,65 +50,65 @@ export class TeamGrabService {
         fallbacks,
       });
     } catch (error) {
-      this.throwConflictOnUniqueViolation(error, 'unable to create team');
+      this.throwConflictOnUniqueViolation(error, '小队创建失败');
     }
   }
 
   async joinTeam(teamId: number, userId: number, inviteCode: string): Promise<TicketTeamRecord> {
     const team = await this.getExistingTeam(teamId);
     this.validateInviteCode(team, inviteCode);
-    if (!JOINABLE_TEAM_STATUSES.has(team.status)) throw new ForbiddenException('team is not joinable');
+    if (!JOINABLE_TEAM_STATUSES.has(team.status)) throw new ForbiddenException('当前小队不可加入');
     const existingMember = await this.repository.findMember(teamId, userId);
-    if (existingMember && existingMember.status !== 'LEFT') throw new ConflictException('user is already in this team');
+    if (existingMember && existingMember.status !== 'LEFT') throw new ConflictException('你已在该小队中');
     const active = await this.repository.findActiveTeamForUser(team.sessionId, userId);
-    if (active && active.id !== teamId) throw new ConflictException('user already has an active team for this session');
+    if (active && active.id !== teamId) throw new ConflictException('你已在该场次创建或加入其他小队');
 
     let inserted: TicketTeamMemberRecord | null;
     try {
       inserted = await this.repository.insertMember(team.id, team.sessionId, userId);
     } catch (error) {
-      this.throwConflictOnUniqueViolation(error, 'unable to join team');
+      this.throwConflictOnUniqueViolation(error, '加入小队失败');
     }
-    if (!inserted) throw new ConflictException('unable to join team');
+    if (!inserted) throw new ConflictException('加入小队失败');
     return this.refreshReadiness(team);
   }
 
   async confirmMember(teamId: number, userId: number): Promise<TicketTeamRecord> {
     const team = await this.getExistingTeam(teamId);
     const member = await this.repository.findMember(teamId, userId);
-    if (!member || member.status === 'LEFT') throw new NotFoundException('team member not found');
+    if (!member || member.status === 'LEFT') throw new NotFoundException('小队成员不存在');
     if (member.status !== 'CONFIRMED') {
       let confirmed: TicketTeamMemberRecord | null;
       try {
         confirmed = await this.repository.confirmMember(teamId, userId);
       } catch (error) {
-        this.throwConflictOnUniqueViolation(error, 'unable to confirm team member');
+        this.throwConflictOnUniqueViolation(error, '确认小队成员失败');
       }
-      if (!confirmed) throw new ConflictException('unable to confirm team member');
+      if (!confirmed) throw new ConflictException('确认小队成员失败');
     }
     return this.refreshReadiness(team);
   }
 
   async leaveTeam(teamId: number, userId: number): Promise<TicketTeamRecord> {
     const team = await this.getExistingTeam(teamId);
-    if (!JOINABLE_TEAM_STATUSES.has(team.status)) throw new ForbiddenException('team cannot be left in its current status');
-    if (team.leaderUserId === userId) throw new BadRequestException('leader cannot leave team');
+    if (!JOINABLE_TEAM_STATUSES.has(team.status)) throw new ForbiddenException('当前小队状态不能退出');
+    if (team.leaderUserId === userId) throw new BadRequestException('队长不能退出小队');
     const member = await this.repository.findMember(teamId, userId);
-    if (!member || member.status === 'LEFT') throw new NotFoundException('team member not found');
+    if (!member || member.status === 'LEFT') throw new NotFoundException('小队成员不存在');
 
     const left = await this.repository.leaveMember(teamId, userId);
-    if (!left) throw new ConflictException('unable to leave team');
+    if (!left) throw new ConflictException('退出小队失败');
     return this.refreshReadiness(team);
   }
 
   async removeMember(teamId: number, leaderUserId: number, memberUserId: number): Promise<TicketTeamRecord> {
     const team = await this.getExistingTeam(teamId);
-    if (team.leaderUserId !== leaderUserId) throw new ForbiddenException('only leader can remove members');
-    if (!JOINABLE_TEAM_STATUSES.has(team.status)) throw new ForbiddenException('team cannot be changed in its current status');
-    if (leaderUserId === memberUserId) throw new BadRequestException('leader cannot remove self');
+    if (team.leaderUserId !== leaderUserId) throw new ForbiddenException('只有队长可以移除成员');
+    if (!JOINABLE_TEAM_STATUSES.has(team.status)) throw new ForbiddenException('当前小队状态不能调整成员');
+    if (leaderUserId === memberUserId) throw new BadRequestException('队长不能移除自己');
 
     const removed = await this.repository.removeMember(teamId, memberUserId);
-    if (!removed) throw new NotFoundException('team member not found');
+    if (!removed) throw new NotFoundException('小队成员不存在');
     return this.refreshReadiness(team);
   }
 
@@ -119,12 +119,12 @@ export class TeamGrabService {
     fallbacks: TeamSeatStrategy[],
   ): Promise<TicketTeamRecord> {
     const team = await this.getExistingTeam(teamId);
-    if (team.leaderUserId !== leaderUserId) throw new ForbiddenException('only leader can update strategy');
-    if (!JOINABLE_TEAM_STATUSES.has(team.status)) throw new ForbiddenException('team strategy cannot be changed in its current status');
+    if (team.leaderUserId !== leaderUserId) throw new ForbiddenException('只有队长可以修改抢票策略');
+    if (!JOINABLE_TEAM_STATUSES.has(team.status)) throw new ForbiddenException('当前小队状态不能修改抢票策略');
     this.validateStrategy(strategy);
     const normalizedFallbacks = this.normalizeFallbacks(strategy, fallbacks);
     const updated = await this.repository.updateStrategy(teamId, strategy, normalizedFallbacks);
-    if (!updated) throw new ConflictException('unable to update team strategy');
+    if (!updated) throw new ConflictException('小队抢票策略更新失败');
     return this.refreshReadiness(updated);
   }
 
@@ -132,7 +132,7 @@ export class TeamGrabService {
     const team = await this.getExistingTeam(teamId);
     const members = await this.repository.listMembers(teamId);
     const currentMember = members.find((member) => member.userId === userId && member.status !== 'LEFT') ?? null;
-    if (team.leaderUserId !== userId && !currentMember) throw new ForbiddenException('cannot view another team');
+    if (team.leaderUserId !== userId && !currentMember) throw new ForbiddenException('不能查看其他小队');
 
     const confirmedMembers = members.filter((member) => member.status === 'CONFIRMED');
     const latestGrabRequest = await this.repository.findLatestTeamGrabRequestByTeamId(teamId);
@@ -153,7 +153,7 @@ export class TeamGrabService {
 
   async triggerTeamGrab(teamId: number, triggerUserId: number): Promise<TeamGrabTriggerResponse> {
     const team = await this.getExistingTeam(teamId);
-    if (!TRIGGERABLE_TEAM_STATUSES.includes(team.status)) throw new ForbiddenException('team is not ready to grab');
+    if (!TRIGGERABLE_TEAM_STATUSES.includes(team.status)) throw new ForbiddenException('小队尚未满足抢票条件');
 
     const queuedGrabRequestId = `GRAB-${randomUUID()}`;
     const teamGrabRequestId = `TEAM-GRAB-${randomUUID()}`;
@@ -164,7 +164,7 @@ export class TeamGrabService {
       queuedGrabRequestId,
       TEAM_TRIGGER_LOCK_TTL_SECONDS,
     );
-    if (!lockAcquired) throw new ConflictException('team grab is already in progress');
+    if (!lockAcquired) throw new ConflictException('小队抢票正在进行中');
 
     let teamGrabCommitted = false;
     try {
@@ -204,7 +204,7 @@ export class TeamGrabService {
       };
     } catch (error) {
       await this.queueService.releaseTeamTriggerLock(team.id, team.sessionId, team.ticketTypeId, queuedGrabRequestId).catch(() => undefined);
-      if (!teamGrabCommitted) this.throwConflictOnUniqueViolation(error, 'team grab is already in progress');
+      if (!teamGrabCommitted) this.throwConflictOnUniqueViolation(error, '小队抢票正在进行中');
       throw error;
     }
   }
@@ -212,20 +212,20 @@ export class TeamGrabService {
   async getTeamGrabProgress(teamId: number, userId: number, requestId: string): Promise<GrabProgressResponse> {
     await this.getTeamDetail(teamId, userId);
     const teamGrab = await this.repository.findTeamGrabByGrabRequestId(requestId);
-    if (!teamGrab) throw new NotFoundException('team grab request not found');
-    if (teamGrab.teamId !== teamId) throw new ForbiddenException('grab request does not belong to this team');
+    if (!teamGrab) throw new NotFoundException('小队抢票请求不存在');
+    if (teamGrab.teamId !== teamId) throw new ForbiddenException('抢票请求不属于当前小队');
     return this.grabService.getProgressForVerifiedRequest(requestId);
   }
 
   async syncPaidTeam(teamId: number, userId: number): Promise<TeamPaymentSyncResponse> {
     await this.getTeamDetail(teamId, userId);
-    if (!this.paymentSyncService) throw new Error('team payment sync service is not configured');
+    if (!this.paymentSyncService) throw new Error('小队支付同步服务未配置');
     return this.paymentSyncService.syncTeam(teamId);
   }
 
   private async getExistingTeam(teamId: number): Promise<TicketTeamRecord> {
     const team = await this.repository.findTeamById(teamId);
-    if (!team) throw new NotFoundException('team not found');
+    if (!team) throw new NotFoundException('小队不存在');
     return team;
   }
 
@@ -236,17 +236,17 @@ export class TeamGrabService {
   }
 
   private validateCreateTeamDto(dto: CreateTeamDto): void {
-    if (!Number.isInteger(dto.activityId) || dto.activityId <= 0) throw new BadRequestException('invalid activity');
-    if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('invalid session');
-    if (!Number.isInteger(dto.ticketTypeId) || dto.ticketTypeId <= 0) throw new BadRequestException('invalid ticket type');
+    if (!Number.isInteger(dto.activityId) || dto.activityId <= 0) throw new BadRequestException('活动无效');
+    if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('场次无效');
+    if (!Number.isInteger(dto.ticketTypeId) || dto.ticketTypeId <= 0) throw new BadRequestException('票档无效');
     this.validateStrategy(dto.strategy);
   }
 
   private validateInviteCode(team: TicketTeamRecord, inviteCode: string | undefined): void {
     const normalizedInput = this.normalizeInviteCode(inviteCode);
-    if (!normalizedInput) throw new BadRequestException('invite code is required');
+    if (!normalizedInput) throw new BadRequestException('邀请码不能为空');
     if (normalizedInput !== this.normalizeInviteCode(team.inviteCode)) {
-      throw new ForbiddenException('invalid invite code');
+      throw new ForbiddenException('邀请码无效');
     }
   }
 
@@ -255,8 +255,8 @@ export class TeamGrabService {
   }
 
   private validateStrategy(strategy: TeamSeatStrategy): void {
-    if (!Object.prototype.hasOwnProperty.call(STRATEGY_RANK, strategy)) throw new BadRequestException('invalid team strategy');
-    if (strategy === 'FALLBACK') throw new BadRequestException('FALLBACK cannot be primary strategy');
+    if (!Object.prototype.hasOwnProperty.call(STRATEGY_RANK, strategy)) throw new BadRequestException('小队抢票策略无效');
+    if (strategy === 'FALLBACK') throw new BadRequestException('兜底策略不能作为首选策略');
   }
 
   private normalizeFallbacks(strategy: TeamSeatStrategy, fallbacks: TeamSeatStrategy[]): TeamSeatStrategy[] {
@@ -264,11 +264,11 @@ export class TeamGrabService {
     let previousRank = STRATEGY_RANK[strategy];
     for (const fallback of fallbacks ?? []) {
       if (!Object.prototype.hasOwnProperty.call(STRATEGY_RANK, fallback)) {
-        throw new BadRequestException('invalid fallback strategy');
+        throw new BadRequestException('兜底策略无效');
       }
       const rank = STRATEGY_RANK[fallback];
       if (rank < STRATEGY_RANK[strategy] || rank < previousRank) {
-        throw new BadRequestException('fallback strategy cannot be stricter than primary');
+        throw new BadRequestException('兜底策略不能比首选策略更严格');
       }
       previousRank = rank;
       if (!normalized.includes(fallback)) normalized.push(fallback);

@@ -95,7 +95,7 @@ export function AlipayQrPayModal({ pay, productName, onClose, onPaid }: AlipayQr
             <div className="w-9 h-9 rounded-lg bg-[#1677ff] flex items-center justify-center text-white font-bold text-[18px] shadow-sm">支</div>
             <div>
               <h3 id="alipay-qr-pay-title" className="text-[18px] font-medium text-[#111]">支付宝扫码支付</h3>
-              <p className="text-[12px] text-[#999] mt-0.5">请打开支付宝 APP 扫一扫</p>
+              <p className="text-[12px] text-[#999] mt-0.5">请打开支付宝应用扫一扫</p>
             </div>
           </div>
           <button onClick={onClose} aria-label="关闭支付弹窗" className="border-none bg-transparent text-[24px] leading-none text-[#999] hover:text-[#333] transition-colors cursor-pointer">×</button>

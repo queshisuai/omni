@@ -13,6 +13,7 @@ import com.omni.ticket.dto.TicketSalesLockRequest;
 import com.omni.ticket.dto.TicketSalesOrderRequest;
 import com.omni.ticket.dto.TicketSalesQuoteRequest;
 import com.omni.ticket.dto.TicketSalesQuoteResponse;
+import com.omni.ticket.dto.TicketSalesReleaseResponse;
 import com.omni.ticket.dto.TicketSalesSeatLockResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.SeatBlock;
@@ -124,7 +125,7 @@ public class TicketSalesInternalService {
 
     public List<TicketTypeVisibleResponse> listVisibleTicketTypes(TicketTypesVisibleRequest request) {
         if (request == null || request.getSessionId() == null || request.getTicketTypeIds() == null || request.getTicketTypeIds().isEmpty()) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket type parameters are required");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票档参数不能为空");
         }
         if (isSessionExplicitlyUnsellable(request.getSessionId())) {
             return Collections.emptyList();
@@ -198,7 +199,7 @@ public class TicketSalesInternalService {
                 request.getSessionId(), request.getTicketTypeId(), request.getLockRequestId()));
         if (!existingLockedSeats.isEmpty()) {
             if (existingLockedSeats.size() != request.getQuantity()) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock request already exists with different quantity");
+                throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座请求已存在且数量不一致");
             }
             return teamSeatLockResponse(existingLockedSeats,
                     matchedExistingStrategy(existingLockedSeats, request.getQuantity()));
@@ -224,12 +225,12 @@ public class TicketSalesInternalService {
                             request.getLockRequestId(),
                             request.getLockExpireTime());
                     if (updated != request.getQuantity()) {
-                        throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock changed concurrently");
+                        throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座状态已变化，请重试");
                     }
                     List<SessionSeat> lockedSeats = sessionSeatMapper.selectLockedByRequest(
                             request.getSessionId(), request.getTicketTypeId(), seatIds, request.getLockRequestId());
                     if (lockedSeats.size() != request.getQuantity()) {
-                        throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock ownership validation failed");
+                        throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座归属校验失败");
                     }
                     return teamSeatLockResponse(lockedSeats, strategy);
                 }
@@ -239,14 +240,14 @@ public class TicketSalesInternalService {
                 limit = Math.min(maxLimit, Math.max(limit + 1, limit * 2));
             }
         }
-        throw new BusinessException(ResultCode.BAD_REQUEST, "no team seat strategy can satisfy quantity");
+        throw new BusinessException(ResultCode.BAD_REQUEST, "没有可满足数量的组队锁座策略");
     }
 
     public TeamSeatLockValidationResponse validateTeamSeatLock(TeamSeatLockValidationRequest request) {
         if (request == null || request.getSessionId() == null || request.getTicketTypeId() == null
                 || request.getSeatIds() == null || request.getSeatIds().isEmpty()
                 || !StringUtils.hasText(request.getLockRequestId())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock validation parameters are required");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座校验参数不能为空");
         }
         List<SessionSeat> lockedSeats = sessionSeatMapper.selectLockedByRequest(
                 request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), request.getLockRequestId());
@@ -259,7 +260,7 @@ public class TicketSalesInternalService {
 
     public Boolean releaseTeamSeatLock(TeamSeatLockReleaseRequest request) {
         if (request == null || !StringUtils.hasText(request.getLockRequestId())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock release parameters are required");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座释放参数不能为空");
         }
         if (request.getSeatIds() == null || request.getSeatIds().isEmpty()) {
             sessionSeatMapper.releaseTeamSeatLockByRequestId(request.getLockRequestId());
@@ -283,7 +284,7 @@ public class TicketSalesInternalService {
         if (ticketType.getSeatBlockId() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "票档库存不足");
         }
-        SeatBlock block = seatBlockMapper.selectById(ticketType.getSeatBlockId());
+        SeatBlock block = seatBlockMapper.selectSalesBindingById(ticketType.getSeatBlockId());
         if (block == null
                 || !Objects.equals("session", block.getOwnerType())
                 || !Objects.equals(sessionId, block.getOwnerId())
@@ -297,29 +298,29 @@ public class TicketSalesInternalService {
         if (request == null || request.getSessionId() == null || request.getTicketTypeId() == null
                 || request.getQuantity() == null || !StringUtils.hasText(request.getStrategy())
                 || !StringUtils.hasText(request.getLockRequestId()) || request.getLockExpireTime() == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock parameters are required");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座参数不能为空");
         }
         if (request.getQuantity() < 2 || request.getQuantity() > 6) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock quantity must be between 2 and 6");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座数量必须为 2-6 张");
         }
     }
 
     private void requireFutureLockExpireTime(LocalDateTime lockExpireTime) {
         if (!lockExpireTime.isAfter(LocalDateTime.now())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock expire time must be in the future");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座过期时间必须晚于当前时间");
         }
     }
 
     private TicketType requireSellableTicketType(Long sessionId, Long ticketTypeId) {
         TicketType ticketType = ticketTypeMapper.selectById(ticketTypeId);
         if (ticketType == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "ticket type not found");
+            throw new BusinessException(ResultCode.NOT_FOUND, "票档不存在");
         }
         if (!sessionId.equals(ticketType.getSessionId())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket type does not belong to session");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票档不属于当前场次");
         }
         if (!Integer.valueOf(1).equals(ticketType.getStatus())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket type is not sellable");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票档不可售");
         }
         return ticketType;
     }
@@ -327,7 +328,7 @@ public class TicketSalesInternalService {
     private List<String> teamLockStrategies(TeamSeatLockRequest request) {
         String primary = normalizeStrategy(request.getStrategy());
         if (FALLBACK.equals(primary)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "FALLBACK primary strategy is not supported");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "兜底策略不能作为首选策略");
         }
         LinkedHashSet<String> strategies = new LinkedHashSet<>();
         strategies.add(primary);
@@ -344,14 +345,14 @@ public class TicketSalesInternalService {
 
     private String normalizeStrategy(String strategy) {
         if (!StringUtils.hasText(strategy)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock strategy is required");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座策略不能为空");
         }
         String normalized = strategy.trim().toUpperCase();
         if (!STRICT_CONTIGUOUS.equals(normalized)
                 && !SAME_BLOCK.equals(normalized)
                 && !SAME_TICKET_TYPE.equals(normalized)
                 && !FALLBACK.equals(normalized)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "unsupported team seat lock strategy");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "不支持该组队锁座策略");
         }
         return normalized;
     }
@@ -490,29 +491,39 @@ public class TicketSalesInternalService {
                         request.getOrderId(), request.getLockRequestId());
             }
             if (updated != request.getSeatIds().size()) {
-                throw new BusinessException(ResultCode.CONFLICT, "seat lock fencing failed while confirming sold");
+                throw new BusinessException(ResultCode.CONFLICT, "确认售出时座位锁校验失败");
             }
         }
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void release(TicketSalesOrderRequest request) {
+    public TicketSalesReleaseResponse release(TicketSalesOrderRequest request) {
+        TicketSalesReleaseResponse response = releaseResponseBase(request);
         if (request.getSeatIds() != null && !request.getSeatIds().isEmpty()) {
             int updated = 0;
             for (Long seatId : request.getSeatIds()) {
                 updated += sessionSeatMapper.releaseLockedSeat(seatId, request.getSessionId(), request.getTicketTypeId(),
                         request.getLockRequestId());
             }
-            if (updated != request.getSeatIds().size()) {
-                throw new BusinessException(ResultCode.CONFLICT, "seat lock fencing failed while releasing");
+            int requestedSeats = request.getSeatIds().size();
+            if (updated != requestedSeats
+                    && sessionSeatMapper.countAvailableBySeatIds(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds()) != requestedSeats) {
+                throw new BusinessException(ResultCode.CONFLICT, "释放座位锁失败，请刷新后重试");
             }
+            response.setQuantity(requestedSeats);
+            response.setRestoredQuantity(requestedSeats);
         } else {
-            ticketTypeMapper.increaseRemainStock(request.getTicketTypeId(), requirePositiveQuantity(request.getQuantity()));
+            int quantity = requirePositiveQuantity(request.getQuantity());
+            ticketTypeMapper.increaseRemainStock(request.getTicketTypeId(), quantity);
+            response.setQuantity(quantity);
+            response.setRestoredQuantity(quantity);
         }
+        return response;
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void refund(TicketSalesOrderRequest request) {
+    public TicketSalesReleaseResponse refund(TicketSalesOrderRequest request) {
+        TicketSalesReleaseResponse response = releaseResponseBase(request);
         if (request.getSeatIds() != null && !request.getSeatIds().isEmpty()) {
             boolean canResell = canResellRefundedSeats(request.getSessionId(), request.getTicketTypeId());
             int restored = 0;
@@ -526,9 +537,25 @@ public class TicketSalesInternalService {
             if (restored > 0) {
                 ticketTypeMapper.increaseRemainStock(request.getTicketTypeId(), restored);
             }
+            response.setQuantity(request.getSeatIds().size());
+            response.setRestoredQuantity(restored);
         } else {
-            ticketTypeMapper.increaseRemainStock(request.getTicketTypeId(), requirePositiveQuantity(request.getQuantity()));
+            int quantity = requirePositiveQuantity(request.getQuantity());
+            ticketTypeMapper.increaseRemainStock(request.getTicketTypeId(), quantity);
+            response.setQuantity(quantity);
+            response.setRestoredQuantity(quantity);
         }
+        return response;
+    }
+
+    private TicketSalesReleaseResponse releaseResponseBase(TicketSalesOrderRequest request) {
+        TicketSalesReleaseResponse response = new TicketSalesReleaseResponse();
+        response.setSessionId(request.getSessionId());
+        response.setTicketTypeId(request.getTicketTypeId());
+        response.setSeatIds(request.getSeatIds() != null ? request.getSeatIds() : Collections.emptyList());
+        response.setQuantity(request.getQuantity());
+        response.setRestoredQuantity(0);
+        return response;
     }
 
     private int requirePositiveQuantity(Integer quantity) {
@@ -540,7 +567,7 @@ public class TicketSalesInternalService {
 
     private void requireSessionSellable(Long sessionId) {
         if (isSessionExplicitlyUnsellable(sessionId)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "session is not sellable");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前场次不可售");
         }
     }
 
@@ -562,6 +589,7 @@ public class TicketSalesInternalService {
             response.setTourId(activity.getTourId());
             response.setStationId(activity.getStationId());
             response.setPerUserLimit(activity.getPerUserLimit());
+            response.setRealNameRequired(Boolean.TRUE.equals(activity.getRealNameRequired()));
         }
         Venue venue = venueMapper.selectById(session.getVenueId());
         if (venue != null) {

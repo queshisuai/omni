@@ -1,7 +1,7 @@
 import { GrabCompensationService } from './grab-compensation.service';
 import { GRAB_STATUS } from './grab-status';
 
-const EXPIRED_MESSAGE = 'grab request expired';
+const EXPIRED_MESSAGE = '抢票请求已过期';
 
 function buildExpiredRequest(overrides: Record<string, unknown> = {}) {
   return {

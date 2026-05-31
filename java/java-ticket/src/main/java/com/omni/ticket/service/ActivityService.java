@@ -141,6 +141,7 @@ public class ActivityService {
             vo.setName(activity.getName());
             vo.setPoster(activity.getPoster());
             vo.setStatus(activity.getStatus());
+            vo.setRealNameRequired(Boolean.TRUE.equals(activity.getRealNameRequired()));
 
             Category category = categoryMap.get(activity.getCategoryId());
             if (category != null) vo.setCategoryName(category.getName());

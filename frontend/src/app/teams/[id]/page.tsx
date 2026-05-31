@@ -20,6 +20,7 @@ import {
   updateTeamGrabStrategy,
 } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
+import { localizeGrabProgressMessage } from '@/lib/grab-progress'
 import {
   canShowPayButton,
   canTriggerTeamGrab,
@@ -474,7 +475,7 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
                 </div>
                 <div className="rounded border border-[#e5e5e5] p-3">
                   <div className="text-[#999]">消息</div>
-                  <div className="mt-1 text-[#333]">{progress.message || progress.failReason || '-'}</div>
+                  <div className="mt-1 text-[#333]">{localizeGrabProgressMessage(progress.message || progress.failReason) || '-'}</div>
                 </div>
               </div>
             ) : (

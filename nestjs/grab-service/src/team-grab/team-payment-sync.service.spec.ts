@@ -134,7 +134,7 @@ describe('TeamPaymentSyncService', () => {
 
     await service.syncLockedTeams();
 
-    expect(repository.markTeamExpired).toHaveBeenCalledWith(7, 'ORDER_CANCELLED');
+    expect(repository.markTeamExpired).toHaveBeenCalledWith(7, '订单已取消');
     expect(repository.assignPaidTeamSeats).not.toHaveBeenCalled();
     expect(notificationClient.sendExpired).toHaveBeenCalledWith(100, 9001);
     expect(notificationClient.sendExpired).toHaveBeenCalledWith(200, 9001);
@@ -148,7 +148,7 @@ describe('TeamPaymentSyncService', () => {
 
     await service.syncLockedTeams();
 
-    expect(repository.markTeamExpired).toHaveBeenCalledWith(7, 'ORDER_CANCELLED');
+    expect(repository.markTeamExpired).toHaveBeenCalledWith(7, '订单已取消');
     expect(notificationClient.sendExpired).not.toHaveBeenCalled();
   });
 

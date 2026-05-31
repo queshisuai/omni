@@ -5,6 +5,7 @@ import com.omni.order.dto.TicketSalesLockRequest;
 import com.omni.order.dto.TicketSalesOrderRequest;
 import com.omni.order.dto.TicketSalesQuoteRequest;
 import com.omni.order.dto.TicketSalesQuoteResponse;
+import com.omni.order.dto.TicketSalesReleaseResponse;
 import com.omni.order.dto.TicketSalesSeatLockResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,10 +36,10 @@ public interface TicketSalesInternalClient {
                              @RequestHeader("X-Internal-Token") String internalToken);
 
     @PostMapping("/api/ticket/internal/sales/release")
-    Result<Void> release(@RequestBody TicketSalesOrderRequest request,
-                         @RequestHeader("X-Internal-Token") String internalToken);
+    Result<TicketSalesReleaseResponse> release(@RequestBody TicketSalesOrderRequest request,
+                                               @RequestHeader("X-Internal-Token") String internalToken);
 
     @PostMapping("/api/ticket/internal/sales/refund")
-    Result<Void> refund(@RequestBody TicketSalesOrderRequest request,
-                        @RequestHeader("X-Internal-Token") String internalToken);
+    Result<TicketSalesReleaseResponse> refund(@RequestBody TicketSalesOrderRequest request,
+                                              @RequestHeader("X-Internal-Token") String internalToken);
 }

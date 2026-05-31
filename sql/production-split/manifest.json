@@ -6,7 +6,8 @@
       "key": "user",
       "targetInstance": "pg-user",
       "targetDatabase": "omni_user",
-      "tables": ["user", "user_auth", "sms_code", "organizer_application", "user_asset"]
+      "tables": ["user", "user_auth", "sms_code", "organizer_application", "user_asset", "user_attendee"],
+      "migrations": ["user/20260530_user_attendee.sql"]
     },
     {
       "service": "java-ticket",
@@ -14,20 +15,21 @@
       "targetInstance": "pg-ticket",
       "targetDatabase": "omni_ticket",
       "tables": ["category", "artist", "tour", "station", "activity", "venue", "venue_application", "session", "ticket_type", "ticket_type_area", "session_seat", "venue_area", "venue_seat", "reservation", "seat", "stock_log", "venue_default_layout", "venue_default_layout_section", "activity_seat_layout", "activity_seat_layout_section", "session_seat_layout", "session_seat_layout_section", "seat_block", "seat_override", "ticket_group", "ticket_asset", "private_asset", "station_config_version"],
-      "migrations": ["ticket/20260523_private_asset.sql", "ticket/20260524_seatcraft_polygon_block.sql", "ticket/20260524_seatcraft_layout_versioning.sql", "ticket/20260525_station_config_version.sql", "ticket/20260525_restore_released_seat_ticket_type_binding.sql", "ticket/20260530_team_seat_lock.sql"]
+      "migrations": ["ticket/20260523_private_asset.sql", "ticket/20260524_seatcraft_polygon_block.sql", "ticket/20260524_seatcraft_layout_versioning.sql", "ticket/20260525_station_config_version.sql", "ticket/20260525_restore_released_seat_ticket_type_binding.sql", "ticket/20260530_team_seat_lock.sql", "ticket/20260530_activity_real_name_required.sql"]
     },
     {
       "service": "java-order",
       "key": "order",
       "targetInstance": "pg-order",
       "targetDatabase": "omni_order",
-      "tables": ["order", "order_seat", "order_snapshot"],
+      "tables": ["order", "order_seat", "order_snapshot", "order_attendee"],
       "migrations": [
         "order/001_same_owner_constraints.sql",
         "order/20260528_seata_undo_log.sql",
         "order/20260529_grab_order_snapshot.sql",
         "order/20260530_team_order_snapshot.sql",
-        "order/20260530_order_seat_selection_mode.sql"
+        "order/20260530_order_seat_selection_mode.sql",
+        "order/20260530_order_attendee.sql"
       ]
     },
     {
@@ -49,12 +51,14 @@
       "key": "grab",
       "targetInstance": "pg-grab",
       "targetDatabase": "omni_grab",
-      "tables": ["grab_request", "ticket_team", "ticket_team_member", "team_grab_request", "team_seat_assignment"],
+      "tables": ["grab_request", "ticket_team", "ticket_team_member", "team_grab_request", "team_seat_assignment", "waitlist_entry", "waitlist_offer", "waitlist_allocation_log"],
       "migrations": [
         "grab/001_create_grab_request.sql",
+        "grab/20260530_grab_attendee_ids.sql",
         "grab/20260529_grab_progress_async_queue.sql",
         "grab/20260530_grab_pending_recovery_status.sql",
-        "grab/20260530_team_grab.sql"
+        "grab/20260530_team_grab.sql",
+        "grab/20260531_waitlist_queue.sql"
       ]
     }
   ]

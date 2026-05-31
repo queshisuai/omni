@@ -1,6 +1,13 @@
 import type { OrderEntity } from '../types/api.ts'
 import type { UserRole } from '../types/api.ts'
 
+export function formatOrderAttendees(order: Pick<OrderEntity, 'attendees'>) {
+  if (!order.attendees?.length) return '-'
+  return order.attendees
+    .map((attendee) => `${attendee.realName} ${attendee.idNoMask}`)
+    .join('；')
+}
+
 export type ConsoleOrderStatusFilter = 'all' | 2 | 3 | 4
 
 export const CONSOLE_ORDER_STATUS_TABS: Array<{ value: ConsoleOrderStatusFilter; label: string }> = [

@@ -13,14 +13,17 @@ import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.PaymentSyncDecisionResponse;
+import com.omni.order.dto.ResolvedAttendeeResponse;
 import com.omni.order.dto.TicketSalesLockRequest;
 import com.omni.order.dto.TicketSalesOrderRequest;
 import com.omni.order.dto.TicketSalesQuoteResponse;
 import com.omni.order.dto.TicketSalesSeatLockResponse;
 import com.omni.order.entity.Order;
+import com.omni.order.entity.OrderAttendee;
 import com.omni.order.entity.OrderSeat;
 import com.omni.order.entity.OrderSnapshot;
 import com.omni.order.mapper.OrderMapper;
+import com.omni.order.mapper.OrderAttendeeMapper;
 import com.omni.order.mapper.OrderSeatMapper;
 import com.omni.order.mapper.OrderSnapshotMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -39,6 +42,7 @@ import com.alibaba.csp.sentinel.slots.block.RuleConstant;
 import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRule;
 import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -73,11 +77,38 @@ class OrderServiceTest {
     @Mock
     private UserInternalClient userInternalClient;
 
+    @Mock
+    private OrderAttendeeMapper orderAttendeeMapper;
+
     private OrderService service;
 
     @BeforeEach
     void setUp() {
-        service = new OrderService(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient);
+        service = new OrderService(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, null, orderAttendeeMapper);
+    }
+
+    @Test
+    void listOrderItemsBySessionsAttachesRealNameAttendees() {
+        OrderListItemResponse order = new OrderListItemResponse();
+        order.setId(9001L);
+        order.setSessionId(101L);
+
+        OrderAttendee attendee = new OrderAttendee();
+        attendee.setId(7001L);
+        attendee.setOrderId(9001L);
+        attendee.setAttendeeUserProfileId(501L);
+        attendee.setRealName("Alice");
+        attendee.setIdType("ID_CARD");
+        attendee.setIdNoMask("110***********011");
+        attendee.setStatus(1);
+
+        when(orderMapper.selectOrderListItemsBySessions(List.of(101L), false)).thenReturn(List.of(order));
+        when(orderAttendeeMapper.selectByOrderIds(List.of(9001L))).thenReturn(List.of(attendee));
+
+        List<OrderListItemResponse> result = service.listOrderItemsBySessions(List.of(101L), false);
+
+        assertEquals(1, result.get(0).getAttendees().size());
+        assertEquals("Alice", result.get(0).getAttendees().get(0).getRealName());
     }
 
     @AfterEach
@@ -199,6 +230,88 @@ class OrderServiceTest {
         verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
         verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
+    }
+
+    @Test
+    void createOrderRejectsRealNameOrderWithoutAttendees() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setQuantity(1);
+
+        TicketSalesQuoteResponse quote = quoteWithoutLimit(1);
+        quote.setRealNameRequired(true);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(request));
+
+        assertEquals("请选择实名观演人", ex.getMessage());
+        verify(orderMapper, never()).insert(any(Order.class));
+        verify(orderAttendeeMapper, never()).insert(any(OrderAttendee.class));
+    }
+
+    @Test
+    void createOrderWritesRealNameAttendeeSnapshot() {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setUserId(2004L);
+        request.setSessionId(10L);
+        request.setTicketTypeId(20L);
+        request.setQuantity(1);
+        request.setAttendeeIds(List.of(501L));
+
+        TicketSalesQuoteResponse quote = quoteWithoutLimit(1);
+        quote.setRealNameRequired(true);
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        when(userInternalClient.resolveAttendees(any(), anyString())).thenReturn(Result.success(List.of(
+                resolvedAttendee(501L, "Alice", "hash-a", "110***********011")
+        )));
+        when(ticketSalesInternalClient.lockStock(any(), anyString())).thenReturn(Result.success());
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(9001L);
+            return 1;
+        });
+
+        service.createOrder(request);
+
+        ArgumentCaptor<OrderAttendee> captor = ArgumentCaptor.forClass(OrderAttendee.class);
+        verify(orderAttendeeMapper).insert(captor.capture());
+        assertEquals(9001L, captor.getValue().getOrderId());
+        assertEquals(10L, captor.getValue().getSessionId());
+        assertEquals(501L, captor.getValue().getAttendeeUserProfileId());
+        assertEquals("hash-a", captor.getValue().getIdNoHash());
+    }
+
+    @Test
+    void createOrderWithSeatsAllowsWaitlistGrabRequestIdWithoutAuthorizedPrice() {
+        LockSeatsRequest request = new LockSeatsRequest();
+        request.setUserId(2004L);
+        request.setSessionId(101L);
+        request.setTicketTypeId(202L);
+        request.setQuantity(1);
+        request.setSeatIds(List.of());
+        request.setGrabRequestId("WAITLIST-10-abcdef1234567890");
+        request.setAuthorizedMaxUnitPrice(null);
+
+        TicketSalesQuoteResponse quote = quoteWithoutLimit(1);
+        quote.setTicketTypeId(202L);
+        quote.setUnitPrice(new BigDecimal("100.00"));
+        TicketSalesSeatLockResponse lockResponse = new TicketSalesSeatLockResponse();
+        lockResponse.setLockedSeatIds(List.of(3001L));
+
+        when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
+        when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
+        when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(9001L);
+            return 1;
+        });
+        when(ticketSalesInternalClient.lockSeats(any(), anyString())).thenReturn(Result.success(lockResponse));
+
+        assertDoesNotThrow(() -> service.createOrderWithSeats(request));
     }
 
     @Test
@@ -1824,6 +1937,29 @@ class OrderServiceTest {
         assertEquals(4, lockedSeat.getStatus());
     }
 
+    @Test
+    void releaseExpiredSeatLocksMarksAttendeesCancelledWithDatabaseAllowedStatus() {
+        Order order = pendingOrder(2201L, 101L, 1L);
+        OrderSeat lockedSeat = orderSeat(2201L, 301L, "A-1");
+        lockedSeat.setId(9101L);
+        lockedSeat.setSessionId(101L);
+        lockedSeat.setTicketTypeId(1L);
+        lockedSeat.setStatus(1);
+        lockedSeat.setLockExpireTime(java.time.LocalDateTime.now().minusMinutes(1));
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of(lockedSeat));
+        when(orderMapper.selectById(2201L)).thenReturn(order);
+        when(paymentInternalClient.syncOrderForCancel(2201L, "test-internal-token"))
+                .thenReturn(Result.success(safeToCancelDecision()));
+        when(orderMapper.updateStatusIfCurrent(2201L, OrderService.STATUS_PENDING, OrderService.STATUS_CANCELLED))
+                .thenReturn(1);
+        when(ticketSalesInternalClient.release(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
+
+        service.releaseExpiredSeatLocks();
+
+        verify(orderAttendeeMapper).updateStatusByOrderId(2201L, 2);
+    }
+
     private TicketSalesQuoteResponse quoteWithLimit(int quantity) {
         TicketSalesQuoteResponse quote = new TicketSalesQuoteResponse();
         quote.setActivityId(100L);
@@ -1943,6 +2079,16 @@ class OrderServiceTest {
         user.setRole("user");
         user.setStatus(1);
         return user;
+    }
+
+    private ResolvedAttendeeResponse resolvedAttendee(Long id, String name, String hash, String mask) {
+        ResolvedAttendeeResponse attendee = new ResolvedAttendeeResponse();
+        attendee.setId(id);
+        attendee.setRealName(name);
+        attendee.setIdType("ID_CARD");
+        attendee.setIdNoHash(hash);
+        attendee.setIdNoMask(mask);
+        return attendee;
     }
 
     private void loadExceptionRatioRule(String resource) {

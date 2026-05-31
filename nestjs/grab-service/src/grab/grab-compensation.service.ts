@@ -8,7 +8,7 @@ import { OrderClientService } from './order-client.service';
 
 const RELEASEABLE_PROGRESS_STATUSES = new Set(['LOCKING', 'ORDER_CREATING']);
 const REQUEUEABLE_PROGRESS_STATUSES = new Set(['QUEUED', 'WAITING']);
-const EXPIRED_MESSAGE = 'grab request expired';
+const EXPIRED_MESSAGE = '抢票请求已过期';
 type OrderRecoveryResult = 'RECOVERED' | 'MISSING' | 'UNKNOWN';
 
 @Injectable()
@@ -138,7 +138,7 @@ export class GrabCompensationService implements OnModuleInit {
     if (attempts.length === 0) return attempts;
     return attempts.map((attempt) => (
       attempt.ticketTypeId === matchedTicketTypeId
-        ? { ...attempt, status: 'ORDER_CREATED', message: 'order created' }
+        ? { ...attempt, status: 'ORDER_CREATED', message: '已创建订单' }
         : attempt
     ));
   }

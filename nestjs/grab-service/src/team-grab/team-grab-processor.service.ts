@@ -24,13 +24,13 @@ export class TeamGrabProcessorService {
   async process(record: GrabRequestRecord): Promise<boolean> {
     const teamGrab = await this.teamRepository.findTeamGrabByGrabRequestId(record.requestId);
     if (!teamGrab) {
-      await this.grabRepository.updateStatus(record.requestId, GRAB_STATUS.FAILED, 'team grab request not found');
+      await this.grabRepository.updateStatus(record.requestId, GRAB_STATUS.FAILED, '小队抢票请求不存在');
       return true;
     }
 
     const progressed = await this.grabRepository.updateProgress(record.requestId, {
       status: GRAB_STATUS.ORDER_CREATING,
-      message: 'locking team seats',
+      message: '正在锁定小队座位',
       currentTicketTypeId: record.ticketTypeId,
       currentAttemptIndex: 0,
       attempts: record.attemptsSnapshot,
@@ -65,7 +65,7 @@ export class TeamGrabProcessorService {
         matchedStrategy,
       });
       if (!persisted) {
-        throw new Error('failed to persist team locked seats');
+        throw new Error('保存小队锁座结果失败');
       }
 
       const authorizedMaxUnitPrice = await this.authorizedMaxUnitPrice(teamGrab);
@@ -86,7 +86,7 @@ export class TeamGrabProcessorService {
         authorizedMaxUnitPrice,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'team grab processing failed';
+      const message = error instanceof Error ? error.message : '小队抢票处理失败';
       if (lockedSeatIds.length > 0) {
         const released = await this.releaseLockedSeats(teamGrab.requestId, lockedSeatIds);
         if (!released) {
@@ -135,11 +135,11 @@ export class TeamGrabProcessorService {
     try {
       const pending = await this.teamRepository.markTeamGrabRequestIdReleasePending(teamGrab.requestId);
       if (!pending) {
-        this.logger.warn(`failed to persist team grab request-id release pending for ${teamGrab.requestId}`);
+        this.logger.warn(`保存小队抢票请求释放待处理状态失败：${teamGrab.requestId}`);
         return false;
       }
       if (pending.failReason !== ORDER_CREATE_RELEASE_PENDING || pending.lockedSeatIds.length > 0) {
-        this.logger.warn(`team grab request-id release pending persisted unexpected state for ${teamGrab.requestId}`);
+        this.logger.warn(`小队抢票请求释放待处理状态异常：${teamGrab.requestId}`);
         return false;
       }
       return true;
@@ -156,11 +156,11 @@ export class TeamGrabProcessorService {
     try {
       const pending = await this.teamRepository.markTeamGrabReleasePending(teamGrab.requestId, input);
       if (!pending) {
-        this.logger.warn(`failed to persist team grab release pending for ${teamGrab.requestId}`);
+        this.logger.warn(`保存小队抢票释放待处理状态失败：${teamGrab.requestId}`);
         return false;
       }
       if (pending.status !== 'LOCKED' || !this.sameLockedSeats(pending.lockedSeatIds, input.lockedSeatIds)) {
-        this.logger.warn(`team grab release pending persisted incomplete lock state for ${teamGrab.requestId}`);
+        this.logger.warn(`小队抢票释放待处理锁定状态不完整：${teamGrab.requestId}`);
         return false;
       }
       return true;
@@ -178,7 +178,7 @@ export class TeamGrabProcessorService {
     try {
       const released = await this.ticketClient.releaseTeamSeatLock(requestId, lockedSeatIds);
       if (!released) {
-        this.logger.warn(`team seat lock release returned false for ${requestId}`);
+        this.logger.warn(`小队座位锁释放失败：${requestId}`);
         return false;
       }
       return true;
@@ -199,7 +199,7 @@ export class TeamGrabProcessorService {
         teamGrab.teamId,
         orderId,
       );
-      if (!teamOrderCreated) throw new Error('failed to persist team grab order');
+      if (!teamOrderCreated) throw new Error('保存小队抢票订单失败');
 
       const grabOrderCreated = await this.grabRepository.markOrderCreated(
         record.requestId,
@@ -209,7 +209,7 @@ export class TeamGrabProcessorService {
         GRAB_STATUS.ORDER_CREATING,
         record.workerId,
       );
-      if (!grabOrderCreated) throw new Error('failed to persist grab order');
+      if (!grabOrderCreated) throw new Error('保存抢票订单失败');
 
       await this.notifyLocked(teamGrab, orderId);
       return true;
@@ -223,7 +223,7 @@ export class TeamGrabProcessorService {
   private async authorizedMaxUnitPrice(teamGrab: TeamGrabRequestRecord): Promise<number> {
     const visibleTypes = await this.ticketClient.listVisibleTicketTypes(teamGrab.sessionId, [teamGrab.ticketTypeId]);
     const ticketType = visibleTypes.find((item) => item.ticketTypeId === teamGrab.ticketTypeId);
-    if (!ticketType) throw new Error('ticket type price not found');
+    if (!ticketType) throw new Error('票档价格不存在');
     return ticketType.price;
   }
 
@@ -238,7 +238,7 @@ export class TeamGrabProcessorService {
 
   private async markPendingRecovery(record: GrabRequestRecord, teamGrab: TeamGrabRequestRecord): Promise<void> {
     await this.grabRepository.markPendingRecovery(record.requestId, {
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: teamGrab.ticketTypeId,
       currentAttemptIndex: 0,
       attempts: record.attemptsSnapshot,

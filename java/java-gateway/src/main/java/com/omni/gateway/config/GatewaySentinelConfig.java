@@ -29,6 +29,7 @@ import java.util.stream.Collectors;
 public class GatewaySentinelConfig implements InitializingBean {
 
     public static final String GRAB_API = "gateway-api-grab";
+    public static final String WAITLIST_API = "gateway-api-waitlist";
     public static final String ORDER_CREATE_API = "gateway-api-order-create";
     public static final String PAYMENT_CRITICAL_API = "gateway-api-payment-critical";
     public static final String USER_AUTH_API = "gateway-api-user-auth";
@@ -37,6 +38,7 @@ public class GatewaySentinelConfig implements InitializingBean {
     private static final String BLOCK_RESPONSE_BODY = "{\"code\":429,\"message\":\"系统繁忙，请稍后重试\",\"data\":null}";
 
     private final double grabQps;
+    private final double waitlistQps;
     private final double orderCreateQps;
     private final double paymentCriticalQps;
     private final double userAuthQps;
@@ -44,11 +46,13 @@ public class GatewaySentinelConfig implements InitializingBean {
 
     public GatewaySentinelConfig(
             @Value("${omni.gateway.sentinel.qps.grab:20}") double grabQps,
+            @Value("${omni.gateway.sentinel.qps.waitlist:20}") double waitlistQps,
             @Value("${omni.gateway.sentinel.qps.order-create:50}") double orderCreateQps,
             @Value("${omni.gateway.sentinel.qps.payment-critical:30}") double paymentCriticalQps,
             @Value("${omni.gateway.sentinel.qps.user-auth:40}") double userAuthQps,
             @Value("${omni.gateway.sentinel.qps.ticket-hot-read:120}") double ticketHotReadQps) {
         this.grabQps = grabQps;
+        this.waitlistQps = waitlistQps;
         this.orderCreateQps = orderCreateQps;
         this.paymentCriticalQps = paymentCriticalQps;
         this.userAuthQps = userAuthQps;
@@ -75,6 +79,7 @@ public class GatewaySentinelConfig implements InitializingBean {
     private Set<ApiDefinition> buildApiDefinitions() {
         Map<String, Set<ApiPredicateItem>> definitions = new HashMap<String, Set<ApiPredicateItem>>();
         addApiPath(definitions, GRAB_API, "/api/grab");
+        addApiPath(definitions, WAITLIST_API, "/api/waitlist");
         addApiPath(definitions, ORDER_CREATE_API, "/api/order/create");
         addApiPath(definitions, ORDER_CREATE_API, "/api/order/create-with-seats");
         addApiPath(definitions, PAYMENT_CRITICAL_API, "/api/payment/alipay/sync");
@@ -114,6 +119,7 @@ public class GatewaySentinelConfig implements InitializingBean {
     private Set<GatewayFlowRule> buildGatewayFlowRules() {
         Set<GatewayFlowRule> rules = new HashSet<GatewayFlowRule>();
         rules.add(gatewayFlowRule(GRAB_API, grabQps));
+        rules.add(gatewayFlowRule(WAITLIST_API, waitlistQps));
         rules.add(gatewayFlowRule(ORDER_CREATE_API, orderCreateQps));
         rules.add(gatewayFlowRule(PAYMENT_CRITICAL_API, paymentCriticalQps));
         rules.add(gatewayFlowRule(USER_AUTH_API, userAuthQps));

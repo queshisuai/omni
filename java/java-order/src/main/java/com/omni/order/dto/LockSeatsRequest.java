@@ -15,6 +15,7 @@ public class LockSeatsRequest {
     private Long requestedTicketTypeId;
     private Long matchedTicketTypeId;
     private Boolean autoDowngraded;
+    private List<Long> attendeeIds;
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
@@ -38,4 +39,6 @@ public class LockSeatsRequest {
     public void setMatchedTicketTypeId(Long matchedTicketTypeId) { this.matchedTicketTypeId = matchedTicketTypeId; }
     public Boolean getAutoDowngraded() { return autoDowngraded; }
     public void setAutoDowngraded(Boolean autoDowngraded) { this.autoDowngraded = autoDowngraded; }
+    public List<Long> getAttendeeIds() { return attendeeIds; }
+    public void setAttendeeIds(List<Long> attendeeIds) { this.attendeeIds = attendeeIds; }
 }

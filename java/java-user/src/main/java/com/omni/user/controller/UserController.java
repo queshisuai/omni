@@ -13,12 +13,17 @@ import com.omni.user.dto.OrganizerApplicationRequest;
 import com.omni.user.dto.OrganizerApplicationResponse;
 import com.omni.user.dto.OrganizerApplicationReviewRequest;
 import com.omni.user.dto.RegisterRequest;
+import com.omni.user.dto.ResolveAttendeesRequest;
+import com.omni.user.dto.ResolvedAttendeeResponse;
 import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UpdateProfileRequest;
+import com.omni.user.dto.UserAttendeeRequest;
+import com.omni.user.dto.UserAttendeeResponse;
 import com.omni.user.dto.UserInfoResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.omni.user.service.OrganizerApplicationService;
+import com.omni.user.service.UserAttendeeService;
 import com.omni.user.service.UserAssetService;
 import com.omni.user.service.UserService;
 import io.jsonwebtoken.Claims;
@@ -44,27 +49,37 @@ public class UserController {
     private final UserService userService;
     private final OrganizerApplicationService organizerApplicationService;
     private final UserAssetService userAssetService;
+    private final UserAttendeeService userAttendeeService;
     private final String internalApiToken;
 
     public UserController(UserService userService, OrganizerApplicationService organizerApplicationService) {
-        this(userService, organizerApplicationService, null, "");
+        this(userService, organizerApplicationService, null, null, "");
     }
 
     public UserController(UserService userService,
                           OrganizerApplicationService organizerApplicationService,
                           String internalApiToken) {
-        this(userService, organizerApplicationService, null, internalApiToken);
+        this(userService, organizerApplicationService, null, null, internalApiToken);
     }
 
     @Autowired
     public UserController(UserService userService,
                           OrganizerApplicationService organizerApplicationService,
                           UserAssetService userAssetService,
+                          UserAttendeeService userAttendeeService,
                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.userService = userService;
         this.organizerApplicationService = organizerApplicationService;
         this.userAssetService = userAssetService;
+        this.userAttendeeService = userAttendeeService;
         this.internalApiToken = internalApiToken;
+    }
+
+    public UserController(UserService userService,
+                          OrganizerApplicationService organizerApplicationService,
+                          UserAssetService userAssetService,
+                          String internalApiToken) {
+        this(userService, organizerApplicationService, userAssetService, null, internalApiToken);
     }
 
     /**
@@ -125,6 +140,39 @@ public class UserController {
         }
         UserInfoResponse response = userAssetService.uploadAvatar(userId, file);
         return Result.success(response);
+    }
+
+    @GetMapping("/attendees")
+    public Result<List<UserAttendeeResponse>> listAttendees(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthUserId(authorization);
+        return Result.success(requireUserAttendeeService().listMine(userId));
+    }
+
+    @PostMapping("/attendees")
+    public Result<UserAttendeeResponse> createAttendee(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody UserAttendeeRequest request) {
+        Long userId = requireAuthUserId(authorization);
+        return Result.success(requireUserAttendeeService().create(userId, request));
+    }
+
+    @PutMapping("/attendees/{id}")
+    public Result<UserAttendeeResponse> updateAttendee(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody UserAttendeeRequest request) {
+        Long userId = requireAuthUserId(authorization);
+        return Result.success(requireUserAttendeeService().update(userId, id, request));
+    }
+
+    @DeleteMapping("/attendees/{id}")
+    public Result<Void> deleteAttendee(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id) {
+        Long userId = requireAuthUserId(authorization);
+        requireUserAttendeeService().delete(userId, id);
+        return Result.success();
     }
 
     /**
@@ -208,6 +256,16 @@ public class UserController {
         return Result.success(userService.getInternalUserRef(id));
     }
 
+    @PostMapping("/internal/attendees/resolve")
+    public Result<List<ResolvedAttendeeResponse>> resolveInternalAttendees(
+            @RequestBody ResolveAttendeesRequest request,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(requireUserAttendeeService().resolve(request.getUserId(), request.getAttendeeIds()));
+    }
+
     private boolean isValidInternalToken(String token) {
         return StringUtils.hasText(internalApiToken) && internalApiToken.equals(token);
     }
@@ -247,5 +305,12 @@ public class UserController {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private UserAttendeeService requireUserAttendeeService() {
+        if (userAttendeeService == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "实名观演人服务未配置");
+        }
+        return userAttendeeService;
     }
 }

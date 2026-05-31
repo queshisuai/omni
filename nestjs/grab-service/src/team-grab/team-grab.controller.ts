@@ -38,12 +38,12 @@ interface TeamDetailResponse {
 }
 
 function success<T>(data: T): ApiResult<T> {
-  return { code: 200, message: 'success', data };
+  return { code: 200, message: '成功', data };
 }
 
 function parsePositiveInt(value: string, label: string): number {
   if (!/^[1-9]\d*$/.test(value)) {
-    throw new BadRequestException(`invalid ${label}`);
+    throw new BadRequestException(`${label}无效`);
   }
   return Number(value);
 }
@@ -71,7 +71,7 @@ export class TeamGrabController {
 
   @Get(':teamId')
   async get(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TeamDetailResponse>> {
-    const parsedTeamId = parsePositiveInt(teamId, 'team');
+    const parsedTeamId = parsePositiveInt(teamId, '小队');
     const detail = await this.teamGrabService.getTeamDetail(parsedTeamId, request.user.userId);
     return success(toTeamDetailResponse(detail));
   }
@@ -82,17 +82,17 @@ export class TeamGrabController {
     @Param('teamId') teamId: string,
     @Body() body: JoinTeamDto,
   ): Promise<ApiResult<TicketTeamRecord>> {
-    return success(await this.teamGrabService.joinTeam(parsePositiveInt(teamId, 'team'), request.user.userId, body?.inviteCode ?? ''));
+    return success(await this.teamGrabService.joinTeam(parsePositiveInt(teamId, '小队'), request.user.userId, body?.inviteCode ?? ''));
   }
 
   @Post(':teamId/confirm')
   async confirm(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TicketTeamRecord>> {
-    return success(await this.teamGrabService.confirmMember(parsePositiveInt(teamId, 'team'), request.user.userId));
+    return success(await this.teamGrabService.confirmMember(parsePositiveInt(teamId, '小队'), request.user.userId));
   }
 
   @Post(':teamId/trigger')
   async trigger(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TeamGrabTriggerResponse>> {
-    return success(await this.teamGrabService.triggerTeamGrab(parsePositiveInt(teamId, 'team'), request.user.userId));
+    return success(await this.teamGrabService.triggerTeamGrab(parsePositiveInt(teamId, '小队'), request.user.userId));
   }
 
   @Get(':teamId/requests/:requestId/progress')
@@ -101,17 +101,17 @@ export class TeamGrabController {
     @Param('teamId') teamId: string,
     @Param('requestId') requestId: string,
   ): Promise<ApiResult<GrabProgressResponse>> {
-    return success(await this.teamGrabService.getTeamGrabProgress(parsePositiveInt(teamId, 'team'), request.user.userId, requestId));
+    return success(await this.teamGrabService.getTeamGrabProgress(parsePositiveInt(teamId, '小队'), request.user.userId, requestId));
   }
 
   @Post(':teamId/sync-paid')
   async syncPaid(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TeamPaymentSyncResponse>> {
-    return success(await this.teamGrabService.syncPaidTeam(parsePositiveInt(teamId, 'team'), request.user.userId));
+    return success(await this.teamGrabService.syncPaidTeam(parsePositiveInt(teamId, '小队'), request.user.userId));
   }
 
   @Post(':teamId/leave')
   async leave(@Req() request: AuthenticatedRequest, @Param('teamId') teamId: string): Promise<ApiResult<TicketTeamRecord>> {
-    return success(await this.teamGrabService.leaveTeam(parsePositiveInt(teamId, 'team'), request.user.userId));
+    return success(await this.teamGrabService.leaveTeam(parsePositiveInt(teamId, '小队'), request.user.userId));
   }
 
   @Delete(':teamId/members/:userId')
@@ -121,9 +121,9 @@ export class TeamGrabController {
     @Param('userId') userId: string,
   ): Promise<ApiResult<TicketTeamRecord>> {
     return success(await this.teamGrabService.removeMember(
-      parsePositiveInt(teamId, 'team'),
+      parsePositiveInt(teamId, '小队'),
       request.user.userId,
-      parsePositiveInt(userId, 'user'),
+      parsePositiveInt(userId, '用户'),
     ));
   }
 
@@ -134,7 +134,7 @@ export class TeamGrabController {
     @Body() body: UpdateStrategyDto,
   ): Promise<ApiResult<TicketTeamRecord>> {
     return success(await this.teamGrabService.updateStrategy(
-      parsePositiveInt(teamId, 'team'),
+      parsePositiveInt(teamId, '小队'),
       request.user.userId,
       body.strategy,
       body.fallbacks ?? [],

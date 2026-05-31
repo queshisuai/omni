@@ -11,6 +11,7 @@ export interface SubmitGrabRequestDto {
   ticketTypeId?: number;
   quantity: number;
   seatIds?: number[];
+  attendeeIds?: number[];
   allocateRandom?: boolean;
   idempotencyKey: string;
   ticketTypePreferences?: TicketTypePreferenceDto[];
@@ -46,6 +47,7 @@ export interface GrabRequestRecord {
   ticketTypeId: number;
   quantity: number;
   seatIds: number[];
+  attendeeIds?: number[];
   allocateRandom: boolean;
   status: GrabStatus;
   progressStatus: GrabStatus;
@@ -77,6 +79,7 @@ export interface CreatePendingGrabRequestInput {
   ticketTypeId: number;
   quantity: number;
   seatIds: number[];
+  attendeeIds?: number[];
   allocateRandom: boolean;
   expireTime: Date;
 }
@@ -89,6 +92,7 @@ export interface CreateQueuedGrabRequestInput {
   ticketTypeId: number;
   quantity: number;
   seatIds: number[];
+  attendeeIds?: number[];
   allocateRandom: boolean;
   expireTime: Date;
   queueSeq: number;
@@ -103,6 +107,7 @@ export interface FindActiveGrabIntentInput {
   ticketTypeId: number;
   quantity: number;
   seatIds: number[];
+  attendeeIds?: number[];
   allocateRandom: boolean;
   requestedTicketTypes: GrabTicketPreference[];
   allowAutoDowngrade: boolean;
