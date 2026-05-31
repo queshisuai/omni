@@ -36,7 +36,7 @@ export function Footer() {
             万象文化传媒发展有限公司 版权所有
           </p>
           <p className="text-[12px] text-[#999] mb-4">
-            Copyright 2003-2020 All Rights Reserved
+            2003-2020 版权所有，保留所有权利
           </p>
           <p className="text-[12px] text-[#999]">
             热线电话：10103721
@@ -51,7 +51,7 @@ export function Footer() {
           >
             <Smartphone className="w-5 h-5" />
           </a>
-          <span className="text-[12px] text-[#ff1268]">APP下载</span>
+          <span className="text-[12px] text-[#ff1268]">应用下载</span>
         </div>
       </div>
     </footer>

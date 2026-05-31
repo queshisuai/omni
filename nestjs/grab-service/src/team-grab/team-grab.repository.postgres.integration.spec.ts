@@ -281,7 +281,7 @@ describeIntegration('TeamGrabRepository Postgres integration', () => {
       teamId: 7,
       orderId: 9001,
       ticketTypeId: 30,
-    })).rejects.toThrow('failed to mark team locked');
+    })).rejects.toThrow('小队锁定状态更新失败');
 
     await expect(snapshotRows('GRAB-1', 'TEAM-GRAB-1', 7)).resolves.toEqual({
       grabStatus: 'ORDER_CREATING',

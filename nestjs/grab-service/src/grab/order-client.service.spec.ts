@@ -40,6 +40,36 @@ describe('OrderClientService', () => {
     }));
   });
 
+  it('creates waitlist offer orders through the random seat order endpoint', async () => {
+    const service = new OrderClientService();
+
+    await service.createWaitlistOfferOrder({
+      userId: 2004,
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 1,
+      attendeeIds: [501],
+      grabRequestId: 'WAITLIST-10-abcdef',
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith('http://order.local/api/order/internal/create-with-seats', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        userId: 2004,
+        sessionId: 101,
+        ticketTypeId: 202,
+        seatIds: [],
+        quantity: 1,
+        attendeeIds: [501],
+        authorizedMaxUnitPrice: undefined,
+        grabRequestId: 'WAITLIST-10-abcdef',
+        requestedTicketTypeId: 202,
+        matchedTicketTypeId: 202,
+        autoDowngraded: false,
+      }),
+    }));
+  });
+
   it('passes grab authorization and matched ticket metadata to order service', async () => {
     const service = new OrderClientService();
 
@@ -50,6 +80,7 @@ describe('OrderClientService', () => {
       quantity: 1,
       seatIds: [],
       allocateRandom: false,
+      attendeeIds: [501],
       authorizedMaxUnitPrice: 980,
       grabRequestId: 'GRAB1',
       requestedTicketTypeId: 1,
@@ -63,6 +94,7 @@ describe('OrderClientService', () => {
         sessionId: 101,
         ticketTypeId: 2,
         quantity: 1,
+        attendeeIds: [501],
         authorizedMaxUnitPrice: 980,
         grabRequestId: 'GRAB1',
         requestedTicketTypeId: 1,
@@ -190,7 +222,7 @@ describe('OrderClientService', () => {
     const service = new OrderClientService();
 
     await expect(service.createOrder({ userId: 2004, sessionId: 7, ticketTypeId: 21, quantity: 1, seatIds: [], allocateRandom: false }))
-      .rejects.toThrow('order internal token is not configured');
+      .rejects.toThrow('订单内部接口令牌未配置');
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });

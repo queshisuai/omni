@@ -252,7 +252,7 @@ describe('TeamGrabProcessorService', () => {
     expect(grabRepository.markOrderCreated).toHaveBeenCalledWith('GRAB-QUEUED-1', 9001, 30, [], GRAB_STATUS.ORDER_CREATING, 'worker-1');
     expect(grabRepository.updateStatus).not.toHaveBeenCalledWith('GRAB-QUEUED-1', GRAB_STATUS.FAILED, expect.any(String));
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: 30,
       workerId: 'worker-1',
     }));
@@ -349,7 +349,7 @@ describe('TeamGrabProcessorService', () => {
     expect(teamRepository.updateTeamStatus).not.toHaveBeenCalled();
     expect(grabRepository.markOrderCreated).not.toHaveBeenCalled();
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: 30,
       workerId: 'worker-1',
     }));
@@ -369,7 +369,7 @@ describe('TeamGrabProcessorService', () => {
         matchedStrategy: 'SAME_BLOCK',
       }),
       markTeamGrabOrderCreateInProgress: jest.fn().mockResolvedValue({ ...teamGrab, status: 'LOCKED', failReason: 'ORDER_CREATE_IN_PROGRESS' }),
-      markTeamGrabOrderCreatedAndLockTeam: jest.fn().mockRejectedValue(new Error('failed to mark team locked')),
+      markTeamGrabOrderCreatedAndLockTeam: jest.fn().mockRejectedValue(new Error('小队锁定状态更新失败')),
       markTeamGrabOrderCreated: jest.fn(),
       updateTeamStatus: jest.fn(),
       markTeamGrabFailed: jest.fn(),
@@ -401,7 +401,7 @@ describe('TeamGrabProcessorService', () => {
     expect(teamRepository.updateTeamStatus).not.toHaveBeenCalled();
     expect(grabRepository.markOrderCreated).not.toHaveBeenCalled();
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: 30,
       workerId: 'worker-1',
     }));
@@ -487,7 +487,7 @@ describe('TeamGrabProcessorService', () => {
     expect(teamRepository.markTeamGrabReleasePending).not.toHaveBeenCalled();
     expect(teamRepository.markTeamGrabRequestIdReleasePending).toHaveBeenCalledWith('TEAM-GRAB-1');
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: 30,
       workerId: 'worker-1',
     }));
@@ -747,7 +747,7 @@ describe('TeamGrabProcessorService', () => {
     expect(teamRepository.updateTeamStatus).not.toHaveBeenCalledWith(1, 'FAILED', expect.any(Array));
     expect(grabRepository.updateStatus).not.toHaveBeenCalledWith('GRAB-QUEUED-1', GRAB_STATUS.FAILED, expect.any(String));
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       workerId: 'worker-1',
     }));
   });
@@ -796,7 +796,7 @@ describe('TeamGrabProcessorService', () => {
     expect(teamRepository.markTeamGrabFailed).not.toHaveBeenCalled();
     expect(teamRepository.updateTeamStatus).not.toHaveBeenCalledWith(1, 'FAILED', expect.any(Array));
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: 30,
       workerId: 'worker-1',
     }));
@@ -885,8 +885,8 @@ describe('TeamGrabProcessorService', () => {
 
     expect(orderClient.createTeamOrderWithLockedSeats).not.toHaveBeenCalled();
     expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', [501, 502]);
-    expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-QUEUED-1', GRAB_STATUS.FAILED, 'failed to persist team locked seats');
-    expect(teamRepository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', 'failed to persist team locked seats');
+    expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-QUEUED-1', GRAB_STATUS.FAILED, '保存小队锁座结果失败');
+    expect(teamRepository.markTeamGrabFailed).toHaveBeenCalledWith('TEAM-GRAB-1', '保存小队锁座结果失败');
     expect(teamRepository.updateTeamStatus).toHaveBeenCalledWith(1, 'FAILED', ['GRABBING', 'READY']);
   });
 
@@ -936,7 +936,7 @@ describe('TeamGrabProcessorService', () => {
       matchedStrategy: 'SAME_BLOCK',
     });
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: 30,
       workerId: 'worker-1',
     }));
@@ -994,7 +994,7 @@ describe('TeamGrabProcessorService', () => {
       matchedStrategy: 'SAME_BLOCK',
     });
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: 30,
       workerId: 'worker-1',
     }));
@@ -1052,7 +1052,7 @@ describe('TeamGrabProcessorService', () => {
     });
     expect(teamRepository.markTeamGrabRequestIdReleasePending).toHaveBeenCalledWith('TEAM-GRAB-1');
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: 30,
       workerId: 'worker-1',
     }));
@@ -1110,7 +1110,7 @@ describe('TeamGrabProcessorService', () => {
     });
     expect(teamRepository.markTeamGrabRequestIdReleasePending).toHaveBeenCalledWith('TEAM-GRAB-1');
     expect(grabRepository.markPendingRecovery).toHaveBeenCalledWith('GRAB-QUEUED-1', expect.objectContaining({
-      message: 'team order confirmation pending',
+      message: '小队订单确认中，请稍后刷新',
       currentTicketTypeId: 30,
       workerId: 'worker-1',
     }));

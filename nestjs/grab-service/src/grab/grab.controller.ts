@@ -12,7 +12,7 @@ interface ApiResult<T> {
 }
 
 function success<T>(data: T): ApiResult<T> {
-  return { code: 200, message: 'success', data };
+  return { code: 200, message: '成功', data };
 }
 
 @Controller('api/grab/requests')
@@ -53,14 +53,14 @@ export class GrabSessionController {
   ): Promise<ApiResult<SessionVisibleStockResponse>> {
     const parsedSessionId = Number(sessionId);
     if (!Number.isInteger(parsedSessionId) || parsedSessionId <= 0) {
-      throw new BadRequestException('invalid session');
+      throw new BadRequestException('场次无效');
     }
     const ids = ticketTypeIds
       .split(',')
       .map((ticketTypeId) => Number(ticketTypeId))
       .filter((ticketTypeId) => Number.isInteger(ticketTypeId) && ticketTypeId > 0);
     if (ids.length === 0) {
-      throw new BadRequestException('ticketTypeIds is required');
+      throw new BadRequestException('票档不能为空');
     }
     return success(await this.visibleStockService.getSessionVisibleStock(parsedSessionId, ids));
   }

@@ -32,6 +32,7 @@ describe('GrabRepository', () => {
       { ticketTypeId: 202, name: 'VIP', status: 'PENDING', message: '待尝试' },
       { ticketTypeId: 203, name: 'A区', status: 'PENDING', message: '待尝试' },
     ]),
+    attendee_ids: JSON.stringify([501, 502]),
     worker_id: null,
     worker_claimed_at: null,
     processing_started_at: null,
@@ -109,6 +110,7 @@ describe('GrabRepository', () => {
       ticketTypeId: 202,
       quantity: 2,
       seatIds: [302, 301],
+      attendeeIds: [502, 501],
       allocateRandom: false,
       expireTime: new Date('2026-05-27T12:15:00.000Z'),
       queueSeq: 3,
@@ -121,9 +123,11 @@ describe('GrabRepository', () => {
     expect(params).toContain(3);
     expect(params).toContain(JSON.stringify(preferences));
     expect(params).toContain(true);
+    expect(params).toContain(JSON.stringify([501, 502]));
     expect(result.progressStatus).toBe(GRAB_STATUS.QUEUED);
     expect(result.queueSeq).toBe(3);
     expect(result.requestedTicketTypes).toEqual(preferences);
+    expect(result.attendeeIds).toEqual([501, 502]);
   });
 
   it('persists TEAM_GRAB request type for queued team requests', async () => {
@@ -138,6 +142,7 @@ describe('GrabRepository', () => {
       ticketTypeId: 202,
       quantity: 2,
       seatIds: [],
+      attendeeIds: [],
       allocateRandom: true,
       expireTime: new Date('2026-05-27T12:15:00.000Z'),
       queueSeq: 3,

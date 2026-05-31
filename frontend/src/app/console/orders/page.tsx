@@ -12,6 +12,7 @@ import {
   paginateConsoleOrders,
   type ConsoleOrderStatusFilter,
   getConsoleOrderScopeCopy,
+  formatOrderAttendees,
 } from '@/lib/console-orders'
 import type { OrderEntity, UserRole } from '@/types/api'
 
@@ -134,7 +135,10 @@ export default function ConsoleOrdersPage() {
                       )}
                     </div>
                   </td>
-                  <td className="p-3 text-[#ff1268] font-medium">¥{o.amount}</td>
+                  <td className="p-3 text-[#333]">
+                    <div className="font-medium text-[#ff1268]">¥{o.amount}</div>
+                    <div className="mt-1 text-[12px] text-[#777]">{formatOrderAttendees(o)}</div>
+                  </td>
                   <td className="p-3 text-[#666]">{o.quantity}张</td>
                   <td className="p-3">
                     <span className={`text-[12px] px-2 py-0.5 rounded-full ${

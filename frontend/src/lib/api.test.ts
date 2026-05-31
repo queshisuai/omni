@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createAlipayQrPay, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, removeTeamGrabMember } from './api.ts'
+import { ApiError, createAlipayQrPay, createWaitlistEntry, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, removeTeamGrabMember } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -149,6 +149,26 @@ test('removes a team member through the leader endpoint', async () => {
     assert.equal(requestedUrl, '/api/grab/teams/7/members/200')
     assert.equal(requestedMethod, 'DELETE')
     assert.equal(result.size, 1)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('localizes english API errors before displaying them', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify({
+      code: 409,
+      message: 'ticket type sold out',
+      data: null,
+    }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    await assert.rejects(
+      () => createWaitlistEntry({ sessionId: 101, ticketTypeId: 202, quantity: 1 }),
+      (error) => error instanceof ApiError && error.message === '当前票档已售罄',
+    )
   } finally {
     globalThis.fetch = originalFetch
   }

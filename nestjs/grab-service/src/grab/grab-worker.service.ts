@@ -65,7 +65,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     const record = await this.repository.claimForProcessing(requestId, this.workerId);
     if (!record) {
       if (existing.expireTime <= new Date()) {
-        await this.repository.expireActiveRequest(requestId, 'grab request expired before processing', [existing.progressStatus]);
+        await this.repository.expireActiveRequest(requestId, '抢票请求处理前已过期', [existing.progressStatus]);
         await this.ackIfQueued(existing);
         return;
       }
@@ -82,7 +82,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         ? await this.processTeamGrab(record)
         : await this.processAttempts(record);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'grab processing failed';
+      const message = error instanceof Error ? error.message : '抢票处理失败';
       await this.repository.updateStatus(record.requestId, GRAB_STATUS.FAILED, message);
       this.logger.error(error);
     } finally {
@@ -91,7 +91,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async processTeamGrab(record: GrabRequestRecord): Promise<boolean> {
-    if (!this.teamGrabProcessor) throw new Error('team grab processor is not configured');
+    if (!this.teamGrabProcessor) throw new Error('组队抢票处理器未配置');
     return this.teamGrabProcessor.process(record);
   }
 
@@ -110,7 +110,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         const previous = effectivePreferences[index - 1];
         const downgraded = await this.repository.updateProgress(record.requestId, {
           status: GRAB_STATUS.DOWNGRADING,
-          message: `${this.ticketLabel(previous)} sold out, trying ${this.ticketLabel(preference)}`,
+          message: `${this.ticketLabel(previous)}已售罄，正在尝试${this.ticketLabel(preference)}`,
           currentTicketTypeId: preference.ticketTypeId,
           currentAttemptIndex: index,
           attempts,
@@ -123,9 +123,9 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       if (outcome === 'STALE_LEASE') return false;
       if (outcome !== 'SOLD_OUT') return true;
 
-      attempts = this.markAttempt(attempts, index, 'SOLD_OUT', 'ticket type sold out');
+      attempts = this.markAttempt(attempts, index, 'SOLD_OUT', '当前票档已售罄');
       if (index === effectivePreferences.length - 1) {
-        return await this.finishTerminalAttempt(record, GRAB_STATUS.SOLD_OUT, 'ticket type sold out', preference, index, attempts, 'SOLD_OUT');
+        return await this.finishTerminalAttempt(record, GRAB_STATUS.SOLD_OUT, '当前票档已售罄', preference, index, attempts, 'SOLD_OUT');
       }
     }
     return true;
@@ -137,10 +137,10 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     index: number,
     attempts: GrabAttemptSnapshot[],
   ): Promise<AttemptOutcome> {
-    const tryingAttempts = this.markAttempt(attempts, index, 'TRYING', `Trying ${this.ticketLabel(preference)}`);
+    const tryingAttempts = this.markAttempt(attempts, index, 'TRYING', `正在尝试${this.ticketLabel(preference)}`);
     const tryingRecord = await this.repository.updateProgress(record.requestId, {
       status: GRAB_STATUS.TRYING_TICKET_TYPE,
-      message: `Trying ${this.ticketLabel(preference)}`,
+      message: `正在尝试${this.ticketLabel(preference)}`,
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: tryingAttempts,
@@ -148,10 +148,10 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     });
     if (!tryingRecord) return await this.missingProgressOutcome(record.requestId);
 
-    const lockingAttempts = this.markAttempt(attempts, index, 'LOCKING', `Locking ${this.ticketLabel(preference)}`);
+    const lockingAttempts = this.markAttempt(attempts, index, 'LOCKING', `正在锁定${this.ticketLabel(preference)}`);
     const lockingRecord = await this.repository.updateProgress(record.requestId, {
       status: GRAB_STATUS.LOCKING,
-      message: `Locking ${this.ticketLabel(preference)}`,
+      message: `正在锁定${this.ticketLabel(preference)}`,
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
       attempts: lockingAttempts,
@@ -177,7 +177,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       const finished = await this.finishTerminalAttempt(
         record,
         GRAB_STATUS.LIMITED,
-        'purchase limit or seat lock conflict',
+        '限购校验未通过或座位锁定冲突',
         preference,
         index,
         lockingAttempts,
@@ -189,7 +189,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       const finished = await this.finishTerminalAttempt(
         record,
         GRAB_STATUS.FAILED,
-        'grab stock is not initialized',
+        '抢票库存未初始化',
         preference,
         index,
         lockingAttempts,
@@ -210,10 +210,10 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
 
     const orderCreatingRecord = await this.repository.updateProgress(record.requestId, {
       status: GRAB_STATUS.ORDER_CREATING,
-      message: `${this.ticketLabel(preference)} locked, creating order`,
+      message: `${this.ticketLabel(preference)}已锁定，正在创建订单`,
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
-      attempts: this.markAttempt(lockingAttempts, index, 'LOCKING', `${this.ticketLabel(preference)} locked`),
+      attempts: this.markAttempt(lockingAttempts, index, 'LOCKING', `${this.ticketLabel(preference)}已锁定`),
       workerId: this.workerId,
     });
     if (!orderCreatingRecord) {
@@ -231,6 +231,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       quantity: record.quantity,
       seatIds: record.seatIds,
       allocateRandom: record.allocateRandom,
+      attendeeIds: record.attendeeIds,
       authorizedMaxUnitPrice: preference.maxPrice,
       grabRequestId: record.requestId,
       requestedTicketTypeId: record.ticketTypeId,
@@ -243,7 +244,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       const persisted = await this.markOrderCreated(record, preference, index, lockingAttempts, order.id);
       return persisted ? 'ORDER_CREATED' : await this.markPendingRecovery(record, preference, index, lockingAttempts);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'order creation failed';
+      const message = error instanceof Error ? error.message : '订单创建失败';
       if (this.isStockError(message)) {
         await this.releaseAdmission(record, preference);
         return 'SOLD_OUT';
@@ -275,7 +276,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       const finished = await this.finishTerminalAttempt(
         record,
         GRAB_STATUS.FAILED,
-        'idempotency hold belongs to another request',
+        '当前幂等锁已被其他请求占用',
         preference,
         index,
         attempts,
@@ -297,7 +298,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     attempts: GrabAttemptSnapshot[],
     orderId: number,
   ): Promise<boolean> {
-    const orderAttempts = this.markAttempt(attempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)} order created`);
+    const orderAttempts = this.markAttempt(attempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)}已创建订单`);
     try {
       const marked = await this.repository.markOrderCreated(
         record.requestId,
@@ -329,7 +330,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         record.requestId,
         existingOrder.id,
         preference.ticketTypeId,
-        this.markAttempt(attempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)} order created`),
+        this.markAttempt(attempts, index, 'ORDER_CREATED', `${this.ticketLabel(preference)}已创建订单`),
         expectedProgressStatus,
         this.workerId,
       );
@@ -347,10 +348,10 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     attempts: GrabAttemptSnapshot[],
   ): Promise<AttemptOutcome> {
     const marked = await this.repository.markPendingRecovery(record.requestId, {
-      message: 'order confirmation pending',
+      message: '订单确认中，请稍后刷新',
       currentTicketTypeId: preference.ticketTypeId,
       currentAttemptIndex: index,
-      attempts: this.markAttempt(attempts, index, 'LOCKING', 'order confirmation pending'),
+      attempts: this.markAttempt(attempts, index, 'LOCKING', '订单确认中，请稍后刷新'),
       workerId: this.workerId,
     });
     if (marked) return 'PENDING_RECOVERY';
@@ -405,7 +406,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       ticketTypeId: ticket.ticketTypeId,
       name: ticket.name,
       status: 'PENDING',
-      message: 'pending',
+      message: '待尝试',
     }));
   }
 
@@ -445,6 +446,6 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private ticketLabel(preference: GrabTicketPreference): string {
-    return preference.name ?? `ticket type ${preference.ticketTypeId}`;
+    return preference.name ?? `票档 ${preference.ticketTypeId}`;
   }
 }

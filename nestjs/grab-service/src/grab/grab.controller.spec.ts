@@ -32,7 +32,7 @@ describe('GrabController', () => {
       quantity: 1,
       idempotencyKey: 'idem-1',
     });
-    expect(result).toEqual({ code: 200, message: 'success', data: queuedResponse });
+    expect(result).toEqual({ code: 200, message: '成功', data: queuedResponse });
   });
 
   it('ignores body userId and always uses authenticated user id', async () => {
@@ -67,7 +67,7 @@ describe('GrabController', () => {
       idempotencyKey: 'idem-body-user',
     });
     expect(service.submitRequest).not.toHaveBeenCalledWith(9999, expect.anything());
-    expect(result).toEqual({ code: 200, message: 'success', data: queuedResponse });
+    expect(result).toEqual({ code: 200, message: '成功', data: queuedResponse });
   });
 
   it('routes progress lookups through the authenticated user id', async () => {
@@ -84,7 +84,7 @@ describe('GrabController', () => {
     const result = await controller.progress({ user: { userId: 2004 } } as any, 'GRAB1');
 
     expect(service.getProgress).toHaveBeenCalledWith(2004, 'GRAB1');
-    expect(result).toEqual({ code: 200, message: 'success', data: progressResponse });
+    expect(result).toEqual({ code: 200, message: '成功', data: progressResponse });
   });
 
   it('routes visible stock lookup with parsed ticket ids', async () => {
@@ -101,7 +101,7 @@ describe('GrabController', () => {
     const result = await controller.stockVisible('101', '1,2,bad,0');
 
     expect(visibleStockService.getSessionVisibleStock).toHaveBeenCalledWith(101, [1, 2]);
-    expect(result).toEqual({ code: 200, message: 'success', data: stockResponse });
+    expect(result).toEqual({ code: 200, message: '成功', data: stockResponse });
   });
 
   it('rejects visible stock lookup when session id or ticket ids are invalid', async () => {

@@ -2,6 +2,7 @@ package com.omni.order.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class OrderListItemResponse {
     private Long id;
@@ -33,6 +34,7 @@ public class OrderListItemResponse {
     private String teamGrabRequestId;
     private Boolean teamOrder;
     private String seatSelectionMode;
+    private List<OrderAttendeeResponse> attendees;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -92,4 +94,6 @@ public class OrderListItemResponse {
     public void setTeamOrder(Boolean teamOrder) { this.teamOrder = teamOrder; }
     public String getSeatSelectionMode() { return seatSelectionMode; }
     public void setSeatSelectionMode(String seatSelectionMode) { this.seatSelectionMode = seatSelectionMode; }
+    public List<OrderAttendeeResponse> getAttendees() { return attendees; }
+    public void setAttendees(List<OrderAttendeeResponse> attendees) { this.attendees = attendees; }
 }

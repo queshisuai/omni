@@ -19,6 +19,7 @@ interface GrabRequestRow {
   ticket_type_id: string | number;
   quantity: number;
   seat_ids: number[] | string;
+  attendee_ids?: number[] | string | null;
   allocate_random: boolean;
   status: GrabStatus;
   progress_status?: GrabStatus | null;
@@ -106,6 +107,7 @@ export class GrabRepository {
 
   async createQueued(input: CreateQueuedGrabRequestInput): Promise<GrabRequestRecord> {
     const normalizedSeatIds = [...input.seatIds].sort((a, b) => a - b);
+    const normalizedAttendeeIds = [...(input.attendeeIds ?? [])].sort((a, b) => a - b);
     const progressMessage = `你前面还有 ${Math.max(input.queueSeq - 1, 0)} 人`;
     const attempts = input.requestedTicketTypes.map((preference) => ({
       ticketTypeId: preference.ticketTypeId,
@@ -116,16 +118,16 @@ export class GrabRepository {
     const result = await this.database.query<GrabRequestRow>(
       `insert into grab_request (
         request_id, idempotency_key, user_id, session_id, ticket_type_id,
-        quantity, seat_ids, allocate_random, status, progress_status,
+        quantity, seat_ids, attendee_ids, allocate_random, status, progress_status,
         progress_message, request_type, queue_seq, requested_ticket_types,
         allow_auto_downgrade, current_ticket_type_id, current_attempt_index,
         attempts_snapshot, expire_time
       ) values (
         $1, $2, $3, $4, $5,
-        $6, $7::jsonb, $8, $9, $10,
-        $11, $12, $13, $14::jsonb,
-        $15, $16, $17,
-        $18::jsonb, $19
+        $6, $7::jsonb, $8::jsonb, $9, $10, $11,
+        $12, $13, $14, $15::jsonb,
+        $16, $17, $18,
+        $19::jsonb, $20
       )
       returning *`,
       [
@@ -136,6 +138,7 @@ export class GrabRepository {
         input.ticketTypeId,
         input.quantity,
         JSON.stringify(normalizedSeatIds),
+        JSON.stringify(normalizedAttendeeIds),
         input.allocateRandom,
         GRAB_STATUS.QUEUED,
         GRAB_STATUS.QUEUED,
@@ -346,6 +349,7 @@ export class GrabRepository {
 
   async findActiveByIntent(input: FindActiveGrabIntentInput): Promise<GrabRequestRecord | null> {
     const normalizedSeatIds = [...input.seatIds].sort((a, b) => a - b);
+    const normalizedAttendeeIds = [...(input.attendeeIds ?? [])].sort((a, b) => a - b);
     const activeStatuses = [
       GRAB_STATUS.QUEUED,
       GRAB_STATUS.WAITING,
@@ -367,6 +371,7 @@ export class GrabRepository {
          and requested_ticket_types = $7::jsonb
          and allow_auto_downgrade = $8
          and status = any($9::varchar[])
+         and attendee_ids = $10::jsonb
        order by created_at asc
        limit 1`,
       [
@@ -379,6 +384,7 @@ export class GrabRepository {
         JSON.stringify(input.requestedTicketTypes),
         input.allowAutoDowngrade,
         activeStatuses,
+        JSON.stringify(normalizedAttendeeIds),
       ],
     );
     return result.rows[0] ? this.mapRow(result.rows[0]) : null;
@@ -416,6 +422,7 @@ export class GrabRepository {
 
   private mapRow(row: GrabRequestRow): GrabRequestRecord {
     const seatIds = this.parseJsonArray<number>(row.seat_ids);
+    const attendeeIds = this.parseJsonArray<number>(row.attendee_ids);
     return {
       id: Number(row.id),
       requestId: row.request_id,
@@ -425,6 +432,7 @@ export class GrabRepository {
       ticketTypeId: Number(row.ticket_type_id),
       quantity: row.quantity,
       seatIds,
+      attendeeIds,
       allocateRandom: row.allocate_random,
       status: row.status,
       progressStatus: row.progress_status ?? row.status,

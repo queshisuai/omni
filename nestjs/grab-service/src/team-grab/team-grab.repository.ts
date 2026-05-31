@@ -404,7 +404,7 @@ export class TeamGrabRepository {
         [input.teamId],
       );
       const teamRow = teamResult.rows[0];
-      if (!teamRow) throw new ConflictException('team grab is already in progress');
+      if (!teamRow) throw new ConflictException('小队抢票正在进行中');
       const team = this.mapTeamRow(teamRow);
 
       const memberResult = await client.query<TicketTeamMemberRow>(
@@ -423,12 +423,12 @@ export class TeamGrabRepository {
       );
       const confirmedMembers = memberResult.rows.map((row) => this.mapMemberRow(row));
       if (!confirmedMembers.some((member) => member.userId === input.triggerUserId)) {
-        throw new ForbiddenException('trigger user must be a confirmed member');
+        throw new ForbiddenException('只有已确认的小队成员可以发起抢票');
       }
 
       const quantity = confirmedMembers.length;
       if (quantity < 2 || quantity > 6) {
-        throw new BadRequestException('team must have 2-6 confirmed members');
+        throw new BadRequestException('小队必须有 2-6 名已确认成员');
       }
 
       const teamGrabResult = await client.query<TeamGrabRequestRow>(
@@ -507,7 +507,7 @@ export class TeamGrabRepository {
         [team.id, quantity],
       );
       const updatedTeam = updatedTeamResult.rows[0];
-      if (!updatedTeam) throw new ConflictException('team grab is already in progress');
+      if (!updatedTeam) throw new ConflictException('小队抢票正在进行中');
 
       return {
         team: this.mapTeamRow(updatedTeam),
@@ -802,7 +802,7 @@ export class TeamGrabRepository {
         [teamId],
       );
       if (teamResult.rows.length === 0) {
-        throw new Error('failed to mark team locked');
+        throw new Error('小队锁定状态更新失败');
       }
 
       return this.mapTeamGrabRow(teamGrab);
@@ -897,7 +897,7 @@ export class TeamGrabRepository {
         [teamId],
       );
       if (!teamResult.rows[0]) {
-        throw new Error('failed to mark team locked');
+        throw new Error('小队锁定状态更新失败');
       }
 
       return this.mapTeamGrabRow(teamGrab);
@@ -961,7 +961,7 @@ export class TeamGrabRepository {
         [input.requestId, input.teamId, input.grabRequestId, input.orderId],
       );
       const teamGrab = teamGrabResult.rows[0];
-      if (!teamGrab) throw new Error('failed to recover found team grab order');
+      if (!teamGrab) throw new Error('恢复小队抢票订单失败');
 
       const teamResult = await client.query<TicketTeamRow>(
         `update ticket_team
@@ -983,7 +983,7 @@ export class TeamGrabRepository {
         [input.teamId, input.requestId, input.grabRequestId, input.orderId],
       );
       if (!teamResult.rows[0]) {
-        throw new Error('failed to mark team locked');
+        throw new Error('小队锁定状态更新失败');
       }
 
       return this.mapTeamGrabRow(teamGrab);
@@ -1067,7 +1067,7 @@ export class TeamGrabRepository {
           existingByOrderSeat.rows[0]
           && !this.isSameSeatAssignment(existingByOrderSeat.rows[0], teamId, assignment.userId, orderId, assignment)
         ) {
-          throw new Error('team seat assignment conflict');
+          throw new Error('小队座位分配冲突');
         }
 
         const assignmentResult = await client.query<TeamSeatAssignmentRow>(
@@ -1097,7 +1097,7 @@ export class TeamGrabRepository {
           !assignmentResult.rows[0]
           || !this.isSameSeatAssignment(assignmentResult.rows[0], teamId, assignment.userId, orderId, assignment)
         ) {
-          throw new Error('team seat assignment conflict');
+          throw new Error('小队座位分配冲突');
         }
 
         const memberResult = await client.query<TicketTeamMemberRow>(
@@ -1112,7 +1112,7 @@ export class TeamGrabRepository {
           [teamId, assignment.userId, assignment.orderSeatId, assignment.sessionSeatId],
         );
         if (!memberResult.rows[0]) {
-          throw new Error('team member not found for paid seat assignment');
+          throw new Error('支付后分配座位的小队成员不存在');
         }
       }
 
@@ -1144,7 +1144,7 @@ export class TeamGrabRepository {
         [teamId, orderId, TEAM_ORDER_PAID_PROGRESS_MESSAGE],
       );
       if (!grabProgress.rows[0]) {
-        throw new Error('failed to update paid team grab progress');
+        throw new Error('小队抢票支付进度更新失败');
       }
 
       return true;
@@ -1211,7 +1211,7 @@ export class TeamGrabRepository {
         ],
       );
       if (!grabResult.rows[0]) {
-        throw new Error('failed to expire team grab request');
+        throw new Error('小队抢票请求过期失败');
       }
       return true;
     });

@@ -520,7 +520,7 @@ describe('TeamGrabService', () => {
       'SAME_TICKET_TYPE',
       'SAME_TICKET_TYPE',
       'STRICT_CONTIGUOUS',
-    ] as TeamSeatStrategy[])).rejects.toThrow('fallback strategy cannot be stricter than primary');
+    ] as TeamSeatStrategy[])).rejects.toThrow('兜底策略不能比首选策略更严格');
     expect(repository.updateStrategy).not.toHaveBeenCalled();
   });
 
@@ -686,7 +686,7 @@ describe('TeamGrabService', () => {
     );
     for (const result of rejected) {
       expect(result.reason).toBeInstanceOf(ConflictException);
-      expect(result.reason.message).toBe('team grab is already in progress');
+      expect(result.reason.message).toBe('小队抢票正在进行中');
     }
   });
 

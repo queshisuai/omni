@@ -43,6 +43,16 @@ public interface OrderMapper extends BaseMapper<Order> {
     List<OrderListItemResponse> selectTrashOrderListItems(Long userId);
 
     @Select({"<script>",
+            "SELECT " + ORDER_LIST_COLUMNS + ORDER_LIST_JOINS,
+            "WHERE o.session_id IN",
+            "<foreach collection='sessionIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "<if test='paidOnly'>AND o.status = 2</if>",
+            "ORDER BY o.id ASC",
+            "</script>"})
+    List<OrderListItemResponse> selectOrderListItemsBySessions(@Param("sessionIds") List<Long> sessionIds,
+                                                               @Param("paidOnly") boolean paidOnly);
+
+    @Select({"<script>",
             "SELECT COUNT(*) FROM \"order\" WHERE status = 2",
             "AND session_id IN",
             "<foreach collection='sessionIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
@@ -57,8 +67,8 @@ public interface OrderMapper extends BaseMapper<Order> {
             "AND o.status IN (1, 2)")
     Integer sumEffectiveQuantityByUserAndActivity(@Param("userId") Long userId, @Param("activityId") Long activityId);
 
-    @Select("SELECT pg_advisory_xact_lock(hashtext(#{key})::bigint)")
-    void acquireAdvisoryTransactionLock(@Param("key") String key);
+    @Select("SELECT 1 FROM pg_advisory_xact_lock(hashtext(#{key})::bigint)")
+    int acquireAdvisoryTransactionLock(@Param("key") String key);
 
     @Select("SELECT * FROM \"order\" WHERE id = #{id} FOR UPDATE")
     Order selectByIdForUpdate(@Param("id") Long id);

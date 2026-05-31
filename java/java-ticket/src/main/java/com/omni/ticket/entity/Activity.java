@@ -32,6 +32,7 @@ public class Activity {
     private String publishStatus;
     private String seatMapVisibility;
     private Integer perUserLimit;
+    private Boolean realNameRequired;
     private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
@@ -80,6 +81,8 @@ public class Activity {
     public void setSeatMapVisibility(String seatMapVisibility) { this.seatMapVisibility = seatMapVisibility; }
     public Integer getPerUserLimit() { return perUserLimit; }
     public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
+    public Boolean getRealNameRequired() { return realNameRequired; }
+    public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public LocalDateTime getCreateTime() { return createTime; }

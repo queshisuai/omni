@@ -6,13 +6,16 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
-import { globalAlert, globalPrompt } from '@/components/GlobalDialog'
-import { cancelGrabRequest, createAlipayQrPay, createTeamGrab, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, submitGrabRequest } from '@/lib/api'
+import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
+import { cancelGrabRequest, createAlipayQrPay, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listUserAttendees, submitGrabRequest } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, getPurchaseQuantityMax } from '@/lib/purchase-intent'
+import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, canShowWaitlistEntry, getPurchaseConfirmCopy, getPurchaseQuantityMax, getWaitlistQuantityMax, shouldResetGrabIdempotencyForStatus, type PurchaseConfirmMode } from '@/lib/purchase-intent'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import { defaultTeamFallbacks } from '@/lib/team-grab'
-import type { ActivityDetailVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity } from '@/types/api'
+import { getGrabProgressDisplayMessage, localizeGrabProgressMessage } from '@/lib/grab-progress'
+import { canJoinWaitlistFromGrabStatus } from '@/lib/waitlist'
+import { formatAttendeeSummary, getAttendeeIdTypeLabel, normalizeChineseIdCard, removeAttendeeById, validateAttendeeSelection } from '@/lib/attendees'
+import type { ActivityDetailVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
 
 const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
 const GRAB_STATUS_LABELS: Record<string, string> = {
@@ -29,6 +32,15 @@ const GRAB_STATUS_LABELS: Record<string, string> = {
   LIMITED: '限购失败',
   EXPIRED: '已结束',
 }
+const GRAB_ATTEMPT_STATUS_LABELS: Record<string, string> = {
+  PENDING: '待尝试',
+  TRYING: '正在尝试',
+  LOCKING: '正在锁票',
+  ORDER_CREATED: '已生成订单',
+  SOLD_OUT: '已售罄',
+  FAILED: '抢票失败',
+  LIMITED: '限购失败',
+}
 
 export default function ActivityDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -40,6 +52,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [selectedTicket, setSelectedTicket] = useState<TicketTypeEntity | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [confirmMode, setConfirmMode] = useState<PurchaseConfirmMode>('purchase')
   const [ordering, setOrdering] = useState(false)
   const [orderError, setOrderError] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
@@ -54,7 +67,16 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [grabProgressOpen, setGrabProgressOpen] = useState(false)
   const [progressPaymentOpening, setProgressPaymentOpening] = useState(false)
   const [teamActionLoading, setTeamActionLoading] = useState(false)
+  const [waitlistSubmitting, setWaitlistSubmitting] = useState(false)
+  const [waitlistMessage, setWaitlistMessage] = useState('')
   const [visibleStock, setVisibleStock] = useState<SessionVisibleStockResult | null>(null)
+  const [attendees, setAttendees] = useState<UserAttendeeVO[]>([])
+  const [attendeesLoading, setAttendeesLoading] = useState(false)
+  const [attendeeError, setAttendeeError] = useState('')
+  const [selectedAttendeeIds, setSelectedAttendeeIds] = useState<number[]>([])
+  const [attendeeSaving, setAttendeeSaving] = useState(false)
+  const [attendeeDeletingId, setAttendeeDeletingId] = useState<number | null>(null)
+  const [attendeeForm, setAttendeeForm] = useState({ realName: '', idNo: '', phone: '' })
   const seatMapRequestIdRef = useRef(0)
   const progressPaymentOrderIdRef = useRef<number | null>(null)
   const progressPaymentInFlightOrderIdRef = useRef<number | null>(null)
@@ -100,6 +122,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const currentProgressStock = grabProgress?.currentTicketTypeId != null && visibleStock
     ? visibleStock.ticketTypes.find(ticket => ticket.ticketTypeId === grabProgress.currentTicketTypeId)
     : null
+  const realNameRequired = Boolean(detail?.activity.realNameRequired)
+  const selectedAttendeeSummary = useMemo(
+    () => formatAttendeeSummary(attendees, selectedAttendeeIds),
+    [attendees, selectedAttendeeIds],
+  )
   const selectedTicketVisibleStock = selectedTicket && visibleStock
     ? visibleStock.ticketTypes.find(ticket => ticket.ticketTypeId === selectedTicket.id)
     : null
@@ -107,10 +134,18 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     ticket: selectedTicket,
     visibleStock: selectedTicketVisibleStock,
   })
+  const showWaitlistEntry = canShowWaitlistEntry({
+    ticket: selectedTicket,
+    visibleStock: selectedTicketVisibleStock,
+  })
   const purchaseQuantityMax = getPurchaseQuantityMax({
     ticket: selectedTicket,
     visibleStock: selectedTicketVisibleStock,
   })
+  const waitlistQuantityMax = getWaitlistQuantityMax(detail?.activity.perUserLimit)
+  const actionQuantityMax = showWaitlistEntry ? waitlistQuantityMax : purchaseQuantityMax
+  const confirmCopy = getPurchaseConfirmCopy(confirmMode)
+  const confirmSubmitting = confirmMode === 'waitlist' ? waitlistSubmitting : ordering
   const getActiveGrabStorageKey = () => {
     const user = getUser()
     return user ? `grab:active-request:${user.userId}:${id}` : null
@@ -292,11 +327,51 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   }, [showsSeatCraftSelection, allowAutoDowngrade])
 
   useEffect(() => {
-    if (quantity <= purchaseQuantityMax) return
-    setQuantity(purchaseQuantityMax)
-    setSelectedSeatIds(ids => ids.slice(0, purchaseQuantityMax))
+    if (quantity <= actionQuantityMax) return
+    setQuantity(actionQuantityMax)
+    setSelectedSeatIds(ids => ids.slice(0, actionQuantityMax))
+    setSelectedAttendeeIds(ids => ids.slice(0, actionQuantityMax))
     resetGrabIdempotencyKey()
-  }, [purchaseQuantityMax, quantity])
+  }, [actionQuantityMax, quantity])
+
+  useEffect(() => {
+    setSelectedAttendeeIds(ids => ids.slice(0, quantity))
+    resetGrabIdempotencyKey()
+  }, [quantity])
+
+  useEffect(() => {
+    if (!realNameRequired || !isAuthenticated()) {
+      setAttendees([])
+      setSelectedAttendeeIds([])
+      setAttendeesLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setAttendeesLoading(true)
+    setAttendeeError('')
+    listUserAttendees()
+      .then((data) => {
+        if (cancelled) return
+        setAttendees(data)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setAttendeeError(err instanceof Error ? err.message : '实名观演人加载失败')
+      })
+      .finally(() => {
+        if (!cancelled) setAttendeesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [realNameRequired])
+
+  useEffect(() => {
+    const available = new Set(attendees.map(attendee => attendee.id))
+    setSelectedAttendeeIds(ids => ids.filter(id => available.has(id)).slice(0, quantity))
+  }, [attendees, quantity])
 
   useEffect(() => {
     if (!detail || grabProgress?.requestId) return
@@ -322,8 +397,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
   useEffect(() => {
     if (!grabProgress?.requestId) return
-    if (TERMINAL_GRAB_STATUSES.has(grabProgress.status) && grabProgress.status !== 'ORDER_CREATED' && grabProgress.status !== 'PENDING_RECOVERY') {
+    if (shouldResetGrabIdempotencyForStatus(grabProgress.status)) {
       forgetActiveGrabRequest()
+      resetGrabIdempotencyKey()
       return
     }
     rememberActiveGrabRequest(grabProgress.requestId)
@@ -336,7 +412,28 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
     if (!selectedTicket) return
     setOrderError('')
+    setWaitlistMessage('')
+    setConfirmMode('purchase')
     setShowConfirm(true)
+  }
+
+  const handleWaitlistEntry = () => {
+    if (!isAuthenticated()) {
+      router.push(`/login?ru=/activity/${id}`)
+      return
+    }
+    if (!selectedTicket) return
+    setOrderError('')
+    setWaitlistMessage('')
+    setConfirmMode('waitlist')
+    setShowConfirm(true)
+  }
+
+  const closeConfirmDialog = () => {
+    if (ordering || waitlistSubmitting) return
+    setShowConfirm(false)
+    setConfirmMode('purchase')
+    resetGrabIdempotencyKey()
   }
 
   const ensureTeamSelection = () => {
@@ -448,6 +545,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       selectedTicketId: selectedTicket?.id ?? 0,
       quantity,
       seatIds: allocation.seatIds,
+      attendeeIds: realNameRequired ? selectedAttendeeIds : [],
       allocateRandom: allocation.allocateRandom,
       allowAutoDowngrade: allowAutoDowngrade && !showsSeatCraftSelection,
       ticketTypePreferences,
@@ -462,6 +560,66 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     return key
   }
 
+  const toggleAttendeeSelection = (attendeeId: number) => {
+    setSelectedAttendeeIds(current => {
+      if (current.includes(attendeeId)) return current.filter(id => id !== attendeeId)
+      if (current.length >= quantity) return current
+      return [...current, attendeeId]
+    })
+    resetGrabIdempotencyKey()
+  }
+
+  const handleCreateAttendee = async () => {
+    const realName = attendeeForm.realName.trim()
+    const idNo = normalizeChineseIdCard(attendeeForm.idNo)
+    const phone = attendeeForm.phone.trim()
+    if (!realName || !idNo) {
+      setAttendeeError('请填写观演人姓名和证件号')
+      return
+    }
+
+    setAttendeeSaving(true)
+    setAttendeeError('')
+    try {
+      const created = await createUserAttendee({
+        realName,
+        idType: 'ID_CARD',
+        idNo,
+        phone: phone || null,
+      })
+      setAttendees(current => [created, ...current.filter(attendee => attendee.id !== created.id)])
+      setSelectedAttendeeIds(current => (
+        current.includes(created.id) || current.length >= quantity
+          ? current
+          : [...current, created.id]
+      ))
+      setAttendeeForm({ realName: '', idNo: '', phone: '' })
+      resetGrabIdempotencyKey()
+    } catch (err: unknown) {
+      setAttendeeError(err instanceof Error ? err.message : '新增实名观演人失败')
+    } finally {
+      setAttendeeSaving(false)
+    }
+  }
+
+  const handleDeleteAttendee = async (attendee: UserAttendeeVO) => {
+    const confirmed = await globalConfirm(`确认删除实名观演人“${attendee.realName}”？删除后不会影响已生成订单。`, '删除实名观演人')
+    if (!confirmed) return
+
+    setAttendeeDeletingId(attendee.id)
+    setAttendeeError('')
+    try {
+      await deleteUserAttendee(attendee.id)
+      setAttendees(current => removeAttendeeById(current, [], attendee.id).attendees)
+      setSelectedAttendeeIds(current => removeAttendeeById([], current, attendee.id).selectedAttendeeIds)
+      resetGrabIdempotencyKey()
+    } catch (err: unknown) {
+      setAttendeeError(err instanceof Error ? err.message : '删除实名观演人失败')
+    } finally {
+      setAttendeeDeletingId(null)
+    }
+  }
+
   const handleConfirmOrder = async () => {
     if (!selectedSession || !selectedTicket) return
     const user = getUser()
@@ -469,6 +627,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
     setOrdering(true)
     setOrderError('')
+    setWaitlistMessage('')
     try {
       const allocation = buildSeatAllocationPayload({
         ticket: selectedTicket,
@@ -479,6 +638,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         setOrderError('请选择对应数量的座位')
         return
       }
+      const attendeeValidation = validateAttendeeSelection(realNameRequired, selectedAttendeeIds, quantity)
+      if (attendeeValidation) {
+        setOrderError(attendeeValidation)
+        return
+      }
       const idempotencyKey = getOrCreateGrabIdempotencyKey(user.userId)
       const ticketTypePreferences = buildTicketTypePreferences()
       const grab = await submitGrabRequest({
@@ -487,6 +651,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         ticketTypePreferences,
         allowAutoDowngrade: allowAutoDowngrade && !showsSeatCraftSelection,
         seatIds: allocation.seatIds,
+        attendeeIds: realNameRequired ? selectedAttendeeIds : undefined,
         quantity,
         allocateRandom: allocation.allocateRandom,
         idempotencyKey,
@@ -546,6 +711,38 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   }
 
   // 加载态
+  const handleJoinWaitlist = async (options: { closeConfirm?: boolean } = {}) => {
+    if (!selectedSession || !selectedTicket) return
+    const user = getUser()
+    if (!user) { router.push(`/login?ru=/activity/${id}`); return }
+
+    setWaitlistSubmitting(true)
+    setOrderError('')
+    setWaitlistMessage('')
+    try {
+      const attendeeValidation = validateAttendeeSelection(realNameRequired, selectedAttendeeIds, quantity)
+      if (attendeeValidation) {
+        setOrderError(attendeeValidation)
+        return
+      }
+      const entry = await createWaitlistEntry({
+        sessionId: selectedSession.session.id,
+        ticketTypeId: selectedTicket.id,
+        quantity,
+        attendeeIds: realNameRequired ? selectedAttendeeIds : undefined,
+      })
+      setWaitlistMessage(entry.rank != null ? `已加入候补，当前约第 ${entry.rank} 位` : '已加入候补')
+      if (options.closeConfirm) {
+        setShowConfirm(false)
+        setConfirmMode('purchase')
+      }
+    } catch (err: unknown) {
+      setOrderError(err instanceof Error ? err.message : '加入候补失败')
+    } finally {
+      setWaitlistSubmitting(false)
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -745,6 +942,58 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       </div>
                     </>
                   )}
+                  {selectedTicket && showWaitlistEntry && (
+                    <div className="rounded-lg border border-[#ffd6e7] bg-[#fff7fb] px-4 py-4">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <div className="text-[14px] font-medium text-[#333]">当前票档暂不可购买</div>
+                          <div className="mt-1 text-[12px] leading-relaxed text-[#777]">
+                            可先加入候补，释放名额后系统会按顺序生成待支付订单并通知你限时付款。
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[14px] text-[#666]">数量</span>
+                            <div className="flex items-center rounded border border-[#e5e5e5] bg-white">
+                              <button
+                                type="button"
+                                onClick={() => { setQuantity(Math.max(1, quantity - 1)); setSelectedAttendeeIds(ids => ids.slice(0, Math.max(1, quantity - 1))); resetGrabIdempotencyKey() }}
+                                className="flex h-8 w-8 cursor-pointer items-center justify-center border-none bg-[#f5f5f5] text-lg text-[#333] outline-none"
+                              >
+                                -
+                              </button>
+                              <span className="w-12 text-center text-[14px] text-[#111]">{quantity}</span>
+                              <button
+                                type="button"
+                                onClick={() => { setQuantity(Math.min(waitlistQuantityMax, quantity + 1)); resetGrabIdempotencyKey() }}
+                                className="flex h-8 w-8 cursor-pointer items-center justify-center border-none bg-[#f5f5f5] text-lg text-[#333] outline-none"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleWaitlistEntry}
+                            disabled={waitlistSubmitting}
+                            className="cursor-pointer rounded border-none bg-[#ff1268] px-8 py-3 text-[15px] font-medium text-white outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            加入候补
+                          </button>
+                        </div>
+                      </div>
+                      {waitlistMessage && (
+                        <div className="mt-3 rounded border border-[#b7eb8f] bg-[#f6ffed] p-2.5 text-[13px] text-[#389e0d]">
+                          {waitlistMessage}
+                        </div>
+                      )}
+                      {orderError && !showConfirm && (
+                        <div className="mt-3 rounded border border-[#ffcccc] bg-[#fff0f0] p-2.5 text-[13px] text-[#e74c3c]">
+                          {orderError}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {selectedTicket && (
                     <div className="mt-4 rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-4 py-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -802,10 +1051,10 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                 </p>
                 <div className="mt-10 p-4 border border-[#e5e5e5] rounded flex items-center gap-4 bg-white">
                   <div className="w-24 h-24 bg-gray-200">
-                    <img src="/1.png" alt="QR Code mock" className="w-full h-full object-cover" />
+                    <img src="/1.png" alt="二维码示意图" className="w-full h-full object-cover" />
                   </div>
                   <div>
-                    <div className="font-bold mb-1">万象APP扫码购票</div>
+                    <div className="font-bold mb-1">万象应用扫码购票</div>
                     <div className="text-sm text-gray-500">该渠道不支持购买</div>
                   </div>
                 </div>
@@ -820,28 +1069,28 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             <div className="bg-white rounded-lg p-5 border border-[#e5e5e5] text-[#666] text-[12px] space-y-4">
               <div>
                 <div className="flex items-center text-[#ff1268] font-medium mb-1 text-[13px]">
-                  <span className="w-3 h-3 rounded-full border border-[#ff1268] flex items-center justify-center mr-1.5 font-bold text-[10px]">x</span>
+                  <span className="w-3 h-3 rounded-full border border-[#ff1268] flex items-center justify-center mr-1.5 font-bold text-[10px]">×</span>
                   不支持退
                 </div>
                 <div className="leading-relaxed">票品为有价票券，非普通商品，其背后承载的文化服务具有时效性，稀缺性等特征，不支持退换。</div>
               </div>
               <div>
                 <div className="flex items-center text-[#ff1268] font-medium mb-1 text-[13px]">
-                  <span className="w-3 h-3 rounded-full border border-[#ff1268] flex items-center justify-center mr-1.5 font-bold text-[10px]">v</span>
+                  <span className="w-3 h-3 rounded-full border border-[#ff1268] flex items-center justify-center mr-1.5 font-bold text-[10px]">✓</span>
                   可选座
                 </div>
                 <div className="leading-relaxed">本项目支持自主选座<br/>1.选择演出时间，并点击“选座购票”进入选座页面<br/>2.选座后，在确认订单页支付成功，则选座生效</div>
               </div>
               <div>
                 <div className="flex items-center text-[#ff1268] font-medium mb-1 text-[13px]">
-                  <span className="w-3 h-3 rounded-full border border-[#ff1268] flex items-center justify-center mr-1.5 font-bold text-[10px]">v</span>
+                  <span className="w-3 h-3 rounded-full border border-[#ff1268] flex items-center justify-center mr-1.5 font-bold text-[10px]">✓</span>
                   自助换票
                 </div>
                 <div className="leading-relaxed">需要您在指定的取票地点取票，下单后可通过票夹中的二维码或身份证换取纸质票</div>
               </div>
               <div>
                 <div className="flex items-center text-[#ff1268] font-medium mb-1 text-[13px]">
-                  <span className="w-3 h-3 rounded-full border border-[#ff1268] flex items-center justify-center mr-1.5 font-bold text-[10px]">v</span>
+                  <span className="w-3 h-3 rounded-full border border-[#ff1268] flex items-center justify-center mr-1.5 font-bold text-[10px]">✓</span>
                   电子发票
                 </div>
                 <div className="leading-relaxed">发票开具方：万象票务<br/>本项目支持开具电子发票。需要在演出开始前在订单详情页提交发票申请，一般演出结束后1个月左右开具并发送至您的邮箱。</div>
@@ -852,7 +1101,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                   <div className="text-[#999]">下单更快捷</div>
                 </div>
                 <div className="w-[80px] h-[80px] bg-gray-100 flex-shrink-0">
-                  <img src="/1.png" alt="QR code" className="w-full h-full object-cover" />
+                  <img src="/1.png" alt="二维码" className="w-full h-full object-cover" />
                 </div>
               </div>
             </div>
@@ -887,22 +1136,18 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       {(() => {
         const modals = (
           <>
-            {/* 订单确认弹窗 */}
+            {/* 订单/候补确认弹窗 */}
             {showConfirm && selectedSession && selectedTicket && (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center"
                 style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-                onClick={() => {
-                  setShowConfirm(false)
-                  resetGrabIdempotencyKey()
-                }}
+                onClick={closeConfirmDialog}
               >
                 <div
-                  className="bg-white rounded-lg p-6"
-                  style={{ width: 420 }}
+                  className="max-h-[90vh] w-full max-w-[520px] overflow-y-auto rounded-lg bg-white p-6"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <h3 className="text-[18px] text-[#111] font-medium mb-4">确认订单</h3>
+                  <h3 className="text-[18px] text-[#111] font-medium mb-4">{confirmCopy.title}</h3>
 
                   <div className="text-[14px] text-[#333] space-y-2 mb-4">
                     <div className="flex justify-between">
@@ -921,7 +1166,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       <span className="text-[#999]">票档</span>
                       <span>{selectedTicket.name} × {quantity}张</span>
                     </div>
-                    {!showsSeatCraftSelection && downgradeCandidates.length > 0 && (
+                    {confirmMode === 'purchase' && !showsSeatCraftSelection && downgradeCandidates.length > 0 && (
                       <label className="flex items-start gap-2 rounded border border-[#f0f0f0] p-3 text-[13px] text-[#666]">
                         <input
                           type="checkbox"
@@ -940,7 +1185,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         </span>
                       </label>
                     )}
-                    {showsSeatCraftSelection && validSelectedSeatIds.length > 0 && (
+                    {confirmMode === 'purchase' && showsSeatCraftSelection && validSelectedSeatIds.length > 0 && (
                       <div className="flex justify-between">
                         <span className="text-[#999]">座位</span>
                         <div className="text-right flex-1 ml-4 text-[13px] leading-relaxed">
@@ -953,8 +1198,99 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         </div>
                       </div>
                     )}
+                    {realNameRequired && (
+                      <div className="rounded border border-[#f0f0f0] bg-[#fafafa] p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="font-medium text-[#333]">实名观演人</span>
+                          <span className="text-[12px] text-[#999]">{selectedAttendeeIds.length}/{quantity}</span>
+                        </div>
+                        {attendeesLoading ? (
+                          <div className="py-3 text-[13px] text-[#999]">加载中...</div>
+                        ) : attendees.length > 0 ? (
+                          <div className="max-h-[160px] space-y-2 overflow-y-auto pr-1">
+                            {attendees.map(attendee => {
+                              const checked = selectedAttendeeIds.includes(attendee.id)
+                              const disabled = !checked && selectedAttendeeIds.length >= quantity
+                              return (
+                                <div key={attendee.id} className={`flex items-start gap-2 rounded border bg-white p-2 text-[13px] ${checked ? 'border-[#ff1268]' : 'border-[#eee]'} ${disabled ? 'opacity-50' : ''}`}>
+                                  <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={disabled}
+                                      onChange={() => toggleAttendeeSelection(attendee.id)}
+                                      className="mt-1"
+                                    />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block text-[#333]">{attendee.realName}</span>
+                                      <span className="block break-all text-[12px] text-[#999]">{getAttendeeIdTypeLabel(attendee.idType)} {attendee.idNoMask}</span>
+                                    </span>
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeleteAttendee(attendee)}
+                                    disabled={attendeeDeletingId === attendee.id}
+                                    className="shrink-0 cursor-pointer rounded border border-[#ddd] bg-white px-2 py-1 text-[12px] text-[#666] outline-none hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {attendeeDeletingId === attendee.id ? '删除中...' : '删除'}
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="py-2 text-[13px] text-[#999]">暂无实名观演人，请先新增。</div>
+                        )}
+                        {selectedAttendeeSummary && (
+                          <div className="mt-2 rounded bg-white px-2 py-1.5 text-[12px] text-[#666]">
+                            已选：{selectedAttendeeSummary}
+                          </div>
+                        )}
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          <input
+                            value={attendeeForm.realName}
+                            onChange={(event) => setAttendeeForm(form => ({ ...form, realName: event.target.value }))}
+                            placeholder="姓名"
+                            className="h-9 rounded border border-[#ddd] px-3 text-[13px] outline-none focus:border-[#ff1268]"
+                          />
+                          <input
+                            value={attendeeForm.idNo}
+                            onChange={(event) => setAttendeeForm(form => ({ ...form, idNo: event.target.value }))}
+                            placeholder="身份证号"
+                            className="h-9 rounded border border-[#ddd] px-3 text-[13px] outline-none focus:border-[#ff1268]"
+                          />
+                          <input
+                            value={attendeeForm.phone}
+                            onChange={(event) => setAttendeeForm(form => ({ ...form, phone: event.target.value }))}
+                            placeholder="手机号可选"
+                            className="h-9 rounded border border-[#ddd] px-3 text-[13px] outline-none focus:border-[#ff1268]"
+                          />
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <span className="text-[12px] text-[#999]">下单后会快照保存，入场核验以订单观演人为准。</span>
+                          <button
+                            type="button"
+                            onClick={handleCreateAttendee}
+                            disabled={attendeeSaving}
+                            className="shrink-0 cursor-pointer rounded border border-[#ff1268] bg-white px-3 py-1.5 text-[12px] text-[#ff1268] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {attendeeSaving ? '保存中...' : '新增'}
+                          </button>
+                        </div>
+                        {attendeeError && (
+                          <div className="mt-2 rounded border border-[#ffcccc] bg-[#fff0f0] p-2 text-[12px] text-[#e74c3c]">
+                            {attendeeError}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {confirmMode === 'waitlist' && (
+                      <div className="rounded border border-[#f0f0f0] bg-[#fafafa] p-3 text-[13px] leading-relaxed text-[#666]">
+                        候补成功后不会立即扣款；有名额释放时系统会生成待支付订单，请在通知时间内完成支付。
+                      </div>
+                    )}
                     <div className="flex justify-between text-[16px] font-medium pt-3 border-t border-[#f0f0f0]">
-                      <span>合计</span>
+                      <span>{confirmCopy.totalLabel}</span>
                       <span className="text-[#ff1268]">¥{(selectedTicket.price * quantity).toFixed(2)}</span>
                     </div>
                   </div>
@@ -967,22 +1303,25 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
                   <div className="flex gap-3 justify-end">
                     <button
-                      onClick={() => {
-                        setShowConfirm(false)
-                        resetGrabIdempotencyKey()
-                      }}
-                      disabled={ordering}
+                      onClick={closeConfirmDialog}
+                      disabled={confirmSubmitting}
                       className="cursor-pointer border border-[#ddd] bg-white text-[#666] text-[14px] px-6 py-2 rounded outline-none"
                     >
                       取消
                     </button>
                     <button
-                      onClick={handleConfirmOrder}
-                      disabled={ordering}
+                      onClick={() => {
+                        if (confirmMode === 'waitlist') {
+                          void handleJoinWaitlist({ closeConfirm: true })
+                          return
+                        }
+                        void handleConfirmOrder()
+                      }}
+                      disabled={confirmSubmitting}
                       className="cursor-pointer border-none outline-none text-white text-[14px] px-6 py-2 rounded"
-                      style={{ backgroundColor: '#ff1268', opacity: ordering ? 0.7 : 1 }}
+                      style={{ backgroundColor: '#ff1268', opacity: confirmSubmitting ? 0.7 : 1 }}
                     >
-                      {ordering ? '提交中...' : '确认支付'}
+                      {confirmSubmitting ? confirmCopy.submittingLabel : confirmCopy.submitLabel}
                     </button>
                   </div>
                 </div>
@@ -1036,14 +1375,14 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       <p className="mt-1 text-[12px] text-[#999]">库存变化较快，以最终锁票结果为准。</p>
                     </div>
                     <span className="rounded-full bg-[#fff1f6] px-3 py-1 text-[12px] text-[#ff1268]">
-                      {GRAB_STATUS_LABELS[grabProgress.status] || grabProgress.status}
+                      {GRAB_STATUS_LABELS[grabProgress.status] || '未知状态'}
                     </span>
                   </div>
 
                   <div className="mb-4 rounded border border-[#f0f0f0] p-3">
                     <div className="text-[12px] text-[#999]">当前状态</div>
                     <div className="mt-1 text-[14px] text-[#333]">
-                      {grabProgress.message || (grabProgress.queueRank != null ? `你前面还有 ${grabProgress.queueRank} 人` : '正在排队')}
+                      {getGrabProgressDisplayMessage(grabProgress)}
                     </div>
                   </div>
 
@@ -1082,7 +1421,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                                   ? 'text-[#22c55e]'
                                   : 'text-[#666]'
                           }>
-                            {attempt.message || attempt.status}
+                            {localizeGrabProgressMessage(attempt.message) || GRAB_ATTEMPT_STATUS_LABELS[attempt.status] || '状态更新中'}
                           </span>
                         </div>
                       ))}
@@ -1103,6 +1442,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                   {orderError && (
                     <div className="mb-4 rounded border border-[#ffcccc] bg-[#fff0f0] p-2.5 text-[13px] text-[#e74c3c]">
                       {orderError}
+                    </div>
+                  )}
+                  {waitlistMessage && (
+                    <div className="mb-4 rounded border border-[#b7eb8f] bg-[#f6ffed] p-2.5 text-[13px] text-[#389e0d]">
+                      {waitlistMessage}
                     </div>
                   )}
 
@@ -1144,13 +1488,14 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         查看订单
                       </button>
                     )}
-                    {(grabProgress.status === 'SOLD_OUT' || grabProgress.status === 'FAILED' || grabProgress.status === 'LIMITED') && (
+                    {canJoinWaitlistFromGrabStatus(grabProgress.status) && (
                       <button
                         type="button"
-                        disabled
-                        className="cursor-not-allowed rounded border border-[#ddd] bg-[#f7f7f7] px-4 py-2 text-[14px] text-[#999] outline-none"
+                        onClick={() => void handleJoinWaitlist()}
+                        disabled={waitlistSubmitting}
+                        className="cursor-pointer rounded border-none bg-[#ff1268] px-4 py-2 text-[14px] text-white outline-none disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        加入候补
+                        {waitlistSubmitting ? '加入中...' : '加入候补'}
                       </button>
                     )}
                     {TERMINAL_GRAB_STATUSES.has(grabProgress.status) && grabProgress.status !== 'ORDER_CREATED' && (

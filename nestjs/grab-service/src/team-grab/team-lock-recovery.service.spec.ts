@@ -171,13 +171,13 @@ describe('TeamLockRecoveryService', () => {
     expect(queueService.publishReserved).not.toHaveBeenCalled();
     expect(grabRepository.expireActiveRequest).toHaveBeenCalledWith(
       'GRAB-1',
-      'team grab request expired before queue publish',
+      '小队抢票请求入队前已过期',
       [GRAB_STATUS.QUEUED],
     );
     expect(repository.markTeamFailed).toHaveBeenCalledWith(
       7,
       'TEAM-GRAB-1',
-      'team grab request expired before queue publish',
+      '小队抢票请求入队前已过期',
     );
     expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
   });
@@ -228,7 +228,7 @@ describe('TeamLockRecoveryService', () => {
     expect(repository.markTeamFailed).toHaveBeenCalledWith(
       7,
       'TEAM-GRAB-1',
-      'team grab request expired before queue publish',
+      '小队抢票请求入队前已过期',
     );
     expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
   });
@@ -280,14 +280,14 @@ describe('TeamLockRecoveryService', () => {
     expect(queueService.publishReserved).not.toHaveBeenCalled();
     expect(grabRepository.expireActiveRequest).toHaveBeenCalledWith(
       'GRAB-1',
-      'team grab request expired before queue publish',
+      '小队抢票请求入队前已过期',
       [GRAB_STATUS.QUEUED],
     );
     expect(grabRepository.findByRequestId).toHaveBeenCalledWith('GRAB-1');
     expect(repository.markTeamFailed).toHaveBeenCalledWith(
       7,
       'TEAM-GRAB-1',
-      'team grab request expired before queue publish',
+      '小队抢票请求入队前已过期',
     );
     expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
   });
@@ -456,8 +456,8 @@ describe('TeamLockRecoveryService', () => {
     expect(repository.claimStalePreOrderRelease).toHaveBeenCalledWith('TEAM-GRAB-1', 30);
     expect(orderClient.findByGrabRequestId).toHaveBeenCalledTimes(2);
     expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', [501, 502]);
-    expect(repository.markTeamFailed).toHaveBeenCalledWith(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT');
-    expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-1', GRAB_STATUS.FAILED, 'ORDER_CREATE_TIMEOUT');
+    expect(repository.markTeamFailed).toHaveBeenCalledWith(7, 'TEAM-GRAB-1', '组队订单创建超时');
+    expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-1', GRAB_STATUS.FAILED, '组队订单创建超时');
     expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
     expect(notificationClient.sendFailed).toHaveBeenCalledWith(100, null);
     expect(notificationClient.sendFailed).toHaveBeenCalledWith(200, null);
@@ -513,8 +513,8 @@ describe('TeamLockRecoveryService', () => {
 
     expect(repository.claimStalePreOrderRelease).toHaveBeenCalledWith('TEAM-GRAB-1', 30);
     expect(ticketClient.releaseTeamSeatLock).toHaveBeenCalledWith('TEAM-GRAB-1', []);
-    expect(repository.markTeamFailed).toHaveBeenCalledWith(7, 'TEAM-GRAB-1', 'ORDER_CREATE_TIMEOUT');
-    expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-1', GRAB_STATUS.FAILED, 'ORDER_CREATE_TIMEOUT');
+    expect(repository.markTeamFailed).toHaveBeenCalledWith(7, 'TEAM-GRAB-1', '组队订单创建超时');
+    expect(grabRepository.updateStatus).toHaveBeenCalledWith('GRAB-1', GRAB_STATUS.FAILED, '组队订单创建超时');
     expect(queueService.removeQueuedRequest).toHaveBeenCalledWith(20, 'GRAB-1');
     expect(notificationClient.sendFailed).toHaveBeenCalledWith(100, null);
     expect(notificationClient.sendFailed).toHaveBeenCalledWith(200, null);
@@ -898,8 +898,8 @@ describe('TeamLockRecoveryService', () => {
       claimStalePreOrderRelease: jest.fn(),
       markTeamGrabOrderCreated: jest.fn().mockResolvedValue(null),
       markClaimedTeamGrabOrderCreated: jest.fn(),
-      recoverFoundOrderAndLockTeam: jest.fn().mockRejectedValue(new Error('failed to mark team locked')),
-      repairTeamGrabOrderCreatedAndLockTeam: jest.fn().mockRejectedValue(new Error('failed to mark team locked')),
+      recoverFoundOrderAndLockTeam: jest.fn().mockRejectedValue(new Error('小队锁定状态更新失败')),
+      repairTeamGrabOrderCreatedAndLockTeam: jest.fn().mockRejectedValue(new Error('小队锁定状态更新失败')),
       repairTeamGrabOrderCreated: jest.fn(),
       updateTeamStatus: jest.fn().mockResolvedValue(undefined),
       markTeamFailed: jest.fn().mockResolvedValue(undefined),

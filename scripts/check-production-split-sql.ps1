@@ -59,14 +59,15 @@ function Test-SqlStatementTargetOwner($match, [string] $filePath, [string] $serv
 }
 
 $schemaColumns = @{
-    "activity" = New-ColumnSet @("id", "category_id", "artist_id", "per_user_limit")
+    "activity" = New-ColumnSet @("id", "category_id", "artist_id", "per_user_limit", "real_name_required")
     "activity_seat_layout" = New-ColumnSet @("id", "activity_id", "source_venue_layout_id")
     "activity_seat_layout_section" = New-ColumnSet @("id", "activity_layout_id")
     "artist" = New-ColumnSet @("id")
     "category" = New-ColumnSet @("id")
-    "grab_request" = New-ColumnSet @("id", "request_id", "idempotency_key", "user_id", "session_id", "ticket_type_id", "quantity", "seat_ids", "allocate_random", "status", "order_id", "fail_reason", "expire_time", "created_at", "updated_at")
+    "grab_request" = New-ColumnSet @("id", "request_id", "idempotency_key", "user_id", "session_id", "ticket_type_id", "quantity", "seat_ids", "attendee_ids", "allocate_random", "status", "order_id", "fail_reason", "expire_time", "created_at", "updated_at")
     "notification" = New-ColumnSet @("id")
     "order" = New-ColumnSet @("id")
+    "order_attendee" = New-ColumnSet @("id", "order_id", "order_seat_id", "user_id", "session_id", "ticket_type_id", "attendee_user_profile_id", "real_name", "id_type", "id_no_hash", "id_no_mask", "id_no_encrypted", "phone", "status", "create_time", "update_time")
     "order_seat" = New-ColumnSet @("id", "order_id")
     "order_snapshot" = New-ColumnSet @("id", "order_id")
     "organizer_application" = New-ColumnSet @("id", "user_id", "reviewer_id")
@@ -95,6 +96,7 @@ $schemaColumns = @{
     "ticket_type_area" = New-ColumnSet @("id", "ticket_type_id", "session_id", "area_id")
     "tour" = New-ColumnSet @("id")
     "user" = New-ColumnSet @("id")
+    "user_attendee" = New-ColumnSet @("id", "user_id", "real_name", "id_type", "id_no_hash", "id_no_mask", "id_no_encrypted", "phone", "is_default", "status", "create_time", "update_time")
     "user_asset" = New-ColumnSet @("id", "uploader_id")
     "user_auth" = New-ColumnSet @("id", "user_id")
     "venue" = New-ColumnSet @("id")
@@ -103,6 +105,9 @@ $schemaColumns = @{
     "venue_default_layout" = New-ColumnSet @("id", "venue_id")
     "venue_default_layout_section" = New-ColumnSet @("id", "layout_id")
     "venue_seat" = New-ColumnSet @("id", "venue_id", "area_id")
+    "waitlist_allocation_log" = New-ColumnSet @("id", "event_key", "attempt_no", "session_id", "ticket_type_id", "released_quantity", "allocated_entry_id", "order_id", "source_order_id", "status", "message", "create_time")
+    "waitlist_entry" = New-ColumnSet @("id", "user_id", "session_id", "ticket_type_id", "quantity", "attendee_ids", "seat_preference", "status", "priority_no", "offer_order_id", "offer_expire_time", "fail_reason", "create_time", "update_time")
+    "waitlist_offer" = New-ColumnSet @("id", "entry_id", "user_id", "session_id", "ticket_type_id", "quantity", "order_id", "status", "expire_time", "create_time", "update_time")
 }
 
 foreach ($key in $expectedKeys) {

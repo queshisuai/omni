@@ -4,7 +4,11 @@ import {
   buildGrabIdempotencyIntent,
   buildSeatAllocationPayload,
   canShowPurchaseEntry,
+  canShowWaitlistEntry,
+  getPurchaseConfirmCopy,
   getPurchaseQuantityMax,
+  getWaitlistQuantityMax,
+  shouldResetGrabIdempotencyForStatus,
 } from './purchase-intent.ts'
 
 test('requests random seat allocation for seat-bound tickets when seat map is hidden', () => {
@@ -44,6 +48,7 @@ test('includes downgrade authorization and ordered ticket preferences in grab id
     selectedTicketId: 101,
     quantity: 2,
     seatIds: [9, 3],
+    attendeeIds: [502, 501],
     allocateRandom: false,
     allowAutoDowngrade: true,
     ticketTypePreferences: [
@@ -52,7 +57,7 @@ test('includes downgrade authorization and ordered ticket preferences in grab id
     ],
   })
 
-  assert.equal(intent, '7:11:101:2:3,9:false:true:101|580|A>102|380|B')
+  assert.equal(intent, '7:11:101:2:3,9:501,502:false:true:101|580|A>102|380|B')
 })
 
 test('shows purchase entry when visible stock is available even if remainStock is stale zero', () => {
@@ -73,4 +78,46 @@ test('quantity max prefers authoritative visible stock over stale remainStock', 
     }),
     4,
   )
+})
+
+test('shows waitlist entry when selected ticket has no visible stock', () => {
+  assert.equal(
+    canShowWaitlistEntry({
+      ticket: { remainStock: 0 },
+      visibleStock: { visibleStock: 0 },
+    }),
+    true,
+  )
+  assert.equal(
+    canShowWaitlistEntry({
+      ticket: { remainStock: 0 },
+      visibleStock: { visibleStock: 2 },
+    }),
+    false,
+  )
+})
+
+test('uses Chinese copy for waitlist confirmation', () => {
+  assert.deepEqual(getPurchaseConfirmCopy('waitlist'), {
+    title: '确认候补',
+    totalLabel: '候补金额',
+    submitLabel: '确认加入候补',
+    submittingLabel: '加入中...',
+  })
+})
+
+test('limits waitlist quantity by activity purchase limit with a safe fallback', () => {
+  assert.equal(getWaitlistQuantityMax(2), 2)
+  assert.equal(getWaitlistQuantityMax(null), 6)
+  assert.equal(getWaitlistQuantityMax(0), 6)
+})
+
+test('resets grab idempotency after terminal states without an order', () => {
+  assert.equal(shouldResetGrabIdempotencyForStatus('FAILED'), true)
+  assert.equal(shouldResetGrabIdempotencyForStatus('SOLD_OUT'), true)
+  assert.equal(shouldResetGrabIdempotencyForStatus('LIMITED'), true)
+  assert.equal(shouldResetGrabIdempotencyForStatus('EXPIRED'), true)
+  assert.equal(shouldResetGrabIdempotencyForStatus('ORDER_CREATED'), false)
+  assert.equal(shouldResetGrabIdempotencyForStatus('PENDING_RECOVERY'), false)
+  assert.equal(shouldResetGrabIdempotencyForStatus('QUEUED'), false)
 })

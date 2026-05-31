@@ -15,6 +15,7 @@ public class CreateOrderRequest {
     private Long requestedTicketTypeId;
     private Long matchedTicketTypeId;
     private Boolean autoDowngraded;
+    private java.util.List<Long> attendeeIds;
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
@@ -36,4 +37,6 @@ public class CreateOrderRequest {
     public void setMatchedTicketTypeId(Long matchedTicketTypeId) { this.matchedTicketTypeId = matchedTicketTypeId; }
     public Boolean getAutoDowngraded() { return autoDowngraded; }
     public void setAutoDowngraded(Boolean autoDowngraded) { this.autoDowngraded = autoDowngraded; }
+    public java.util.List<Long> getAttendeeIds() { return attendeeIds; }
+    public void setAttendeeIds(java.util.List<Long> attendeeIds) { this.attendeeIds = attendeeIds; }
 }

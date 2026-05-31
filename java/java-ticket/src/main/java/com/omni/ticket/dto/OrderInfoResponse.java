@@ -2,6 +2,7 @@ package com.omni.ticket.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class OrderInfoResponse {
 
@@ -14,6 +15,7 @@ public class OrderInfoResponse {
     private BigDecimal amount;
     private Integer status;
     private String activityName;
+    private List<OrderAttendeeResponse> attendees;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -35,6 +37,8 @@ public class OrderInfoResponse {
     public void setStatus(Integer status) { this.status = status; }
     public String getActivityName() { return activityName; }
     public void setActivityName(String activityName) { this.activityName = activityName; }
+    public List<OrderAttendeeResponse> getAttendees() { return attendees; }
+    public void setAttendees(List<OrderAttendeeResponse> attendees) { this.attendees = attendees; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getUpdateTime() { return updateTime; }

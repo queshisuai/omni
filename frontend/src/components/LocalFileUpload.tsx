@@ -27,7 +27,7 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<File> {
 
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('No 2d context')
+  if (!ctx) throw new Error('图片处理环境不可用')
 
   canvas.width = pixelCrop.width
   canvas.height = pixelCrop.height
@@ -49,7 +49,7 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<File> {
       if (blob) {
         resolve(new File([blob], 'cropped.jpg', { type: 'image/jpeg' }))
       } else {
-        reject(new Error('Canvas is empty'))
+        reject(new Error('图片裁剪结果为空'))
       }
     }, 'image/jpeg', 0.9)
   })
@@ -226,7 +226,7 @@ export function LocalFileUpload({ label, value, accept, uploading, onUpload, onC
                   min={1}
                   max={3}
                   step={0.1}
-                  aria-labelledby="Zoom"
+                  aria-label="缩放"
                   onChange={(e) => setZoom(Number(e.target.value))}
                   className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#ff1268]"
                 />

@@ -8,12 +8,12 @@ function Add-Owners {
     foreach ($t in $Tables) { $ownerMap[$t.ToLower()] = $Owner }
 }
 
-Add-Owners -Tables @("user", "user_auth", "sms_code", "organizer_application") -Owner "java-user"
+Add-Owners -Tables @("user", "user_auth", "sms_code", "organizer_application", "user_attendee") -Owner "java-user"
 Add-Owners -Tables @("category", "artist", "tour", "station", "activity", "session", "ticket_type", "ticket_type_area", "session_seat", "venue", "venue_area", "venue_seat", "venue_application", "reservation", "seat", "review", "moment", "stock_log", "venue_seat_layout_template", "venue_seat_layout_template_section", "venue_default_layout", "venue_default_layout_section", "activity_seat_layout", "activity_seat_layout_section", "session_seat_layout", "session_seat_layout_section", "seat_block", "seat_override", "ticket_group", "layout_section") -Owner "java-ticket"
-Add-Owners -Tables @("order", "order_seat", "order_snapshot") -Owner "java-order"
+Add-Owners -Tables @("order", "order_seat", "order_snapshot", "order_attendee") -Owner "java-order"
 Add-Owners -Tables @("payment", "refund_request") -Owner "java-payment"
 Add-Owners -Tables @("notification") -Owner "java-notification"
-Add-Owners -Tables @("grab_request", "ticket_team", "ticket_team_member", "team_grab_request", "team_seat_assignment") -Owner "grab-service"
+Add-Owners -Tables @("grab_request", "ticket_team", "ticket_team_member", "team_grab_request", "team_seat_assignment", "waitlist_entry", "waitlist_offer", "waitlist_allocation_log") -Owner "grab-service"
 
 # --- Normalize table name: strip quotes and lowercase ---
 function Normalize-TableName {

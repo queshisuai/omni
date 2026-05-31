@@ -23,12 +23,36 @@ import type {
   TicketTeamDetailVO,
   TicketTeamVO,
   UpdateTeamGrabStrategyPayload,
+  UserAttendeePayload,
+  UserAttendeeVO,
   UserInfo,
 } from '@/types/api'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 const DEFAULT_REQUEST_TIMEOUT_MS = 5000
 const QR_PAY_REQUEST_TIMEOUT_MS = 15000
+const MESSAGE_LABELS: Record<string, string> = {
+  'ticket type sold out': '当前票档已售罄',
+  'order confirmation pending': '订单确认中，请稍后查看订单结果',
+  'team order confirmation pending': '小队订单确认中，请稍后查看订单结果',
+  unauthorized: '登录状态已失效，请重新登录',
+  forbidden: '没有权限执行该操作',
+  'not found': '未找到相关记录',
+  'bad request': '请求参数不正确',
+  conflict: '请求冲突，请刷新后重试',
+  'internal server error': '服务暂不可用，请稍后重试',
+  'service unavailable': '服务暂不可用，请稍后重试',
+  'gateway timeout': '服务响应超时，请稍后重试',
+}
+const PARAMETER_LABELS: Record<string, string> = {
+  userId: '用户ID',
+  teamId: '小队ID',
+  attendeeId: '实名观演人ID',
+  waitlistId: '候补记录ID',
+  artistId: '艺人ID',
+  activityId: '活动ID',
+  resolutionId: '风险处理ID',
+}
 
 class ApiError extends Error {
   code: number
@@ -41,8 +65,24 @@ class ApiError extends Error {
 
 function assertPositiveInteger(value: number, name: string) {
   if (!Number.isInteger(value) || value <= 0) {
-    throw new ApiError(400, `${name}不正确`)
+    throw new ApiError(400, `${formatParameterLabel(name)}不正确`)
   }
+}
+
+function formatParameterLabel(name: string) {
+  return PARAMETER_LABELS[name] ?? (hasChinese(name) ? name : '参数')
+}
+
+function hasChinese(value: string) {
+  return /[\u3400-\u9fff]/.test(value)
+}
+
+function toUserVisibleMessage(message: string | null | undefined, fallback = '请求失败，请稍后重试') {
+  if (!message) return fallback
+  const trimmed = message.trim()
+  const localized = MESSAGE_LABELS[trimmed.toLowerCase()]
+  if (localized) return localized
+  return hasChinese(trimmed) ? trimmed : fallback
 }
 
 async function request<T>(url: string, options?: RequestInit, config?: { timeoutMs?: number }): Promise<T> {
@@ -77,7 +117,7 @@ async function request<T>(url: string, options?: RequestInit, config?: { timeout
   }
 
   if (result.code !== 200) {
-    throw new ApiError(result.code, result.message)
+    throw new ApiError(result.code, toUserVisibleMessage(result.message))
   }
 
   return result.data
@@ -111,10 +151,10 @@ async function multipartRequest<T>(url: string, formData: FormData, options?: Om
   if (!response.ok) {
     try {
       const result = await response.json() as ApiResult<unknown>
-      throw new ApiError(result.code || response.status, result.message || response.statusText || '请求失败')
+      throw new ApiError(result.code || response.status, toUserVisibleMessage(result.message || response.statusText))
     } catch (err) {
       if (err instanceof ApiError) throw err
-      throw new ApiError(response.status, response.statusText || '请求失败')
+      throw new ApiError(response.status, toUserVisibleMessage(response.statusText))
     }
   }
 
@@ -126,7 +166,7 @@ async function multipartRequest<T>(url: string, formData: FormData, options?: Om
   }
 
   if (result.code !== 200) {
-    throw new ApiError(result.code, result.message)
+    throw new ApiError(result.code, toUserVisibleMessage(result.message))
   }
 
   return result.data
@@ -163,6 +203,30 @@ export async function uploadUserAvatar(file: File) {
   const formData = new FormData()
   formData.append('file', file)
   return multipartRequest<UserInfo>('/api/user/assets/avatar', formData)
+}
+
+export async function listUserAttendees() {
+  return request<UserAttendeeVO[]>('/api/user/attendees')
+}
+
+export async function createUserAttendee(params: UserAttendeePayload) {
+  return request<UserAttendeeVO>('/api/user/attendees', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function updateUserAttendee(id: number, params: UserAttendeePayload) {
+  assertPositiveInteger(id, 'attendeeId')
+  return request<UserAttendeeVO>(`/api/user/attendees/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function deleteUserAttendee(id: number) {
+  assertPositiveInteger(id, 'attendeeId')
+  return request<void>(`/api/user/attendees/${id}`, { method: 'DELETE' })
 }
 
 export async function changePassword(params: ChangePasswordRequest) {
@@ -404,6 +468,22 @@ export async function cancelGrabRequest(requestId: string) {
   return request<GrabRequestResult>(`/api/grab/requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' })
 }
 
+export async function createWaitlistEntry(params: { sessionId: number; ticketTypeId: number; quantity: number; attendeeIds?: number[] }) {
+  return request<import('@/types/api').WaitlistEntryVO>('/api/waitlist/entries', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function listMyWaitlistEntries() {
+  return request<import('@/types/api').WaitlistEntryVO[]>('/api/waitlist/my')
+}
+
+export async function cancelWaitlistEntry(id: number) {
+  assertPositiveInteger(id, 'waitlistId')
+  return request<import('@/types/api').WaitlistEntryVO>(`/api/waitlist/entries/${id}`, { method: 'DELETE' })
+}
+
 export async function createTeamGrab(params: CreateTeamGrabPayload): Promise<TicketTeamVO> {
   return request<TicketTeamVO>('/api/grab/teams', {
     method: 'POST',
@@ -472,14 +552,14 @@ export async function syncTeamGrabPaid(teamId: number): Promise<TeamPaymentSyncR
   })
 }
 
-export async function createOrder(params: { userId: number; sessionId: number; ticketTypeId: number; quantity: number; unitPrice?: number }) {
+export async function createOrder(params: { userId: number; sessionId: number; ticketTypeId: number; quantity: number; unitPrice?: number; attendeeIds?: number[] }) {
   return request<{ id: number; orderNo: string; amount: number }>('/api/order/create', {
     method: 'POST',
     body: JSON.stringify(params),
   })
 }
 
-export async function createOrderWithSeats(params: { userId: number; sessionId: number; ticketTypeId: number; seatIds?: number[]; quantity?: number; unitPrice?: number }) {
+export async function createOrderWithSeats(params: { userId: number; sessionId: number; ticketTypeId: number; seatIds?: number[]; quantity?: number; unitPrice?: number; attendeeIds?: number[] }) {
   return request<{ id: number; orderNo: string; amount: number }>('/api/order/create-with-seats', {
     method: 'POST',
     body: JSON.stringify(params),

@@ -8,6 +8,7 @@ import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { Pagination, DEFAULT_PAGE_SIZE } from '@/components/Pagination'
 import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund, getRefundOptions } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
+import { formatOrderAttendees } from '@/lib/console-orders'
 import { ArrowLeft, Check, Ticket as TicketIcon, Search, PackageOpen, Trash2, RotateCcw, AlertCircle, RefreshCw, EyeOff, Loader2 } from 'lucide-react'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import type { OrderEntity, QrPayResponse, RefundOptionsVO, RefundRequestVO, RefundStatus } from '@/types/api'
@@ -478,6 +479,11 @@ export default function OrdersPage() {
                       <div className="text-[13px] text-gray-400 mt-2 bg-gray-50 rounded-lg p-2.5 border border-gray-100">
                         座位信息：<span className="text-gray-700">{order.seatLabels}</span>
                       </div>
+                      {order.attendees?.length ? (
+                        <div className="text-[13px] text-gray-400 bg-gray-50 rounded-lg p-2.5 border border-gray-100">
+                          实名观演人：<span className="text-gray-700">{formatOrderAttendees(order)}</span>
+                        </div>
+                      ) : null}
                       <div className="text-[22px] text-[#ff1268] font-bold mt-2">
                         <span className="text-[14px] font-medium mr-1">¥</span>{order.amount.toFixed(2)}
                       </div>

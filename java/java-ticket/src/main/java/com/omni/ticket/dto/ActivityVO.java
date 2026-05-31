@@ -18,6 +18,7 @@ public class ActivityVO {
     private String venueCity;
     private LocalDateTime startTime;
     private BigDecimal minPrice;
+    private Boolean realNameRequired;
     private Integer status;
     private List<ActivityArtistDto> artists;
 
@@ -39,6 +40,8 @@ public class ActivityVO {
     public void setStartTime(LocalDateTime startTime) { this.startTime = startTime; }
     public BigDecimal getMinPrice() { return minPrice; }
     public void setMinPrice(BigDecimal minPrice) { this.minPrice = minPrice; }
+    public Boolean getRealNameRequired() { return realNameRequired; }
+    public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public List<ActivityArtistDto> getArtists() { return artists; }

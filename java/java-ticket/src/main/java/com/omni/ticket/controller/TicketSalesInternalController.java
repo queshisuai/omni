@@ -15,6 +15,7 @@ import com.omni.ticket.dto.TicketSalesLockRequest;
 import com.omni.ticket.dto.TicketSalesOrderRequest;
 import com.omni.ticket.dto.TicketSalesQuoteRequest;
 import com.omni.ticket.dto.TicketSalesQuoteResponse;
+import com.omni.ticket.dto.TicketSalesReleaseResponse;
 import com.omni.ticket.dto.TicketSalesSeatLockResponse;
 import com.omni.ticket.service.TicketSalesInternalService;
 import org.springframework.beans.factory.annotation.Value;
@@ -129,23 +130,21 @@ public class TicketSalesInternalController {
     }
 
     @PostMapping("/release")
-    public Result<Void> release(@RequestBody TicketSalesOrderRequest request,
-                                @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+    public Result<TicketSalesReleaseResponse> release(@RequestBody TicketSalesOrderRequest request,
+                                                      @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
             return Result.fail(403, "无权限");
         }
-        service.release(request);
-        return Result.success();
+        return Result.success(service.release(request));
     }
 
     @PostMapping("/refund")
-    public Result<Void> refund(@RequestBody TicketSalesOrderRequest request,
-                               @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+    public Result<TicketSalesReleaseResponse> refund(@RequestBody TicketSalesOrderRequest request,
+                                                     @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
             return Result.fail(403, "无权限");
         }
-        service.refund(request);
-        return Result.success();
+        return Result.success(service.refund(request));
     }
 
     private boolean isValidInternalToken(String token) {

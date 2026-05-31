@@ -164,19 +164,19 @@ public class ActivitySeatLayoutService {
                                                                       String sourceOwnerType, Long sourceOwnerId) {
         Activity activity = requireManageableActivity(userId, activityId);
         if (blockLayoutService == null) {
-            throw new BusinessException(500, "SeatCraft service unavailable");
+            throw new BusinessException(500, "SeatCraft服务暂不可用");
         }
         SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayoutService.getLayout(sourceOwnerType, sourceOwnerId);
         if (blockLayout == null) {
-            throw new BusinessException(400, "SeatCraft layout not found");
+            throw new BusinessException(400, "SeatCraft座位图不存在");
         }
         LocalDateTime now = LocalDateTime.now();
         disableActiveLayouts(activity.getId(), now);
         ActivitySeatLayout layout = new ActivitySeatLayout();
         layout.setActivityId(activity.getId());
-        layout.setName(defaultText(blockLayout.getName(), defaultText(activity.getName(), "Activity SeatCraft layout")));
+        layout.setName(defaultText(blockLayout.getName(), defaultText(activity.getName(), "活动SeatCraft座位图")));
         layout.setTemplateType(defaultText(blockLayout.getTemplateType(), "concert"));
-        layout.setStageTitle(defaultText(blockLayout.getStageTitle(), "Stage"));
+        layout.setStageTitle(defaultText(blockLayout.getStageTitle(), "舞台"));
         layout.setStageX(blockLayout.getStageX() == null ? 0 : blockLayout.getStageX());
         layout.setStageY(blockLayout.getStageY() == null ? 0 : blockLayout.getStageY());
         layout.setCanvasWidth(blockLayout.getCanvasWidth() == null ? 800 : blockLayout.getCanvasWidth());

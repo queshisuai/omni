@@ -100,8 +100,19 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
                           @Param("ticketTypeId") Long ticketTypeId,
                           @Param("lockRequestId") String lockRequestId);
 
-    @Select("SELECT pg_advisory_xact_lock(hashtext(#{lockRequestId})::bigint)")
-    void acquireTeamLockRequestLock(@Param("lockRequestId") String lockRequestId);
+    @Select({"<script>",
+            "SELECT COUNT(*) FROM session_seat ",
+            "WHERE session_id = #{sessionId} AND ticket_type_id = #{ticketTypeId} ",
+            "AND status = 1 AND order_id IS NULL AND lock_expire_time IS NULL AND lock_request_id IS NULL ",
+            "AND id IN ",
+            "<foreach collection='seatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int countAvailableBySeatIds(@Param("sessionId") Long sessionId,
+                                @Param("ticketTypeId") Long ticketTypeId,
+                                @Param("seatIds") List<Long> seatIds);
+
+    @Select("SELECT 1 FROM pg_advisory_xact_lock(hashtext(#{lockRequestId})::bigint)")
+    int acquireTeamLockRequestLock(@Param("lockRequestId") String lockRequestId);
 
     @Select("SELECT * FROM session_seat WHERE session_id = #{sessionId} " +
             "AND ticket_type_id = #{ticketTypeId} AND status = 1 AND order_id IS NULL " +

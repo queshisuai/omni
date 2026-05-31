@@ -92,6 +92,7 @@ describe('GrabService', () => {
       requestedTicketTypes: [{ ticketTypeId: 202, name: 'Ticket 202', maxPrice: 202 }],
       allowAutoDowngrade: false,
       seatIds: [301, 302],
+      attendeeIds: [],
     }));
     expect(result).toEqual({
       requestId: expect.stringMatching(/^GRAB/),
@@ -125,6 +126,25 @@ describe('GrabService', () => {
         { ticketTypeId: 203, name: 'B', maxPrice: 80 },
       ],
       allowAutoDowngrade: true,
+    })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects attendee ids when their count does not match quantity', async () => {
+    const service = createService({
+      repository: {
+        findByUserAndIdempotency: jest.fn(),
+        findActiveByIntent: jest.fn(),
+        createQueued: jest.fn(),
+      },
+      queue: { enqueue: jest.fn(), calculateQueueRank: jest.fn() },
+    });
+
+    await expect(service.submitRequest(2004, {
+      sessionId: 101,
+      ticketTypeId: 202,
+      quantity: 2,
+      attendeeIds: [501],
+      idempotencyKey: 'idem-attendees',
     })).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -379,6 +399,7 @@ describe('GrabService', () => {
       ticketTypeId: 202,
       quantity: 2,
       seatIds: [],
+      attendeeIds: [],
       allocateRandom: false,
       requestedTicketTypes: [
         { ticketTypeId: 202, name: 'A', maxPrice: 100 },
@@ -499,7 +520,7 @@ describe('GrabService', () => {
         ...record,
         status: GRAB_STATUS.EXPIRED,
         progressStatus: GRAB_STATUS.EXPIRED,
-        failReason: 'grab request cancelled',
+        failReason: '抢票请求已取消',
       }),
     };
     const admission: any = { release: jest.fn() };
@@ -508,8 +529,8 @@ describe('GrabService', () => {
     const result = await service.cancelRequest(2004, 'GRAB-QUEUED');
 
     expect(admission.release).not.toHaveBeenCalled();
-    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-QUEUED', 'grab request cancelled', [GRAB_STATUS.QUEUED]);
-    expect(result).toMatchObject({ requestId: 'GRAB-QUEUED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'grab request cancelled' });
+    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-QUEUED', '抢票请求已取消', [GRAB_STATUS.QUEUED]);
+    expect(result).toMatchObject({ requestId: 'GRAB-QUEUED', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: '抢票请求已取消' });
   });
 
   it('returns current ticket visible stock in progress when available', async () => {
@@ -676,7 +697,7 @@ describe('GrabService', () => {
         ...record,
         status: GRAB_STATUS.EXPIRED,
         progressStatus: GRAB_STATUS.EXPIRED,
-        failReason: 'grab request cancelled',
+        failReason: '抢票请求已取消',
       }),
     };
     const admission: any = { release: jest.fn() };
@@ -693,8 +714,8 @@ describe('GrabService', () => {
       seatIds: [],
       idempotencyKey: 'idem-locking',
     });
-    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-LOCKING', 'grab request cancelled', [GRAB_STATUS.LOCKING]);
-    expect(result).toMatchObject({ requestId: 'GRAB-LOCKING', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: 'grab request cancelled' });
+    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-LOCKING', '抢票请求已取消', [GRAB_STATUS.LOCKING]);
+    expect(result).toMatchObject({ requestId: 'GRAB-LOCKING', status: GRAB_STATUS.EXPIRED, orderId: null, failReason: '抢票请求已取消' });
   });
 
   it('does not release redis holds when conditional cancellation loses the race', async () => {
@@ -730,7 +751,7 @@ describe('GrabService', () => {
 
     const result = await service.cancelRequest(2004, 'GRAB-RACE');
 
-    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-RACE', 'grab request cancelled', [GRAB_STATUS.LOCKING]);
+    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB-RACE', '抢票请求已取消', [GRAB_STATUS.LOCKING]);
     expect(admission.release).not.toHaveBeenCalled();
     expect(result).toMatchObject({ requestId: 'GRAB-RACE', status: GRAB_STATUS.ORDER_CREATED, orderId: 9001 });
   });

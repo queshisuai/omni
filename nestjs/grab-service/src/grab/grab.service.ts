@@ -50,6 +50,7 @@ export class GrabService {
 
     const requestId = this.generateRequestId();
     const seatIds = [...(dto.seatIds ?? [])].sort((a, b) => a - b);
+    const attendeeIds = [...(dto.attendeeIds ?? [])].sort((a, b) => a - b);
     const allocateRandom = Boolean(dto.allocateRandom);
     const active = await this.repository.findActiveByIntent({
       userId,
@@ -57,6 +58,7 @@ export class GrabService {
       ticketTypeId: firstPreference.ticketTypeId,
       quantity: dto.quantity,
       seatIds,
+      attendeeIds,
       allocateRandom,
       requestedTicketTypes,
       allowAutoDowngrade,
@@ -80,6 +82,7 @@ export class GrabService {
         ticketTypeId: firstPreference.ticketTypeId,
         quantity: dto.quantity,
         seatIds,
+        attendeeIds,
         allocateRandom,
         expireTime: new Date(Date.now() + this.requestTtlSeconds * 1000),
         queueSeq: queued.queueSeq,
@@ -100,21 +103,21 @@ export class GrabService {
 
   async getRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {
     const record = await this.repository.findByRequestId(requestId);
-    if (!record) throw new NotFoundException('grab request not found');
-    if (record.userId !== userId) throw new ForbiddenException('cannot view another user grab request');
+    if (!record) throw new NotFoundException('抢票请求不存在');
+    if (record.userId !== userId) throw new ForbiddenException('不能查看其他用户的抢票请求');
     return this.toResponse(record);
   }
 
   async getProgress(userId: number, requestId: string): Promise<GrabProgressResponse> {
     const record = await this.repository.findByRequestId(requestId);
-    if (!record) throw new NotFoundException('grab request not found');
-    if (record.userId !== userId) throw new ForbiddenException('cannot view another user grab request');
+    if (!record) throw new NotFoundException('抢票请求不存在');
+    if (record.userId !== userId) throw new ForbiddenException('不能查看其他用户的抢票请求');
     return this.toProgressResponse(record);
   }
 
   async getProgressForVerifiedRequest(requestId: string): Promise<GrabProgressResponse> {
     const record = await this.repository.findByRequestId(requestId);
-    if (!record) throw new NotFoundException('grab request not found');
+    if (!record) throw new NotFoundException('抢票请求不存在');
     return this.toProgressResponse(record);
   }
 
@@ -144,8 +147,8 @@ export class GrabService {
 
   async cancelRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {
     const record = await this.repository.findByRequestId(requestId);
-    if (!record) throw new NotFoundException('grab request not found');
-    if (record.userId !== userId) throw new ForbiddenException('cannot cancel another user grab request');
+    if (!record) throw new NotFoundException('抢票请求不存在');
+    if (record.userId !== userId) throw new ForbiddenException('不能取消其他用户的抢票请求');
     if (TERMINAL_CANCEL_STATUSES.has(record.status)) return this.toResponse(record);
     if (record.orderId) return this.toResponse(record);
     const progressStatus = record.progressStatus;
@@ -153,8 +156,8 @@ export class GrabService {
     const hasLegacyCancelableStatus = !ACTIVE_ASYNC_PROGRESS_STATUS_SET.has(progressStatus) && record.status === GRAB_STATUS.ACCEPTED;
     if (!hasCancelableProgress && !hasLegacyCancelableStatus) return this.toResponse(record);
     const expired = hasCancelableProgress
-      ? await this.repository.expireActiveRequest(requestId, 'grab request cancelled', [progressStatus as GrabStatus])
-      : await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, 'grab request cancelled');
+      ? await this.repository.expireActiveRequest(requestId, '抢票请求已取消', [progressStatus as GrabStatus])
+      : await this.repository.updateStatus(requestId, GRAB_STATUS.EXPIRED, '抢票请求已取消');
     if (!expired) {
       const latest = await this.repository.findByRequestId(requestId);
       return this.toResponse(latest ?? record);
@@ -174,10 +177,17 @@ export class GrabService {
   }
 
   private validateSubmitRequest(dto: SubmitGrabRequestDto): void {
-    if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('invalid session');
-    if (!Number.isInteger(dto.quantity) || dto.quantity <= 0) throw new BadRequestException('invalid quantity');
-    if (!dto.idempotencyKey?.trim()) throw new BadRequestException('idempotency key is required');
-    if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('invalid seat quantity');
+    if (!Number.isInteger(dto.sessionId) || dto.sessionId <= 0) throw new BadRequestException('场次不能为空');
+    if (!Number.isInteger(dto.quantity) || dto.quantity <= 0) throw new BadRequestException('购买数量不正确');
+    if (!dto.idempotencyKey?.trim()) throw new BadRequestException('幂等请求标识不能为空');
+    if (dto.seatIds && dto.seatIds.length > 0 && dto.seatIds.length !== dto.quantity) throw new BadRequestException('座位数量必须与购买数量一致');
+    if (dto.attendeeIds && dto.attendeeIds.length > 0) {
+      if (dto.attendeeIds.length !== dto.quantity) throw new BadRequestException('实名观演人数必须与购买数量一致');
+      const unique = new Set(dto.attendeeIds);
+      if (unique.size !== dto.attendeeIds.length || dto.attendeeIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+        throw new BadRequestException('实名观演人信息无效');
+      }
+    }
   }
 
   private async normalizePreferences(dto: SubmitGrabRequestDto): Promise<GrabTicketPreference[]> {
@@ -187,18 +197,18 @@ export class GrabService {
         ? []
         : [{ ticketTypeId: dto.ticketTypeId }];
 
-    if (preferences.length === 0) throw new BadRequestException('ticket type is required');
+    if (preferences.length === 0) throw new BadRequestException('票档不能为空');
 
     const requestedIds = preferences.map((preference) => {
       if (!Number.isInteger(preference.ticketTypeId) || preference.ticketTypeId <= 0) {
-        throw new BadRequestException('invalid ticket type');
+        throw new BadRequestException('票档信息无效');
       }
 
       return preference.ticketTypeId;
     });
 
     if (dto.seatIds?.length && requestedIds.length > 1) {
-      throw new BadRequestException('seat selection does not support auto downgrade');
+      throw new BadRequestException('选座模式不支持自动降档');
     }
 
     const metadata = await this.ticketClient.listVisibleTicketTypes(dto.sessionId, requestedIds);
@@ -207,7 +217,7 @@ export class GrabService {
     );
     const canonical = requestedIds.map((ticketTypeId) => {
       const ticket = metadataById.get(ticketTypeId);
-      if (!ticket) throw new BadRequestException('ticket type is not available for this session');
+      if (!ticket) throw new BadRequestException('当前场次不可购买该票档');
       return {
         ticketTypeId,
         name: ticket.name,
@@ -220,7 +230,7 @@ export class GrabService {
     const requestedPrice = canonical[0].maxPrice;
     for (const preference of canonical.slice(1)) {
       if (preference.maxPrice > requestedPrice) {
-        throw new BadRequestException('auto downgrade cannot increase ticket price');
+        throw new BadRequestException('自动降档不能提高票价');
       }
     }
 

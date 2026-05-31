@@ -9,6 +9,7 @@ function queuedRecord(overrides: any = {}) {
     ticketTypeId: 1,
     quantity: 2,
     seatIds: [],
+    attendeeIds: [],
     allocateRandom: true,
     idempotencyKey: 'idem-1',
     status: GRAB_STATUS.QUEUED,
@@ -32,7 +33,7 @@ function deferred<T>() {
 
 describe('GrabWorkerService', () => {
   it('locks a single ticket type, creates an order, and acks the inflight queue item', async () => {
-    const record = queuedRecord();
+    const record = queuedRecord({ attendeeIds: [501, 502] });
     const repository: any = {
       findByRequestId: jest.fn().mockResolvedValue(record),
       claimForProcessing: jest.fn().mockResolvedValue(record),
@@ -73,6 +74,7 @@ describe('GrabWorkerService', () => {
       ticketTypeId: 1,
       quantity: 2,
       authorizedMaxUnitPrice: 1280,
+      attendeeIds: [501, 502],
       grabRequestId: 'GRAB1',
       requestedTicketTypeId: 1,
       matchedTicketTypeId: 1,
@@ -115,7 +117,7 @@ describe('GrabWorkerService', () => {
       status: GRAB_STATUS.SOLD_OUT,
       attempts: [expect.objectContaining({ ticketTypeId: 1, status: 'SOLD_OUT' })],
     }));
-    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB1', GRAB_STATUS.SOLD_OUT, 'ticket type sold out');
+    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB1', GRAB_STATUS.SOLD_OUT, '当前票档已售罄');
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
 
@@ -188,7 +190,7 @@ describe('GrabWorkerService', () => {
     expect(orderClient.findByGrabRequestId).toHaveBeenCalledWith('GRAB1');
     expect(admission.release).not.toHaveBeenCalled();
     expect(repository.markPendingRecovery).toHaveBeenCalledWith('GRAB1', expect.objectContaining({
-      message: 'order confirmation pending',
+      message: '订单确认中，请稍后刷新',
       currentTicketTypeId: 1,
       currentAttemptIndex: 0,
     }));
@@ -292,7 +294,7 @@ describe('GrabWorkerService', () => {
     expect(repository.updateStatus).toHaveBeenCalledWith(
       'GRAB1',
       GRAB_STATUS.FAILED,
-      'idempotency hold belongs to another request',
+      '当前幂等锁已被其他请求占用',
     );
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
@@ -399,7 +401,7 @@ describe('GrabWorkerService', () => {
     expect(repository.markOrderCreated).toHaveBeenCalled();
     expect(admission.release).not.toHaveBeenCalled();
     expect(repository.markPendingRecovery).toHaveBeenCalledWith('GRAB1', expect.objectContaining({
-      message: 'order confirmation pending',
+      message: '订单确认中，请稍后刷新',
     }));
     expect(repository.updateStatus).not.toHaveBeenCalledWith('GRAB1', GRAB_STATUS.FAILED, 'database unavailable');
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
@@ -527,7 +529,7 @@ describe('GrabWorkerService', () => {
 
     await service.processRequest('GRAB1');
 
-    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB1', 'grab request expired before processing', [GRAB_STATUS.QUEUED]);
+    expect(repository.expireActiveRequest).toHaveBeenCalledWith('GRAB1', '抢票请求处理前已过期', [GRAB_STATUS.QUEUED]);
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
 
@@ -632,7 +634,7 @@ describe('GrabWorkerService', () => {
     ]), GRAB_STATUS.ORDER_CREATING, expect.stringMatching(/^grab-worker-/));
     expect(repository.updateProgress).toHaveBeenCalledWith('GRAB1', expect.objectContaining({
       status: GRAB_STATUS.DOWNGRADING,
-      message: 'A sold out, trying B',
+      message: 'A已售罄，正在尝试B',
     }));
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
@@ -667,7 +669,7 @@ describe('GrabWorkerService', () => {
 
     expect(admission.admit).toHaveBeenCalledTimes(1);
     expect(orderClient.createOrder).not.toHaveBeenCalled();
-    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB1', GRAB_STATUS.SOLD_OUT, 'ticket type sold out');
+    expect(repository.updateStatus).toHaveBeenCalledWith('GRAB1', GRAB_STATUS.SOLD_OUT, '当前票档已售罄');
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
 

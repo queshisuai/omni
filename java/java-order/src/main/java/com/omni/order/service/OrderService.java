@@ -11,16 +11,20 @@ import com.omni.exception.BusinessException;
 import com.omni.order.client.PaymentInternalClient;
 import com.omni.order.client.TicketSalesInternalClient;
 import com.omni.order.client.UserInternalClient;
+import com.omni.order.client.WaitlistInternalClient;
 import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.CreateTeamOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
 import com.omni.order.dto.MarkPartialRefundedRequest;
 import com.omni.order.dto.OrderListItemResponse;
+import com.omni.order.dto.OrderAttendeeResponse;
 import com.omni.order.dto.OrderSeatItemResponse;
 import com.omni.order.dto.PaymentSyncDecisionResponse;
 import com.omni.order.dto.RefundOptionsResponse;
 import com.omni.order.dto.RefundSeatOptionResponse;
+import com.omni.order.dto.ResolveAttendeesRequest;
+import com.omni.order.dto.ResolvedAttendeeResponse;
 import com.omni.order.dto.SessionSeatUsageItemResponse;
 import com.omni.order.dto.SessionSeatUsageResponse;
 import com.omni.order.dto.TicketSalesLockRequest;
@@ -28,10 +32,15 @@ import com.omni.order.dto.TicketSalesOrderRequest;
 import com.omni.order.dto.TicketSalesQuoteRequest;
 import com.omni.order.dto.TicketSalesQuoteResponse;
 import com.omni.order.dto.InternalUserRefResponse;
+import com.omni.order.dto.TicketReleasedEvent;
+import com.omni.order.dto.TicketSalesReleaseResponse;
 import com.omni.order.dto.TicketSalesSeatLockResponse;
+import com.omni.order.dto.WaitlistReleaseRequest;
 import com.omni.order.entity.Order;
+import com.omni.order.entity.OrderAttendee;
 import com.omni.order.entity.OrderSeat;
 import com.omni.order.entity.OrderSnapshot;
+import com.omni.order.mapper.OrderAttendeeMapper;
 import com.omni.order.mapper.OrderMapper;
 import com.omni.order.mapper.OrderSeatMapper;
 import com.omni.order.mapper.OrderSnapshotMapper;
@@ -73,6 +82,9 @@ public class OrderService {
     private static final int ORDER_SEAT_SOLD = 2;
     private static final int ORDER_SEAT_REFUNDED = 3;
     private static final int ORDER_SEAT_RELEASED = 4;
+    private static final int ORDER_ATTENDEE_ACTIVE = 1;
+    private static final int ORDER_ATTENDEE_CANCELLED = 2;
+    private static final int ORDER_ATTENDEE_REFUNDED = 3;
     private static final String SEAT_SELECTION_NONE = "NONE";
     private static final String SEAT_SELECTION_EXPLICIT = "EXPLICIT";
     private static final String SEAT_SELECTION_RANDOM = "RANDOM";
@@ -84,14 +96,16 @@ public class OrderService {
     private final PaymentInternalClient paymentInternalClient;
     private final TicketSalesInternalClient ticketSalesInternalClient;
     private final UserInternalClient userInternalClient;
+    private final WaitlistInternalClient waitlistInternalClient;
     private final String internalApiToken;
+    private OrderAttendeeMapper orderAttendeeMapper;
 
     public OrderService(OrderMapper orderMapper) {
-        this(orderMapper, null, null, null, null, null, null);
+        this(orderMapper, null, null, null, null, null, null, (String) null);
     }
 
     public OrderService(OrderMapper orderMapper, OrderSeatMapper orderSeatMapper) {
-        this(orderMapper, orderSeatMapper, null, null, null, null, null);
+        this(orderMapper, orderSeatMapper, null, null, null, null, null, (String) null);
     }
 
     @Autowired
@@ -101,6 +115,7 @@ public class OrderService {
                         PaymentInternalClient paymentInternalClient,
                         TicketSalesInternalClient ticketSalesInternalClient,
                         UserInternalClient userInternalClient,
+                        WaitlistInternalClient waitlistInternalClient,
                         @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.orderMapper = orderMapper;
         this.orderSeatMapper = orderSeatMapper;
@@ -108,6 +123,7 @@ public class OrderService {
         this.paymentInternalClient = paymentInternalClient;
         this.ticketSalesInternalClient = ticketSalesInternalClient;
         this.userInternalClient = userInternalClient;
+        this.waitlistInternalClient = waitlistInternalClient;
         this.internalApiToken = internalApiToken;
     }
 
@@ -117,7 +133,29 @@ public class OrderService {
                         PaymentInternalClient paymentInternalClient,
                         TicketSalesInternalClient ticketSalesInternalClient,
                         UserInternalClient userInternalClient) {
-        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, "test-internal-token");
+        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, null, "test-internal-token");
+    }
+
+    public OrderService(OrderMapper orderMapper,
+                        OrderSeatMapper orderSeatMapper,
+                        OrderSnapshotMapper orderSnapshotMapper,
+                        PaymentInternalClient paymentInternalClient,
+                        TicketSalesInternalClient ticketSalesInternalClient,
+                        UserInternalClient userInternalClient,
+                        WaitlistInternalClient waitlistInternalClient) {
+        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, waitlistInternalClient, "test-internal-token");
+    }
+
+    public OrderService(OrderMapper orderMapper,
+                        OrderSeatMapper orderSeatMapper,
+                        OrderSnapshotMapper orderSnapshotMapper,
+                        PaymentInternalClient paymentInternalClient,
+                        TicketSalesInternalClient ticketSalesInternalClient,
+                        UserInternalClient userInternalClient,
+                        WaitlistInternalClient waitlistInternalClient,
+                        OrderAttendeeMapper orderAttendeeMapper) {
+        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, waitlistInternalClient, "test-internal-token");
+        this.orderAttendeeMapper = orderAttendeeMapper;
     }
 
     public OrderService(OrderMapper orderMapper,
@@ -125,7 +163,7 @@ public class OrderService {
                         PaymentInternalClient paymentInternalClient,
                         TicketSalesInternalClient ticketSalesInternalClient,
                         UserInternalClient userInternalClient) {
-        this(orderMapper, orderSeatMapper, null, paymentInternalClient, ticketSalesInternalClient, userInternalClient, "test-internal-token");
+        this(orderMapper, orderSeatMapper, null, paymentInternalClient, ticketSalesInternalClient, userInternalClient, null, "test-internal-token");
     }
 
     public OrderService(OrderMapper orderMapper,
@@ -133,7 +171,7 @@ public class OrderService {
                         OrderSnapshotMapper orderSnapshotMapper,
                         PaymentInternalClient paymentInternalClient,
                         TicketSalesInternalClient ticketSalesInternalClient) {
-        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, null, "test-internal-token");
+        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, null, null, "test-internal-token");
     }
 
     @Deprecated
@@ -141,7 +179,12 @@ public class OrderService {
                         OrderSeatMapper orderSeatMapper,
                         PaymentInternalClient paymentInternalClient,
                         TicketSalesInternalClient ticketSalesInternalClient) {
-        this(orderMapper, orderSeatMapper, null, paymentInternalClient, ticketSalesInternalClient, null, "test-internal-token");
+        this(orderMapper, orderSeatMapper, null, paymentInternalClient, ticketSalesInternalClient, null, null, "test-internal-token");
+    }
+
+    @Autowired(required = false)
+    public void setOrderAttendeeMapper(OrderAttendeeMapper orderAttendeeMapper) {
+        this.orderAttendeeMapper = orderAttendeeMapper;
     }
 
     @GlobalTransactional(name = "omni-create-order", rollbackFor = Exception.class)
@@ -156,11 +199,13 @@ public class OrderService {
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), null, quantity);
         validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
         validatePerUserLimit(request.getUserId(), quote, quantity);
+        List<ResolvedAttendeeResponse> attendees = resolveOrderAttendees(request.getUserId(), request.getAttendeeIds(), quote, quantity);
         Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity, quote.getUnitPrice());
         lockStockForOrder(order);
         orderMapper.insert(order);
         writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(),
                 request.getMatchedTicketTypeId(), request.getAutoDowngraded(), SEAT_SELECTION_NONE);
+        writeOrderAttendees(order, attendees, Collections.emptyList());
         log.info("订单创建成功: orderNo={}, userId={}, amount={}", order.getOrderNo(), request.getUserId(), order.getAmount());
         return order;
     }
@@ -189,6 +234,7 @@ public class OrderService {
         order.setStatus(STATUS_PAID);
         order.setUpdateTime(LocalDateTime.now());
         confirmTicketsSold(order);
+        notifyWaitlistPaid(order.getId());
         log.info("订单已标记为已支付: id={}, orderNo={}", id, order.getOrderNo());
         return order;
     }
@@ -207,6 +253,7 @@ public class OrderService {
         TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
         validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
         validatePerUserLimit(request.getUserId(), quote, quantity);
+        List<ResolvedAttendeeResponse> attendees = resolveOrderAttendees(request.getUserId(), request.getAttendeeIds(), quote, quantity);
         TicketSalesLockRequest lockRequest = new TicketSalesLockRequest();
         lockRequest.setOrderId(0L);
         lockRequest.setSessionId(request.getSessionId());
@@ -223,20 +270,20 @@ public class OrderService {
         Map<Long, String> lockedSeatLabelsById = Collections.emptyMap();
         if (hasLockedSeatIds) {
             if (lockedSeatIds.size() != quantity) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "ticket seat lock count does not match requested quantity");
+                throw new BusinessException(ResultCode.BAD_REQUEST, "锁定座位数量与购买数量不一致");
             }
             if (hasSeatIds && !sameSeatIds(request.getSeatIds(), lockedSeatIds)) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "ticket seat lock does not match requested seats");
+                throw new BusinessException(ResultCode.BAD_REQUEST, "锁定座位与所选座位不一致");
             }
             lockedSeatLabelsById = buildSeatLabelMap(lockedSeatIds, lockSeatLabels,
-                    "ticket seat lock labels do not match locked seats");
+                    "锁定座位标签与座位数量不一致");
             if (!lockedSeatLabelsById.isEmpty()) {
                 quote.setSeatLabels(String.join(", ", lockSeatLabels));
             }
         } else if (hasAggregateSeatLabels) {
             quote.setSeatLabels(String.join(", ", lockSeatLabels));
         } else {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket seat lock did not return locked seats or labels");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "锁座结果缺少座位或座位标签");
         }
         Order order = buildPendingOrder(
                 request.getUserId(),
@@ -247,6 +294,7 @@ public class OrderService {
         orderMapper.insert(order);
         writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(),
                 request.getMatchedTicketTypeId(), request.getAutoDowngraded(), seatSelectionMode);
+        List<Long> orderSeatIds = new ArrayList<>();
         if (lockedSeatIds != null && !lockedSeatIds.isEmpty() && orderSeatMapper != null) {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime expireTime = now.plusMinutes(15);
@@ -262,8 +310,10 @@ public class OrderService {
                 orderSeat.setCreateTime(now);
                 orderSeat.setUpdateTime(now);
                 orderSeatMapper.insert(orderSeat);
+                orderSeatIds.add(orderSeat.getId());
             }
         }
+        writeOrderAttendees(order, attendees, orderSeatIds);
         return order;
     }
 
@@ -277,11 +327,11 @@ public class OrderService {
         OrderListItemResponse existingTeamOrder = orderMapper.selectTeamOrderListItemByTeamGrabRequestId(request.getTeamGrabRequestId());
         OrderListItemResponse teamGrabAsNormalOrder = orderMapper.selectOrderListItemByGrabRequestId(request.getTeamGrabRequestId());
         if (teamGrabAsNormalOrder != null && !sameTeamOrderPayload(request, teamGrabAsNormalOrder)) {
-            throw new BusinessException(ResultCode.CONFLICT, "team grab request collides with a grab request");
+            throw new BusinessException(ResultCode.CONFLICT, "组队抢票请求与普通抢票请求冲突");
         }
         OrderListItemResponse grabAsTeamGrabOrder = orderMapper.selectTeamOrderListItemByTeamGrabRequestId(request.getGrabRequestId());
         if (grabAsTeamGrabOrder != null) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request collides with a team grab request");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与组队抢票请求冲突");
         }
         if (existingTeamOrder != null) {
             validateTeamOrderRetryMatchesGrabRequest(request, existingTeamOrder, payload);
@@ -342,7 +392,9 @@ public class OrderService {
             order.setStatus(STATUS_REFUNDED);
             order.setUpdateTime(LocalDateTime.now());
             orderMapper.updateById(order);
-            refundTicketsStrict(order);
+            TicketReleasedEvent event = refundTicketsStrict(order);
+            markOrderAttendeesStatus(order.getId(), ORDER_ATTENDEE_REFUNDED);
+            publishWaitlistReleaseEvent(event);
             return order;
         }
         throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许退款");
@@ -406,7 +458,9 @@ public class OrderService {
         } else {
             recordQuantityOnlyRefund(order, quantity);
         }
-        refundTickets(order, selectedSeats, quantity);
+        TicketReleasedEvent event = refundTickets(order, selectedSeats, quantity);
+        markPartialOrderAttendeesRefunded(orderId, selectedSeats, quantity);
+        publishWaitlistReleaseEvent(event);
 
         if (refunded + quantity >= order.getQuantity()) {
             order.setStatus(STATUS_REFUNDED);
@@ -424,11 +478,11 @@ public class OrderService {
     }
 
     public List<OrderListItemResponse> listOrderItems(Long userId) {
-        return orderMapper.selectVisibleOrderListItems(userId);
+        return attachAttendees(orderMapper.selectVisibleOrderListItems(userId));
     }
 
     public List<OrderListItemResponse> listTrashOrderItems(Long userId) {
-        return orderMapper.selectTrashOrderListItems(userId);
+        return attachAttendees(orderMapper.selectTrashOrderListItems(userId));
     }
 
     public void hideOrder(Long id, Long userId) {
@@ -555,6 +609,13 @@ public class OrderService {
         return orderMapper.selectList(wrapper);
     }
 
+    public List<OrderListItemResponse> listOrderItemsBySessions(List<Long> sessionIds, boolean paidOnly) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        return attachAttendees(orderMapper.selectOrderListItemsBySessions(sessionIds, paidOnly));
+    }
+
     public SessionSeatUsageResponse inspectSessionSeatUsage(List<Long> sessionSeatIds) {
         if (sessionSeatIds == null || sessionSeatIds.isEmpty()) {
             return new SessionSeatUsageResponse(Collections.emptyList());
@@ -624,6 +685,42 @@ public class OrderService {
         return orderSeat.getStatus() == ORDER_SEAT_SOLD && order.getStatus() == STATUS_PAID;
     }
 
+    private List<OrderListItemResponse> attachAttendees(List<OrderListItemResponse> orders) {
+        if (orders == null || orders.isEmpty() || orderAttendeeMapper == null) {
+            return orders;
+        }
+        List<Long> orderIds = orders.stream()
+                .map(OrderListItemResponse::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (orderIds.isEmpty()) {
+            return orders;
+        }
+        List<OrderAttendee> attendees = orderAttendeeMapper.selectByOrderIds(orderIds);
+        Map<Long, List<OrderAttendeeResponse>> attendeesByOrderId = attendees == null ? Collections.emptyMap()
+                : attendees.stream()
+                .map(this::toOrderAttendeeResponse)
+                .collect(Collectors.groupingBy(OrderAttendeeResponse::getOrderId));
+        for (OrderListItemResponse order : orders) {
+            order.setAttendees(attendeesByOrderId.getOrDefault(order.getId(), Collections.emptyList()));
+        }
+        return orders;
+    }
+
+    private OrderAttendeeResponse toOrderAttendeeResponse(OrderAttendee attendee) {
+        OrderAttendeeResponse response = new OrderAttendeeResponse();
+        response.setId(attendee.getId());
+        response.setOrderId(attendee.getOrderId());
+        response.setOrderSeatId(attendee.getOrderSeatId());
+        response.setAttendeeUserProfileId(attendee.getAttendeeUserProfileId());
+        response.setRealName(attendee.getRealName());
+        response.setIdType(attendee.getIdType());
+        response.setIdNoMask(attendee.getIdNoMask());
+        response.setPhone(attendee.getPhone());
+        response.setStatus(attendee.getStatus());
+        return response;
+    }
+
     public Order getOrderDetail(Long id) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
@@ -637,6 +734,7 @@ public class OrderService {
         if (order == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
         }
+        attachAttendees(List.of(order));
         return order;
     }
 
@@ -646,7 +744,11 @@ public class OrderService {
             return null;
         }
         orderMapper.acquireAdvisoryTransactionLock("grab-order:" + grabRequestId);
-        return orderMapper.selectOrderListItemByGrabRequestId(grabRequestId);
+        OrderListItemResponse order = orderMapper.selectOrderListItemByGrabRequestId(grabRequestId);
+        if (order != null) {
+            attachAttendees(List.of(order));
+        }
+        return order;
     }
 
     public List<OrderSeatItemResponse> listInternalOrderSeats(Long orderId) {
@@ -675,16 +777,22 @@ public class OrderService {
         assertPendingOrderSafeToCancel(order);
         cancelPendingOrderOrThrow(order);
         releaseLockedResourcesStrict(order);
+        markOrderAttendeesStatus(order.getId(), ORDER_ATTENDEE_CANCELLED);
         log.info("订单已取消: orderNo={}", order.getOrderNo());
     }
 
     @Transactional
     public int releaseExpiredSeatLocks() {
+        return releaseExpiredSeatLocksDetailed().size();
+    }
+
+    @Transactional
+    public List<TicketReleasedEvent> releaseExpiredSeatLocksDetailed() {
         if (orderSeatMapper == null) {
-            return 0;
+            return Collections.emptyList();
         }
         LocalDateTime now = LocalDateTime.now();
-        int released = 0;
+        List<TicketReleasedEvent> events = new ArrayList<>();
         List<OrderSeat> expiredSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
                 .eq(OrderSeat::getStatus, ORDER_SEAT_LOCKED)
                 .le(OrderSeat::getLockExpireTime, now));
@@ -705,34 +813,39 @@ public class OrderService {
                 } else if (order.getStatus() != STATUS_CANCELLED) {
                     continue;
                 }
-                if (releaseSingleLockedSeat(orderSeat)) {
-                    released++;
+                TicketReleasedEvent event = releaseSingleLockedSeat(orderSeat);
+                markOrderAttendeesStatus(order.getId(), ORDER_ATTENDEE_CANCELLED);
+                if (event != null) {
+                    events.add(event);
                 }
             }
         }
-        released += releaseExpiredPendingOrders(now.minusMinutes(15));
-        return released;
+        events.addAll(releaseExpiredPendingOrders(now.minusMinutes(15)));
+        return events;
     }
 
-    private int releaseExpiredPendingOrders(LocalDateTime expireBefore) {
+    private List<TicketReleasedEvent> releaseExpiredPendingOrders(LocalDateTime expireBefore) {
         List<Order> expiredOrders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getStatus, STATUS_PENDING)
                 .le(Order::getCreateTime, expireBefore));
         if (expiredOrders == null || expiredOrders.isEmpty()) {
-            return 0;
+            return Collections.emptyList();
         }
-        int released = 0;
+        List<TicketReleasedEvent> events = new ArrayList<>();
         for (Order order : expiredOrders) {
             try {
                 assertPendingOrderSafeToCancel(order);
                 cancelPendingOrderOrThrow(order);
-                releaseLockedResourcesBestEffort(order);
-                released++;
+                TicketReleasedEvent event = releaseLockedResourcesBestEffort(order);
+                markOrderAttendeesStatus(order.getId(), ORDER_ATTENDEE_CANCELLED);
+                if (event != null) {
+                    events.add(event);
+                }
             } catch (BusinessException e) {
                 log.warn("过期待支付订单释放前确认支付状态失败，跳过释放: orderId={}, orderNo={}, message={}", order.getId(), order.getOrderNo(), e.getMessage());
             }
         }
-        return released;
+        return events;
     }
 
     private void writeSnapshot(Order order,
@@ -825,8 +938,8 @@ public class OrderService {
 
     private void validateAuthorizedPrice(BigDecimal authorizedMaxUnitPrice, TicketSalesQuoteResponse quote, String grabRequestId) {
         if (authorizedMaxUnitPrice == null) {
-            if (StringUtils.hasText(grabRequestId)) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "authorized price is required for grab order");
+            if (StringUtils.hasText(grabRequestId) && !isWaitlistGrabRequestId(grabRequestId)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "抢票订单缺少授权价格");
             }
             return;
         }
@@ -834,32 +947,32 @@ public class OrderService {
             return;
         }
         if (quote.getUnitPrice().compareTo(authorizedMaxUnitPrice) > 0) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket price exceeds authorized price");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票价超过授权价格");
         }
     }
 
     private void validateTeamOrderRequestBasics(CreateTeamOrderRequest request) {
         if (request == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team order request is required");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单请求不能为空");
         }
         if (request.getUserId() == null || request.getPayerUserId() == null
                 || !request.getUserId().equals(request.getPayerUserId())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "payerUserId must equal userId for leader-paid team order");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "队长支付订单的付款人必须与下单用户一致");
         }
         if (request.getSessionId() == null || request.getTicketTypeId() == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team order session and ticket type are required");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单场次和票档不能为空");
         }
         if (!StringUtils.hasText(request.getTeamGrabRequestId())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team grab request id is required");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队抢票请求标识不能为空");
         }
         if (request.getTeamId() == null || request.getTeamId() <= 0) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team id is required for team order");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单缺少队伍标识");
         }
         if (!StringUtils.hasText(request.getGrabRequestId())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "grab request id is required for team order");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单缺少抢票请求标识");
         }
         if (request.getTeamGrabRequestId().equals(request.getGrabRequestId())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team grab request id must differ from grab request id");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队抢票请求标识不能与普通抢票请求标识相同");
         }
     }
 
@@ -878,23 +991,23 @@ public class OrderService {
         int quantity = requirePositiveQuantity(request.getQuantity());
         List<CreateTeamOrderRequest.TeamOrderSeatItem> seats = request.getSeats();
         if (seats == null || seats.isEmpty() || seats.size() != quantity) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team order seat quantity mismatch");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单座位数量不一致");
         }
 
         Map<Long, String> seatLabelsById = new LinkedHashMap<>();
         for (CreateTeamOrderRequest.TeamOrderSeatItem seat : seats) {
             if (seat == null || seat.getSessionSeatId() == null) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "team order seat id is required");
+                throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单座位标识不能为空");
             }
             if (!StringUtils.hasText(seat.getSeatLabel())) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "team order seat label is required");
+                throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单座位标签不能为空");
             }
             if (seatLabelsById.put(seat.getSessionSeatId(), seat.getSeatLabel()) != null) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "team order seat ids must be unique");
+                throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单座位不能重复");
             }
         }
         if (request.getAuthorizedMaxUnitPrice() == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "authorized price is required for team order");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单缺少授权价格");
         }
         return new TeamOrderSeatPayload(quantity, seatLabelsById);
     }
@@ -947,27 +1060,27 @@ public class OrderService {
         OrderListItemResponse existingOrder = orderMapper.selectOrderListItemByGrabRequestId(grabRequestId);
         OrderListItemResponse existingTeamGrabOrder = orderMapper.selectTeamOrderListItemByTeamGrabRequestId(grabRequestId);
         if (existingTeamGrabOrder != null) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request collides with a team grab request");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与组队抢票请求冲突");
         }
         if (existingOrder == null) {
             return null;
         }
         if (Boolean.TRUE.equals(existingOrder.getTeamOrder())) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a team order");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求已关联组队订单");
         }
         if (!sameOrderPayload(existingOrder, userId, sessionId, ticketTypeId, quantity)
                 || !grabRequestId.equals(existingOrder.getGrabRequestId())
                 || !sameGrabRetrySnapshotPayload(existingOrder, requestedTicketTypeId, matchedTicketTypeId, autoDowngraded)) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
         }
-        Order loadedOrder = validateExistingNormalOrderAuthorizedPrice(authorizedMaxUnitPrice, existingOrder);
+        Order loadedOrder = validateExistingNormalOrderAuthorizedPrice(authorizedMaxUnitPrice, existingOrder, grabRequestId);
         validateExistingNormalOrderSeats(seatSelectionMode, requestedSeatIds, existingOrder);
         return loadedOrder != null ? loadedOrder : loadExistingOrder(existingOrder);
     }
 
     private void validateTeamAuthorizedPrice(BigDecimal authorizedMaxUnitPrice, TicketSalesQuoteResponse quote) {
         if (authorizedMaxUnitPrice == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "authorized price is required for team order");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队订单缺少授权价格");
         }
         validateAuthorizedPrice(authorizedMaxUnitPrice, quote, "team-order");
     }
@@ -976,7 +1089,7 @@ public class OrderService {
                                                           OrderListItemResponse existingOrder,
                                                           TeamOrderSeatPayload payload) {
         if (!sameTeamOrderPayload(request, existingOrder)) {
-            throw new BusinessException(ResultCode.CONFLICT, "team order retry conflicts with grab request");
+            throw new BusinessException(ResultCode.CONFLICT, "组队订单重试与抢票请求冲突");
         }
         validateExistingTeamOrderSeats(payload, existingOrder);
         validateExistingTeamOrderAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), existingOrder);
@@ -986,7 +1099,7 @@ public class OrderService {
                                                      OrderListItemResponse existingOrder,
                                                      TeamOrderSeatPayload payload) {
         if (!sameTeamOrderPayload(request, existingOrder)) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求已关联其他订单");
         }
         validateExistingTeamOrderSeats(payload, existingOrder);
         validateExistingTeamOrderAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), existingOrder);
@@ -1036,22 +1149,22 @@ public class OrderService {
             return;
         }
         if (!Objects.equals(seatSelectionMode, existingMode)) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
         }
         if (SEAT_SELECTION_NONE.equals(seatSelectionMode) || SEAT_SELECTION_RANDOM.equals(seatSelectionMode)) {
             return;
         }
         if (requestedSeatIds == null || requestedSeatIds.isEmpty()) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
         }
         Set<Long> requested = new HashSet<>(requestedSeatIds);
         if (requested.size() != requestedSeatIds.size()) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
         }
         List<OrderSeat> existingSeats = orderSeatMapper.selectLockedAndSoldSeatsByOrderId(existingOrder.getId());
         Set<Long> existing = toSessionSeatIdSet(existingSeats);
         if (existing.size() != existingSeatsSize(existingSeats) || !existing.equals(requested)) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
         }
     }
 
@@ -1060,25 +1173,25 @@ public class OrderService {
                                                          OrderListItemResponse existingOrder) {
         List<OrderSeat> existingSeats = orderSeatMapper.selectLockedAndSoldSeatsByOrderId(existingOrder.getId());
         if (SEAT_SELECTION_RANDOM.equals(seatSelectionMode)) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
         }
         if (SEAT_SELECTION_NONE.equals(seatSelectionMode)) {
             if (existingSeatsSize(existingSeats) != 0) {
-                throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+                throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
             }
             return;
         }
         if (!SEAT_SELECTION_EXPLICIT.equals(seatSelectionMode)
                 || requestedSeatIds == null || requestedSeatIds.isEmpty()) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
         }
         Set<Long> requested = new HashSet<>(requestedSeatIds);
         if (requested.size() != requestedSeatIds.size()) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
         }
         Set<Long> existing = toSessionSeatIdSet(existingSeats);
         if (existing.size() != existingSeatsSize(existingSeats) || !existing.equals(requested)) {
-            throw new BusinessException(ResultCode.CONFLICT, "grab request belongs to a different order intent");
+            throw new BusinessException(ResultCode.CONFLICT, "抢票请求与当前订单意图不一致");
         }
     }
 
@@ -1089,12 +1202,12 @@ public class OrderService {
             for (OrderSeat seat : existingSeats) {
                 if (seat == null || seat.getSessionSeatId() == null
                         || existingLabelsById.put(seat.getSessionSeatId(), seat.getSeatLabel()) != null) {
-                    throw new BusinessException(ResultCode.CONFLICT, "team order retry conflicts with seat payload");
+                    throw new BusinessException(ResultCode.CONFLICT, "组队订单重试与座位信息冲突");
                 }
             }
         }
         if (!existingLabelsById.equals(payload.seatLabelsById)) {
-            throw new BusinessException(ResultCode.CONFLICT, "team order retry conflicts with seat payload");
+            throw new BusinessException(ResultCode.CONFLICT, "组队订单重试与座位信息冲突");
         }
     }
 
@@ -1102,17 +1215,21 @@ public class OrderService {
                                                           OrderListItemResponse existingOrder) {
         BigDecimal existingUnitPrice = existingOrder.getUnitPrice();
         if (existingUnitPrice == null) {
-            throw new BusinessException(ResultCode.CONFLICT, "existing order price is inconsistent");
+            throw new BusinessException(ResultCode.CONFLICT, "已有订单价格不一致");
         }
         if (authorizedMaxUnitPrice.compareTo(existingUnitPrice) < 0) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket price exceeds authorized price");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票价超过授权价格");
         }
     }
 
     private Order validateExistingNormalOrderAuthorizedPrice(BigDecimal authorizedMaxUnitPrice,
-                                                             OrderListItemResponse existingOrder) {
+                                                             OrderListItemResponse existingOrder,
+                                                             String grabRequestId) {
         if (authorizedMaxUnitPrice == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "authorized price is required for grab order");
+            if (isWaitlistGrabRequestId(grabRequestId)) {
+                return null;
+            }
+            throw new BusinessException(ResultCode.BAD_REQUEST, "抢票订单缺少授权价格");
         }
         BigDecimal existingUnitPrice = existingOrder.getUnitPrice();
         Order loadedOrder = null;
@@ -1121,12 +1238,16 @@ public class OrderService {
             existingUnitPrice = deriveUnitPriceFromOrder(loadedOrder);
         }
         if (existingUnitPrice == null) {
-            throw new BusinessException(ResultCode.CONFLICT, "existing order price is inconsistent");
+            throw new BusinessException(ResultCode.CONFLICT, "已有订单价格不一致");
         }
         if (authorizedMaxUnitPrice.compareTo(existingUnitPrice) < 0) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "ticket price exceeds authorized price");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票价超过授权价格");
         }
         return loadedOrder;
+    }
+
+    private boolean isWaitlistGrabRequestId(String grabRequestId) {
+        return StringUtils.hasText(grabRequestId) && grabRequestId.startsWith("WAITLIST-");
     }
 
     private BigDecimal deriveUnitPriceFromOrder(Order order) {
@@ -1157,7 +1278,7 @@ public class OrderService {
     private Order loadExistingOrder(OrderListItemResponse existingOrder) {
         Order order = existingOrder != null && existingOrder.getId() != null ? orderMapper.selectById(existingOrder.getId()) : null;
         if (order == null) {
-            throw new BusinessException(ResultCode.CONFLICT, "existing order snapshot is inconsistent");
+            throw new BusinessException(ResultCode.CONFLICT, "已有订单快照不一致");
         }
         return order;
     }
@@ -1189,6 +1310,113 @@ public class OrderService {
         int effective = existing == null ? 0 : existing;
         if (effective + quantity > limit) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "超过本活动个人限购数量");
+        }
+    }
+
+    private List<ResolvedAttendeeResponse> resolveOrderAttendees(Long userId,
+                                                                  List<Long> attendeeIds,
+                                                                  TicketSalesQuoteResponse quote,
+                                                                  int quantity) {
+        if (!Boolean.TRUE.equals(quote.getRealNameRequired())) {
+            return Collections.emptyList();
+        }
+        if (attendeeIds == null || attendeeIds.size() != quantity) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "请选择实名观演人");
+        }
+        if (userInternalClient == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "用户服务实名观演人接口未配置");
+        }
+        String token = requireInternalApiToken("鐢ㄦ埛鏈嶅姟鎺ュ彛浠ょ墝鏈厤缃?");
+        Result<List<ResolvedAttendeeResponse>> result = callUserValidate(() ->
+                userInternalClient.resolveAttendees(new ResolveAttendeesRequest(userId, attendeeIds), token));
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "实名观演人校验失败");
+        }
+        List<ResolvedAttendeeResponse> attendees = result.getData();
+        if (attendees.size() != quantity) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "请选择实名观演人");
+        }
+        Set<String> identities = new HashSet<>();
+        for (ResolvedAttendeeResponse attendee : attendees) {
+            if (attendee == null || !StringUtils.hasText(attendee.getIdType()) || !StringUtils.hasText(attendee.getIdNoHash())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "实名观演人信息不完整");
+            }
+            String identity = attendee.getIdType() + ":" + attendee.getIdNoHash();
+            if (!identities.add(identity)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "同一订单实名观演人不能重复");
+            }
+            if (orderAttendeeMapper != null) {
+                orderMapper.acquireAdvisoryTransactionLock("order-attendee:" + quote.getSessionId() + ":" + identity);
+                Long existing = orderAttendeeMapper.countActiveBySessionIdentity(
+                        quote.getSessionId(), attendee.getIdType(), attendee.getIdNoHash());
+                if (existing != null && existing > 0) {
+                    throw new BusinessException(ResultCode.BAD_REQUEST, "该观演人已购买本场次门票");
+                }
+            }
+        }
+        return attendees;
+    }
+
+    private void writeOrderAttendees(Order order, List<ResolvedAttendeeResponse> attendees, List<Long> orderSeatIds) {
+        if (orderAttendeeMapper == null || attendees == null || attendees.isEmpty()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < attendees.size(); i++) {
+            ResolvedAttendeeResponse attendee = attendees.get(i);
+            OrderAttendee snapshot = new OrderAttendee();
+            snapshot.setOrderId(order.getId());
+            snapshot.setOrderSeatId(orderSeatIds != null && i < orderSeatIds.size() ? orderSeatIds.get(i) : null);
+            snapshot.setUserId(order.getUserId());
+            snapshot.setSessionId(order.getSessionId());
+            snapshot.setTicketTypeId(order.getTicketTypeId());
+            snapshot.setAttendeeUserProfileId(attendee.getId());
+            snapshot.setRealName(attendee.getRealName());
+            snapshot.setIdType(attendee.getIdType());
+            snapshot.setIdNoHash(attendee.getIdNoHash());
+            snapshot.setIdNoMask(attendee.getIdNoMask());
+            snapshot.setIdNoEncrypted(null);
+            snapshot.setPhone(attendee.getPhone());
+            snapshot.setStatus(ORDER_ATTENDEE_ACTIVE);
+            snapshot.setCreateTime(now);
+            snapshot.setUpdateTime(now);
+            orderAttendeeMapper.insert(snapshot);
+        }
+    }
+
+    private void markOrderAttendeesStatus(Long orderId, int status) {
+        if (orderAttendeeMapper == null || orderId == null) {
+            return;
+        }
+        orderAttendeeMapper.updateStatusByOrderId(orderId, status);
+    }
+
+    private void markPartialOrderAttendeesRefunded(Long orderId, List<OrderSeat> selectedSeats, int quantity) {
+        if (orderAttendeeMapper == null || orderId == null || quantity <= 0) {
+            return;
+        }
+        List<Long> orderSeatIds = selectedSeats == null ? Collections.emptyList()
+                : selectedSeats.stream().map(OrderSeat::getId).filter(Objects::nonNull).collect(Collectors.toList());
+        if (!orderSeatIds.isEmpty()) {
+            orderAttendeeMapper.updateStatusByOrderSeatIds(orderId, orderSeatIds, ORDER_ATTENDEE_REFUNDED);
+            return;
+        }
+        List<OrderAttendee> attendees = orderAttendeeMapper.selectByOrderIds(List.of(orderId));
+        if (attendees == null || attendees.isEmpty()) {
+            return;
+        }
+        int changed = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (OrderAttendee attendee : attendees) {
+            if (changed >= quantity) {
+                break;
+            }
+            if (Integer.valueOf(ORDER_ATTENDEE_ACTIVE).equals(attendee.getStatus())) {
+                attendee.setStatus(ORDER_ATTENDEE_REFUNDED);
+                attendee.setUpdateTime(now);
+                orderAttendeeMapper.updateById(attendee);
+                changed++;
+            }
         }
     }
 
@@ -1227,7 +1455,7 @@ public class OrderService {
     }
 
     private void validateTeamSeatLock(CreateTeamOrderRequest request, TeamOrderSeatPayload payload) {
-        String token = requireInternalApiToken("ticket sales internal token is not configured");
+        String token = requireInternalApiToken("票务库存接口令牌未配置");
         TicketSalesLockRequest validationRequest = new TicketSalesLockRequest();
         validationRequest.setSessionId(request.getSessionId());
         validationRequest.setTicketTypeId(request.getTicketTypeId());
@@ -1236,17 +1464,17 @@ public class OrderService {
         Result<TicketSalesSeatLockResponse> result = callTicketSales(
                 () -> ticketSalesInternalClient.validateTeamSeatLock(validationRequest, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "ticket service did not respond");
+            throw new BusinessException(ResultCode.BAD_REQUEST, result != null ? result.getMessage() : "票务服务无响应");
         }
         TicketSalesSeatLockResponse response = result.getData();
         List<Long> validatedSeatIds = validatedSeatIds(response);
         if (!Boolean.TRUE.equals(response.getValid()) || !sameSeatIds(payload.seatIds, validatedSeatIds)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock does not belong to request");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座不属于当前请求");
         }
         Map<Long, String> validatedLabelsById = buildRequiredSeatLabelMap(validatedSeatIds, response.getSeatLabels(),
-                "team seat lock labels do not match validated seats");
+                "组队锁座标签与座位数量不一致");
         if (!payload.seatLabelsById.equals(validatedLabelsById)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "team seat lock labels do not belong to request");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "组队锁座标签不属于当前请求");
         }
     }
 
@@ -1324,17 +1552,17 @@ public class OrderService {
         }
     }
 
-    private void releaseLockedResourcesBestEffort(Order order) {
-        releaseLockedResources(order, false);
+    private TicketReleasedEvent releaseLockedResourcesBestEffort(Order order) {
+        return releaseLockedResources(order, false);
     }
 
-    private void releaseLockedResourcesStrict(Order order) {
-        releaseLockedResources(order, true);
+    private TicketReleasedEvent releaseLockedResourcesStrict(Order order) {
+        return releaseLockedResources(order, true);
     }
 
-    private void releaseLockedResources(Order order, boolean strict) {
+    private TicketReleasedEvent releaseLockedResources(Order order, boolean strict) {
         if (orderSeatMapper == null || order == null || order.getId() == null) {
-            return;
+            return null;
         }
         List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
                 .eq(OrderSeat::getOrderId, order.getId())
@@ -1353,7 +1581,7 @@ public class OrderService {
             request.setLockRequestId(resolveTeamLockRequestId(order.getId()));
         }
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.release(request, token));
+        Result<TicketSalesReleaseResponse> result = callTicketSales(() -> ticketSalesInternalClient.release(request, token));
         if (result != null && result.getCode() == ResultCode.SUCCESS.getCode()) {
             if (orderSeats != null) {
                 LocalDateTime now = LocalDateTime.now();
@@ -1363,15 +1591,18 @@ public class OrderService {
                     orderSeatMapper.updateById(orderSeat);
                 }
             }
+            return toTicketReleasedEvent("ORDER_TIMEOUT", orderTimeoutEventKey(order), order.getId(),
+                    releaseResponseOrFallback(result.getData(), request));
         } else {
             log.warn("释放票务资源失败: orderId={}", order.getId());
             if (strict) {
                 throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
             }
         }
+        return null;
     }
 
-    private boolean releaseSingleLockedSeat(OrderSeat orderSeat) {
+    private TicketReleasedEvent releaseSingleLockedSeat(OrderSeat orderSeat) {
         TicketSalesOrderRequest request = new TicketSalesOrderRequest();
         request.setOrderId(orderSeat.getOrderId());
         request.setSessionId(orderSeat.getSessionId());
@@ -1380,16 +1611,17 @@ public class OrderService {
         request.setQuantity(1);
         request.setLockRequestId(resolveTeamLockRequestId(orderSeat.getOrderId()));
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.release(request, token));
+        Result<TicketSalesReleaseResponse> result = callTicketSales(() -> ticketSalesInternalClient.release(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             log.warn("释放座位锁失败，票务服务拒绝: orderSeatId={}, sessionSeatId={}, orderId={}",
                     orderSeat.getId(), orderSeat.getSessionSeatId(), orderSeat.getOrderId());
-            return false;
+            return null;
         }
         orderSeat.setStatus(ORDER_SEAT_RELEASED);
         orderSeat.setUpdateTime(LocalDateTime.now());
         orderSeatMapper.updateById(orderSeat);
-        return true;
+        return toTicketReleasedEvent("ORDER_TIMEOUT", orderSeatTimeoutEventKey(orderSeat), orderSeat.getOrderId(),
+                releaseResponseOrFallback(result.getData(), request));
     }
 
     private String resolveTeamLockRequestId(Long orderId) {
@@ -1405,9 +1637,9 @@ public class OrderService {
         return snapshot.getTeamGrabRequestId();
     }
 
-    private void refundTicketsStrict(Order order) {
+    private TicketReleasedEvent refundTicketsStrict(Order order) {
         if (orderSeatMapper == null || order == null || order.getId() == null) {
-            return;
+            return null;
         }
         List<OrderSeat> orderSeats = orderSeatMapper.selectList(new LambdaQueryWrapper<OrderSeat>()
                 .eq(OrderSeat::getOrderId, order.getId())
@@ -1428,14 +1660,15 @@ public class OrderService {
             }
         }
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.refund(request, token));
+        Result<TicketSalesReleaseResponse> result = callTicketSales(() -> ticketSalesInternalClient.refund(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             log.warn("退款恢复票务资源失败: orderId={}", order.getId());
             throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
         }
+        return toRefundReleasedEvent(order, releaseResponseOrFallback(result.getData(), request));
     }
 
-    private void refundTickets(Order order, List<OrderSeat> orderSeats, int quantity) {
+    private TicketReleasedEvent refundTickets(Order order, List<OrderSeat> orderSeats, int quantity) {
         TicketSalesOrderRequest request = new TicketSalesOrderRequest();
         request.setOrderId(order.getId());
         request.setSessionId(order.getSessionId());
@@ -1445,10 +1678,96 @@ public class OrderService {
             request.setSeatIds(orderSeats.stream().map(OrderSeat::getSessionSeatId).collect(Collectors.toList()));
         }
         String token = requireInternalApiToken("票务库存接口令牌未配置");
-        Result<Void> result = callTicketSales(() -> ticketSalesInternalClient.refund(request, token));
+        Result<TicketSalesReleaseResponse> result = callTicketSales(() -> ticketSalesInternalClient.refund(request, token));
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, result != null ? result.getMessage() : "票务服务无响应");
         }
+        return toRefundReleasedEvent(order, releaseResponseOrFallback(result.getData(), request));
+    }
+
+    public void publishWaitlistReleaseEvents(List<TicketReleasedEvent> events) {
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+        for (TicketReleasedEvent event : events) {
+            publishWaitlistReleaseEvent(event);
+        }
+    }
+
+    private void publishWaitlistReleaseEvent(TicketReleasedEvent event) {
+        if (event == null || waitlistInternalClient == null || event.getQuantity() == null || event.getQuantity() <= 0) {
+            return;
+        }
+        try {
+            String token = requireInternalApiToken("候补服务接口令牌未配置");
+            waitlistInternalClient.released(new WaitlistReleaseRequest(event), token);
+        } catch (RuntimeException e) {
+            log.warn("候补释放事件发布失败: eventKey={}, message={}", event.getEventKey(), e.getMessage());
+        }
+    }
+
+    private void notifyWaitlistPaid(Long orderId) {
+        if (orderId == null || waitlistInternalClient == null) {
+            return;
+        }
+        try {
+            String token = requireInternalApiToken("候补服务接口令牌未配置");
+            waitlistInternalClient.orderPaid(orderId, token);
+        } catch (RuntimeException e) {
+            log.warn("候补支付事件发布失败: orderId={}, message={}", orderId, e.getMessage());
+        }
+    }
+
+    private TicketReleasedEvent toRefundReleasedEvent(Order order, TicketSalesReleaseResponse response) {
+        TicketReleasedEvent event = toTicketReleasedEvent("REFUND", refundEventKey(order, response), order.getId(), response);
+        if (event == null || event.getQuantity() == null || event.getQuantity() <= 0) {
+            return null;
+        }
+        return event;
+    }
+
+    private TicketSalesReleaseResponse releaseResponseOrFallback(TicketSalesReleaseResponse response, TicketSalesOrderRequest request) {
+        if (response != null) {
+            return response;
+        }
+        TicketSalesReleaseResponse fallback = new TicketSalesReleaseResponse();
+        fallback.setSessionId(request.getSessionId());
+        fallback.setTicketTypeId(request.getTicketTypeId());
+        fallback.setSeatIds(request.getSeatIds() != null ? request.getSeatIds() : Collections.emptyList());
+        int quantity = request.getSeatIds() != null && !request.getSeatIds().isEmpty()
+                ? request.getSeatIds().size()
+                : requirePositiveQuantity(request.getQuantity());
+        fallback.setQuantity(quantity);
+        fallback.setRestoredQuantity(quantity);
+        return fallback;
+    }
+
+    private TicketReleasedEvent toTicketReleasedEvent(String source, String eventKey, Long sourceOrderId, TicketSalesReleaseResponse response) {
+        if (response == null || response.getRestoredQuantity() == null || response.getRestoredQuantity() <= 0) {
+            return null;
+        }
+        TicketReleasedEvent event = new TicketReleasedEvent();
+        event.setEventKey(eventKey);
+        event.setSource(source);
+        event.setSourceOrderId(sourceOrderId);
+        event.setSessionId(response.getSessionId());
+        event.setTicketTypeId(response.getTicketTypeId());
+        event.setQuantity(response.getRestoredQuantity());
+        event.setSeatIds(response.getSeatIds() != null ? response.getSeatIds() : Collections.emptyList());
+        return event;
+    }
+
+    private String orderTimeoutEventKey(Order order) {
+        return "order-timeout:" + order.getId() + ":session:" + order.getSessionId() + ":ticket-type:" + order.getTicketTypeId();
+    }
+
+    private String orderSeatTimeoutEventKey(OrderSeat orderSeat) {
+        return "order-seat-timeout:" + orderSeat.getId() + ":session:" + orderSeat.getSessionId() + ":ticket-type:" + orderSeat.getTicketTypeId();
+    }
+
+    private String refundEventKey(Order order, TicketSalesReleaseResponse response) {
+        int quantity = response != null && response.getRestoredQuantity() != null ? response.getRestoredQuantity() : 0;
+        return "refund:" + order.getId() + ":session:" + order.getSessionId() + ":ticket-type:" + order.getTicketTypeId() + ":quantity:" + quantity;
     }
 
     private <T> T callUserValidate(Supplier<T> call) {

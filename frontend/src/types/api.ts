@@ -117,6 +117,7 @@ export interface SubmitGrabRequestPayload {
   ticketTypeId?: number
   quantity: number
   seatIds?: number[]
+  attendeeIds?: number[]
   allocateRandom?: boolean
   idempotencyKey: string
   ticketTypePreferences?: TicketTypePreferencePayload[]
@@ -178,6 +179,58 @@ export interface SessionVisibleStockResult {
     level: VisibleStockSnapshot['level']
   }>
   snapshotTime: string
+}
+
+export type WaitlistEntryStatus =
+  | 'WAITING'
+  | 'ALLOCATING'
+  | 'OFFERED'
+  | 'PAID'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'FAILED'
+
+export interface WaitlistEntryVO {
+  id: number
+  sessionId: number
+  ticketTypeId: number
+  quantity: number
+  status: WaitlistEntryStatus
+  rank: number | null
+  offerOrderId: number | null
+  offerExpireTime: string | null
+  failReason: string | null
+}
+
+export interface UserAttendeePayload {
+  realName: string
+  idType: 'ID_CARD' | string
+  idNo: string
+  phone?: string | null
+  isDefault?: boolean | null
+}
+
+export interface UserAttendeeVO {
+  id: number
+  realName: string
+  idType: string
+  idNoMask: string
+  phone?: string | null
+  isDefault?: boolean | null
+  createTime?: string | null
+  updateTime?: string | null
+}
+
+export interface OrderAttendeeVO {
+  id: number
+  orderId: number
+  orderSeatId?: number | null
+  attendeeUserProfileId: number
+  realName: string
+  idType: string
+  idNoMask: string
+  phone?: string | null
+  status: number
 }
 
 export type TeamStatus = 'DRAFT' | 'READY' | 'GRABBING' | 'LOCKED' | 'PAID' | 'FAILED' | 'CANCELLED' | 'EXPIRED'
@@ -418,6 +471,7 @@ export interface ActivityVO {
   startTime: string
   minPrice: number | null
   status: number
+  realNameRequired?: boolean | null
   artists?: ActivityArtistVO[]
 }
 
@@ -452,6 +506,7 @@ export interface ActivityEntity {
   riskRestoredAt?: string | null
   seatMapVisibility?: 'published' | 'hidden' | null
   perUserLimit?: number | null
+  realNameRequired?: boolean | null
   status: number
   createTime: string
 }
@@ -631,6 +686,7 @@ export interface ActivityDraftPayload {
   poster?: string | null
   seatMapVisibility?: 'published' | 'hidden' | null
   perUserLimit?: number | null
+  realNameRequired?: boolean | null
 }
 
 export interface StationConfigVersionPayload {
@@ -1068,6 +1124,7 @@ export interface OrderEntity {
   requestedTicketTypeId?: number | null
   matchedTicketTypeId?: number | null
   autoDowngraded?: boolean | null
+  attendees?: OrderAttendeeVO[]
 }
 
 export interface PagePayResponse {

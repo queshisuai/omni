@@ -15,8 +15,8 @@ import type { StaleUnpublishedTeamGrabRequestRecord, TeamGrabRequestRecord } fro
 
 const RECOVERY_LIMIT = 100;
 const STALE_PRE_ORDER_SECONDS = 30;
-const ORDER_CREATE_TIMEOUT = 'ORDER_CREATE_TIMEOUT';
-const UNPUBLISHED_QUEUE_EXPIRED_MESSAGE = 'team grab request expired before queue publish';
+const ORDER_CREATE_TIMEOUT = '组队订单创建超时';
+const UNPUBLISHED_QUEUE_EXPIRED_MESSAGE = '小队抢票请求入队前已过期';
 
 @Injectable()
 export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
@@ -145,7 +145,7 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
 
     const released = await this.ticketClient.releaseTeamSeatLock(releaseClaim.requestId, releaseClaim.lockedSeatIds);
     if (!released) {
-      this.logger.warn(`team seat lock recovery release returned false for ${releaseClaim.requestId}`);
+      this.logger.warn(`小队座位锁恢复释放失败：${releaseClaim.requestId}`);
       return;
     }
 

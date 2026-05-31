@@ -43,7 +43,7 @@ export function LoginFooter() {
               textDecoration: 'none',
             }}
           >
-            APP下载
+            应用下载
           </a>
           <a
             href="https://ai.alimebot.taobao.com/intl/index.htm?from=EtbcRzNj3U"

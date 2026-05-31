@@ -13,7 +13,7 @@ export class NotificationClientService {
   private readonly internalToken = process.env.INTERNAL_API_TOKEN;
 
   async sendMessage(input: NotificationMessageInput): Promise<void> {
-    if (!this.internalToken) throw new Error('notification internal token is not configured');
+    if (!this.internalToken) throw new Error('通知内部接口令牌未配置');
 
     const response = await fetch(`${this.baseUrl}/api/notification/internal/messages`, {
       method: 'POST',
@@ -22,7 +22,7 @@ export class NotificationClientService {
     });
     const result = await response.json();
     if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || 'notification failed');
+      throw new Error(result.message || '通知发送失败');
     }
   }
 
@@ -31,7 +31,7 @@ export class NotificationClientService {
       userId,
       orderId,
       type: 'TEAM_LOCKED',
-      content: 'Team seats locked, leader payment pending',
+      content: '小队座位已锁定，请队长尽快支付。',
     });
   }
 
@@ -40,7 +40,7 @@ export class NotificationClientService {
       userId,
       orderId,
       type: 'TEAM_PAID',
-      content: 'Team tickets issued',
+      content: '小队订单已支付成功。',
     });
   }
 
@@ -49,7 +49,7 @@ export class NotificationClientService {
       userId,
       orderId,
       type: 'TEAM_FAILED',
-      content: 'Team grab failed',
+      content: '小队抢票失败，请重新尝试。',
     });
   }
 
@@ -58,7 +58,7 @@ export class NotificationClientService {
       userId,
       orderId,
       type: 'TEAM_EXPIRED',
-      content: 'Team order expired',
+      content: '小队订单已过期。',
     });
   }
 }

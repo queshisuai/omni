@@ -41,6 +41,22 @@ CREATE TABLE organizer_application (
     review_time TIMESTAMP
 );
 
+CREATE TABLE user_attendee (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES "user"(id),
+    real_name VARCHAR(80) NOT NULL,
+    id_type VARCHAR(32) NOT NULL,
+    id_no_hash VARCHAR(128) NOT NULL,
+    id_no_mask VARCHAR(64) NOT NULL,
+    id_no_encrypted TEXT,
+    phone VARCHAR(32),
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    status INTEGER NOT NULL DEFAULT 1,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_user_attendee_status CHECK (status IN (0, 1))
+);
+
 COMMENT ON TABLE organizer_application IS '商户入驻申请表';
 COMMENT ON COLUMN organizer_application.id IS '申请ID';
 COMMENT ON COLUMN organizer_application.user_id IS '申请用户ID';
@@ -181,6 +197,7 @@ CREATE TABLE activity (
     description TEXT,
     poster VARCHAR(255),
     status SMALLINT DEFAULT 1,
+    real_name_required BOOLEAN NOT NULL DEFAULT FALSE,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -258,6 +275,26 @@ CREATE TABLE order_seat (
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE order_attendee (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL REFERENCES "order"(id) ON DELETE CASCADE,
+    order_seat_id BIGINT REFERENCES order_seat(id) ON DELETE SET NULL,
+    user_id BIGINT NOT NULL,
+    session_id BIGINT NOT NULL,
+    ticket_type_id BIGINT NOT NULL,
+    attendee_user_profile_id BIGINT NOT NULL,
+    real_name VARCHAR(80) NOT NULL,
+    id_type VARCHAR(32) NOT NULL,
+    id_no_hash VARCHAR(128) NOT NULL,
+    id_no_mask VARCHAR(64) NOT NULL,
+    id_no_encrypted TEXT,
+    phone VARCHAR(32),
+    status INTEGER NOT NULL DEFAULT 1,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_order_attendee_status CHECK (status IN (1, 2, 3))
+);
+
 CREATE TABLE order_snapshot (
     id BIGSERIAL PRIMARY KEY,
     order_id BIGINT NOT NULL UNIQUE REFERENCES "order"(id) ON DELETE CASCADE,
@@ -295,6 +332,7 @@ CREATE TABLE grab_request (
     ticket_type_id BIGINT NOT NULL,
     quantity INTEGER NOT NULL,
     seat_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    attendee_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     allocate_random BOOLEAN NOT NULL DEFAULT FALSE,
     status VARCHAR(32) NOT NULL,
     request_type VARCHAR(32) NOT NULL DEFAULT 'NORMAL_GRAB',
@@ -423,6 +461,60 @@ CREATE TABLE team_seat_assignment (
     create_time TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uk_team_assignment_team_user UNIQUE (team_id, user_id),
     CONSTRAINT uk_team_assignment_order_seat UNIQUE (order_seat_id)
+);
+
+CREATE SEQUENCE IF NOT EXISTS waitlist_priority_seq;
+
+CREATE TABLE waitlist_entry (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    session_id BIGINT NOT NULL,
+    ticket_type_id BIGINT NOT NULL,
+    quantity INTEGER NOT NULL,
+    attendee_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    seat_preference JSONB,
+    status VARCHAR(32) NOT NULL DEFAULT 'WAITING',
+    priority_no BIGINT NOT NULL DEFAULT nextval('waitlist_priority_seq'),
+    offer_order_id BIGINT,
+    offer_expire_time TIMESTAMP,
+    fail_reason VARCHAR(512),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_waitlist_entry_quantity CHECK (quantity > 0),
+    CONSTRAINT chk_waitlist_entry_status CHECK (status IN ('WAITING', 'ALLOCATING', 'OFFERED', 'PAID', 'CANCELLED', 'EXPIRED', 'FAILED'))
+);
+
+CREATE TABLE waitlist_offer (
+    id BIGSERIAL PRIMARY KEY,
+    entry_id BIGINT NOT NULL REFERENCES waitlist_entry(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    session_id BIGINT NOT NULL,
+    ticket_type_id BIGINT NOT NULL,
+    quantity INTEGER NOT NULL,
+    order_id BIGINT NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'OFFERED',
+    expire_time TIMESTAMP NOT NULL,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_waitlist_offer_quantity CHECK (quantity > 0),
+    CONSTRAINT chk_waitlist_offer_status CHECK (status IN ('OFFERED', 'PAID', 'EXPIRED', 'CANCELLED'))
+);
+
+CREATE TABLE waitlist_allocation_log (
+    id BIGSERIAL PRIMARY KEY,
+    event_key VARCHAR(160) NOT NULL,
+    attempt_no INTEGER NOT NULL DEFAULT 0,
+    session_id BIGINT NOT NULL,
+    ticket_type_id BIGINT NOT NULL,
+    released_quantity INTEGER NOT NULL,
+    allocated_entry_id BIGINT,
+    order_id BIGINT,
+    source_order_id BIGINT,
+    status VARCHAR(32) NOT NULL,
+    message VARCHAR(1024),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_waitlist_allocation_quantity CHECK (released_quantity > 0),
+    CONSTRAINT chk_waitlist_allocation_status CHECK (status IN ('PROCESSING', 'FAILED', 'OFFERED', 'NO_MATCH', 'DUPLICATE'))
 );
 
 CREATE TABLE venue_seat_layout_template (
@@ -695,12 +787,17 @@ CREATE TABLE moment (
 -- 创建索引
 CREATE INDEX idx_user_phone ON "user"(phone);
 CREATE INDEX idx_user_auth_user ON user_auth(user_id);
+CREATE INDEX idx_user_attendee_user_status ON user_attendee(user_id, status, is_default DESC, create_time DESC);
+CREATE UNIQUE INDEX uk_user_attendee_active_identity ON user_attendee(user_id, id_type, id_no_hash) WHERE status = 1;
 CREATE INDEX idx_order_user ON "order"(user_id);
 CREATE INDEX idx_order_no ON "order"(order_no);
 CREATE INDEX idx_order_status ON "order"(status);
 CREATE INDEX idx_order_seat_order ON order_seat(order_id);
 CREATE INDEX idx_order_seat_session_seat ON order_seat(session_seat_id);
 CREATE INDEX idx_order_seat_status ON order_seat(status);
+CREATE INDEX idx_order_attendee_order ON order_attendee(order_id);
+CREATE INDEX idx_order_attendee_seat ON order_attendee(order_seat_id);
+CREATE INDEX idx_order_attendee_session_identity_active ON order_attendee(session_id, id_type, id_no_hash) WHERE status = 1;
 CREATE INDEX idx_order_snapshot_order_id ON order_snapshot(order_id);
 CREATE INDEX idx_order_snapshot_activity_id ON order_snapshot(activity_id);
 CREATE INDEX idx_order_snapshot_session_id ON order_snapshot(session_id);
@@ -719,6 +816,14 @@ CREATE INDEX idx_ticket_team_session ON ticket_team(session_id, status);
 CREATE INDEX idx_ticket_team_member_team ON ticket_team_member(team_id, status, join_time);
 CREATE INDEX idx_team_grab_request_order ON team_grab_request(order_id);
 CREATE INDEX idx_team_grab_request_grab_request ON team_grab_request(grab_request_id);
+CREATE UNIQUE INDEX uk_waitlist_entry_active_user_ticket ON waitlist_entry(user_id, session_id, ticket_type_id) WHERE status IN ('WAITING', 'ALLOCATING', 'OFFERED');
+CREATE INDEX idx_waitlist_entry_queue ON waitlist_entry(session_id, ticket_type_id, status, priority_no, create_time, id);
+CREATE INDEX idx_waitlist_entry_user ON waitlist_entry(user_id, create_time DESC);
+CREATE UNIQUE INDEX uk_waitlist_offer_order ON waitlist_offer(order_id);
+CREATE INDEX idx_waitlist_offer_entry ON waitlist_offer(entry_id, status);
+CREATE INDEX idx_waitlist_offer_expire ON waitlist_offer(status, expire_time);
+CREATE UNIQUE INDEX uk_waitlist_allocation_event_attempt ON waitlist_allocation_log(event_key, attempt_no);
+CREATE INDEX idx_waitlist_allocation_event ON waitlist_allocation_log(event_key, create_time);
 CREATE INDEX idx_payment_order ON payment(order_id);
 CREATE INDEX idx_payment_no ON payment(payment_no);
 CREATE INDEX idx_payment_out_trade_no ON payment(out_trade_no);

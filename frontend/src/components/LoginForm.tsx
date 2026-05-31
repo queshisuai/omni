@@ -257,7 +257,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
               {/* Scan Line Animation */}
               <div className="absolute top-0 left-0 w-full h-[2px] bg-[#ff1268] shadow-[0_0_8px_#ff1268] animate-[scan_2s_ease-in-out_infinite]" />
             </div>
-            <h3 className="text-[16px] font-semibold text-gray-800 mb-2">打开万象APP扫码登录</h3>
+            <h3 className="text-[16px] font-semibold text-gray-800 mb-2">打开万象应用扫码登录</h3>
             <p className="text-sm text-gray-500">点击“我的”右上角扫一扫</p>
           </div>
         )}

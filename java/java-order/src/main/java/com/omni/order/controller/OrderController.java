@@ -196,7 +196,7 @@ public class OrderController {
     }
 
     @PostMapping("/internal/paid-by-sessions")
-    public Result<List<Order>> listInternalPaidOrdersBySessions(
+    public Result<List<OrderListItemResponse>> listInternalPaidOrdersBySessions(
             @RequestBody(required = false) PaidOrdersBySessionsRequest request,
             @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         if (!isValidInternalToken(token)) {
@@ -204,7 +204,7 @@ public class OrderController {
         }
         List<Long> sessionIds = request != null ? request.getSessionIds() : java.util.Collections.emptyList();
         boolean paidOnly = request == null || !Boolean.FALSE.equals(request.getPaidOnly());
-        return Result.success(orderService.listOrdersBySessions(sessionIds, paidOnly));
+        return Result.success(orderService.listOrderItemsBySessions(sessionIds, paidOnly));
     }
 
     @PostMapping("/internal/paid-count-by-sessions")
