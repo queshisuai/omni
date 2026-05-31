@@ -852,6 +852,49 @@ export class TeamGrabRepository {
     return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
   }
 
+  async repairTeamGrabOrderCreatedAndLockTeam(
+    requestId: string,
+    teamId: number,
+    orderId: number,
+  ): Promise<TeamGrabRequestRecord | null> {
+    return this.database.withTransaction(async (client) => {
+      const teamGrabResult = await client.query<TeamGrabRequestRow>(
+        `update team_grab_request
+         set status = 'ORDER_CREATED',
+             order_id = $2,
+             fail_reason = null,
+             update_time = now()
+         where request_id = $1
+           and status in ('LOCKED', 'GRABBING', 'ORDER_CREATED')
+           and (order_id is null or order_id = $2)
+           and (
+             fail_reason is null
+             or fail_reason in ('${ORDER_CREATE_IN_PROGRESS}', '${ORDER_CREATE_TIMEOUT_CLAIMED}', '${ORDER_CREATE_TIMEOUT_RELEASING}', '${ORDER_CREATE_RELEASE_PENDING}')
+             or order_id = $2
+           )
+         returning *`,
+        [requestId, orderId],
+      );
+      const teamGrab = teamGrabResult.rows[0];
+      if (!teamGrab) return null;
+
+      const teamResult = await client.query<TicketTeamRow>(
+        `update ticket_team
+         set status = 'LOCKED',
+             update_time = now()
+         where id = $1
+           and status in ('GRABBING', 'LOCKED')
+         returning *`,
+        [teamId],
+      );
+      if (!teamResult.rows[0]) {
+        throw new Error('failed to mark team locked');
+      }
+
+      return this.mapTeamGrabRow(teamGrab);
+    });
+  }
+
   async markTeamGrabFailed(requestId: string, failReason: string): Promise<TeamGrabRequestRecord | null> {
     const result = await this.database.query<TeamGrabRequestRow>(
       `update team_grab_request

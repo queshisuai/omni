@@ -190,9 +190,12 @@ export class TeamLockRecoveryService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const teamOrderCreated = await this.repository.repairTeamGrabOrderCreated(teamGrab.requestId, orderId);
+    const teamOrderCreated = await this.repository.repairTeamGrabOrderCreatedAndLockTeam(
+      teamGrab.requestId,
+      teamGrab.teamId,
+      orderId,
+    );
     if (!teamOrderCreated) return;
-    await this.repository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING', 'LOCKED']);
   }
 
   private async lookupOrder(grabRequestId: string): Promise<{ id: number } | null | 'UNKNOWN'> {
