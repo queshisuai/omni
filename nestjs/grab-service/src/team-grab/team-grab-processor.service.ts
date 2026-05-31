@@ -185,11 +185,12 @@ export class TeamGrabProcessorService {
     orderId: number,
   ): Promise<boolean> {
     try {
-      const teamOrderCreated = await this.teamRepository.markTeamGrabOrderCreated(teamGrab.requestId, orderId);
+      const teamOrderCreated = await this.teamRepository.markTeamGrabOrderCreatedAndLockTeam(
+        teamGrab.requestId,
+        teamGrab.teamId,
+        orderId,
+      );
       if (!teamOrderCreated) throw new Error('failed to persist team grab order');
-
-      const lockedTeam = await this.teamRepository.updateTeamStatus(teamGrab.teamId, 'LOCKED', ['GRABBING']);
-      if (!lockedTeam) throw new Error('failed to mark team locked');
 
       const grabOrderCreated = await this.grabRepository.markOrderCreated(
         record.requestId,

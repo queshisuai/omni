@@ -736,6 +736,51 @@ describe('TeamGrabRepository', () => {
     expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 9001]);
   });
 
+  it('marks team grab order-created and locks the team in one transaction', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'ORDER_CREATED', order_id: '9001', fail_reason: null }] })
+      .mockResolvedValueOnce({ rows: [{ ...teamRow, id: '1', status: 'LOCKED' }] });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ withTransaction } as any);
+
+    const result = await repository.markTeamGrabOrderCreatedAndLockTeam('TEAM-GRAB-1', 1, 9001);
+
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
+    const teamGrabSql = query.mock.calls[0][0].toLowerCase();
+    expect(teamGrabSql).toContain("status = 'order_created'");
+    expect(teamGrabSql).toContain('order_id = $2');
+    expect(teamGrabSql).toContain("fail_reason is distinct from 'order_create_release_pending'");
+    expect(teamGrabSql).toContain("fail_reason is distinct from 'order_create_timeout_claimed'");
+    expect(teamGrabSql).toContain("fail_reason is distinct from 'order_create_timeout_releasing'");
+    expect(query.mock.calls[0][1]).toEqual(['TEAM-GRAB-1', 9001]);
+    const teamSql = query.mock.calls[1][0].toLowerCase();
+    expect(teamSql).toContain('update ticket_team');
+    expect(teamSql).toContain("status = 'locked'");
+    expect(teamSql).toContain("status = 'grabbing'");
+    expect(query.mock.calls[1][1]).toEqual([1]);
+    expect(result).toMatchObject({
+      requestId: 'TEAM-GRAB-1',
+      status: 'ORDER_CREATED',
+      orderId: 9001,
+      failReason: null,
+    });
+  });
+
+  it('throws from the atomic order-created transition when team locking loses the race', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce({ rows: [{ ...teamGrabRow, status: 'ORDER_CREATED', order_id: '9001', fail_reason: null }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const withTransaction = jest.fn((callback) => callback({ query }));
+    const repository = new TeamGrabRepository({ withTransaction } as any);
+
+    await expect(repository.markTeamGrabOrderCreatedAndLockTeam('TEAM-GRAB-1', 1, 9001))
+      .rejects.toThrow('failed to mark team locked');
+
+    expect(withTransaction).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
   it('allows claimed recovery to persist an order found by second lookup', async () => {
     const query = jest.fn().mockResolvedValue({
       rows: [{ ...teamGrabRow, status: 'ORDER_CREATED', order_id: '9001', fail_reason: null }],

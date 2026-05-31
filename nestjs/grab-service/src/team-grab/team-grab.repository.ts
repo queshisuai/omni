@@ -751,12 +751,53 @@ export class TeamGrabRepository {
            update_time = now()
        where request_id = $1
          and status in ('LOCKED', 'GRABBING')
+         and fail_reason is distinct from '${ORDER_CREATE_RELEASE_PENDING}'
          and fail_reason is distinct from '${ORDER_CREATE_TIMEOUT_CLAIMED}'
          and fail_reason is distinct from '${ORDER_CREATE_TIMEOUT_RELEASING}'
        returning *`,
       [requestId, orderId],
     );
     return result.rows[0] ? this.mapTeamGrabRow(result.rows[0]) : null;
+  }
+
+  async markTeamGrabOrderCreatedAndLockTeam(
+    requestId: string,
+    teamId: number,
+    orderId: number,
+  ): Promise<TeamGrabRequestRecord | null> {
+    return this.database.withTransaction(async (client) => {
+      const teamGrabResult = await client.query<TeamGrabRequestRow>(
+        `update team_grab_request
+         set status = 'ORDER_CREATED',
+             order_id = $2,
+             fail_reason = null,
+             update_time = now()
+         where request_id = $1
+           and status in ('LOCKED', 'GRABBING')
+           and fail_reason is distinct from '${ORDER_CREATE_RELEASE_PENDING}'
+           and fail_reason is distinct from '${ORDER_CREATE_TIMEOUT_CLAIMED}'
+           and fail_reason is distinct from '${ORDER_CREATE_TIMEOUT_RELEASING}'
+         returning *`,
+        [requestId, orderId],
+      );
+      const teamGrab = teamGrabResult.rows[0];
+      if (!teamGrab) return null;
+
+      const teamResult = await client.query(
+        `update ticket_team
+         set status = 'LOCKED',
+             update_time = now()
+         where id = $1
+           and status = 'GRABBING'
+         returning *`,
+        [teamId],
+      );
+      if (teamResult.rows.length === 0) {
+        throw new Error('failed to mark team locked');
+      }
+
+      return this.mapTeamGrabRow(teamGrab);
+    });
   }
 
   async markTeamGrabOrderCreateInProgress(requestId: string): Promise<TeamGrabRequestRecord | null> {
