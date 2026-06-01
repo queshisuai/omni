@@ -661,6 +661,8 @@ export type SupportMessageSenderType = 'USER' | 'AI' | 'AGENT' | 'SYSTEM' | stri
 export interface SupportConversationVO {
   id: number
   userId: number
+  userNickname?: string | null
+  userPhoneMask?: string | null
   subject: string
   status: SupportConversationStatus
   sourceType: 'AI' | 'HUMAN' | string

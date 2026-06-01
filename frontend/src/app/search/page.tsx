@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Header, HOT_CITIES, OTHER_CITIES } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { TicketCard } from '@/components/TicketCard'
+import { SearchResultsSkeleton } from '@/components/Skeleton'
 import { listActivities, listCategories } from '@/lib/api'
-import { DEFAULT_POPULAR_SEARCHES, SEARCH_HISTORY_KEY, addSearchHistoryTerm, buildSearchSuggestions, parseSearchHistory } from '@/lib/search-experience'
+import { DEFAULT_POPULAR_SEARCHES, SEARCH_HISTORY_KEY, addSearchHistoryTerm, buildEmptySearchRecommendations, buildSearchSuggestions, parseSearchHistory } from '@/lib/search-experience'
 import { categories as mockCategories, sections as mockSections } from '@/lib/mock-data'
 import type { CategoryVO, ActivityVO } from '@/types/api'
 import type { Activity } from '@/types/damai'
@@ -168,6 +169,7 @@ function SearchContent() {
 
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
+  const [fallbackActivities, setFallbackActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -227,6 +229,20 @@ function SearchContent() {
   const fetchActivities = async (cat: string, p: number) => {
     setLoading(true)
     try {
+      const loadFallbackActivities = async () => {
+        try {
+          const fallback = await listActivities({
+            page: 1,
+            size: 6,
+            keyword: initialKeyword || undefined,
+            sort: sort === 'recommend' ? 'recent' : sort,
+          })
+          setFallbackActivities(fallback.records.map(toActivity))
+        } catch {
+          setFallbackActivities([])
+        }
+      }
+
       let currentCats = categories
       if (currentCats.length === 0) {
         // 如果没有指定分类，可以并行请求分类和活动以提升首屏速度
@@ -252,6 +268,8 @@ function SearchContent() {
           setActivities(actData.records.map(toActivity))
           setTotal(actData.total)
           setTotalPages(actData.pages)
+          if (actData.total === 0) await loadFallbackActivities()
+          else setFallbackActivities([])
           usingMock.current = false
           setLoading(false)
           return
@@ -285,6 +303,8 @@ function SearchContent() {
       setActivities(data.records.map(toActivity))
       setTotal(data.total)
       setTotalPages(data.pages)
+      if (data.total === 0) await loadFallbackActivities()
+      else setFallbackActivities([])
       usingMock.current = false
     } catch {
       // 降级到 mock 数据 —— 只在首次加载时拉取全量
@@ -304,6 +324,7 @@ function SearchContent() {
 
       const all = mockAllActivities.current
       setActivities(all)
+      setFallbackActivities(all.slice(0, 6))
       setTotal(all.length)
       setTotalPages(Math.ceil(all.length / 20) || 1)
       usingMock.current = true
@@ -397,6 +418,13 @@ function SearchContent() {
     resultTerms,
     limit: 8,
   })
+  const emptyRecommendations = buildEmptySearchRecommendations({
+    keyword,
+    activeCity,
+    activities: fallbackActivities,
+    cities: [...HOT_CITIES, ...OTHER_CITIES],
+    limit: 6,
+  })
 
   const handlePageChange = (p: number) => {
     setPage(p)
@@ -419,6 +447,16 @@ function SearchContent() {
     const params = new URLSearchParams()
     params.set('keyword', nextKeyword)
     if (activeCity !== '全部') params.set('city', activeCity)
+    router.push(`/search?${params.toString()}`)
+  }
+
+  const searchWithCity = (nextCity: string) => {
+    mockAllActivities.current = []
+    setActiveCity(nextCity)
+    setPage(1)
+    const params = new URLSearchParams()
+    if (keyword) params.set('keyword', keyword)
+    params.set('city', nextCity)
     router.push(`/search?${params.toString()}`)
   }
 
@@ -665,14 +703,39 @@ function SearchContent() {
 
           {/* 结果网格 */}
           {loading ? (
-            <div className="flex flex-col items-center justify-center gap-4 py-32 text-gray-400">
-              <div className="w-8 h-8 border-4 border-[#ff1268]/20 border-t-[#ff1268] rounded-full animate-spin" />
-              <div className="text-[14px] font-medium tracking-wider">努力搜索中...</div>
-            </div>
+            <SearchResultsSkeleton />
           ) : pageData.length === 0 ? (
             <div className="rounded-3xl border border-gray-100 bg-white px-6 py-20 text-center text-[14px] text-gray-500">
               <div className="font-medium text-gray-600">暂无符合条件的演出</div>
-              <div className="mt-2 text-[13px] text-gray-400">可以放宽筛选条件，或先关注城市和候补提醒。</div>
+              <div className="mt-2 text-[13px] text-gray-400">可以放宽筛选条件，或先关注城市；无票票档可在购票区加入候补。</div>
+              {(emptyRecommendations.terms.length > 0 || emptyRecommendations.cities.length > 0) && (
+                <div className="mx-auto mt-5 max-w-[640px] rounded-2xl bg-gray-50 px-4 py-4 text-left">
+                  {emptyRecommendations.terms.length > 0 && (
+                    <div>
+                      <div className="mb-2 text-[12px] font-medium text-gray-500">相关演出</div>
+                      <div className="flex flex-wrap gap-2">
+                        {emptyRecommendations.terms.map(term => (
+                          <button key={term} onClick={() => searchWithKeyword(term)} className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
+                            {term}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {emptyRecommendations.cities.length > 0 && (
+                    <div className={emptyRecommendations.terms.length > 0 ? 'mt-4' : ''}>
+                      <div className="mb-2 text-[12px] font-medium text-gray-500">相邻城市</div>
+                      <div className="flex flex-wrap gap-2">
+                        {emptyRecommendations.cities.map(city => (
+                          <button key={city} onClick={() => searchWithCity(city)} className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
+                            {city}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="mt-5 flex flex-wrap justify-center gap-2">
                 <button onClick={clearFilters} className="rounded-lg border border-[#ff1268] bg-white px-4 py-2 text-[13px] text-[#ff1268]">清空筛选</button>
                 <button onClick={() => router.push('/subscriptions')} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] text-white">关注提醒</button>
@@ -736,9 +799,8 @@ export default function SearchPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Header />
       <Suspense fallback={
-        <div className="flex flex-col items-center justify-center gap-4 py-32 text-gray-400 flex-1">
-          <div className="w-8 h-8 border-4 border-[#ff1268]/20 border-t-[#ff1268] rounded-full animate-spin" />
-          <div className="text-[14px] font-medium tracking-wider">加载中...</div>
+        <div className="mx-auto w-full max-w-[1200px] flex-1 px-5 py-8">
+          <SearchResultsSkeleton />
         </div>
       }>
         <SearchContent />

@@ -3,9 +3,34 @@
 import { useEffect, useRef, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { getAdminSummary, getGrabOpsSummary, listAdminRefunds } from '@/lib/api'
-import { summarizeOpsMetric } from '@/lib/marketing-tools'
+import { getConsoleQuickActions } from '@/lib/console-paths'
+import { buildDashboardBars, summarizeOpsMetric } from '@/lib/marketing-tools'
+import { ConsoleDashboardSkeleton } from '@/components/Skeleton'
 import { Activity, AlertTriangle, CalendarDays, Gauge, RotateCcw, ShoppingCart, Ticket, TrendingUp, Users } from 'lucide-react'
 import type { AdminSummaryVO, GrabOpsSummaryVO } from '@/types/api'
+
+function DashboardBarList({ items, emptyText = '暂无数据' }: { items: Array<{ label: string; value: number }>; emptyText?: string }) {
+  const bars = buildDashboardBars(items)
+  if (bars.length === 0) return <div className="text-[13px] text-gray-400">{emptyText}</div>
+  return (
+    <div className="space-y-3">
+      {bars.map(item => (
+        <div key={item.label}>
+          <div className="mb-1 flex items-center justify-between gap-3 text-[13px]">
+            <span className="truncate text-gray-700">{item.label}</span>
+            <span className="shrink-0 font-semibold text-gray-900">{item.value}</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="h-full rounded-full bg-[#ff1268]"
+              style={{ width: item.widthPercent > 0 ? `${Math.max(item.widthPercent, 4)}%` : '0%' }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function ConsoleHome() {
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null)
@@ -77,6 +102,12 @@ export default function ConsoleHome() {
     }
   }, [])
 
+  if (!stats && !statsError) {
+    return <ConsoleDashboardSkeleton />
+  }
+
+  const quickActions = getConsoleQuickActions(user?.role)
+
   return (
     <div>
       <div className="mb-8">
@@ -136,30 +167,14 @@ export default function ConsoleHome() {
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
                   <TrendingUp className="h-4 w-4 text-[#ff1268]" /> 热门活动实时流量
                 </div>
-                <div className="space-y-2">
-                  {(stats?.hotActivities ?? []).slice(0, 3).map((item) => (
-                    <div key={item.activityId} className="flex items-center justify-between gap-3 text-[13px]">
-                      <span className="truncate text-gray-700">{item.activityName}</span>
-                      <span className="shrink-0 font-semibold text-gray-900">{item.orderCount} 单</span>
-                    </div>
-                  ))}
-                  {(stats?.hotActivities ?? []).length === 0 ? <div className="text-[13px] text-gray-400">暂无数据</div> : null}
-                </div>
+                <DashboardBarList items={(stats?.hotActivities ?? []).slice(0, 5).map(item => ({ label: item.activityName, value: item.orderCount }))} />
               </div>
 
               <div className="rounded-xl border border-gray-200 bg-white p-5">
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
                   <AlertTriangle className="h-4 w-4 text-[#f97316]" /> 抢票失败原因分布
                 </div>
-                <div className="space-y-2">
-                  {(grabOps?.failureReasons ?? []).slice(0, 3).map((item) => (
-                    <div key={item.reason} className="flex items-center justify-between gap-3 text-[13px]">
-                      <span className="truncate text-gray-700">{item.reason}</span>
-                      <span className="shrink-0 font-semibold text-gray-900">{item.count}</span>
-                    </div>
-                  ))}
-                  {(grabOps?.failureReasons ?? []).length === 0 ? <div className="text-[13px] text-gray-400">暂无数据</div> : null}
-                </div>
+                <DashboardBarList items={(grabOps?.failureReasons ?? []).slice(0, 5).map(item => ({ label: item.reason, value: item.count }))} />
               </div>
 
               {[
@@ -206,13 +221,8 @@ export default function ConsoleHome() {
         )}
 
         <h2 className="text-[16px] font-semibold text-gray-900 mb-4">快捷操作</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: '新建活动', href: '/console/activities/new' },
-            { label: '管理活动', href: '/console/activities' },
-            { label: '场馆记录', href: '/console/venue' },
-            { label: '查看订单', href: '/console/orders' },
-          ].map(item => (
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+          {quickActions.map(item => (
             <a
               key={item.label}
               href={item.href}

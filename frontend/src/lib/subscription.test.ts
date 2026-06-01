@@ -5,7 +5,7 @@ import { formatSubscriptionTargetType, getCountdownText } from './subscription.t
 test('formats subscription target types in Chinese', () => {
   assert.equal(formatSubscriptionTargetType('ACTIVITY_WANT'), '想看')
   assert.equal(formatSubscriptionTargetType('SALE_REMINDER'), '开售提醒')
-  assert.equal(formatSubscriptionTargetType('WAITLIST_REMINDER'), '候补提醒')
+  assert.equal(formatSubscriptionTargetType('WAITLIST_REMINDER'), '候补通知')
   assert.equal(formatSubscriptionTargetType('ARTIST_FOLLOW'), '艺人关注')
   assert.equal(formatSubscriptionTargetType('CITY_FOLLOW'), '城市关注')
   assert.equal(formatSubscriptionTargetType('TOUR_CITY_REMINDER'), '巡演城市提醒')

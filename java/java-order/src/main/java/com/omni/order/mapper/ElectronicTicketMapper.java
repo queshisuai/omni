@@ -41,4 +41,26 @@ public interface ElectronicTicketMapper extends BaseMapper<ElectronicTicket> {
     int updateStatusOnlyIfCurrent(@Param("id") Long id,
                                   @Param("expectedStatus") Integer expectedStatus,
                                   @Param("nextStatus") Integer nextStatus);
+
+    @Update("UPDATE electronic_ticket SET status = 3, invalid_reason = #{reason}, update_time = CURRENT_TIMESTAMP " +
+            "WHERE order_id = #{orderId} AND status = 1")
+    int invalidateUnusedByOrderId(@Param("orderId") Long orderId, @Param("reason") String reason);
+
+    @Update({"<script>",
+            "UPDATE electronic_ticket SET status = 3, invalid_reason = #{reason}, update_time = CURRENT_TIMESTAMP",
+            "WHERE order_id = #{orderId} AND status = 1",
+            "AND order_seat_id IN",
+            "<foreach collection='orderSeatIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int invalidateUnusedByOrderSeatIds(@Param("orderId") Long orderId,
+                                       @Param("orderSeatIds") List<Long> orderSeatIds,
+                                       @Param("reason") String reason);
+
+    @Update("WITH picked AS (" +
+            "SELECT id FROM electronic_ticket WHERE order_id = #{orderId} AND status = 1 ORDER BY id LIMIT #{quantity}" +
+            ") UPDATE electronic_ticket SET status = 3, invalid_reason = #{reason}, update_time = CURRENT_TIMESTAMP " +
+            "WHERE id IN (SELECT id FROM picked)")
+    int invalidateFirstUnusedByOrderId(@Param("orderId") Long orderId,
+                                       @Param("quantity") Integer quantity,
+                                       @Param("reason") String reason);
 }

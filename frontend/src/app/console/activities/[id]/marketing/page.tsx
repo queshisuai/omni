@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ArrowLeft, BarChart3, Save, TicketPercent } from 'lucide-react'
 import { getActivityMarketing, updateActivityMarketing } from '@/lib/api'
+import { ConsoleTableSkeleton } from '@/components/Skeleton'
 import { formatDiscountRule, normalizeFunnelSteps } from '@/lib/marketing-tools'
 import type { ActivityMarketingOverviewVO, ActivityMarketingRulePayload } from '@/types/api'
 
@@ -79,7 +80,7 @@ export default function ActivityMarketingPage() {
   }
 
   if (loading) {
-    return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
+    return <ConsoleTableSkeleton rows={5} columns={3} />
   }
 
   return (

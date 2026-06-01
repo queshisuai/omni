@@ -5,6 +5,9 @@ export interface ActivityViewSignal {
   category?: string | null
   artist?: string | null
   city?: string | null
+  title?: string | null
+  poster?: string | null
+  viewedAt?: string | null
 }
 
 export interface RecommendationActivity {
@@ -29,7 +32,11 @@ export function parseActivityViewSignals(raw: string | null | undefined): Activi
 
 export function addActivityViewSignal(history: ActivityViewSignal[], signal: ActivityViewSignal, limit = 20) {
   if (!signal.activityId) return history.slice(0, limit)
-  const next = [signal, ...history.filter(item => item.activityId !== signal.activityId)]
+  const nextSignal: ActivityViewSignal = {
+    ...signal,
+    viewedAt: signal.viewedAt || new Date().toISOString(),
+  }
+  const next = [nextSignal, ...history.filter(item => item.activityId !== signal.activityId)]
   return next.slice(0, limit)
 }
 

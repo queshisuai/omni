@@ -3,6 +3,8 @@ package com.omni.user.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
+import com.omni.user.client.NotificationInternalClient;
+import com.omni.user.dto.NotificationMessageRequest;
 import com.omni.user.dto.SupportConversationRequest;
 import com.omni.user.dto.SupportConversationResponse;
 import com.omni.user.dto.SupportMessageRequest;
@@ -13,6 +15,9 @@ import com.omni.user.entity.User;
 import com.omni.user.mapper.SupportConversationMapper;
 import com.omni.user.mapper.SupportMessageMapper;
 import com.omni.user.mapper.UserMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -23,6 +28,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class CustomerSupportService {
+
+    private static final Logger log = LoggerFactory.getLogger(CustomerSupportService.class);
 
     private static final String ROLE_ADMIN = "admin";
     private static final String ROLE_SUPPORT = "support";
@@ -37,15 +44,21 @@ public class CustomerSupportService {
     private final SupportMessageMapper messageMapper;
     private final UserMapper userMapper;
     private final SupportAiService supportAiService;
+    private final NotificationInternalClient notificationClient;
+    private final String internalApiToken;
 
     public CustomerSupportService(SupportConversationMapper conversationMapper,
                                   SupportMessageMapper messageMapper,
                                   UserMapper userMapper,
-                                  SupportAiService supportAiService) {
+                                  SupportAiService supportAiService,
+                                  NotificationInternalClient notificationClient,
+                                  @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
         this.userMapper = userMapper;
         this.supportAiService = supportAiService;
+        this.notificationClient = notificationClient;
+        this.internalApiToken = internalApiToken;
     }
 
     @Transactional
@@ -132,6 +145,9 @@ public class CustomerSupportService {
             conversation.setStatus(STATUS_ASSIGNED);
         }
         conversationMapper.updateById(conversation);
+        if ("AGENT".equals(senderType)) {
+            notifySupportReply(conversation);
+        }
 
         if ("USER".equals(senderType) && SOURCE_AI.equals(conversation.getSourceType()) && conversation.getAssignedAgentId() == null) {
             String answer = supportAiService.answer(content);
@@ -242,6 +258,20 @@ public class CustomerSupportService {
         return message;
     }
 
+    private void notifySupportReply(SupportConversation conversation) {
+        if (conversation == null || conversation.getUserId() == null || notificationClient == null || !StringUtils.hasText(internalApiToken)) {
+            return;
+        }
+        try {
+            notificationClient.createMessage(
+                    new NotificationMessageRequest(conversation.getUserId(), null, "SUPPORT_REPLY", "人工客服回复了你的咨询，请查看客服会话。"),
+                    internalApiToken);
+        } catch (RuntimeException e) {
+            log.warn("客服回复通知发送失败: conversationId={}, userId={}, message={}",
+                    conversation.getId(), conversation.getUserId(), e.getMessage());
+        }
+    }
+
     private String buildSubject(String subject, String initialMessage) {
         String explicit = trimToNull(subject);
         if (explicit != null) return abbreviate(explicit, 40);
@@ -258,6 +288,11 @@ public class CustomerSupportService {
         SupportConversationResponse response = new SupportConversationResponse();
         response.setId(conversation.getId());
         response.setUserId(conversation.getUserId());
+        User customer = conversation.getUserId() == null ? null : userMapper.selectById(conversation.getUserId());
+        if (customer != null) {
+            response.setUserNickname(customer.getNickname());
+            response.setUserPhoneMask(maskPhone(customer.getPhone()));
+        }
         response.setSubject(conversation.getSubject());
         response.setStatus(conversation.getStatus());
         response.setSourceType(conversation.getSourceType());
@@ -267,6 +302,13 @@ public class CustomerSupportService {
         response.setUpdateTime(conversation.getUpdateTime());
         response.setClosedAt(conversation.getClosedAt());
         return response;
+    }
+
+    private String maskPhone(String phone) {
+        String value = trimToNull(phone);
+        if (value == null) return null;
+        if (value.length() < 7) return value;
+        return value.substring(0, 3) + "****" + value.substring(value.length() - 4);
     }
 
     private SupportMessageResponse toMessageResponse(SupportMessage message) {

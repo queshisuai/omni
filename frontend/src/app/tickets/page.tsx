@@ -7,6 +7,7 @@ import { CheckCircle2, Gift, Loader2, QrCode, RefreshCw, RotateCcw, Ticket, XCir
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
+import { TicketWalletSkeleton } from '@/components/Skeleton'
 import { claimTicketTransfer, createTicketEntryCode, createTicketTransfer, listMyTickets, revokeTicketTransfer } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import type { TicketEntryCodeVO, TicketTransferCreateVO, TicketWalletItemVO } from '@/types/api'
@@ -203,25 +204,23 @@ export default function TicketsPage() {
           </button>
         </div>
 
-        <div className="mb-5 grid gap-3 rounded-lg border border-[#eee] bg-white p-4 md:grid-cols-[1fr_auto]">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#fff0f5] text-[#ff1268]">
-              <Gift className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[14px] font-medium text-[#111]">领取转赠</div>
-              <input
-                value={claimCode}
-                onChange={(event) => setClaimCode(event.target.value)}
-                placeholder="输入好友分享的转赠码"
-                className="mt-2 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] text-[#333] outline-none focus:border-[#ff1268]"
-              />
-            </div>
+        <div className="mb-5 grid gap-3 rounded-lg border border-[#eee] bg-white p-4 md:grid-cols-[40px_minmax(0,1fr)_auto] md:items-end">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#fff0f5] text-[#ff1268] md:mb-0">
+            <Gift className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[14px] font-medium text-[#111]">领取转赠</div>
+            <input
+              value={claimCode}
+              onChange={(event) => setClaimCode(event.target.value)}
+              placeholder="输入好友分享的转赠码"
+              className="mt-2 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] text-[#333] outline-none focus:border-[#ff1268]"
+            />
           </div>
           <button
             onClick={claimTransfer}
             disabled={claiming}
-            className="inline-flex h-10 min-w-[112px] cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#ff1268] bg-[#ff1268] px-4 text-[14px] font-medium text-white outline-none hover:bg-[#e0105a] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-10 w-full min-w-[112px] cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#ff1268] bg-[#ff1268] px-4 text-[14px] font-medium text-white outline-none hover:bg-[#e0105a] disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
           >
             {claiming ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             领取
@@ -245,10 +244,7 @@ export default function TicketsPage() {
         </div>
 
         {loading ? (
-          <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-[#eee] bg-white text-[14px] text-[#666]">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            加载中...
-          </div>
+          <TicketWalletSkeleton />
         ) : error ? (
           <div className="rounded-lg border border-[#ffd9e6] bg-white py-16 text-center text-[14px] text-[#ff4d4f]">{error}</div>
         ) : filteredTickets.length === 0 ? (

@@ -196,6 +196,36 @@ class TicketWalletServiceTest {
         assertEquals("电子票不存在", error.getMessage());
     }
 
+    @Test
+    void invalidateRefundedOrderMarksUnusedTicketsInvalid() {
+        when(electronicTicketMapper.invalidateUnusedByOrderId(9001L, "订单已退款")).thenReturn(2);
+
+        int updated = service.invalidateUnusedTicketsForOrder(9001L, "订单已退款");
+
+        assertEquals(2, updated);
+        verify(electronicTicketMapper).invalidateUnusedByOrderId(9001L, "订单已退款");
+    }
+
+    @Test
+    void invalidateRefundedSeatsMarksSelectedSeatTicketsInvalid() {
+        when(electronicTicketMapper.invalidateUnusedByOrderSeatIds(9001L, List.of(21L, 22L), "部分退款")).thenReturn(2);
+
+        int updated = service.invalidateUnusedTicketsByOrderSeats(9001L, List.of(21L, 22L), "部分退款");
+
+        assertEquals(2, updated);
+        verify(electronicTicketMapper).invalidateUnusedByOrderSeatIds(9001L, List.of(21L, 22L), "部分退款");
+    }
+
+    @Test
+    void invalidateRefundedQuantityMarksFirstUnusedTicketsInvalid() {
+        when(electronicTicketMapper.invalidateFirstUnusedByOrderId(9001L, 1, "部分退款")).thenReturn(1);
+
+        int updated = service.invalidateUnusedTicketsByQuantity(9001L, 1, "部分退款");
+
+        assertEquals(1, updated);
+        verify(electronicTicketMapper).invalidateFirstUnusedByOrderId(9001L, 1, "部分退款");
+    }
+
     private Order paidOrder(Long id, Long userId, Long sessionId, Long ticketTypeId, int quantity) {
         Order order = new Order();
         order.setId(id);

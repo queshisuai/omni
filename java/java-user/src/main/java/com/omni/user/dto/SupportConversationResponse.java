@@ -6,6 +6,8 @@ public class SupportConversationResponse {
 
     private Long id;
     private Long userId;
+    private String userNickname;
+    private String userPhoneMask;
     private String subject;
     private String status;
     private String sourceType;
@@ -20,6 +22,12 @@ public class SupportConversationResponse {
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
+
+    public String getUserNickname() { return userNickname; }
+    public void setUserNickname(String userNickname) { this.userNickname = userNickname; }
+
+    public String getUserPhoneMask() { return userPhoneMask; }
+    public void setUserPhoneMask(String userPhoneMask) { this.userPhoneMask = userPhoneMask; }
 
     public String getSubject() { return subject; }
     public void setSubject(String subject) { this.subject = subject; }

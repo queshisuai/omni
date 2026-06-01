@@ -402,6 +402,7 @@ public class OrderService {
             orderMapper.updateById(order);
             TicketReleasedEvent event = refundTicketsStrict(order);
             markOrderAttendeesStatus(order.getId(), ORDER_ATTENDEE_REFUNDED);
+            invalidateElectronicTicketsForRefundedOrder(order);
             publishWaitlistReleaseEvent(event);
             return order;
         }
@@ -468,6 +469,7 @@ public class OrderService {
         }
         TicketReleasedEvent event = refundTickets(order, selectedSeats, quantity);
         markPartialOrderAttendeesRefunded(orderId, selectedSeats, quantity);
+        invalidateElectronicTicketsForPartialRefund(order, selectedSeats, quantity);
         publishWaitlistReleaseEvent(event);
 
         if (refunded + quantity >= order.getQuantity()) {
@@ -1787,6 +1789,25 @@ public class OrderService {
         if (ticketWalletService != null) {
             ticketWalletService.issueForPaidOrder(order);
         }
+    }
+
+    private void invalidateElectronicTicketsForRefundedOrder(Order order) {
+        if (ticketWalletService != null && order != null) {
+            ticketWalletService.invalidateUnusedTicketsForOrder(order.getId(), "订单已退款");
+        }
+    }
+
+    private void invalidateElectronicTicketsForPartialRefund(Order order, List<OrderSeat> selectedSeats, int quantity) {
+        if (ticketWalletService == null || order == null) {
+            return;
+        }
+        List<Long> orderSeatIds = selectedSeats == null ? Collections.emptyList()
+                : selectedSeats.stream().map(OrderSeat::getId).filter(Objects::nonNull).collect(Collectors.toList());
+        if (!orderSeatIds.isEmpty()) {
+            ticketWalletService.invalidateUnusedTicketsByOrderSeats(order.getId(), orderSeatIds, "部分退款");
+            return;
+        }
+        ticketWalletService.invalidateUnusedTicketsByQuantity(order.getId(), quantity, "部分退款");
     }
 
     private String orderTimeoutEventKey(Order order) {

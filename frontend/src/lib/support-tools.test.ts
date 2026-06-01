@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { getLoginRedirectForRole, formatSupportConversationStatus, buildSupportSubject } from './support-tools.ts'
+import { buildSupportSubject, filterSupportConversations, formatSupportConversationStatus, getLoginRedirectForRole } from './support-tools.ts'
 
 test('routes support role to support workbench after login', () => {
   assert.equal(getLoginRedirectForRole('support'), '/support')
@@ -19,4 +19,16 @@ test('formats support conversation status in Chinese', () => {
 test('builds concise support subject from first message', () => {
   assert.equal(buildSupportSubject('  电子票二维码无法打开，需要人工帮忙看一下  '), '电子票二维码无法打开，需要人工帮忙看一下')
   assert.equal(buildSupportSubject(''), '在线客服咨询')
+})
+
+test('filters support conversations by workbench tab', () => {
+  const conversations = [
+    { id: 1, status: 'WAITING_AGENT' },
+    { id: 2, status: 'ASSIGNED' },
+    { id: 3, status: 'CLOSED' },
+  ] as any[]
+
+  assert.deepEqual(filterSupportConversations(conversations, 'active').map(item => item.id), [1, 2])
+  assert.deepEqual(filterSupportConversations(conversations, 'closed').map(item => item.id), [3])
+  assert.deepEqual(filterSupportConversations(conversations, 'all').map(item => item.id), [1, 2, 3])
 })

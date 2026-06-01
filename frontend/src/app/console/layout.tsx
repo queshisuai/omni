@@ -5,11 +5,13 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
+import { isConsolePathAllowedForRole } from '@/lib/console-paths'
 import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones } from 'lucide-react'
 
 const menuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
   { href: '/console/activities', label: '活动发布管理', icon: CalendarDays, roles: ['admin'] },
+  { href: '/console/tours', label: '巡演草稿管理', icon: GitPullRequestArrow, roles: ['admin'] },
   { href: '/console/sessions', label: '场次管理', icon: Clock },
   { href: '/console/orders', label: '订单查看', icon: ShoppingCart },
   { href: '/console/refunds', label: '退款审核', icon: RotateCcw },
@@ -22,16 +24,19 @@ const menuItems = [
   { href: '/console/station-config-reviews', label: '站点变更审核', icon: GitPullRequestArrow, roles: ['admin'] },
   { href: '/console/organizer-applications', label: '入驻审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/support-accounts', label: '客服账号管理', icon: Headphones, roles: ['admin'] },
+  { href: '/console/support-conversations', label: '客服会话记录', icon: Headphones, roles: ['admin'] },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
 ]
 
 const organizerMenuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
   { href: '/console/activities', label: '我的活动管理', icon: CalendarDays },
+  { href: '/console/tours', label: '巡演草稿', icon: GitPullRequestArrow },
   { href: '/console/sessions', label: '我的场次管理', icon: Clock },
   { href: '/console/artists', label: '我的艺人', icon: Users },
   { href: '/console/risk-events', label: '风险事件待办', icon: AlertTriangle },
   { href: '/console/refunds', label: '主办方退款处理', icon: RotateCcw },
+  { href: '/console/venue', label: '场馆记录', icon: MapPin },
   { href: '/console/venue/apply', label: '提交场馆资料', icon: MapPin },
   { href: '/console/orders', label: '订单', icon: ShoppingCart },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
@@ -45,6 +50,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const [role, setRole] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [checking, setChecking] = useState(true)
+  const [redirecting, setRedirecting] = useState(false)
   const visibleMenuItems = useMemo(() => {
     if (checking || !role) return []
     if (role === 'organizer') return organizerMenuItems
@@ -70,6 +76,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   useEffect(() => {
     if (!isAuthenticated()) { router.push('/login'); return }
     let active = true
+    setRedirecting(false)
     ;(async () => {
       const cached = getUser()
       try {
@@ -83,6 +90,11 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setNickname(latest.nickname || latest.phone || '')
         setAvatar(latest.avatar || '')
         setRole(latest.role)
+        if (!isConsolePathAllowedForRole(latest.role, pathname)) {
+          setRedirecting(true)
+          router.replace('/console')
+          return
+        }
       } catch {
         if (!active) return
         if (!cached || (cached.role !== 'admin' && cached.role !== 'organizer')) {
@@ -91,6 +103,11 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         }
         setNickname(cached.nickname || cached.phone || '')
         setRole(cached.role || '')
+        if (!isConsolePathAllowedForRole(cached.role, pathname)) {
+          setRedirecting(true)
+          router.replace('/console')
+          return
+        }
       } finally {
         if (active) setChecking(false)
       }
@@ -98,7 +115,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     return () => {
       active = false
     }
-  }, [router])
+  }, [router, pathname])
 
   const handleLogout = () => logout()
   const roleReady = !checking && Boolean(role)
@@ -192,7 +209,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         </header>
         <main className="flex-1 p-6 sm:p-8 overflow-y-auto">
           <div className="max-w-[1200px] mx-auto">
-            {checking ? <div className="text-[14px] text-[#666] flex items-center justify-center py-20">正在校验后台权限...</div> : children}
+            {checking || redirecting ? <div className="text-[14px] text-[#666] flex items-center justify-center py-20">正在校验后台权限...</div> : children}
           </div>
         </main>
       </div>

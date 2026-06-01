@@ -76,6 +76,9 @@ public class UserService {
         if (user == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "账号不存在");
         }
+        if (Integer.valueOf(0).equals(user.getStatus())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "账号已停用");
+        }
 
         if ("password".equals(request.getLoginType())) {
             // 密码登录

@@ -1,6 +1,7 @@
-import type { UserRole } from '@/types/api'
+import type { SupportConversationVO, UserRole } from '@/types/api'
 
 export type SupportConversationStatus = 'OPEN' | 'WAITING_AGENT' | 'ASSIGNED' | 'CLOSED' | string
+export type SupportConversationFilter = 'active' | 'closed' | 'all'
 
 export function getLoginRedirectForRole(role: UserRole | string | null | undefined) {
   if (role === 'support') return '/support'
@@ -27,4 +28,13 @@ export function formatSupportSender(senderType: string | null | undefined) {
   if (senderType === 'AGENT') return '人工客服'
   if (senderType === 'SYSTEM') return '系统'
   return '我'
+}
+
+export function filterSupportConversations<T extends Pick<SupportConversationVO, 'status'>>(
+  conversations: T[],
+  filter: SupportConversationFilter,
+) {
+  if (filter === 'all') return conversations
+  if (filter === 'closed') return conversations.filter(item => item.status === 'CLOSED')
+  return conversations.filter(item => item.status !== 'CLOSED')
 }

@@ -73,3 +73,29 @@ export function getConsoleOrderScopeCopy(role: UserRole | null | undefined) {
   if (role === 'organizer') return '当前权限：主办方，仅查看自己活动产生的订单。'
   return '当前权限：未识别后台角色，仅在登录后展示可访问订单。'
 }
+
+export function getSelectedConsoleOrders(orders: OrderEntity[], selectedIds: Set<number>) {
+  if (selectedIds.size === 0) return []
+  return orders.filter(order => selectedIds.has(order.id))
+}
+
+export function buildConsoleOrderExportCsv(orders: OrderEntity[]) {
+  const header = ['订单号', '活动', '票档', '数量', '金额', '状态', '观演人', '下单时间']
+  const rows = orders.map(order => [
+    order.orderNo,
+    order.activityName || '未知活动',
+    order.ticketName || `票档 ${order.matchedTicketTypeId ?? order.ticketTypeId}`,
+    order.quantity,
+    order.amount,
+    CONSOLE_ORDER_STATUS_LABELS[order.status] || '-',
+    formatOrderAttendees(order),
+    order.createTime,
+  ])
+  return `\ufeff${[header, ...rows].map(row => row.map(csvCell).join(',')).join('\n')}`
+}
+
+function csvCell(value: string | number | null | undefined) {
+  const text = value == null ? '' : String(value)
+  if (!/[",\r\n]/.test(text)) return text
+  return `"${text.replaceAll('"', '""')}"`
+}

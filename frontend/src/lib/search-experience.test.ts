@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   addSearchHistoryTerm,
+  buildEmptySearchRecommendations,
   buildSearchSuggestions,
   parseSearchHistory,
 } from './search-experience.ts'
@@ -28,4 +29,19 @@ test('builds suggestions from history popular terms and live results', () => {
   })
 
   assert.deepEqual(suggestions.slice(0, 3), ['周杰伦', '周末演出', '周杰伦演唱会'])
+})
+
+test('builds empty result recommendations from real activity candidates and nearby cities', () => {
+  const recommendations = buildEmptySearchRecommendations({
+    keyword: '周',
+    activeCity: '北京',
+    activities: [
+      { title: '周杰伦上海站', venue: '上海' },
+      { title: '音乐节', venue: '北京' },
+    ],
+    cities: ['北京', '上海', '广州', '深圳'],
+  })
+
+  assert.deepEqual(recommendations.terms, ['周杰伦上海站'])
+  assert.deepEqual(recommendations.cities, ['上海', '广州', '深圳'])
 })

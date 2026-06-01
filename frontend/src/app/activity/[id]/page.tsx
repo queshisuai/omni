@@ -18,6 +18,7 @@ import { getAutoDowngradeDisplay, getGrabProgressDisplayMessage, getQueueRankTre
 import { canJoinWaitlistFromGrabStatus } from '@/lib/waitlist'
 import { formatAttendeeSummary, getAttendeeIdTypeLabel, normalizeChineseIdCard, removeAttendeeById, validateAttendeeSelection } from '@/lib/attendees'
 import { ACTIVITY_VIEW_SIGNAL_KEY, addActivityViewSignal, parseActivityViewSignals } from '@/lib/personalized-recommendations'
+import { getActivitySubscriptionActions, type ActivitySubscriptionActionType } from '@/lib/activity-actions'
 import type { ActivityDetailVO, ActivityQuestionVO, ActivityReviewListVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
 
 const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
@@ -189,9 +190,12 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         const firstVenue = data.sessions[0]?.venue?.city || ''
         const next = addActivityViewSignal(parseActivityViewSignals(localStorage.getItem(ACTIVITY_VIEW_SIGNAL_KEY)), {
           activityId: String(data.activity.id),
+          title: data.activity.name,
+          poster: data.activity.poster,
           category: data.category?.name || null,
           artist: artistSummaryFromDetail(data) || null,
           city: firstVenue || null,
+          viewedAt: new Date().toISOString(),
         })
         localStorage.setItem(ACTIVITY_VIEW_SIGNAL_KEY, JSON.stringify(next))
       }
@@ -803,7 +807,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  const handleSubscription = async (targetType: 'ACTIVITY_WANT' | 'SALE_REMINDER' | 'WAITLIST_REMINDER' | 'ARTIST_FOLLOW') => {
+  const handleSubscription = async (targetType: Exclude<ActivitySubscriptionActionType, 'CALENDAR'>) => {
     if (!isAuthenticated()) {
       router.push(`/login?ru=/activity/${id}`)
       return
@@ -825,9 +829,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         ? '已加入想看'
         : targetType === 'SALE_REMINDER'
           ? '开售提醒已开启'
-          : targetType === 'WAITLIST_REMINDER'
-            ? '候补提醒已开启'
-            : '艺人关注已开启'
+          : '艺人关注已开启'
       await globalAlert(message)
     } catch (err) {
       await globalAlert(err instanceof Error ? err.message : '操作失败')
@@ -939,6 +941,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const artistSummary = detail.artists?.length
     ? detail.artists.map(item => item.roleName ? `${item.name}（${item.roleName}）` : item.name).filter(Boolean).join('、')
     : artist?.name
+  const subscriptionActions = getActivitySubscriptionActions(activity)
 
   return (
     <>
@@ -973,52 +976,39 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             {activity.description && (
               <p className="text-[14px] text-[#999] leading-relaxed mt-4">{activity.description}</p>
             )}
-            <div className="mt-5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void handleSubscription('ACTIVITY_WANT')}
-                disabled={subscriptionLoading === 'ACTIVITY_WANT'}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#ff1268] bg-[#ff1268] px-4 text-[14px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Heart className="h-4 w-4" />
-                {subscriptionLoading === 'ACTIVITY_WANT' ? '添加中...' : '想看'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSubscription('SALE_REMINDER')}
-                disabled={subscriptionLoading === 'SALE_REMINDER'}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#ff1268] bg-white px-4 text-[14px] font-medium text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Bell className="h-4 w-4" />
-                {subscriptionLoading === 'SALE_REMINDER' ? '开启中...' : '开售提醒'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSubscription('WAITLIST_REMINDER')}
-                disabled={subscriptionLoading === 'WAITLIST_REMINDER'}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-4 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Bell className="h-4 w-4" />
-                {subscriptionLoading === 'WAITLIST_REMINDER' ? '开启中...' : '候补提醒'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSubscription('ARTIST_FOLLOW')}
-                disabled={subscriptionLoading === 'ARTIST_FOLLOW'}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-4 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <UserRound className="h-4 w-4" />
-                {subscriptionLoading === 'ARTIST_FOLLOW' ? '关注中...' : '关注艺人'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleCalendarDownload()}
-                disabled={subscriptionLoading === 'CALENDAR'}
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-4 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <CalendarDays className="h-4 w-4" />
-                {subscriptionLoading === 'CALENDAR' ? '生成中...' : '加入日历'}
-              </button>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              {subscriptionActions.map((action) => {
+                const Icon = action.type === 'ACTIVITY_WANT'
+                  ? Heart
+                  : action.type === 'SALE_REMINDER'
+                    ? Bell
+                    : action.type === 'ARTIST_FOLLOW'
+                      ? UserRound
+                      : CalendarDays
+                const isPrimary = action.tone === 'primary'
+                return (
+                  <button
+                    key={action.type}
+                    type="button"
+                    onClick={() => {
+                      if (action.type === 'CALENDAR') {
+                        void handleCalendarDownload()
+                      } else {
+                        void handleSubscription(action.type)
+                      }
+                    }}
+                    disabled={subscriptionLoading === action.type}
+                    className={`inline-flex h-10 min-w-[112px] items-center justify-center gap-2 rounded-lg border px-4 text-[14px] font-medium disabled:cursor-not-allowed disabled:opacity-60 ${
+                      isPrimary
+                        ? 'border-[#ff1268] bg-[#ff1268] text-white'
+                        : 'border-[#e5e5e5] bg-white text-[#666] hover:border-[#ff1268] hover:text-[#ff1268]'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {subscriptionLoading === action.type ? action.loadingLabel : action.label}
+                  </button>
+                )
+              })}
             </div>
             <div className="mt-4 rounded-lg bg-[#fafafa] px-4 py-3 text-[13px] text-[#666]">
               {selectedSession?.session.startTime ? `倒计时：${getCountdownText(selectedSession.session.startTime)}` : '倒计时：场次时间待定'}
@@ -1129,30 +1119,32 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-4 pt-4 border-t border-[#f0f0f0]">
-                        <span className="text-[14px] text-[#666]">数量</span>
-                        <div className="flex items-center border border-[#e5e5e5] rounded">
-                          <button
-                            onClick={() => { setQuantity(Math.max(1, quantity - 1)); setSelectedSeatIds(ids => ids.slice(0, Math.max(1, quantity - 1))); resetGrabIdempotencyKey() }}
-                            className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
-                          >
-                            -
-                          </button>
-                          <span className="w-12 text-center text-[14px] text-[#111]">{quantity}</span>
-                          <button
-                            onClick={() => { setQuantity(Math.min(purchaseQuantityMax, quantity + 1)); resetGrabIdempotencyKey() }}
-                            className="w-8 h-8 flex items-center justify-center cursor-pointer border-none bg-[#f5f5f5] text-[#333] text-lg outline-none"
-                          >
-                            +
-                          </button>
+                      <div className="flex flex-col gap-4 border-t border-[#f0f0f0] pt-4 sm:flex-row sm:items-center">
+                        <div className="flex items-center gap-3">
+                          <span className="text-[14px] text-[#666]">数量</span>
+                          <div className="flex items-center rounded border border-[#e5e5e5]">
+                            <button
+                              onClick={() => { setQuantity(Math.max(1, quantity - 1)); setSelectedSeatIds(ids => ids.slice(0, Math.max(1, quantity - 1))); resetGrabIdempotencyKey() }}
+                              className="flex h-9 w-9 cursor-pointer items-center justify-center border-none bg-[#f5f5f5] text-lg text-[#333] outline-none"
+                            >
+                              -
+                            </button>
+                            <span className="w-12 text-center text-[14px] text-[#111]">{quantity}</span>
+                            <button
+                              onClick={() => { setQuantity(Math.min(purchaseQuantityMax, quantity + 1)); resetGrabIdempotencyKey() }}
+                              className="flex h-9 w-9 cursor-pointer items-center justify-center border-none bg-[#f5f5f5] text-lg text-[#333] outline-none"
+                            >
+                              +
+                            </button>
+                          </div>
                         </div>
-                        <div className="text-[14px] text-[#666] ml-4">
+                        <div className="text-[14px] text-[#666] sm:ml-2">
                           合计：<span className="text-[24px] text-[#ff1268] font-medium">¥{(selectedTicket.price * quantity).toFixed(2)}</span>
                         </div>
                         <button
                           onClick={handleBuy}
                           disabled={Boolean(showsSeatCraftSelection) && validSelectedSeatIds.length !== quantity}
-                          className="ml-auto cursor-pointer border-none outline-none text-white text-[16px] font-medium px-10 py-3 rounded disabled:cursor-not-allowed disabled:opacity-50"
+                          className="h-11 w-full cursor-pointer rounded border-none px-10 text-[16px] font-medium text-white outline-none disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto sm:w-auto"
                           style={{ backgroundColor: '#ff1268' }}
                         >
                           立即购买
@@ -1169,14 +1161,14 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                             可先加入候补，释放名额后系统会按顺序生成待支付订单并通知你限时付款。
                           </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-4">
-                          <div className="flex items-center gap-2">
+                        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+                          <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start">
                             <span className="text-[14px] text-[#666]">数量</span>
                             <div className="flex items-center rounded border border-[#e5e5e5] bg-white">
                               <button
                                 type="button"
                                 onClick={() => { setQuantity(Math.max(1, quantity - 1)); setSelectedAttendeeIds(ids => ids.slice(0, Math.max(1, quantity - 1))); resetGrabIdempotencyKey() }}
-                                className="flex h-8 w-8 cursor-pointer items-center justify-center border-none bg-[#f5f5f5] text-lg text-[#333] outline-none"
+                                className="flex h-9 w-9 cursor-pointer items-center justify-center border-none bg-[#f5f5f5] text-lg text-[#333] outline-none"
                               >
                                 -
                               </button>
@@ -1184,7 +1176,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                               <button
                                 type="button"
                                 onClick={() => { setQuantity(Math.min(waitlistQuantityMax, quantity + 1)); resetGrabIdempotencyKey() }}
-                                className="flex h-8 w-8 cursor-pointer items-center justify-center border-none bg-[#f5f5f5] text-lg text-[#333] outline-none"
+                                className="flex h-9 w-9 cursor-pointer items-center justify-center border-none bg-[#f5f5f5] text-lg text-[#333] outline-none"
                               >
                                 +
                               </button>
@@ -1194,7 +1186,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                             type="button"
                             onClick={handleWaitlistEntry}
                             disabled={waitlistSubmitting}
-                            className="cursor-pointer rounded border-none bg-[#ff1268] px-8 py-3 text-[15px] font-medium text-white outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                            className="h-10 w-full cursor-pointer rounded border-none bg-[#ff1268] px-8 text-[15px] font-medium text-white outline-none disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                           >
                             加入候补
                           </button>

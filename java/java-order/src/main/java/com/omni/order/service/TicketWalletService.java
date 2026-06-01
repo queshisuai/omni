@@ -129,6 +129,27 @@ public class TicketWalletService {
         return tickets;
     }
 
+    public int invalidateUnusedTicketsForOrder(Long orderId, String reason) {
+        if (orderId == null) {
+            return 0;
+        }
+        return electronicTicketMapper.invalidateUnusedByOrderId(orderId, reason);
+    }
+
+    public int invalidateUnusedTicketsByOrderSeats(Long orderId, List<Long> orderSeatIds, String reason) {
+        if (orderId == null || orderSeatIds == null || orderSeatIds.isEmpty()) {
+            return 0;
+        }
+        return electronicTicketMapper.invalidateUnusedByOrderSeatIds(orderId, orderSeatIds, reason);
+    }
+
+    public int invalidateUnusedTicketsByQuantity(Long orderId, int quantity, String reason) {
+        if (orderId == null || quantity <= 0) {
+            return 0;
+        }
+        return electronicTicketMapper.invalidateFirstUnusedByOrderId(orderId, quantity, reason);
+    }
+
     public TicketEntryCodeResponse createEntryCode(Long userId, Long ticketId) {
         if (userId == null || ticketId == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "电子票信息无效");

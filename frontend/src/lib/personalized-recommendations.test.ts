@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addActivityViewSignal, buildPersonalizedActivities } from './personalized-recommendations.ts'
+import { addActivityViewSignal, buildPersonalizedActivities, parseActivityViewSignals } from './personalized-recommendations.ts'
 
 test('stores latest activity view signal first without duplicates', () => {
   const next = addActivityViewSignal([{ activityId: '1', category: '演唱会', artist: 'A', city: '北京' }], {
@@ -12,6 +12,36 @@ test('stores latest activity view signal first without duplicates', () => {
 
   assert.equal(next.length, 1)
   assert.equal(next[0].activityId, '1')
+})
+
+test('keeps display fields for browser history', () => {
+  const viewedAt = '2026-06-01T09:40:00.000Z'
+  const next = addActivityViewSignal([], {
+    activityId: '9',
+    title: '夏日演唱会',
+    poster: '/poster.jpg',
+    category: '演唱会',
+    artist: 'A',
+    city: '上海',
+    viewedAt,
+  })
+
+  const parsed = parseActivityViewSignals(JSON.stringify(next))
+
+  assert.equal(parsed[0].activityId, '9')
+  assert.equal(parsed[0].title, '夏日演唱会')
+  assert.equal(parsed[0].poster, '/poster.jpg')
+  assert.equal(parsed[0].viewedAt, viewedAt)
+})
+
+test('fills view time when adding activity history', () => {
+  const before = Date.now()
+  const [item] = addActivityViewSignal([], { activityId: '10', title: '没有传时间的演出' })
+  const after = Date.now()
+
+  assert.ok(item.viewedAt)
+  const time = new Date(item.viewedAt || '').getTime()
+  assert.ok(time >= before && time <= after)
 })
 
 test('builds personalized activities by recent category artist and city', () => {

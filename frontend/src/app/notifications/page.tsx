@@ -6,19 +6,8 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { listMyNotifications } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationReadAt, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt } from '@/components/notification-state'
-import type { NotificationVO } from '@/types/api'
-
-const TYPE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  IN_APP: { label: '站内消息', color: '#ff1268', bg: '#fff0f5' },
-  SMS: { label: '短信', color: '#2563eb', bg: '#eff6ff' },
-  EMAIL: { label: '邮件', color: '#2563eb', bg: '#eff6ff' },
-}
-
-function getTypeMeta(notification: NotificationVO) {
-  const raw = (notification.type || 'IN_APP').toUpperCase()
-  return TYPE_LABEL[raw] || TYPE_LABEL.IN_APP
-}
+import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationAction, getNotificationReadAt, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt } from '@/components/notification-state'
+import type { NotificationVO, UserRole } from '@/types/api'
 
 function formatTime(value?: string | null): string {
   if (!value) return ''
@@ -34,6 +23,7 @@ export default function NotificationsPage() {
   const [error, setError] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<NotificationVO[]>([])
   const [userId, setUserId] = useState(0)
+  const [role, setRole] = useState<UserRole | null>(null)
   const [readAt, setReadAt] = useState(0)
   const [hiddenIds, setHiddenIds] = useState<number[]>([])
 
@@ -49,6 +39,7 @@ export default function NotificationsPage() {
     }
     const uid = Number(user.userId)
     setUserId(uid)
+    setRole(user.role || null)
     setReadAt(getNotificationReadAt(uid))
     setHiddenIds(getHiddenNotificationIds(uid))
     let cancelled = false
@@ -122,7 +113,8 @@ export default function NotificationsPage() {
 
         <div className="space-y-3">
           {visibleNotifications.map((item) => {
-            const meta = getTypeMeta(item)
+            const meta = getNotificationTypeMeta(item)
+            const action = getNotificationAction(item, role)
             const unread = isNotificationUnread(item, readAt)
             return (
               <div key={item.id} className="rounded border border-[#eee] bg-white px-4 py-4">
@@ -130,13 +122,13 @@ export default function NotificationsPage() {
                   <span className="rounded-full px-2 py-0.5 text-[12px]" style={{ color: meta.color, backgroundColor: meta.bg }}>{meta.label}</span>
                   {unread && <span className="rounded-full bg-[#ff1268] px-2 py-0.5 text-[11px] text-white">未读</span>}
                   <span className="text-[12px] text-[#999]">{formatTime(item.createTime)}</span>
-                  {item.orderId && (
+                  {action && (
                     <button
                       type="button"
-                      onClick={() => router.push('/orders')}
+                      onClick={() => router.push(action.href)}
                       className="ml-auto cursor-pointer border-none bg-transparent text-[12px] text-[#3b82f6] outline-none hover:underline"
                     >
-                      查看相关订单
+                      {action.buttonLabel}
                     </button>
                   )}
                 </div>

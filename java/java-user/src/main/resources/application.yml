@@ -42,3 +42,7 @@ omni:
         endpoint: ${OMNI_SUPPORT_AI_LOCAL_ENDPOINT:http://localhost:11434/api/chat}
         model: ${OMNI_SUPPORT_AI_LOCAL_MODEL:qwen2.5:7b}
         timeout-ms: ${OMNI_SUPPORT_AI_LOCAL_TIMEOUT_MS:8000}
+
+internal:
+  api:
+    token: ${INTERNAL_API_TOKEN:omni-local-internal-token}

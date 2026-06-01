@@ -5,27 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Bell } from 'lucide-react'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { listMyNotifications } from '@/lib/api'
-import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationReadAt, getNotificationTime, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt } from './notification-state'
-import type { NotificationVO } from '@/types/api'
-
-const TYPE_LABEL: Record<string, { label: string; color: string }> = {
-  IN_APP: { label: '站内消息', color: '#ff1268' },
-  CAST_CHANGE: { label: '阵容变更', color: '#b91c1c' },
-  RISK_SUSPENDED: { label: '风险停售', color: '#b91c1c' },
-  RISK_RESUMED: { label: '恢复售票', color: '#16a34a' },
-  SMS: { label: '短信', color: '#2563eb' },
-  EMAIL: { label: '邮件', color: '#2563eb' },
-}
-
-function detectType(notification: NotificationVO): string {
-  const raw = (notification.type || 'IN_APP').toUpperCase()
-  if (raw !== 'IN_APP') return raw
-  const content = notification.content || ''
-  if (content.includes('阵容变更') || content.includes('阵容调整')) return 'CAST_CHANGE'
-  if (content.includes('风险停售') || content.includes('暂停售票')) return 'RISK_SUSPENDED'
-  if (content.includes('恢复售票')) return 'RISK_RESUMED'
-  return 'IN_APP'
-}
+import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationAction, getNotificationReadAt, getNotificationTime, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt } from './notification-state'
+import type { NotificationVO, UserRole } from '@/types/api'
 
 function formatTime(value?: string | null): string {
   if (!value) return ''
@@ -44,6 +25,7 @@ export function NotificationBell() {
   const router = useRouter()
   const [loggedIn, setLoggedIn] = useState(false)
   const [userId, setUserId] = useState(0)
+  const [role, setRole] = useState<UserRole | null>(null)
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationVO[]>([])
   const [loading, setLoading] = useState(false)
@@ -60,10 +42,12 @@ export function NotificationBell() {
         const user = getUser()
         const uid = user?.userId || 0
         setUserId(uid)
+        setRole(user?.role || null)
         setReadAt(uid ? getNotificationReadAt(uid) : 0)
         setHiddenIds(uid ? getHiddenNotificationIds(uid) : [])
       } else {
         setUserId(0)
+        setRole(null)
         setItems([])
         setReadAt(0)
         setHiddenIds([])
@@ -139,10 +123,11 @@ export function NotificationBell() {
     router.push('/notifications')
   }
 
-  const handlePickItem = () => {
+  const handlePickItem = (item: NotificationVO) => {
+    const action = getNotificationAction(item, role)
     markAllRead()
     setOpen(false)
-    router.push('/notifications')
+    router.push(action?.href || '/notifications')
   }
 
   const previewItems = visibleItems.slice(0, 5)
@@ -207,13 +192,12 @@ export function NotificationBell() {
             <div className="bg-white">
               <ul className="max-h-[380px] overflow-y-auto custom-scrollbar">
                 {previewItems.map((item) => {
-                  const type = detectType(item)
-                  const meta = TYPE_LABEL[type] || TYPE_LABEL.IN_APP
+                  const meta = getNotificationTypeMeta(item)
                   const unread = getNotificationTime(item) > readAt
                   return (
                     <li key={item.id} className="border-b border-gray-50 last:border-b-0">
                       <button
-                        onClick={handlePickItem}
+                        onClick={() => handlePickItem(item)}
                         className="group block w-full px-5 py-4 text-left outline-none hover:bg-gray-50/80 transition-colors"
                       >
                         <div className="flex items-center gap-2 mb-2">

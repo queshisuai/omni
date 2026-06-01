@@ -41,11 +41,15 @@ class OrderPartialRefundServiceTest {
     @Mock
     private TicketSalesInternalClient ticketSalesInternalClient;
 
+    @Mock
+    private TicketWalletService ticketWalletService;
+
     private OrderService service;
 
     @BeforeEach
     void setUp() {
         service = new OrderService(orderMapper, orderSeatMapper, null, null, ticketSalesInternalClient);
+        service.setTicketWalletService(ticketWalletService);
     }
 
     @Test
@@ -68,6 +72,20 @@ class OrderPartialRefundServiceTest {
         verify(orderSeatMapper).updateRefundedStatusByOrderIdAndIds(10L, List.of(900L));
         verify(orderMapper, never()).updateById(any(Order.class));
         verify(ticketSalesInternalClient).refund(any(), anyString());
+        verify(ticketWalletService).invalidateUnusedTicketsByOrderSeats(10L, List.of(900L), "部分退款");
+    }
+
+    @Test
+    void markRefundedInvalidatesElectronicTicketsForOrder() {
+        Order order = paidOrder(10L, 1);
+        when(orderMapper.selectById(10L)).thenReturn(order);
+        when(orderSeatMapper.selectList(any())).thenReturn(List.of());
+        when(ticketSalesInternalClient.refund(any(), anyString())).thenReturn(Result.success());
+
+        Order result = service.markRefunded(10L);
+
+        assertEquals(OrderService.STATUS_REFUNDED, result.getStatus());
+        verify(ticketWalletService).invalidateUnusedTicketsForOrder(10L, "订单已退款");
     }
 
     @Test
@@ -161,6 +179,7 @@ class OrderPartialRefundServiceTest {
         assertEquals(1, response.getRefundedQuantity());
         assertEquals(1, response.getRefundableQuantity());
         verify(orderSeatMapper).insert(any(OrderSeat.class));
+        verify(ticketWalletService).invalidateUnusedTicketsByQuantity(10L, 1, "部分退款");
     }
 
     @Test

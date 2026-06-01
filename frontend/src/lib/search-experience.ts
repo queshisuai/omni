@@ -50,3 +50,35 @@ export function buildSearchSuggestions(input: {
   }
   return suggestions
 }
+
+export function buildEmptySearchRecommendations(input: {
+  keyword: string
+  activeCity: string
+  activities: Array<{ title?: string | null; venue?: string | null }>
+  cities: string[]
+  limit?: number
+}) {
+  const keyword = input.keyword.trim().toLowerCase()
+  const limit = input.limit || 6
+  const seenTerms = new Set<string>()
+  const terms: string[] = []
+
+  for (const activity of input.activities) {
+    const title = activity.title?.trim()
+    if (!title || seenTerms.has(title)) continue
+    if (!keyword || title.toLowerCase().includes(keyword)) {
+      seenTerms.add(title)
+      terms.push(title)
+    }
+    if (terms.length >= limit) break
+  }
+
+  const activeCity = input.activeCity.trim()
+  const cities = input.cities
+    .map(city => city.trim())
+    .filter(city => city && city !== '全部' && city !== activeCity)
+    .filter((city, index, all) => all.indexOf(city) === index)
+    .slice(0, 4)
+
+  return { terms, cities }
+}

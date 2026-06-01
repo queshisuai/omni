@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { formatDiscountRule, normalizeFunnelSteps, summarizeOpsMetric } from './marketing-tools.ts'
+import { buildDashboardBars, formatDiscountRule, normalizeFunnelSteps, summarizeOpsMetric } from './marketing-tools.ts'
 
 test('formats full reduction coupon rule in Chinese', () => {
   assert.equal(formatDiscountRule({
@@ -43,4 +43,14 @@ test('normalizes funnel steps with conversion rate from previous step', () => {
 test('summarizes operation metric rate', () => {
   assert.equal(summarizeOpsMetric({ numerator: 3, denominator: 12 }), '25.0%')
   assert.equal(summarizeOpsMetric({ numerator: 0, denominator: 0 }), '暂无数据')
+})
+
+test('normalizes dashboard bars against the largest value', () => {
+  const bars = buildDashboardBars([
+    { label: '票档售罄', value: 20 },
+    { label: '重复请求', value: 5 },
+  ])
+
+  assert.deepEqual(bars.map(item => item.widthPercent), [100, 25])
+  assert.equal(buildDashboardBars([{ label: '暂无', value: 0 }])[0].widthPercent, 0)
 })

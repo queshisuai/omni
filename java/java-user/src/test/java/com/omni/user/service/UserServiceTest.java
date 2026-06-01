@@ -51,6 +51,21 @@ class UserServiceTest {
     }
 
     @Test
+    void loginRejectsDeactivatedUserBeforeCheckingCredential() {
+        User user = existingUser();
+        user.setStatus(0);
+        when(userMapper.selectOne(any())).thenReturn(user);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> userService.login(smsLoginRequest("666666"))
+        );
+
+        assertEquals("账号已停用", exception.getMessage());
+        verifyNoInteractions(passwordEncoder);
+    }
+
+    @Test
     void resetPasswordRejectsWrongSmsCode() {
         BusinessException exception = assertThrows(
                 BusinessException.class,

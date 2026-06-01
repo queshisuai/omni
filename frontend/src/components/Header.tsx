@@ -310,6 +310,12 @@ export function Header() {
                     想看与提醒
                   </button>
                   <button
+                    onClick={() => { setShowUserDropdown(false); router.push("/history") }}
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
+                  >
+                    浏览记录
+                  </button>
+                  <button
                     onClick={() => { setShowUserDropdown(false); router.push("/orders") }}
                     className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                   >

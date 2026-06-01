@@ -1,9 +1,108 @@
-import type { NotificationVO } from '@/types/api'
+import type { NotificationVO, UserRole } from '@/types/api'
 
 export const NOTIFICATION_READ_STORAGE_KEY = 'damai-notifications-read-at'
 export const NOTIFICATION_HIDDEN_STORAGE_KEY = 'damai-notifications-hidden-ids'
 
 type HiddenMap = Record<string, number[]>
+
+export interface NotificationTypeMeta {
+  key: string
+  label: string
+  color: string
+  bg: string
+}
+
+export interface NotificationAction {
+  href: string
+  buttonLabel: string
+}
+
+const TYPE_META: Record<string, NotificationTypeMeta> = {
+  IN_APP: { key: 'IN_APP', label: '站内消息', color: '#ff1268', bg: '#fff0f5' },
+  CAST_CHANGE: { key: 'CAST_CHANGE', label: '阵容变更', color: '#b91c1c', bg: '#fef2f2' },
+  RISK_SUSPENDED: { key: 'RISK_SUSPENDED', label: '风险停售', color: '#b91c1c', bg: '#fef2f2' },
+  RISK_RESUMED: { key: 'RISK_RESUMED', label: '恢复售票', color: '#16a34a', bg: '#f0fdf4' },
+  SMS: { key: 'SMS', label: '短信', color: '#2563eb', bg: '#eff6ff' },
+  EMAIL: { key: 'EMAIL', label: '邮件', color: '#2563eb', bg: '#eff6ff' },
+  WAITLIST_OFFERED: { key: 'WAITLIST_OFFERED', label: '候补通知', color: '#ff1268', bg: '#fff0f5' },
+  WAITLIST_EXPIRED: { key: 'WAITLIST_EXPIRED', label: '候补通知', color: '#ff1268', bg: '#fff0f5' },
+  WAITLIST_PAID: { key: 'WAITLIST_PAID', label: '候补通知', color: '#ff1268', bg: '#fff0f5' },
+  TEAM_LOCKED: { key: 'TEAM_LOCKED', label: '小队通知', color: '#7c3aed', bg: '#f5f3ff' },
+  TEAM_PAID: { key: 'TEAM_PAID', label: '小队通知', color: '#16a34a', bg: '#f0fdf4' },
+  TEAM_FAILED: { key: 'TEAM_FAILED', label: '小队通知', color: '#b91c1c', bg: '#fef2f2' },
+  TEAM_EXPIRED: { key: 'TEAM_EXPIRED', label: '小队通知', color: '#b45309', bg: '#fffbeb' },
+  SUPPORT_REPLY: { key: 'SUPPORT_REPLY', label: '客服消息', color: '#2563eb', bg: '#eff6ff' },
+  SUPPORT_ASSIGNED: { key: 'SUPPORT_ASSIGNED', label: '客服消息', color: '#2563eb', bg: '#eff6ff' },
+  SUPPORT_CLOSED: { key: 'SUPPORT_CLOSED', label: '客服消息', color: '#64748b', bg: '#f8fafc' },
+  TODO: { key: 'TODO', label: '待办消息', color: '#b45309', bg: '#fffbeb' },
+}
+
+function detectNotificationType(notification: NotificationVO): string {
+  const raw = (notification.type || 'IN_APP').toUpperCase()
+  if (raw !== 'IN_APP') return raw
+  const content = notification.content || ''
+  if (content.includes('阵容变更') || content.includes('阵容调整')) return 'CAST_CHANGE'
+  if (content.includes('风险停售') || content.includes('暂停售票')) return 'RISK_SUSPENDED'
+  if (content.includes('恢复售票')) return 'RISK_RESUMED'
+  return 'IN_APP'
+}
+
+export function getNotificationTypeMeta(notification: NotificationVO): NotificationTypeMeta {
+  const key = detectNotificationType(notification)
+  return TYPE_META[key] || TYPE_META.IN_APP
+}
+
+function orderHref(notification: NotificationVO) {
+  return notification.orderId ? `/orders/${notification.orderId}` : '/orders'
+}
+
+export function getNotificationAction(
+  notification: NotificationVO,
+  role?: UserRole | string | null,
+): NotificationAction | null {
+  const key = getNotificationTypeMeta(notification).key
+
+  if (key.startsWith('WAITLIST_')) {
+    if (notification.orderId) {
+      return {
+        href: `/orders/${notification.orderId}`,
+        buttonLabel: key === 'WAITLIST_OFFERED' ? '处理候补订单' : '查看候补订单',
+      }
+    }
+    return { href: '/waitlist', buttonLabel: '查看候补' }
+  }
+
+  if (key.startsWith('TEAM_')) {
+    return {
+      href: orderHref(notification),
+      buttonLabel: notification.orderId ? '查看小队订单' : '查看订单',
+    }
+  }
+
+  if (key.startsWith('SUPPORT_')) {
+    return {
+      href: role === 'admin' ? '/console/support-conversations' : '/support',
+      buttonLabel: '查看客服会话',
+    }
+  }
+
+  if (key === 'TODO' || key.startsWith('RISK_')) {
+    return {
+      href: role === 'admin' ? '/console/risk-resolutions' : role === 'organizer' ? '/console/risk-events' : '/notifications',
+      buttonLabel: key === 'TODO' ? '查看待办' : '查看处理',
+    }
+  }
+
+  if (key === 'CAST_CHANGE') {
+    return { href: orderHref(notification), buttonLabel: '查看相关订单' }
+  }
+
+  if (notification.orderId) {
+    return { href: `/orders/${notification.orderId}`, buttonLabel: '查看相关订单' }
+  }
+
+  return null
+}
 
 function readJsonMap<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback

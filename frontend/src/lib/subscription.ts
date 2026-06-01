@@ -10,7 +10,7 @@ export type SubscriptionTargetType =
 const TARGET_TYPE_LABELS: Record<string, string> = {
   ACTIVITY_WANT: '想看',
   SALE_REMINDER: '开售提醒',
-  WAITLIST_REMINDER: '候补提醒',
+  WAITLIST_REMINDER: '候补通知',
   TOUR_CITY_REMINDER: '巡演城市提醒',
   ARTIST_FOLLOW: '艺人关注',
   CITY_FOLLOW: '城市关注',

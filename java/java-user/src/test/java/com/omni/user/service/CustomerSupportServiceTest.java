@@ -2,6 +2,7 @@ package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.omni.exception.BusinessException;
+import com.omni.user.client.NotificationInternalClient;
 import com.omni.user.dto.SupportConversationRequest;
 import com.omni.user.dto.SupportConversationResponse;
 import com.omni.user.dto.SupportMessageRequest;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
@@ -38,11 +40,14 @@ class CustomerSupportServiceTest {
     private final SupportConversationMapper conversationMapper = mock(SupportConversationMapper.class);
     private final SupportMessageMapper messageMapper = mock(SupportMessageMapper.class);
     private final UserMapper userMapper = mock(UserMapper.class);
+    private final NotificationInternalClient notificationClient = mock(NotificationInternalClient.class);
     private final CustomerSupportService service = new CustomerSupportService(
             conversationMapper,
             messageMapper,
             userMapper,
-            new SupportAiService((question, projectKnowledge) -> java.util.Optional.empty())
+            new SupportAiService((question, projectKnowledge) -> java.util.Optional.empty()),
+            notificationClient,
+            "internal-token"
         );
 
     @Test
@@ -102,6 +107,28 @@ class CustomerSupportServiceTest {
     }
 
     @Test
+    void supportAgentReplyCreatesUserNotification() {
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("WAITING_AGENT");
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+
+        SupportMessageRequest message = new SupportMessageRequest();
+        message.setContent("您好，票夹入口已经为您处理完成。");
+
+        service.sendMessage(30L, 99L, message);
+
+        verify(notificationClient).createMessage(org.mockito.ArgumentMatchers.argThat(request ->
+                Long.valueOf(10L).equals(request.getUserId())
+                        && request.getOrderId() == null
+                        && "SUPPORT_REPLY".equals(request.getType())
+                        && request.getContent().contains("客服回复")
+        ), eq("internal-token"));
+    }
+
+    @Test
     void listsWaitingConversationsForSupportAgent() {
         when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
         SupportConversation conversation = new SupportConversation();
@@ -114,6 +141,25 @@ class CustomerSupportServiceTest {
 
         assertEquals(1, response.size());
         assertEquals("WAITING_AGENT", response.get(0).getStatus());
+    }
+
+    @Test
+    void adminConversationListIncludesUserDisplayInfo() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "admin"));
+        User customer = user(10L, "user");
+        customer.setNickname("小王");
+        customer.setPhone("13812348000");
+        when(userMapper.selectById(10L)).thenReturn(customer);
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("WAITING_AGENT");
+        when(conversationMapper.selectList(any())).thenReturn(List.of(conversation));
+
+        List<SupportConversationResponse> response = service.listAgentConversations(30L, "WAITING_AGENT");
+
+        assertEquals("小王", response.get(0).getUserNickname());
+        assertEquals("138****8000", response.get(0).getUserPhoneMask());
     }
 
     private User user(Long id, String role) {

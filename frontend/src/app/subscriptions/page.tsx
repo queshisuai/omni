@@ -125,7 +125,7 @@ export default function SubscriptionsPage() {
         <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
             <h1 className="text-[24px] font-medium text-[#111]">想看与提醒</h1>
-            <p className="mt-2 text-[13px] text-[#666]">管理演出想看、开售提醒、候补提醒、艺人和城市关注。</p>
+            <p className="mt-2 text-[13px] text-[#666]">管理演出想看、开售提醒、艺人和城市关注；候补释放和支付提醒在消息通知中查看。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
