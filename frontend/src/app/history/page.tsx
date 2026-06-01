@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Clock3, MapPin, Trash2, UserRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
+import { clearUserBrowseHistory, listUserBrowseHistory } from '@/lib/api'
+import { getToken } from '@/lib/auth'
 import { ACTIVITY_VIEW_SIGNAL_KEY, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
 
 function formatTime(value?: string | null) {
@@ -18,9 +20,29 @@ function formatTime(value?: string | null) {
 export default function HistoryPage() {
   const router = useRouter()
   const [items, setItems] = useState<ActivityViewSignal[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setItems(parseActivityViewSignals(localStorage.getItem(ACTIVITY_VIEW_SIGNAL_KEY)))
+    const localItems = parseActivityViewSignals(localStorage.getItem(ACTIVITY_VIEW_SIGNAL_KEY))
+    setItems(localItems)
+    if (!getToken()) {
+      setLoading(false)
+      return
+    }
+    listUserBrowseHistory()
+      .then(data => {
+        setItems(data.map(item => ({
+          activityId: String(item.activityId),
+          title: item.activityName,
+          poster: item.poster,
+          category: item.category,
+          artist: item.artist,
+          city: item.city,
+          viewedAt: item.viewedAt || item.updateTime || item.createTime,
+        })))
+      })
+      .catch(() => setItems(localItems))
+      .finally(() => setLoading(false))
   }, [])
 
   const visibleItems = useMemo(() => items.filter(item => item.activityId), [items])
@@ -28,6 +50,9 @@ export default function HistoryPage() {
   const clearHistory = () => {
     localStorage.removeItem(ACTIVITY_VIEW_SIGNAL_KEY)
     setItems([])
+    if (getToken()) {
+      void clearUserBrowseHistory().catch(() => undefined)
+    }
   }
 
   return (
@@ -50,7 +75,9 @@ export default function HistoryPage() {
           </button>
         </div>
 
-        {visibleItems.length === 0 ? (
+        {loading ? (
+          <div className="rounded-lg border border-[#eee] bg-white px-6 py-12 text-center text-[14px] text-[#999]">正在加载浏览记录...</div>
+        ) : visibleItems.length === 0 ? (
           <div className="rounded-lg border border-[#eee] bg-white px-6 py-12 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#f5f5f5]">
               <Clock3 className="h-5 w-5 text-[#999]" />

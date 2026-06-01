@@ -20,12 +20,15 @@ import com.omni.user.dto.UpdateProfileRequest;
 import com.omni.user.dto.UserAttendeeExportResponse;
 import com.omni.user.dto.UserAttendeeRequest;
 import com.omni.user.dto.UserAttendeeResponse;
+import com.omni.user.dto.UserBrowseHistoryRequest;
+import com.omni.user.dto.UserBrowseHistoryResponse;
 import com.omni.user.dto.UserInfoResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.omni.user.service.OrganizerApplicationService;
 import com.omni.user.service.UserAttendeeService;
 import com.omni.user.service.UserAssetService;
+import com.omni.user.service.UserBrowseHistoryService;
 import com.omni.user.service.UserService;
 import io.jsonwebtoken.Claims;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
@@ -51,16 +54,17 @@ public class UserController {
     private final OrganizerApplicationService organizerApplicationService;
     private final UserAssetService userAssetService;
     private final UserAttendeeService userAttendeeService;
+    private final UserBrowseHistoryService userBrowseHistoryService;
     private final String internalApiToken;
 
     public UserController(UserService userService, OrganizerApplicationService organizerApplicationService) {
-        this(userService, organizerApplicationService, null, null, "");
+        this(userService, organizerApplicationService, null, null, null, "");
     }
 
     public UserController(UserService userService,
                           OrganizerApplicationService organizerApplicationService,
                           String internalApiToken) {
-        this(userService, organizerApplicationService, null, null, internalApiToken);
+        this(userService, organizerApplicationService, null, null, null, internalApiToken);
     }
 
     @Autowired
@@ -68,11 +72,13 @@ public class UserController {
                           OrganizerApplicationService organizerApplicationService,
                           UserAssetService userAssetService,
                           UserAttendeeService userAttendeeService,
+                          UserBrowseHistoryService userBrowseHistoryService,
                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.userService = userService;
         this.organizerApplicationService = organizerApplicationService;
         this.userAssetService = userAssetService;
         this.userAttendeeService = userAttendeeService;
+        this.userBrowseHistoryService = userBrowseHistoryService;
         this.internalApiToken = internalApiToken;
     }
 
@@ -80,7 +86,15 @@ public class UserController {
                           OrganizerApplicationService organizerApplicationService,
                           UserAssetService userAssetService,
                           String internalApiToken) {
-        this(userService, organizerApplicationService, userAssetService, null, internalApiToken);
+        this(userService, organizerApplicationService, userAssetService, null, null, internalApiToken);
+    }
+
+    public UserController(UserService userService,
+                          OrganizerApplicationService organizerApplicationService,
+                          UserAssetService userAssetService,
+                          UserAttendeeService userAttendeeService,
+                          String internalApiToken) {
+        this(userService, organizerApplicationService, userAssetService, userAttendeeService, null, internalApiToken);
     }
 
     /**
@@ -180,6 +194,29 @@ public class UserController {
             @PathVariable Long id) {
         Long userId = requireAuthUserId(authorization);
         requireUserAttendeeService().delete(userId, id);
+        return Result.success();
+    }
+
+    @PostMapping("/browse-history")
+    public Result<UserBrowseHistoryResponse> recordBrowseHistory(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody UserBrowseHistoryRequest request) {
+        Long userId = requireAuthUserId(authorization);
+        return Result.success(requireUserBrowseHistoryService().record(userId, request));
+    }
+
+    @GetMapping("/browse-history")
+    public Result<List<UserBrowseHistoryResponse>> listBrowseHistory(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthUserId(authorization);
+        return Result.success(requireUserBrowseHistoryService().listMine(userId));
+    }
+
+    @DeleteMapping("/browse-history")
+    public Result<Void> clearBrowseHistory(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthUserId(authorization);
+        requireUserBrowseHistoryService().clearMine(userId);
         return Result.success();
     }
 
@@ -320,5 +357,12 @@ public class UserController {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "实名观演人服务未配置");
         }
         return userAttendeeService;
+    }
+
+    private UserBrowseHistoryService requireUserBrowseHistoryService() {
+        if (userBrowseHistoryService == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "浏览历史服务未配置");
+        }
+        return userBrowseHistoryService;
     }
 }

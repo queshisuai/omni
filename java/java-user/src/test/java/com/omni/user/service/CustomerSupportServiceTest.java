@@ -144,6 +144,26 @@ class CustomerSupportServiceTest {
     }
 
     @Test
+    void supportAgentDefaultQueueExcludesAiOnlyOpenConversations() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        SupportConversation aiOnly = new SupportConversation();
+        aiOnly.setId(98L);
+        aiOnly.setUserId(10L);
+        aiOnly.setStatus("OPEN");
+        SupportConversation waiting = new SupportConversation();
+        waiting.setId(99L);
+        waiting.setUserId(10L);
+        waiting.setStatus("WAITING_AGENT");
+        when(conversationMapper.selectList(any())).thenReturn(List.of(aiOnly, waiting));
+
+        List<SupportConversationResponse> response = service.listAgentConversations(30L, null);
+
+        assertEquals(1, response.size());
+        assertEquals(99L, response.get(0).getId());
+        assertEquals("WAITING_AGENT", response.get(0).getStatus());
+    }
+
+    @Test
     void adminConversationListIncludesUserDisplayInfo() {
         when(userMapper.selectById(30L)).thenReturn(user(30L, "admin"));
         User customer = user(10L, "user");

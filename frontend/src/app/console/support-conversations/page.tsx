@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Headphones, MessageSquareText, RefreshCcw, UserRound } from 'lucide-react'
 import { listAgentSupportConversations, listSupportMessages } from '@/lib/api'
-import { filterSupportConversations, formatSupportConversationStatus, formatSupportSender, type SupportConversationFilter } from '@/lib/support-tools'
+import { filterSupportConversations, formatSupportConversationStatus, formatSupportSender, shouldPollSupportConversation, type SupportConversationFilter } from '@/lib/support-tools'
 import type { SupportConversationVO, SupportMessageVO } from '@/types/api'
 
 function formatTime(value?: string | null) {
@@ -48,8 +48,8 @@ export default function ConsoleSupportConversationsPage() {
     { value: 'all', label: '全部', count: conversations.length },
   ]
 
-  const loadConversations = async () => {
-    setLoading(true)
+  const loadConversations = async (showLoading = true) => {
+    if (showLoading) setLoading(true)
     setError('')
     try {
       const [activeItems, closedItems] = await Promise.all([
@@ -62,13 +62,25 @@ export default function ConsoleSupportConversationsPage() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '加载客服会话失败')
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }
 
   useEffect(() => {
     void loadConversations()
   }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadConversations(false)
+      if (active && shouldPollSupportConversation(active.status)) {
+        listSupportMessages(active.id)
+          .then(data => setMessages(data || []))
+          .catch(() => undefined)
+      }
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [active?.id, active?.status])
 
   useEffect(() => {
     if (visibleConversations.length === 0) {
@@ -97,7 +109,7 @@ export default function ConsoleSupportConversationsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-[22px] font-bold text-[#1a1a2e]">客服会话记录</h1>
-          <p className="mt-1 text-[13px] text-[#999]">按用户查看 AI 客服和人工客服的完整对话记录。</p>
+          <p className="mt-1 text-[13px] text-[#999]">按用户会话查看完整对话记录，包含用户、AI 客服、人工客服和系统消息。</p>
         </div>
         <button
           type="button"

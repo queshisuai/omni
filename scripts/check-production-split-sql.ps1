@@ -108,6 +108,7 @@ $schemaColumns = @{
     "user_attendee" = New-ColumnSet @("id", "user_id", "real_name", "id_type", "id_no_hash", "id_no_mask", "id_no_encrypted", "phone", "is_default", "status", "create_time", "update_time")
     "user_asset" = New-ColumnSet @("id", "uploader_id")
     "user_auth" = New-ColumnSet @("id", "user_id")
+    "user_browse_history" = New-ColumnSet @("id", "user_id", "activity_id", "activity_name", "poster", "category", "artist", "city", "viewed_at", "create_time", "update_time")
     "venue" = New-ColumnSet @("id")
     "venue_application" = New-ColumnSet @("id", "venue_id", "proof_asset_id")
     "venue_area" = New-ColumnSet @("id", "venue_id")

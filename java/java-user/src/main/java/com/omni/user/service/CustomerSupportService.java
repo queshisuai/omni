@@ -107,6 +107,9 @@ public class CustomerSupportService {
             wrapper.eq(SupportConversation::getStatus, normalizedStatus);
         } else {
             wrapper.ne(SupportConversation::getStatus, STATUS_CLOSED);
+            if (ROLE_SUPPORT.equals(agent.getRole())) {
+                wrapper.in(SupportConversation::getStatus, STATUS_WAITING_AGENT, STATUS_ASSIGNED);
+            }
         }
         if (ROLE_SUPPORT.equals(agent.getRole())) {
             wrapper.and(w -> w.isNull(SupportConversation::getAssignedAgentId)
@@ -114,6 +117,10 @@ public class CustomerSupportService {
                     .eq(SupportConversation::getAssignedAgentId, agentUserId));
         }
         return conversationMapper.selectList(wrapper).stream()
+                .filter(conversation -> !ROLE_SUPPORT.equals(agent.getRole())
+                        || normalizedStatus != null
+                        || STATUS_WAITING_AGENT.equals(conversation.getStatus())
+                        || STATUS_ASSIGNED.equals(conversation.getStatus()))
                 .map(this::toConversationResponse)
                 .collect(Collectors.toList());
     }

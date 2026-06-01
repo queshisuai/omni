@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSupportSubject, filterSupportConversations, formatSupportConversationStatus, getLoginRedirectForRole } from './support-tools.ts'
+import { buildSupportSubject, filterSupportConversations, formatSupportConversationStatus, getLoginRedirectForRole, getSupportConversationRecordsHref, shouldPollSupportConversation } from './support-tools.ts'
 
 test('routes support role to support workbench after login', () => {
   assert.equal(getLoginRedirectForRole('support'), '/support')
@@ -31,4 +31,16 @@ test('filters support conversations by workbench tab', () => {
   assert.deepEqual(filterSupportConversations(conversations, 'active').map(item => item.id), [1, 2])
   assert.deepEqual(filterSupportConversations(conversations, 'closed').map(item => item.id), [3])
   assert.deepEqual(filterSupportConversations(conversations, 'all').map(item => item.id), [1, 2, 3])
+})
+
+test('polls active support conversations so manual refresh is not required', () => {
+  assert.equal(shouldPollSupportConversation('OPEN'), true)
+  assert.equal(shouldPollSupportConversation('WAITING_AGENT'), true)
+  assert.equal(shouldPollSupportConversation('ASSIGNED'), true)
+  assert.equal(shouldPollSupportConversation('CLOSED'), false)
+  assert.equal(shouldPollSupportConversation(null), false)
+})
+
+test('links admin support management to user conversation records instead of agent filtered records', () => {
+  assert.equal(getSupportConversationRecordsHref(), '/console/support-conversations')
 })

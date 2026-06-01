@@ -8,7 +8,7 @@ import { Footer } from '@/components/Footer'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
-import { cancelGrabRequest, createActivityQuestion, createActivityReview, createAlipayQrPay, createSubscription, createSubscriptionCalendar, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listActivityQuestions, listActivityReviews, listUserAttendees, submitGrabRequest } from '@/lib/api'
+import { cancelGrabRequest, createActivityQuestion, createActivityReview, createAlipayQrPay, createSubscription, createSubscriptionCalendar, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listActivityQuestions, listActivityReviews, listUserAttendees, recordUserBrowseHistory, submitGrabRequest } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, canShowWaitlistEntry, getPurchaseConfirmCopy, getPurchaseQuantityMax, getWaitlistQuantityMax, shouldResetGrabIdempotencyForStatus, type PurchaseConfirmMode } from '@/lib/purchase-intent'
 import { getCountdownText } from '@/lib/subscription'
@@ -198,6 +198,16 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           viewedAt: new Date().toISOString(),
         })
         localStorage.setItem(ACTIVITY_VIEW_SIGNAL_KEY, JSON.stringify(next))
+        if (isAuthenticated()) {
+          void recordUserBrowseHistory({
+            activityId: data.activity.id,
+            activityName: data.activity.name,
+            poster: data.activity.poster,
+            category: data.category?.name || null,
+            artist: artistSummaryFromDetail(data) || null,
+            city: firstVenue || null,
+          }).catch(() => undefined)
+        }
       }
       if (data.sessions.length > 0) {
         setSelectedSession(data.sessions[0])

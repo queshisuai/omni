@@ -8,12 +8,13 @@ import { Footer } from '@/components/Footer'
 import {
   handoffSupportConversation,
   listHelpFaqs,
+  listMySupportConversations,
   listSupportMessages,
   sendSupportMessage,
   startSupportConversation,
 } from '@/lib/api'
 import { getToken } from '@/lib/auth'
-import { buildSupportSubject, formatSupportSender } from '@/lib/support-tools'
+import { buildSupportSubject, formatSupportConversationStatus, formatSupportSender, shouldPollSupportConversation } from '@/lib/support-tools'
 import type { HelpFaqVO, SupportConversationVO, SupportMessageVO } from '@/types/api'
 
 export default function HelpPage() {
@@ -26,10 +27,14 @@ export default function HelpPage() {
   const [loggedIn, setLoggedIn] = useState(false)
 
   useEffect(() => {
-    setLoggedIn(Boolean(getToken()))
+    const hasToken = Boolean(getToken())
+    setLoggedIn(hasToken)
     listHelpFaqs()
       .then(setFaqs)
       .catch(() => setFaqs([]))
+    if (hasToken) {
+      loadMyConversation().catch(() => undefined)
+    }
   }, [])
 
   const groupedFaqs = useMemo(() => {
@@ -44,6 +49,44 @@ export default function HelpPage() {
     const data = await listSupportMessages(id)
     setMessages(data)
   }
+
+  const pickDefaultConversation = (items: SupportConversationVO[]) => {
+    return items.find(item => item.status !== 'CLOSED') || items[0] || null
+  }
+
+  const loadMyConversation = async (preferredId?: number | null) => {
+    const conversations = await listMySupportConversations()
+    const next = preferredId
+      ? conversations.find(item => item.id === preferredId) || pickDefaultConversation(conversations)
+      : pickDefaultConversation(conversations)
+    setConversation(next)
+    if (next) {
+      await refreshMessages(next.id)
+    } else {
+      setMessages([])
+    }
+    return next
+  }
+
+  useEffect(() => {
+    if (!conversation || !shouldPollSupportConversation(conversation.status)) return
+
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const next = await loadMyConversation(conversation.id)
+        if (cancelled || !next) return
+      } catch {
+        // 轮询失败时保留当前会话，下一轮继续尝试。
+      }
+    }
+
+    const timer = window.setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [conversation?.id, conversation?.status])
 
   const send = async () => {
     const content = text.trim()
@@ -75,11 +118,22 @@ export default function HelpPage() {
   }
 
   const handoff = async () => {
-    if (!conversation || loading) return
+    if (loading) return
     setLoading(true)
     setMessage('')
     try {
-      const updated = await handoffSupportConversation(conversation.id)
+      let updated: SupportConversationVO
+      if (!conversation) {
+        const initialMessage = text.trim() || '用户申请人工客服'
+        updated = await startSupportConversation({
+          subject: buildSupportSubject(initialMessage),
+          initialMessage,
+          preferHuman: true,
+        })
+        setText('')
+      } else {
+        updated = await handoffSupportConversation(conversation.id)
+      }
       setConversation(updated)
       await refreshMessages(updated.id)
     } catch (err: unknown) {
@@ -122,7 +176,9 @@ export default function HelpPage() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-[18px] font-bold text-[#111]">在线客服</h2>
-              <p className="mt-1 text-[12px] text-gray-500">AI 优先回答，可随时转人工</p>
+              <p className="mt-1 text-[12px] text-gray-500">
+                {conversation ? formatSupportConversationStatus(conversation.status) : 'AI 优先回答，可随时转人工'}
+              </p>
             </div>
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fff0f5] text-[#ff1268]">
               <Headphones className="h-5 w-5" />
@@ -185,10 +241,10 @@ export default function HelpPage() {
               <button
                 type="button"
                 onClick={handoff}
-                disabled={!conversation || loading || conversation.status === 'WAITING_AGENT' || conversation.status === 'ASSIGNED'}
+                disabled={loading || conversation?.status === 'WAITING_AGENT' || conversation?.status === 'ASSIGNED' || conversation?.status === 'CLOSED'}
                 className="mt-3 w-full rounded-xl border border-gray-200 py-2.5 text-[13px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                转人工客服
+                {conversation?.status === 'WAITING_AGENT' ? '等待人工客服接入' : conversation?.status === 'ASSIGNED' ? '人工客服处理中' : '转人工客服'}
               </button>
             </>
           )}

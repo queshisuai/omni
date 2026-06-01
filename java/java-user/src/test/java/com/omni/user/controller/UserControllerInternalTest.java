@@ -4,6 +4,7 @@ import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.service.OrganizerApplicationService;
 import com.omni.user.service.UserAssetService;
 import com.omni.user.service.UserAttendeeService;
+import com.omni.user.service.UserBrowseHistoryService;
 import com.omni.user.service.UserService;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -72,10 +73,11 @@ class UserControllerInternalTest {
                 OrganizerApplicationService.class,
                 UserAssetService.class,
                 UserAttendeeService.class,
+                UserBrowseHistoryService.class,
                 String.class
         ));
 
         Assertions.assertNotNull(constructor.getAnnotation(Autowired.class));
-        Assertions.assertNotNull(constructor.getParameters()[4].getAnnotation(Value.class));
+        Assertions.assertNotNull(constructor.getParameters()[5].getAnnotation(Value.class));
     }
 }

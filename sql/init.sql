@@ -92,6 +92,20 @@ CREATE TABLE support_message (
     CONSTRAINT chk_support_message_sender CHECK (sender_type IN ('USER', 'AI', 'AGENT', 'SYSTEM'))
 );
 
+CREATE TABLE user_browse_history (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES "user"(id),
+    activity_id BIGINT NOT NULL,
+    activity_name VARCHAR(200) NOT NULL,
+    poster VARCHAR(500),
+    category VARCHAR(80),
+    artist VARCHAR(200),
+    city VARCHAR(80),
+    viewed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 COMMENT ON TABLE organizer_application IS '商户入驻申请表';
 COMMENT ON COLUMN organizer_application.id IS '申请ID';
 COMMENT ON COLUMN organizer_application.user_id IS '申请用户ID';
@@ -930,6 +944,8 @@ CREATE INDEX idx_support_conversation_user_time ON support_conversation(user_id,
 CREATE INDEX idx_support_conversation_agent_status ON support_conversation(assigned_agent_id, status, update_time DESC);
 CREATE INDEX idx_support_conversation_status_time ON support_conversation(status, update_time DESC);
 CREATE INDEX idx_support_message_conversation_time ON support_message(conversation_id, id ASC);
+CREATE UNIQUE INDEX uk_user_browse_history_user_activity ON user_browse_history(user_id, activity_id);
+CREATE INDEX idx_user_browse_history_user_time ON user_browse_history(user_id, viewed_at DESC, id DESC);
 CREATE INDEX idx_order_user ON "order"(user_id);
 CREATE INDEX idx_order_no ON "order"(order_no);
 CREATE INDEX idx_order_status ON "order"(status);

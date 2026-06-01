@@ -27,6 +27,8 @@ import type {
   UserAttendeeExportVO,
   UserAttendeePayload,
   UserAttendeeVO,
+  UserBrowseHistoryPayload,
+  UserBrowseHistoryVO,
   UserInfo,
 } from '@/types/api'
 
@@ -233,6 +235,21 @@ export async function updateUserAttendee(id: number, params: UserAttendeePayload
 export async function deleteUserAttendee(id: number) {
   assertPositiveInteger(id, 'attendeeId')
   return request<void>(`/api/user/attendees/${id}`, { method: 'DELETE' })
+}
+
+export async function recordUserBrowseHistory(params: UserBrowseHistoryPayload) {
+  return request<UserBrowseHistoryVO>('/api/user/browse-history', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function listUserBrowseHistory() {
+  return request<UserBrowseHistoryVO[]>('/api/user/browse-history')
+}
+
+export async function clearUserBrowseHistory() {
+  return request<void>('/api/user/browse-history', { method: 'DELETE' })
 }
 
 export async function changePassword(params: ChangePasswordRequest) {

@@ -12,7 +12,7 @@ import {
   sendSupportMessage,
 } from '@/lib/api'
 import { logout } from '@/lib/auth'
-import { filterSupportConversations, formatSupportConversationStatus, formatSupportSender, type SupportConversationFilter } from '@/lib/support-tools'
+import { filterSupportConversations, formatSupportConversationStatus, formatSupportSender, shouldPollSupportConversation, type SupportConversationFilter } from '@/lib/support-tools'
 import type { SupportConversationVO, SupportMessageVO } from '@/types/api'
 
 function getConversationUserDisplay(conversation: SupportConversationVO) {
@@ -46,6 +46,7 @@ export default function SupportWorkbenchPage() {
     { value: 'closed', label: '已结束', count: filterSupportConversations(conversations, 'closed').length },
     { value: 'all', label: '全部', count: conversations.length },
   ]
+  const canReply = active?.status === 'ASSIGNED'
 
   const loadMessages = async (conversationId: number) => {
     const data = await listSupportMessages(conversationId)
@@ -72,6 +73,28 @@ export default function SupportWorkbenchPage() {
       setMessages([])
     }
   }, [active?.id])
+
+  useEffect(() => {
+    if (checking) return
+
+    let cancelled = false
+    const poll = async () => {
+      try {
+        await loadConversations()
+        if (!cancelled && active && shouldPollSupportConversation(active.status)) {
+          await loadMessages(active.id)
+        }
+      } catch {
+        // 工作台保持在线轮询，短暂失败不打断客服处理。
+      }
+    }
+
+    const timer = window.setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [checking, active?.id, active?.status])
 
   useEffect(() => {
     if (visibleConversations.length === 0) {
@@ -195,7 +218,7 @@ export default function SupportWorkbenchPage() {
                   <div className="mt-1 text-[12px] text-gray-500">用户：{getConversationUserDisplay(active)} · ID：{active.userId} · {formatSupportConversationStatus(active.status)}</div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={claim} disabled={active.status === 'CLOSED'} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50">接入</button>
+                  <button onClick={claim} disabled={active.status === 'CLOSED' || active.status === 'ASSIGNED'} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50">接入</button>
                   <button onClick={close} disabled={active.status === 'CLOSED'} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] text-gray-600 hover:border-red-300 hover:text-red-500 disabled:opacity-50">结束</button>
                 </div>
               </div>
@@ -223,11 +246,11 @@ export default function SupportWorkbenchPage() {
                     value={text}
                     onChange={event => setText(event.target.value)}
                     onKeyDown={event => { if (event.key === 'Enter') send() }}
-                    disabled={active.status === 'CLOSED'}
-                    placeholder="输入回复内容"
+                    disabled={active.status === 'CLOSED' || !canReply}
+                    placeholder={canReply ? '输入回复内容' : '请先接入该会话'}
                     className="h-11 min-w-0 flex-1 rounded-xl border border-gray-200 px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-gray-100"
                   />
-                  <button onClick={send} disabled={active.status === 'CLOSED' || !text.trim()} className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ff1268] text-white disabled:opacity-50" title="发送">
+                  <button onClick={send} disabled={active.status === 'CLOSED' || !canReply || !text.trim()} className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ff1268] text-white disabled:opacity-50" title="发送">
                     <Send className="h-4 w-4" />
                   </button>
                 </div>

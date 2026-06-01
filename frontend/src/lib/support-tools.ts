@@ -38,3 +38,11 @@ export function filterSupportConversations<T extends Pick<SupportConversationVO,
   if (filter === 'closed') return conversations.filter(item => item.status === 'CLOSED')
   return conversations.filter(item => item.status !== 'CLOSED')
 }
+
+export function shouldPollSupportConversation(status: SupportConversationStatus | null | undefined) {
+  return status === 'OPEN' || status === 'WAITING_AGENT' || status === 'ASSIGNED'
+}
+
+export function getSupportConversationRecordsHref() {
+  return '/console/support-conversations'
+}

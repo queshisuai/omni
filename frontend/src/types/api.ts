@@ -233,6 +233,22 @@ export interface UserAttendeeExportVO {
   content: string
 }
 
+export interface UserBrowseHistoryPayload {
+  activityId: number
+  activityName: string
+  poster?: string | null
+  category?: string | null
+  artist?: string | null
+  city?: string | null
+}
+
+export interface UserBrowseHistoryVO extends UserBrowseHistoryPayload {
+  id: number
+  viewedAt?: string | null
+  createTime?: string | null
+  updateTime?: string | null
+}
+
 export interface OrderAttendeeVO {
   id: number
   orderId: number
