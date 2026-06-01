@@ -337,6 +337,9 @@ class CustomerSupportServiceTest {
                         && request.getOrderId() == null
                         && "SUPPORT_REPLY".equals(request.getType())
                         && request.getContent().contains("客服回复")
+                        && "/help".equals(request.getActionHref())
+                        && "查看客服会话".equals(request.getActionLabel())
+                        && "SUPPORT_REPLY:99".equals(request.getAggregateKey())
         ), eq("internal-token"));
     }
 

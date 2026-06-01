@@ -464,6 +464,20 @@ export interface NotificationVO {
   content: string
   status: number
   createTime?: string | null
+  readTime?: string | null
+  deletedTime?: string | null
+  updateTime?: string | null
+  actionHref?: string | null
+  actionLabel?: string | null
+  aggregateKey?: string | null
+  aggregateCount?: number | null
+}
+
+export interface NotificationSummaryVO {
+  unreadCount: number
+  visibleCount: number
+  readCount: number
+  typeCounts?: Record<string, number> | null
 }
 
 export interface ActivityRiskCaseVO {

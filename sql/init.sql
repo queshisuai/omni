@@ -877,10 +877,19 @@ CREATE TABLE notification (
     type VARCHAR(20) NOT NULL,
     content TEXT,
     status SMALLINT DEFAULT 0,
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    read_time TIMESTAMP NULL,
+    deleted_time TIMESTAMP NULL,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    action_href VARCHAR(255),
+    action_label VARCHAR(50),
+    aggregate_key VARCHAR(100)
 );
 -- notification.type: SMS=短信, EMAIL=邮件
 -- notification.status: 0=待发送, 1=已发送, 2=发送失败
+CREATE INDEX IF NOT EXISTS idx_notification_user_visible_time ON notification(user_id, deleted_time, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_user_read_visible ON notification(user_id, read_time, deleted_time);
+CREATE INDEX IF NOT EXISTS idx_notification_user_aggregate_visible ON notification(user_id, aggregate_key, deleted_time);
 
 -- 库存流水表
 CREATE TABLE stock_log (

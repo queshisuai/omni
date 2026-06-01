@@ -2,6 +2,7 @@ package com.omni.notification.controller;
 
 import com.omni.common.result.Result;
 import com.omni.notification.dto.InternalNotificationRequest;
+import com.omni.notification.dto.NotificationSummaryResponse;
 import com.omni.notification.entity.Notification;
 import com.omni.notification.service.NotificationService;
 import io.jsonwebtoken.Claims;
@@ -87,6 +88,58 @@ public class NotificationController {
         }
         List<Notification> notifications = notificationService.listNotifications(userId);
         return Result.success(notifications);
+    }
+
+    @GetMapping("/summary")
+    public Result<NotificationSummaryResponse> getSummary(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
+        return Result.success(notificationService.getSummary(userId));
+    }
+
+    @PostMapping("/read-all")
+    public Result<NotificationSummaryResponse> markAllRead(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
+        return Result.success(notificationService.markAllRead(userId));
+    }
+
+    @PostMapping("/{id}/read")
+    public Result<NotificationSummaryResponse> markRead(
+            @PathVariable("id") Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
+        return Result.success(notificationService.markRead(userId, id));
+    }
+
+    @DeleteMapping("/read")
+    public Result<NotificationSummaryResponse> deleteRead(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
+        return Result.success(notificationService.deleteRead(userId));
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<NotificationSummaryResponse> deleteOne(
+            @PathVariable("id") Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return Result.fail(401, "未登录");
+        }
+        return Result.success(notificationService.deleteOne(userId, id));
     }
 
     private Long requireAuthenticatedUserId(String authorization) {

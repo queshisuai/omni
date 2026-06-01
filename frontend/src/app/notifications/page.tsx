@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { listMyNotifications } from '@/lib/api'
+import { deleteReadNotifications, listMyNotifications, markAllNotificationsRead } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationAction, getNotificationContentSegments, getNotificationReadAt, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt, shouldRenderNotificationActionButton } from '@/components/notification-state'
+import { filterVisibleNotifications, getNotificationAction, getNotificationContentSegments, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread, shouldRenderNotificationActionButton } from '@/components/notification-state'
 import type { NotificationVO, UserRole } from '@/types/api'
 
 function formatTime(value?: string | null): string {
@@ -22,10 +22,7 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<NotificationVO[]>([])
-  const [userId, setUserId] = useState(0)
   const [role, setRole] = useState<UserRole | null>(null)
-  const [readAt, setReadAt] = useState(0)
-  const [hiddenIds, setHiddenIds] = useState<number[]>([])
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -37,11 +34,7 @@ export default function NotificationsPage() {
       router.replace('/login')
       return
     }
-    const uid = Number(user.userId)
-    setUserId(uid)
     setRole(user.role || null)
-    setReadAt(getNotificationReadAt(uid))
-    setHiddenIds(getHiddenNotificationIds(uid))
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -52,25 +45,33 @@ export default function NotificationsPage() {
     return () => { cancelled = true }
   }, [router])
 
-  const visibleNotifications = filterVisibleNotifications(notifications, hiddenIds)
+  const visibleNotifications = filterVisibleNotifications(notifications)
 
-  const unreadCount = visibleNotifications.reduce((acc, item) => acc + (isNotificationUnread(item, readAt) ? 1 : 0), 0)
-  const readCount = getReadNotificationIds(visibleNotifications, readAt).length
+  const unreadCount = visibleNotifications.reduce((acc, item) => acc + (isNotificationUnread(item) ? 1 : 0), 0)
+  const readCount = getReadNotificationIds(visibleNotifications).length
 
-  const markAllRead = () => {
-    if (!userId) return
-    const latest = getLatestNotificationTime(visibleNotifications)
-    setReadAt(latest)
-    setNotificationReadAt(userId, latest)
+  const reloadNotifications = async () => {
+    setNotifications(await listMyNotifications())
   }
 
-  const deleteRead = () => {
-    if (!userId) return
-    const readIds = getReadNotificationIds(visibleNotifications, readAt)
-    if (readIds.length === 0) return
-    const next = Array.from(new Set([...hiddenIds, ...readIds]))
-    setHiddenIds(next)
-    setHiddenNotificationIds(userId, next)
+  const markAllRead = async () => {
+    if (unreadCount === 0) return
+    try {
+      await markAllNotificationsRead()
+      await reloadNotifications()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '标记已读失败')
+    }
+  }
+
+  const deleteRead = async () => {
+    if (readCount === 0) return
+    try {
+      await deleteReadNotifications()
+      await reloadNotifications()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '删除已读失败')
+    }
   }
 
   return (
@@ -80,7 +81,7 @@ export default function NotificationsPage() {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-[24px] text-[#111] font-medium">站内消息</h1>
-            <p className="mt-1 text-[13px] text-[#999]">删除只会隐藏当前设备上的已读消息，后端消息记录不会被物理删除。</p>
+            <p className="mt-1 text-[13px] text-[#999]">删除会在当前账号下隐藏已读消息，换设备后状态保持一致，后端不会物理删除原始记录。</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -116,7 +117,7 @@ export default function NotificationsPage() {
             const meta = getNotificationTypeMeta(item)
             const action = getNotificationAction(item, role)
             const contentSegments = getNotificationContentSegments(item.content, action)
-            const unread = isNotificationUnread(item, readAt)
+            const unread = isNotificationUnread(item)
             return (
               <div key={item.id} className="rounded border border-[#eee] bg-white px-4 py-4">
                 <div className="flex flex-wrap items-center gap-2">

@@ -7,24 +7,39 @@ function notification(id: number, createTime: string): NotificationVO {
   return { id, userId: 2004, type: 'IN_APP', content: '测试消息', status: 1, createTime }
 }
 
-test('filters notifications hidden by local ids', () => {
-  const items = [notification(1, '2026-05-22T10:00:00'), notification(2, '2026-05-22T11:00:00')]
-
-  assert.deepEqual(filterVisibleNotifications(items, [1]).map((item) => item.id), [2])
+test('read state is based on backend read time', () => {
+  assert.equal(isNotificationUnread({ ...notification(1, '2026-05-22T10:00:00'), readTime: '2026-05-22T10:30:00' }), false)
+  assert.equal(isNotificationUnread({ ...notification(2, '2026-05-22T11:00:00'), readTime: null }), true)
 })
 
-test('read state is based on latest local read timestamp', () => {
-  const readAt = new Date('2026-05-22T10:30:00').getTime()
+test('collects read ids from backend read time for deletion', () => {
+  const items = [
+    { ...notification(1, '2026-05-22T10:00:00'), readTime: '2026-05-22T10:30:00' },
+    { ...notification(2, '2026-05-22T11:00:00'), readTime: null },
+  ]
 
-  assert.equal(isNotificationUnread(notification(1, '2026-05-22T10:00:00'), readAt), false)
-  assert.equal(isNotificationUnread(notification(2, '2026-05-22T11:00:00'), readAt), true)
+  assert.deepEqual(getReadNotificationIds(items), [1])
 })
 
-test('collects read ids for local-only deletion', () => {
-  const readAt = new Date('2026-05-22T10:30:00').getTime()
-  const items = [notification(1, '2026-05-22T10:00:00'), notification(2, '2026-05-22T11:00:00')]
+test('filters backend deleted notifications without local hidden ids', () => {
+  const items = [
+    notification(1, '2026-05-22T10:00:00'),
+    { ...notification(2, '2026-05-22T11:00:00'), deletedTime: '2026-05-22T12:00:00' },
+  ]
 
-  assert.deepEqual(getReadNotificationIds(items, readAt), [1])
+  assert.deepEqual(filterVisibleNotifications(items).map((item) => item.id), [1])
+})
+
+test('uses backend action metadata before local type fallback', () => {
+  assert.deepEqual(getNotificationAction({
+    ...notification(14, '2026-06-02T10:00:00'),
+    type: 'SUPPORT_REPLY',
+    actionHref: '/help?conversationId=99',
+    actionLabel: '查看客服会话',
+  }), {
+    href: '/help?conversationId=99',
+    buttonLabel: '查看客服会话',
+  })
 })
 
 test('finds latest notification timestamp for mark all read', () => {

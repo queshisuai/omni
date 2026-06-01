@@ -558,6 +558,36 @@ export async function listMyNotifications() {
   return request<import('@/types/api').NotificationVO[]>('/api/notification/list')
 }
 
+export async function getNotificationSummary() {
+  return request<import('@/types/api').NotificationSummaryVO>('/api/notification/summary')
+}
+
+export async function markAllNotificationsRead() {
+  return request<import('@/types/api').NotificationSummaryVO>('/api/notification/read-all', {
+    method: 'POST',
+  })
+}
+
+export async function markNotificationRead(id: number) {
+  assertPositiveInteger(id, '通知ID')
+  return request<import('@/types/api').NotificationSummaryVO>(`/api/notification/${id}/read`, {
+    method: 'POST',
+  })
+}
+
+export async function deleteReadNotifications() {
+  return request<import('@/types/api').NotificationSummaryVO>('/api/notification/read', {
+    method: 'DELETE',
+  })
+}
+
+export async function deleteNotification(id: number) {
+  assertPositiveInteger(id, '通知ID')
+  return request<import('@/types/api').NotificationSummaryVO>(`/api/notification/${id}`, {
+    method: 'DELETE',
+  })
+}
+
 export async function suspendActivityForRisk(id: number, params: { userId: number; reason?: string }) {
   assertPositiveInteger(id, 'activityId')
   const { userId: _userId, ...safeParams } = params

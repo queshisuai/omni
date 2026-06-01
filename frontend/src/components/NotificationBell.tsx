@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bell } from 'lucide-react'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import { listMyNotifications } from '@/lib/api'
-import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationAction, getNotificationReadAt, getNotificationTime, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt } from './notification-state'
+import { deleteReadNotifications, listMyNotifications, markAllNotificationsRead, markNotificationRead } from '@/lib/api'
+import { filterVisibleNotifications, getNotificationAction, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread } from './notification-state'
 import type { NotificationVO, UserRole } from '@/types/api'
 
 function formatTime(value?: string | null): string {
@@ -30,8 +30,6 @@ export function NotificationBell() {
   const [items, setItems] = useState<NotificationVO[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [readAt, setReadAt] = useState(0)
-  const [hiddenIds, setHiddenIds] = useState<number[]>([])
   const fetchTokenRef = useRef(0)
 
   useEffect(() => {
@@ -43,14 +41,10 @@ export function NotificationBell() {
         const uid = user?.userId || 0
         setUserId(uid)
         setRole(user?.role || null)
-        setReadAt(uid ? getNotificationReadAt(uid) : 0)
-        setHiddenIds(uid ? getHiddenNotificationIds(uid) : [])
       } else {
         setUserId(0)
         setRole(null)
         setItems([])
-        setReadAt(0)
-        setHiddenIds([])
       }
     }
     checkAuth()
@@ -92,24 +86,28 @@ export function NotificationBell() {
 
   if (!loggedIn) return null
 
-  const visibleItems = filterVisibleNotifications(items, hiddenIds)
-  const unreadCount = visibleItems.reduce((acc, item) => acc + (isNotificationUnread(item, readAt) ? 1 : 0), 0)
-  const readCount = getReadNotificationIds(visibleItems, readAt).length
+  const visibleItems = filterVisibleNotifications(items)
+  const unreadCount = visibleItems.reduce((acc, item) => acc + (isNotificationUnread(item) ? 1 : 0), 0)
+  const readCount = getReadNotificationIds(visibleItems).length
 
-  const markAllRead = () => {
-    const latest = getLatestNotificationTime(visibleItems)
-    if (latest > readAt) {
-      setReadAt(latest)
-      if (userId) setNotificationReadAt(userId, latest)
+  const markAllRead = async () => {
+    if (unreadCount === 0) return
+    try {
+      await markAllNotificationsRead()
+      fetchNotifications()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '标记已读失败')
     }
   }
 
-  const deleteRead = () => {
-    const readIds = getReadNotificationIds(visibleItems, readAt)
-    if (readIds.length === 0 || !userId) return
-    const next = Array.from(new Set([...hiddenIds, ...readIds]))
-    setHiddenIds(next)
-    setHiddenNotificationIds(userId, next)
+  const deleteRead = async () => {
+    if (readCount === 0) return
+    try {
+      await deleteReadNotifications()
+      fetchNotifications()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '清除已读失败')
+    }
   }
 
   const handleEnter = () => {
@@ -117,15 +115,21 @@ export function NotificationBell() {
     if (items.length === 0 && !loading) fetchNotifications()
   }
 
-  const handleClickBell = () => {
-    markAllRead()
+  const handleClickBell = async () => {
+    await markAllRead()
     setOpen(false)
     router.push('/notifications')
   }
 
-  const handlePickItem = (item: NotificationVO) => {
+  const handlePickItem = async (item: NotificationVO) => {
     const action = getNotificationAction(item, role)
-    markAllRead()
+    if (isNotificationUnread(item)) {
+      try {
+        await markNotificationRead(item.id)
+      } catch {
+        // 跳转优先，已读状态会在下次刷新时再次同步。
+      }
+    }
     setOpen(false)
     router.push(action?.href || '/notifications')
   }
@@ -199,7 +203,7 @@ export function NotificationBell() {
               <ul className="max-h-[380px] overflow-y-auto custom-scrollbar">
                 {previewItems.map((item) => {
                   const meta = getNotificationTypeMeta(item)
-                  const unread = getNotificationTime(item) > readAt
+                  const unread = isNotificationUnread(item)
                   return (
                     <li key={item.id} className="border-b border-gray-50 last:border-b-0">
                       <button

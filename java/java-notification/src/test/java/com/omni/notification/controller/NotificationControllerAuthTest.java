@@ -45,6 +45,37 @@ class NotificationControllerAuthTest {
     }
 
     @Test
+    void markAllReadUsesJwtUserId() {
+        NotificationService service = mock(NotificationService.class);
+        NotificationController controller = new NotificationController(service, "internal-token", SECRET);
+
+        controller.markAllRead(bearer(2004L));
+
+        verify(service).markAllRead(2004L);
+    }
+
+    @Test
+    void deleteReadRejectsMissingJwt() {
+        NotificationService service = mock(NotificationService.class);
+        NotificationController controller = new NotificationController(service, "internal-token", SECRET);
+
+        Result<?> result = controller.deleteRead(null);
+
+        assertEquals(401, result.getCode());
+        verify(service, never()).deleteRead(any());
+    }
+
+    @Test
+    void markSingleReadUsesJwtUserIdAndPathId() {
+        NotificationService service = mock(NotificationService.class);
+        NotificationController controller = new NotificationController(service, "internal-token", SECRET);
+
+        controller.markRead(99L, bearer(2004L));
+
+        verify(service).markRead(2004L, 99L);
+    }
+
+    @Test
     void sendSmsUsesJwtUserId() {
         NotificationService service = mock(NotificationService.class);
         NotificationController controller = new NotificationController(service, "internal-token", SECRET);

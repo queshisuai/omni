@@ -376,9 +376,15 @@ public class CustomerSupportService {
             return;
         }
         try {
-            notificationClient.createMessage(
-                    new NotificationMessageRequest(conversation.getUserId(), null, "SUPPORT_REPLY", "人工客服回复了你的咨询，请查看客服会话。"),
-                    internalApiToken);
+            NotificationMessageRequest request = new NotificationMessageRequest(
+                    conversation.getUserId(),
+                    null,
+                    "SUPPORT_REPLY",
+                    "人工客服回复了你的咨询，请查看客服会话。");
+            request.setActionHref("/help");
+            request.setActionLabel("查看客服会话");
+            request.setAggregateKey("SUPPORT_REPLY:" + conversation.getId());
+            notificationClient.createMessage(request, internalApiToken);
         } catch (RuntimeException e) {
             log.warn("客服回复通知发送失败: conversationId={}, userId={}, message={}",
                     conversation.getId(), conversation.getUserId(), e.getMessage());
