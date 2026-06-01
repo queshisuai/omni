@@ -1,6 +1,7 @@
 import { SectionData } from "@/types/damai";
 import { TicketCard } from "./TicketCard";
 import { ChevronRight } from "lucide-react";
+import { buildSectionItemKey } from "@/lib/section-row";
 
 interface SectionRowProps {
   section: SectionData;
@@ -26,8 +27,8 @@ export function SectionRow({ section }: SectionRowProps) {
 
         {/* Cards Grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
-          {section.items.slice(0, 6).map((item) => (
-            <TicketCard key={item.id} activity={item} />
+          {section.items.slice(0, 6).map((item, index) => (
+            <TicketCard key={buildSectionItemKey(section.id, item, index)} activity={item} />
           ))}
         </div>
       </div>

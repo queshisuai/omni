@@ -944,7 +944,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     <>
       <Header />
       <main className="max-w-[1200px] mx-auto px-5 py-8">
-        <div className="flex gap-5 items-start">
+        <div className="grid gap-5 items-start lg:grid-cols-[minmax(0,1fr)_300px]">
           {/* 左侧：占比约 2/3 */}
           <div className="flex-1 flex flex-col gap-5 min-w-0">
             {/* 顶部：活动基本信息与购票 */}
@@ -1279,7 +1279,6 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                 </div>
               </div>
             </div>
-          </div>
 
           <div className="bg-white rounded-lg overflow-hidden border border-[#e5e5e5]">
             <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-4">
@@ -1400,8 +1399,10 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             </div>
           </div>
 
+          </div>
+
           {/* 右侧：占比约 1/3 */}
-          <div className="w-[300px] flex-shrink-0 flex flex-col gap-5">
+          <div className="flex w-full flex-col gap-5">
             {/* 购票保障 / 服务说明 */}
             <div className="bg-white rounded-lg p-5 border border-[#e5e5e5] text-[#666] text-[12px] space-y-4">
               <div>
