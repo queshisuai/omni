@@ -322,6 +322,19 @@ export async function listSupportMessages(conversationId: number) {
   return request<import('@/types/api').SupportMessageVO[]>(`/api/user/support/conversations/${conversationId}/messages`)
 }
 
+export async function markSupportHelpPresence() {
+  return request<void>('/api/user/support/presence/help', {
+    method: 'POST',
+  })
+}
+
+export async function clearSupportHelpPresence(options?: { keepalive?: boolean }) {
+  return request<void>('/api/user/support/presence/help/leave', {
+    method: 'POST',
+    keepalive: options?.keepalive,
+  })
+}
+
 export async function sendSupportMessage(conversationId: number, content: string) {
   assertPositiveInteger(conversationId, '客服会话ID')
   return request<import('@/types/api').SupportMessageVO>(`/api/user/support/conversations/${conversationId}/messages`, {
@@ -333,6 +346,13 @@ export async function sendSupportMessage(conversationId: number, content: string
 export async function handoffSupportConversation(conversationId: number) {
   assertPositiveInteger(conversationId, '客服会话ID')
   return request<import('@/types/api').SupportConversationVO>(`/api/user/support/conversations/${conversationId}/handoff`, {
+    method: 'POST',
+  })
+}
+
+export async function confirmCloseSupportConversation(conversationId: number) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportConversationVO>(`/api/user/support/conversations/${conversationId}/close`, {
     method: 'POST',
   })
 }
@@ -369,10 +389,18 @@ export async function createSupportAccount(params: { phone: string; nickname: st
   })
 }
 
+export async function updateSupportAccount(id: number, params: { phone: string; nickname: string; password?: string; status?: number }) {
+  assertPositiveInteger(id, '客服账号ID')
+  return request<import('@/types/api').SupportAccountVO>(`/api/user/support/admin/accounts/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(params),
+  })
+}
+
 export async function deactivateSupportAccount(id: number) {
   assertPositiveInteger(id, '客服账号ID')
-  return request<import('@/types/api').SupportAccountVO>(`/api/user/support/admin/accounts/${id}/deactivate`, {
-    method: 'POST',
+  return request<import('@/types/api').SupportAccountVO>(`/api/user/support/admin/accounts/${id}`, {
+    method: 'DELETE',
   })
 }
 

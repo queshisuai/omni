@@ -3,7 +3,9 @@ package com.omni.user.service;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.SupportAccountRequest;
 import com.omni.user.dto.SupportAccountResponse;
+import com.omni.user.entity.SupportAccount;
 import com.omni.user.entity.User;
+import com.omni.user.mapper.SupportAccountMapper;
 import com.omni.user.mapper.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,22 +23,35 @@ import static org.mockito.Mockito.when;
 class SupportAccountServiceTest {
 
     private final UserMapper userMapper = mock(UserMapper.class);
+    private final SupportAccountMapper supportAccountMapper = mock(SupportAccountMapper.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
-    private final SupportAccountService service = new SupportAccountService(userMapper, passwordEncoder);
+    private final SupportAccountService service = new SupportAccountService(userMapper, supportAccountMapper, passwordEncoder);
 
     @Test
-    void adminCreatesSupportAccountWithSupportRole() {
+    void adminCreatesSupportAccountWithSupportRoleAndSupportAccountRow() {
         when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
         when(userMapper.selectOne(any())).thenReturn(null);
         when(passwordEncoder.encode("support123")).thenReturn("encoded-support123");
+        when(userMapper.insert(any(User.class))).thenAnswer(invocation -> {
+            User inserted = invocation.getArgument(0);
+            inserted.setId(3L);
+            return 1;
+        });
 
         SupportAccountResponse response = service.create(1L, request("13900000002", "客服一号", "support123"));
 
+        assertEquals(3L, response.getId());
         assertEquals("13900000002", response.getPhone());
         assertEquals("客服一号", response.getNickname());
         assertEquals("support", response.getRole());
         assertEquals(1, response.getStatus());
         verify(userMapper).insert(any(User.class));
+        verify(supportAccountMapper).insert(org.mockito.ArgumentMatchers.argThat(account ->
+                Long.valueOf(3L).equals(account.getUserId())
+                        && "13900000002".equals(account.getPhone())
+                        && "客服一号".equals(account.getNickname())
+                        && Integer.valueOf(1).equals(account.getStatus())
+        ));
     }
 
     @Test
@@ -50,33 +65,64 @@ class SupportAccountServiceTest {
 
         assertEquals("仅平台管理员可以管理客服账号", error.getMessage());
         verify(userMapper, never()).insert(any());
+        verify(supportAccountMapper, never()).insert(any());
     }
 
     @Test
     void adminDeactivatesSupportAccountWithoutDeletingHistory() {
         User support = user(3L, "support", 1);
+        SupportAccount account = supportAccount(3L, "13900000003", "客服三号", 1);
         when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
         when(userMapper.selectById(3L)).thenReturn(support);
+        when(supportAccountMapper.selectById(3L)).thenReturn(account);
 
         SupportAccountResponse response = service.deactivate(1L, 3L);
 
         assertEquals(0, response.getStatus());
         assertEquals("support", response.getRole());
         verify(userMapper).updateById(support);
+        verify(supportAccountMapper).updateById(account);
     }
 
     @Test
-    void listOnlyReturnsSupportAccountsForAdmin() {
+    void listOnlyReturnsRowsFromSupportAccountTableForAdmin() {
         when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
-        User support = user(3L, "support", 1);
-        support.setPhone("13900000003");
-        support.setNickname("客服三号");
-        when(userMapper.selectList(any())).thenReturn(List.of(support));
+        when(supportAccountMapper.selectList(any())).thenReturn(List.of(supportAccount(3L, "13900000003", "客服三号", 1)));
 
         List<SupportAccountResponse> accounts = service.list(1L);
 
         assertEquals(1, accounts.size());
+        assertEquals(3L, accounts.get(0).getId());
         assertEquals("客服三号", accounts.get(0).getNickname());
+        verify(userMapper, never()).selectList(any());
+    }
+
+    @Test
+    void adminUpdatesSupportAccountAndLinkedLoginUser() {
+        User support = user(3L, "support", 1);
+        support.setPhone("13900000003");
+        support.setNickname("客服三号");
+        SupportAccount account = supportAccount(3L, "13900000003", "客服三号", 1);
+        when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
+        when(userMapper.selectById(3L)).thenReturn(support);
+        when(supportAccountMapper.selectById(3L)).thenReturn(account);
+        when(userMapper.selectOne(any())).thenReturn(null);
+        when(passwordEncoder.encode("newpass123")).thenReturn("encoded-newpass123");
+
+        SupportAccountRequest request = request("13900000004", "客服四号", "newpass123");
+        request.setStatus(1);
+        SupportAccountResponse response = service.update(1L, 3L, request);
+
+        assertEquals("13900000004", response.getPhone());
+        assertEquals("客服四号", response.getNickname());
+        assertEquals(1, response.getStatus());
+        assertEquals("13900000004", support.getPhone());
+        assertEquals("客服四号", support.getNickname());
+        assertEquals("encoded-newpass123", support.getPassword());
+        assertEquals("13900000004", account.getPhone());
+        assertEquals("客服四号", account.getNickname());
+        verify(userMapper).updateById(support);
+        verify(supportAccountMapper).updateById(account);
     }
 
     private SupportAccountRequest request(String phone, String nickname, String password) {
@@ -93,5 +139,14 @@ class SupportAccountServiceTest {
         user.setRole(role);
         user.setStatus(status);
         return user;
+    }
+
+    private SupportAccount supportAccount(Long userId, String phone, String nickname, Integer status) {
+        SupportAccount account = new SupportAccount();
+        account.setUserId(userId);
+        account.setPhone(phone);
+        account.setNickname(nickname);
+        account.setStatus(status);
+        return account;
     }
 }

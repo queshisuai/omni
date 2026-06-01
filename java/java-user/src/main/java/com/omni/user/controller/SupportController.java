@@ -68,6 +68,24 @@ public class SupportController {
         return Result.success(customerSupportService.listMessages(userId, id));
     }
 
+    @PostMapping("/support/presence/help")
+    public Result<Void> markHelpPresence(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        customerSupportService.markHelpPresence(userId);
+        return Result.success();
+    }
+
+    @PostMapping("/support/presence/help/leave")
+    public Result<Void> clearHelpPresence(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        customerSupportService.clearHelpPresence(userId);
+        return Result.success();
+    }
+
     @PostMapping("/support/conversations/{id}/messages")
     public Result<SupportMessageResponse> sendMessage(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -85,6 +103,15 @@ public class SupportController {
         Long userId = parseUserId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(customerSupportService.handoff(userId, id));
+    }
+
+    @PostMapping("/support/conversations/{id}/close")
+    public Result<SupportConversationResponse> confirmClose(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.confirmClose(userId, id));
     }
 
     @GetMapping("/support/agent/conversations")
@@ -131,8 +158,27 @@ public class SupportController {
         return Result.success(supportAccountService.create(userId, request));
     }
 
+    @PutMapping("/support/admin/accounts/{id}")
+    public Result<SupportAccountResponse> updateSupportAccount(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody SupportAccountRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(supportAccountService.update(userId, id, request));
+    }
+
     @PostMapping("/support/admin/accounts/{id}/deactivate")
     public Result<SupportAccountResponse> deactivateSupportAccount(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(supportAccountService.deactivate(userId, id));
+    }
+
+    @DeleteMapping("/support/admin/accounts/{id}")
+    public Result<SupportAccountResponse> deleteSupportAccount(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable Long id) {
         Long userId = parseUserId(authorization);

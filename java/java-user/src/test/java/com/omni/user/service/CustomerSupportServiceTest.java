@@ -6,6 +6,7 @@ import com.omni.user.client.NotificationInternalClient;
 import com.omni.user.dto.SupportConversationRequest;
 import com.omni.user.dto.SupportConversationResponse;
 import com.omni.user.dto.SupportMessageRequest;
+import com.omni.user.dto.SupportMessageResponse;
 import com.omni.user.entity.SupportConversation;
 import com.omni.user.entity.SupportMessage;
 import com.omni.user.entity.User;
@@ -17,6 +18,7 @@ import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -103,7 +105,217 @@ class CustomerSupportServiceTest {
         assertEquals("ASSIGNED", claimed.getStatus());
         assertEquals(30L, claimed.getAssignedAgentId());
         assertTrue("ASSIGNED".equals(conversation.getStatus()));
+        assertTrue(conversation.getUpdateTime() != null);
         verify(conversationMapper, atLeastOnce()).updateById(conversation);
+    }
+
+    @Test
+    void handoffWritesWaitingPromptVisibleToUser() {
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "user"));
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("OPEN");
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+
+        service.handoff(10L, 99L);
+
+        verify(messageMapper).insert(org.mockito.ArgumentMatchers.argThat(message ->
+                "SYSTEM".equals(message.getSenderType())
+                        && "人工介入请等待".equals(message.getContent())
+        ));
+    }
+
+    @Test
+    void claimWritesNamedAgentPromptVisibleToUser() {
+        User agent = user(30L, "support");
+        agent.setNickname("客服一号");
+        when(userMapper.selectById(30L)).thenReturn(agent);
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("WAITING_AGENT");
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+
+        service.claim(30L, 99L);
+
+        verify(messageMapper).insert(org.mockito.ArgumentMatchers.argThat(message ->
+                "SYSTEM".equals(message.getSenderType())
+                        && "客服一号已介入".equals(message.getContent())
+        ));
+    }
+
+    @Test
+    void supportAgentCanOnlyRequestCloseUntilUserConfirms() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("ASSIGNED");
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+
+        SupportConversationResponse response = service.close(30L, 99L);
+
+        assertEquals("CLOSE_REQUESTED", response.getStatus());
+        assertEquals(null, conversation.getClosedAt());
+        verify(messageMapper).insert(org.mockito.ArgumentMatchers.argThat(message ->
+                "SYSTEM".equals(message.getSenderType())
+                        && "人工客服申请结束会话，请确认是否结束。".equals(message.getContent())
+        ));
+    }
+
+    @Test
+    void ownerConfirmsCloseBeforeConversationActuallyEnds() {
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "user"));
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("CLOSE_REQUESTED");
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+
+        SupportConversationResponse response = service.confirmClose(10L, 99L);
+
+        assertEquals("CLOSED", response.getStatus());
+        assertTrue(conversation.getClosedAt() != null);
+        verify(messageMapper).insert(org.mockito.ArgumentMatchers.argThat(message ->
+                "SYSTEM".equals(message.getSenderType())
+                        && "用户已确认结束会话".equals(message.getContent())
+        ));
+    }
+
+    @Test
+    void userReplyKeepsConversationOpenWhenCloseWasRequested() {
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "user"));
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("CLOSE_REQUESTED");
+        conversation.setSourceType("HUMAN");
+        conversation.setAssignedAgentId(30L);
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        SupportMessageRequest message = new SupportMessageRequest();
+        message.setContent("我还需要继续咨询");
+
+        service.sendMessage(10L, 99L, message);
+
+        assertEquals("ASSIGNED", conversation.getStatus());
+        verify(conversationMapper, atLeastOnce()).updateById(conversation);
+    }
+
+    @Test
+    void conversationOwnerMessageIsUserEvenWhenOwnerHasAdminRole() {
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "admin"));
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("OPEN");
+        conversation.setSourceType("HUMAN");
+        conversation.setAssignedAgentId(30L);
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        SupportMessageRequest message = new SupportMessageRequest();
+        message.setContent("我在用户端继续咨询");
+
+        service.sendMessage(10L, 99L, message);
+
+        verify(messageMapper).insert(org.mockito.ArgumentMatchers.argThat(inserted ->
+                "USER".equals(inserted.getSenderType())
+                        && Long.valueOf(10L).equals(inserted.getSenderUserId())
+                        && "我在用户端继续咨询".equals(inserted.getContent())
+        ));
+    }
+
+    @Test
+    void messageResponseIncludesSenderDisplayName() {
+        User customer = user(10L, "user");
+        customer.setNickname("小王");
+        when(userMapper.selectById(10L)).thenReturn(customer);
+        User agent = user(30L, "support");
+        agent.setNickname("杨梅");
+        when(userMapper.selectById(30L)).thenReturn(agent);
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("ASSIGNED");
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        SupportMessage message = new SupportMessage();
+        message.setId(1L);
+        message.setConversationId(99L);
+        message.setSenderUserId(30L);
+        message.setSenderType("AGENT");
+        message.setContent("您好");
+        when(messageMapper.selectList(any())).thenReturn(List.of(message));
+
+        List<SupportMessageResponse> response = service.listMessages(10L, 99L);
+
+        assertEquals("杨梅", response.get(0).getSenderDisplayName());
+    }
+
+    @Test
+    void autoClosesAssignedHumanConversationWhenUserInactiveMoreThanThirtyMinutes() {
+        LocalDateTime now = LocalDateTime.of(2026, 6, 1, 17, 0);
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("ASSIGNED");
+        conversation.setSourceType("HUMAN");
+        when(conversationMapper.selectList(any())).thenReturn(List.of(conversation));
+        SupportMessage lastUserMessage = new SupportMessage();
+        lastUserMessage.setConversationId(99L);
+        lastUserMessage.setSenderType("USER");
+        lastUserMessage.setCreateTime(now.minusMinutes(31));
+        when(messageMapper.selectOne(any())).thenReturn(lastUserMessage);
+
+        int closedCount = service.closeInactiveAssignedHumanConversations(now);
+
+        assertEquals(1, closedCount);
+        assertEquals("CLOSED", conversation.getStatus());
+        assertEquals(now, conversation.getClosedAt());
+        assertEquals("用户超过30分钟未继续咨询，系统已自动结束会话。", conversation.getLastMessage());
+        verify(conversationMapper).updateById(conversation);
+        verify(messageMapper).insert(org.mockito.ArgumentMatchers.argThat(message ->
+                "SYSTEM".equals(message.getSenderType())
+                        && "用户超过30分钟未继续咨询，系统已自动结束会话。".equals(message.getContent())
+        ));
+    }
+
+    @Test
+    void doesNotAutoCloseWhenLastUserMessageIsWithinThirtyMinutes() {
+        LocalDateTime now = LocalDateTime.of(2026, 6, 1, 17, 0);
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("ASSIGNED");
+        conversation.setSourceType("HUMAN");
+        when(conversationMapper.selectList(any())).thenReturn(List.of(conversation));
+        SupportMessage lastUserMessage = new SupportMessage();
+        lastUserMessage.setConversationId(99L);
+        lastUserMessage.setSenderType("USER");
+        lastUserMessage.setCreateTime(now.minusMinutes(29));
+        when(messageMapper.selectOne(any())).thenReturn(lastUserMessage);
+
+        int closedCount = service.closeInactiveAssignedHumanConversations(now);
+
+        assertEquals(0, closedCount);
+        assertEquals("ASSIGNED", conversation.getStatus());
+        verify(conversationMapper, org.mockito.Mockito.never()).updateById(any());
+    }
+
+    @Test
+    void doesNotAutoCloseAssignedHumanConversationWithoutUserMessage() {
+        LocalDateTime now = LocalDateTime.of(2026, 6, 1, 17, 0);
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("ASSIGNED");
+        conversation.setSourceType("HUMAN");
+        when(conversationMapper.selectList(any())).thenReturn(List.of(conversation));
+        when(messageMapper.selectOne(any())).thenReturn(null);
+
+        int closedCount = service.closeInactiveAssignedHumanConversations(now);
+
+        assertEquals(0, closedCount);
+        assertEquals("ASSIGNED", conversation.getStatus());
+        verify(conversationMapper, org.mockito.Mockito.never()).updateById(any());
     }
 
     @Test
@@ -125,6 +337,70 @@ class CustomerSupportServiceTest {
                         && request.getOrderId() == null
                         && "SUPPORT_REPLY".equals(request.getType())
                         && request.getContent().contains("客服回复")
+        ), eq("internal-token"));
+    }
+
+    @Test
+    void supportAgentReplySkipsNotificationWhenUserIsViewingHelp() {
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("WAITING_AGENT");
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "user"));
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        service.markHelpPresence(10L, LocalDateTime.now());
+
+        SupportMessageRequest message = new SupportMessageRequest();
+        message.setContent("您好，客服已回复。");
+
+        service.sendMessage(30L, 99L, message);
+
+        verify(notificationClient, org.mockito.Mockito.never()).createMessage(any(), any());
+    }
+
+    @Test
+    void supportAgentReplyCreatesNotificationWhenHelpPresenceExpired() {
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("WAITING_AGENT");
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "user"));
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        service.markHelpPresence(10L, LocalDateTime.now().minusMinutes(2));
+
+        SupportMessageRequest message = new SupportMessageRequest();
+        message.setContent("您好，客服已回复。");
+
+        service.sendMessage(30L, 99L, message);
+
+        verify(notificationClient).createMessage(org.mockito.ArgumentMatchers.argThat(request ->
+                Long.valueOf(10L).equals(request.getUserId())
+                        && "SUPPORT_REPLY".equals(request.getType())
+        ), eq("internal-token"));
+    }
+
+    @Test
+    void supportAgentReplyCreatesNotificationAfterUserLeavesHelpWindow() {
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("WAITING_AGENT");
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "user"));
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        service.markHelpPresence(10L, LocalDateTime.now());
+        service.clearHelpPresence(10L);
+
+        SupportMessageRequest message = new SupportMessageRequest();
+        message.setContent("您好，客服已回复。");
+
+        service.sendMessage(30L, 99L, message);
+
+        verify(notificationClient).createMessage(org.mockito.ArgumentMatchers.argThat(request ->
+                Long.valueOf(10L).equals(request.getUserId())
+                        && "SUPPORT_REPLY".equals(request.getType())
         ), eq("internal-token"));
     }
 

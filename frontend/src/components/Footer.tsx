@@ -1,4 +1,3 @@
-import { Smartphone } from "lucide-react";
 import { footerLinks } from "@/lib/mock-data";
 
 export function Footer() {
@@ -41,17 +40,6 @@ export function Footer() {
           <p className="text-[12px] text-[#999]">
             热线电话：10103721
           </p>
-        </div>
-
-        {/* App Download CTA */}
-        <div className="fixed right-5 bottom-10 flex flex-col items-center gap-2">
-          <a
-            href="#"
-            className="bg-[#ff1268] text-white p-3 rounded-full shadow-lg hover:bg-[#e01058] transition-colors"
-          >
-            <Smartphone className="w-5 h-5" />
-          </a>
-          <span className="text-[12px] text-[#ff1268]">应用下载</span>
         </div>
       </div>
     </footer>

@@ -1,23 +1,29 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Bot, Headphones, Send, UserRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import {
+  clearSupportHelpPresence,
+  confirmCloseSupportConversation,
   handoffSupportConversation,
   listHelpFaqs,
   listMySupportConversations,
   listSupportMessages,
+  markSupportHelpPresence,
   sendSupportMessage,
   startSupportConversation,
 } from '@/lib/api'
-import { getToken } from '@/lib/auth'
-import { buildSupportSubject, formatSupportConversationStatus, formatSupportSender, shouldPollSupportConversation } from '@/lib/support-tools'
+import { getToken, getUser } from '@/lib/auth'
+import { buildSupportSubject, canRequestSupportHandoff, formatSupportConversationStatus, formatSupportMessageSender, isSupportHelpConversationPath, pickDefaultUserSupportConversation, shouldPollSupportConversation } from '@/lib/support-tools'
 import type { HelpFaqVO, SupportConversationVO, SupportMessageVO } from '@/types/api'
 
 export default function HelpPage() {
+  const pathname = usePathname()
+  const inSupportWindow = isSupportHelpConversationPath(pathname)
   const [faqs, setFaqs] = useState<HelpFaqVO[]>([])
   const [conversation, setConversation] = useState<SupportConversationVO | null>(null)
   const [messages, setMessages] = useState<SupportMessageVO[]>([])
@@ -25,15 +31,20 @@ export default function HelpPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [loggedIn, setLoggedIn] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState(0)
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const hasToken = Boolean(getToken())
     setLoggedIn(hasToken)
+    const user = getUser()
+    const uid = Number(user?.userId || 0)
+    setCurrentUserId(uid)
     listHelpFaqs()
       .then(setFaqs)
       .catch(() => setFaqs([]))
     if (hasToken) {
-      loadMyConversation().catch(() => undefined)
+      loadMyConversation(null, uid).catch(() => undefined)
     }
   }, [])
 
@@ -50,15 +61,9 @@ export default function HelpPage() {
     setMessages(data)
   }
 
-  const pickDefaultConversation = (items: SupportConversationVO[]) => {
-    return items.find(item => item.status !== 'CLOSED') || items[0] || null
-  }
-
-  const loadMyConversation = async (preferredId?: number | null) => {
+  const loadMyConversation = async (preferredId?: number | null, ownerUserId = currentUserId) => {
     const conversations = await listMySupportConversations()
-    const next = preferredId
-      ? conversations.find(item => item.id === preferredId) || pickDefaultConversation(conversations)
-      : pickDefaultConversation(conversations)
+    const next = pickDefaultUserSupportConversation(conversations, ownerUserId, preferredId)
     setConversation(next)
     if (next) {
       await refreshMessages(next.id)
@@ -69,7 +74,7 @@ export default function HelpPage() {
   }
 
   useEffect(() => {
-    if (!conversation || !shouldPollSupportConversation(conversation.status)) return
+    if (!inSupportWindow || !conversation || !shouldPollSupportConversation(conversation.status)) return
 
     let cancelled = false
     const poll = async () => {
@@ -86,7 +91,55 @@ export default function HelpPage() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [conversation?.id, conversation?.status])
+  }, [conversation?.id, conversation?.status, inSupportWindow])
+
+  useEffect(() => {
+    if (!loggedIn) return
+
+    const markVisible = () => {
+      if (document.visibilityState === 'visible') {
+        markSupportHelpPresence().catch(() => undefined)
+      }
+    }
+    const clearPresence = () => {
+      clearSupportHelpPresence({ keepalive: true }).catch(() => undefined)
+    }
+    const handleVisibilityChange = () => {
+      if (inSupportWindow && document.visibilityState === 'visible') {
+        markSupportHelpPresence().catch(() => undefined)
+      } else {
+        clearPresence()
+      }
+    }
+    const handlePageHide = () => {
+      clearPresence()
+    }
+
+    if (inSupportWindow) {
+      markVisible()
+    } else {
+      clearPresence()
+    }
+    const timer = window.setInterval(() => {
+      if (inSupportWindow) {
+        markVisible()
+      } else {
+        clearPresence()
+      }
+    }, 20_000)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pagehide', handlePageHide)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pagehide', handlePageHide)
+      clearPresence()
+    }
+  }, [loggedIn, inSupportWindow])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' })
+  }, [messages.length, conversation?.id])
 
   const send = async () => {
     const content = text.trim()
@@ -109,7 +162,7 @@ export default function HelpPage() {
         await sendSupportMessage(current.id, content)
       }
       setText('')
-      await refreshMessages(current.id)
+      await loadMyConversation(current.id)
     } catch (err: unknown) {
       setMessage(err instanceof Error ? err.message : '消息发送失败')
     } finally {
@@ -117,23 +170,28 @@ export default function HelpPage() {
     }
   }
 
-  const handoff = async () => {
-    if (loading) return
+  const confirmClose = async () => {
+    if (!conversation || loading) return
     setLoading(true)
     setMessage('')
     try {
-      let updated: SupportConversationVO
-      if (!conversation) {
-        const initialMessage = text.trim() || '用户申请人工客服'
-        updated = await startSupportConversation({
-          subject: buildSupportSubject(initialMessage),
-          initialMessage,
-          preferHuman: true,
-        })
-        setText('')
-      } else {
-        updated = await handoffSupportConversation(conversation.id)
-      }
+      const updated = await confirmCloseSupportConversation(conversation.id)
+      setConversation(updated)
+      await refreshMessages(updated.id)
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : '结束会话失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handoff = async () => {
+    if (loading) return
+    if (!conversation || !canRequestSupportHandoff(conversation)) return
+    setLoading(true)
+    setMessage('')
+    try {
+      const updated = await handoffSupportConversation(conversation.id)
       setConversation(updated)
       await refreshMessages(updated.id)
     } catch (err: unknown) {
@@ -177,7 +235,7 @@ export default function HelpPage() {
             <div>
               <h2 className="text-[18px] font-bold text-[#111]">在线客服</h2>
               <p className="mt-1 text-[12px] text-gray-500">
-                {conversation ? formatSupportConversationStatus(conversation.status) : 'AI 优先回答，可随时转人工'}
+                {conversation ? formatSupportConversationStatus(conversation.status) : 'AI 优先回答'}
               </p>
             </div>
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fff0f5] text-[#ff1268]">
@@ -207,13 +265,14 @@ export default function HelpPage() {
                           <div className={`max-w-[86%] rounded-2xl px-4 py-3 text-[13px] leading-6 ${mine ? 'bg-[#ff1268] text-white' : 'bg-white text-gray-700 shadow-sm'}`}>
                             <div className={`mb-1 flex items-center gap-1 text-[11px] ${mine ? 'text-white/80' : 'text-gray-400'}`}>
                               {mine ? <UserRound className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
-                              {formatSupportSender(item.senderType)}
+                              {formatSupportMessageSender(item, 'customer')}
                             </div>
                             {item.content}
                           </div>
                         </div>
                       )
                     })}
+                    <div ref={messagesEndRef} />
                   </div>
                 )}
               </div>
@@ -225,13 +284,14 @@ export default function HelpPage() {
                   value={text}
                   onChange={event => setText(event.target.value)}
                   onKeyDown={event => { if (event.key === 'Enter') send() }}
-                  placeholder="输入订单、票夹、退款等问题"
+                  disabled={conversation?.status === 'CLOSED'}
+                  placeholder={conversation?.status === 'CLOSE_REQUESTED' ? '如需继续咨询，请直接输入问题' : '输入订单、票夹、退款等问题'}
                   className="h-11 min-w-0 flex-1 rounded-xl border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
                 />
                 <button
                   type="button"
                   onClick={send}
-                  disabled={loading}
+                  disabled={loading || conversation?.status === 'CLOSED'}
                   className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ff1268] text-white disabled:opacity-60"
                   title="发送"
                 >
@@ -241,11 +301,21 @@ export default function HelpPage() {
               <button
                 type="button"
                 onClick={handoff}
-                disabled={loading || conversation?.status === 'WAITING_AGENT' || conversation?.status === 'ASSIGNED' || conversation?.status === 'CLOSED'}
+                disabled={loading || !canRequestSupportHandoff(conversation)}
                 className="mt-3 w-full rounded-xl border border-gray-200 py-2.5 text-[13px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {conversation?.status === 'WAITING_AGENT' ? '等待人工客服接入' : conversation?.status === 'ASSIGNED' ? '人工客服处理中' : '转人工客服'}
+                {conversation?.status === 'WAITING_AGENT' ? '人工介入请等待' : conversation?.status === 'ASSIGNED' ? '人工客服处理中' : conversation?.status === 'CLOSE_REQUESTED' ? '等待你确认是否结束' : '转人工客服'}
               </button>
+              {conversation?.status === 'CLOSE_REQUESTED' && (
+                <button
+                  type="button"
+                  onClick={confirmClose}
+                  disabled={loading}
+                  className="mt-2 w-full rounded-xl bg-[#1a1a2e] py-2.5 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  确认结束会话
+                </button>
+              )}
             </>
           )}
         </aside>

@@ -17,6 +17,11 @@ export interface NotificationAction {
   buttonLabel: string
 }
 
+export interface NotificationContentSegment {
+  text: string
+  href?: string
+}
+
 const TYPE_META: Record<string, NotificationTypeMeta> = {
   IN_APP: { key: 'IN_APP', label: '站内消息', color: '#ff1268', bg: '#fff0f5' },
   CAST_CHANGE: { key: 'CAST_CHANGE', label: '阵容变更', color: '#b91c1c', bg: '#fef2f2' },
@@ -44,6 +49,7 @@ function detectNotificationType(notification: NotificationVO): string {
   if (content.includes('阵容变更') || content.includes('阵容调整')) return 'CAST_CHANGE'
   if (content.includes('风险停售') || content.includes('暂停售票')) return 'RISK_SUSPENDED'
   if (content.includes('恢复售票')) return 'RISK_RESUMED'
+  if (content.includes('查看客服会话') || content.includes('人工客服回复')) return 'SUPPORT_REPLY'
   return 'IN_APP'
 }
 
@@ -81,7 +87,7 @@ export function getNotificationAction(
 
   if (key.startsWith('SUPPORT_')) {
     return {
-      href: role === 'admin' ? '/console/support-conversations' : '/support',
+      href: '/help',
       buttonLabel: '查看客服会话',
     }
   }
@@ -102,6 +108,29 @@ export function getNotificationAction(
   }
 
   return null
+}
+
+export function getNotificationContentSegments(
+  content: string,
+  action: NotificationAction | null,
+): NotificationContentSegment[] {
+  if (!action?.buttonLabel || !content.includes(action.buttonLabel)) {
+    return [{ text: content }]
+  }
+  const start = content.indexOf(action.buttonLabel)
+  const end = start + action.buttonLabel.length
+  return [
+    { text: content.slice(0, start) },
+    { text: action.buttonLabel, href: action.href },
+    { text: content.slice(end) },
+  ].filter(segment => segment.text.length > 0)
+}
+
+export function shouldRenderNotificationActionButton(
+  content: string,
+  action: NotificationAction | null,
+): boolean {
+  return Boolean(action && !content.includes(action.buttonLabel))
 }
 
 function readJsonMap<T>(key: string, fallback: T): T {

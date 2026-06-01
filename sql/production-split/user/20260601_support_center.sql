@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS support_conversation (
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     closed_at TIMESTAMP,
-    CONSTRAINT chk_support_conversation_status CHECK (status IN ('OPEN', 'WAITING_AGENT', 'ASSIGNED', 'CLOSED')),
+    CONSTRAINT chk_support_conversation_status CHECK (status IN ('OPEN', 'WAITING_AGENT', 'ASSIGNED', 'CLOSE_REQUESTED', 'CLOSED')),
     CONSTRAINT chk_support_conversation_source CHECK (source_type IN ('AI', 'HUMAN'))
 );
 

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Search, Download, MapPin, ChevronDown, User, Menu } from "lucide-react";
+import { Search, MapPin, ChevronDown, User, Menu } from "lucide-react";
 import { getUser, isAuthenticated, logout } from "@/lib/auth";
 import { NotificationBell } from "@/components/NotificationBell";
 import type { UserRole } from "@/types/api";
@@ -201,14 +201,6 @@ export function Header() {
           >
             分类
           </Link>
-          <Link
-            href="/help"
-            className={`text-[16px] font-medium transition-colors ${
-              pathname.startsWith('/help') ? 'text-[#ff1268]' : 'text-[#111] hover:text-[#ff1268]'
-            }`}
-          >
-            客服
-          </Link>
         </nav>
 
         {/* Spacer */}
@@ -354,15 +346,6 @@ export function Header() {
             </div>
           )}
         </div>
-
-        {/* Download App */}
-        <a
-          href="#"
-          className="flex items-center gap-1 text-sm text-[#111] hover:text-[#ff1268] flex-shrink-0"
-        >
-          <Download className="w-5 h-5" />
-          <span>下载</span>
-        </a>
 
         {/* Mobile Menu */}
         <button className="lg:hidden">

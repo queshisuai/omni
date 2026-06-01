@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { filterVisibleNotifications, getLatestNotificationTime, getNotificationAction, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread } from './notification-state.ts'
+import { filterVisibleNotifications, getLatestNotificationTime, getNotificationAction, getNotificationContentSegments, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread, shouldRenderNotificationActionButton } from './notification-state.ts'
 import type { NotificationVO } from '@/types/api'
 
 function notification(id: number, createTime: string): NotificationVO {
@@ -66,11 +66,65 @@ test('links team and generic order notifications to order service pages', () => 
   })
 })
 
-test('links support and risk messages to their service workbenches', () => {
+test('links support messages for normal users to help center', () => {
   assert.deepEqual(getNotificationAction({ ...notification(10, '2026-05-22T12:00:00'), type: 'SUPPORT_REPLY' }), {
-    href: '/support',
+    href: '/help',
     buttonLabel: '查看客服会话',
   })
+  assert.deepEqual(getNotificationAction({ ...notification(1010, '2026-05-22T12:00:00'), type: 'SUPPORT_REPLY' }, 'admin'), {
+    href: '/help',
+    buttonLabel: '查看客服会话',
+  })
+})
+
+test('detects legacy in-app support reply content as a support message', () => {
+  const legacy = {
+    ...notification(13, '2026-06-01T15:18:00'),
+    type: 'IN_APP',
+    content: '人工客服回复了你的咨询，请查看客服会话。',
+  }
+
+  assert.equal(getNotificationTypeMeta(legacy).label, '客服消息')
+  assert.deepEqual(getNotificationAction(legacy), {
+    href: '/help',
+    buttonLabel: '查看客服会话',
+  })
+  assert.deepEqual(getNotificationContentSegments(legacy.content, getNotificationAction(legacy)), [
+    { text: '人工客服回复了你的咨询，请' },
+    { text: '查看客服会话', href: '/help' },
+    { text: '。' },
+  ])
+})
+
+test('turns matching notification content text into an inline action segment', () => {
+  assert.deepEqual(
+    getNotificationContentSegments('人工客服回复了你的咨询，请查看客服会话。', {
+      href: '/help',
+      buttonLabel: '查看客服会话',
+    }),
+    [
+      { text: '人工客服回复了你的咨询，请' },
+      { text: '查看客服会话', href: '/help' },
+      { text: '。' },
+    ],
+  )
+  assert.equal(
+    shouldRenderNotificationActionButton('人工客服回复了你的咨询，请查看客服会话。', {
+      href: '/help',
+      buttonLabel: '查看客服会话',
+    }),
+    false,
+  )
+  assert.equal(
+    shouldRenderNotificationActionButton('人工客服有新的回复。', {
+      href: '/help',
+      buttonLabel: '查看客服会话',
+    }),
+    true,
+  )
+})
+
+test('links risk messages to their service workbenches', () => {
   assert.deepEqual(getNotificationAction({ ...notification(11, '2026-05-22T12:00:00'), type: 'TODO' }, 'admin'), {
     href: '/console/risk-resolutions',
     buttonLabel: '查看待办',

@@ -17,6 +17,7 @@ import com.omni.user.mapper.SupportMessageMapper;
 import com.omni.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,8 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,9 +39,12 @@ public class CustomerSupportService {
     private static final String STATUS_OPEN = "OPEN";
     private static final String STATUS_WAITING_AGENT = "WAITING_AGENT";
     private static final String STATUS_ASSIGNED = "ASSIGNED";
+    private static final String STATUS_CLOSE_REQUESTED = "CLOSE_REQUESTED";
     private static final String STATUS_CLOSED = "CLOSED";
     private static final String SOURCE_AI = "AI";
     private static final String SOURCE_HUMAN = "HUMAN";
+    private static final String AUTO_CLOSE_MESSAGE = "用户超过30分钟未继续咨询，系统已自动结束会话。";
+    private static final long HELP_PRESENCE_TTL_SECONDS = 60L;
 
     private final SupportConversationMapper conversationMapper;
     private final SupportMessageMapper messageMapper;
@@ -46,6 +52,7 @@ public class CustomerSupportService {
     private final SupportAiService supportAiService;
     private final NotificationInternalClient notificationClient;
     private final String internalApiToken;
+    private final ConcurrentMap<Long, LocalDateTime> helpPresence = new ConcurrentHashMap<>();
 
     public CustomerSupportService(SupportConversationMapper conversationMapper,
                                   SupportMessageMapper messageMapper,
@@ -72,6 +79,7 @@ public class CustomerSupportService {
         conversation.setStatus(preferHuman ? STATUS_WAITING_AGENT : STATUS_OPEN);
         conversation.setSourceType(preferHuman ? SOURCE_HUMAN : SOURCE_AI);
         conversation.setLastMessage(initialMessage == null ? "用户发起在线客服咨询" : initialMessage);
+        touch(conversation);
         conversationMapper.insert(conversation);
 
         if (initialMessage != null) {
@@ -80,6 +88,7 @@ public class CustomerSupportService {
                 String answer = supportAiService.answer(initialMessage);
                 insertMessage(conversation.getId(), null, "AI", answer);
                 conversation.setLastMessage(answer);
+                touch(conversation);
                 conversationMapper.updateById(conversation);
             }
         }
@@ -108,7 +117,7 @@ public class CustomerSupportService {
         } else {
             wrapper.ne(SupportConversation::getStatus, STATUS_CLOSED);
             if (ROLE_SUPPORT.equals(agent.getRole())) {
-                wrapper.in(SupportConversation::getStatus, STATUS_WAITING_AGENT, STATUS_ASSIGNED);
+                wrapper.in(SupportConversation::getStatus, STATUS_WAITING_AGENT, STATUS_ASSIGNED, STATUS_CLOSE_REQUESTED);
             }
         }
         if (ROLE_SUPPORT.equals(agent.getRole())) {
@@ -120,7 +129,8 @@ public class CustomerSupportService {
                 .filter(conversation -> !ROLE_SUPPORT.equals(agent.getRole())
                         || normalizedStatus != null
                         || STATUS_WAITING_AGENT.equals(conversation.getStatus())
-                        || STATUS_ASSIGNED.equals(conversation.getStatus()))
+                        || STATUS_ASSIGNED.equals(conversation.getStatus())
+                        || STATUS_CLOSE_REQUESTED.equals(conversation.getStatus()))
                 .map(this::toConversationResponse)
                 .collect(Collectors.toList());
     }
@@ -135,6 +145,25 @@ public class CustomerSupportService {
                 .collect(Collectors.toList());
     }
 
+    public void markHelpPresence(Long userId) {
+        markHelpPresence(userId, LocalDateTime.now());
+    }
+
+    public void markHelpPresence(Long userId, LocalDateTime now) {
+        if (userId == null) {
+            return;
+        }
+        requireActiveUser(userId);
+        helpPresence.put(userId, now == null ? LocalDateTime.now() : now);
+    }
+
+    public void clearHelpPresence(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        helpPresence.remove(userId);
+    }
+
     @Transactional
     public SupportMessageResponse sendMessage(Long actorUserId, Long conversationId, SupportMessageRequest request) {
         String content = request == null ? null : trimToNull(request.getContent());
@@ -143,14 +172,18 @@ public class CustomerSupportService {
         }
         User actor = requireActiveUser(actorUserId);
         SupportConversation conversation = requireVisibleConversation(actorUserId, conversationId);
-        String senderType = isSupportRole(actor.getRole()) ? "AGENT" : "USER";
+        String senderType = actorUserId.equals(conversation.getUserId()) ? "USER" : "AGENT";
         SupportMessage message = insertMessage(conversation.getId(), actorUserId, senderType, content);
         conversation.setLastMessage(content);
+        if ("USER".equals(senderType) && STATUS_CLOSE_REQUESTED.equals(conversation.getStatus())) {
+            conversation.setStatus(STATUS_ASSIGNED);
+        }
         if ("AGENT".equals(senderType) && conversation.getAssignedAgentId() == null) {
             conversation.setAssignedAgentId(actorUserId);
             conversation.setSourceType(SOURCE_HUMAN);
             conversation.setStatus(STATUS_ASSIGNED);
         }
+        touch(conversation);
         conversationMapper.updateById(conversation);
         if ("AGENT".equals(senderType)) {
             notifySupportReply(conversation);
@@ -160,6 +193,7 @@ public class CustomerSupportService {
             String answer = supportAiService.answer(content);
             insertMessage(conversation.getId(), null, "AI", answer);
             conversation.setLastMessage(answer);
+            touch(conversation);
             conversationMapper.updateById(conversation);
         }
         return toMessageResponse(message);
@@ -171,24 +205,27 @@ public class CustomerSupportService {
         conversation.setSourceType(SOURCE_HUMAN);
         conversation.setStatus(STATUS_WAITING_AGENT);
         conversation.setLastMessage("用户已申请转人工客服");
+        touch(conversation);
         conversationMapper.updateById(conversation);
-        insertMessage(conversation.getId(), null, "SYSTEM", "已为你转接人工客服，请保持页面打开。");
+        insertMessage(conversation.getId(), null, "SYSTEM", "人工介入请等待");
         return toConversationResponse(conversation);
     }
 
     @Transactional
     public SupportConversationResponse claim(Long agentUserId, Long conversationId) {
-        requireSupportOrAdmin(agentUserId);
+        User agent = requireSupportOrAdmin(agentUserId);
         SupportConversation conversation = requireConversation(conversationId);
         if (STATUS_CLOSED.equals(conversation.getStatus())) {
             throw new BusinessException(ResultCode.CONFLICT, "已结束的会话不能接入");
         }
+        String joinedMessage = buildAgentJoinedMessage(agent);
         conversation.setAssignedAgentId(agentUserId);
         conversation.setSourceType(SOURCE_HUMAN);
         conversation.setStatus(STATUS_ASSIGNED);
-        conversation.setLastMessage("人工客服已接入");
+        conversation.setLastMessage(joinedMessage);
+        touch(conversation);
         conversationMapper.updateById(conversation);
-        insertMessage(conversation.getId(), agentUserId, "SYSTEM", "人工客服已接入");
+        insertMessage(conversation.getId(), agentUserId, "SYSTEM", joinedMessage);
         return toConversationResponse(conversation);
     }
 
@@ -196,12 +233,70 @@ public class CustomerSupportService {
     public SupportConversationResponse close(Long agentUserId, Long conversationId) {
         requireSupportOrAdmin(agentUserId);
         SupportConversation conversation = requireConversation(conversationId);
+        if (STATUS_CLOSED.equals(conversation.getStatus())) {
+            throw new BusinessException(ResultCode.CONFLICT, "会话已结束");
+        }
+        conversation.setStatus(STATUS_CLOSE_REQUESTED);
+        conversation.setLastMessage("人工客服申请结束会话，请确认是否结束。");
+        touch(conversation);
+        conversationMapper.updateById(conversation);
+        insertMessage(conversation.getId(), agentUserId, "SYSTEM", "人工客服申请结束会话，请确认是否结束。");
+        return toConversationResponse(conversation);
+    }
+
+    @Transactional
+    public SupportConversationResponse confirmClose(Long userId, Long conversationId) {
+        SupportConversation conversation = requireOwnerConversation(userId, conversationId);
+        if (!STATUS_CLOSE_REQUESTED.equals(conversation.getStatus())) {
+            throw new BusinessException(ResultCode.CONFLICT, "当前会话未申请结束");
+        }
         conversation.setStatus(STATUS_CLOSED);
         conversation.setClosedAt(LocalDateTime.now());
-        conversation.setLastMessage("会话已结束");
+        conversation.setLastMessage("用户已确认结束会话");
+        touch(conversation);
         conversationMapper.updateById(conversation);
-        insertMessage(conversation.getId(), agentUserId, "SYSTEM", "会话已结束");
+        insertMessage(conversation.getId(), userId, "SYSTEM", "用户已确认结束会话");
         return toConversationResponse(conversation);
+    }
+
+    @Scheduled(fixedDelay = 60_000L)
+    @Transactional
+    public void closeInactiveAssignedHumanConversationsOnSchedule() {
+        int closedCount = closeInactiveAssignedHumanConversations(LocalDateTime.now());
+        if (closedCount > 0) {
+            log.info("自动结束超时客服会话: count={}", closedCount);
+        }
+    }
+
+    public int closeInactiveAssignedHumanConversations(LocalDateTime now) {
+        LocalDateTime effectiveNow = now == null ? LocalDateTime.now() : now;
+        LocalDateTime deadline = effectiveNow.minusMinutes(30);
+        List<SupportConversation> conversations = conversationMapper.selectList(new LambdaQueryWrapper<SupportConversation>()
+                .eq(SupportConversation::getSourceType, SOURCE_HUMAN)
+                .eq(SupportConversation::getStatus, STATUS_ASSIGNED));
+        int closedCount = 0;
+        for (SupportConversation conversation : conversations) {
+            SupportMessage lastUserMessage = messageMapper.selectOne(new LambdaQueryWrapper<SupportMessage>()
+                    .eq(SupportMessage::getConversationId, conversation.getId())
+                    .eq(SupportMessage::getSenderType, "USER")
+                    .orderByDesc(SupportMessage::getCreateTime)
+                    .orderByDesc(SupportMessage::getId)
+                    .last("limit 1"));
+            if (lastUserMessage == null || lastUserMessage.getCreateTime() == null) {
+                continue;
+            }
+            if (!lastUserMessage.getCreateTime().isBefore(deadline)) {
+                continue;
+            }
+            conversation.setStatus(STATUS_CLOSED);
+            conversation.setClosedAt(effectiveNow);
+            conversation.setLastMessage(AUTO_CLOSE_MESSAGE);
+            touch(conversation, effectiveNow);
+            conversationMapper.updateById(conversation);
+            insertMessage(conversation.getId(), null, "SYSTEM", AUTO_CLOSE_MESSAGE);
+            closedCount++;
+        }
+        return closedCount;
     }
 
     private SupportConversation requireVisibleConversation(Long actorUserId, Long conversationId) {
@@ -265,8 +360,19 @@ public class CustomerSupportService {
         return message;
     }
 
+    private void touch(SupportConversation conversation) {
+        conversation.setUpdateTime(LocalDateTime.now());
+    }
+
+    private void touch(SupportConversation conversation, LocalDateTime now) {
+        conversation.setUpdateTime(now == null ? LocalDateTime.now() : now);
+    }
+
     private void notifySupportReply(SupportConversation conversation) {
         if (conversation == null || conversation.getUserId() == null || notificationClient == null || !StringUtils.hasText(internalApiToken)) {
+            return;
+        }
+        if (isUserViewingHelp(conversation.getUserId(), LocalDateTime.now())) {
             return;
         }
         try {
@@ -279,6 +385,22 @@ public class CustomerSupportService {
         }
     }
 
+    private boolean isUserViewingHelp(Long userId, LocalDateTime now) {
+        if (userId == null) {
+            return false;
+        }
+        LocalDateTime lastSeen = helpPresence.get(userId);
+        if (lastSeen == null) {
+            return false;
+        }
+        LocalDateTime effectiveNow = now == null ? LocalDateTime.now() : now;
+        if (lastSeen.isBefore(effectiveNow.minusSeconds(HELP_PRESENCE_TTL_SECONDS))) {
+            helpPresence.remove(userId, lastSeen);
+            return false;
+        }
+        return true;
+    }
+
     private String buildSubject(String subject, String initialMessage) {
         String explicit = trimToNull(subject);
         if (explicit != null) return abbreviate(explicit, 40);
@@ -289,6 +411,11 @@ public class CustomerSupportService {
     private String abbreviate(String value, int maxLength) {
         if (value.length() <= maxLength) return value;
         return value.substring(0, maxLength);
+    }
+
+    private String buildAgentJoinedMessage(User agent) {
+        String nickname = agent == null ? null : trimToNull(agent.getNickname());
+        return nickname == null ? "人工客服已介入" : nickname + "已介入";
     }
 
     private SupportConversationResponse toConversationResponse(SupportConversation conversation) {
@@ -324,9 +451,24 @@ public class CustomerSupportService {
         response.setConversationId(message.getConversationId());
         response.setSenderUserId(message.getSenderUserId());
         response.setSenderType(message.getSenderType());
+        response.setSenderDisplayName(buildSenderDisplayName(message));
         response.setContent(message.getContent());
         response.setCreateTime(message.getCreateTime());
         return response;
+    }
+
+    private String buildSenderDisplayName(SupportMessage message) {
+        if (message == null) return null;
+        if ("AI".equals(message.getSenderType())) return "AI 客服";
+        if ("SYSTEM".equals(message.getSenderType())) return "系统";
+        if (message.getSenderUserId() == null) return null;
+        User user = userMapper.selectById(message.getSenderUserId());
+        if (user == null) return null;
+        String nickname = trimToNull(user.getNickname());
+        if (nickname != null) return nickname;
+        String phoneMask = maskPhone(user.getPhone());
+        if (phoneMask != null) return phoneMask;
+        return "用户 " + user.getId();
     }
 
     private String trimToNull(String value) {

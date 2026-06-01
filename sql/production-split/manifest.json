@@ -6,8 +6,8 @@
       "key": "user",
       "targetInstance": "pg-user",
       "targetDatabase": "omni_user",
-      "tables": ["user", "user_auth", "sms_code", "organizer_application", "user_asset", "user_attendee", "privacy_audit_log", "support_conversation", "support_message", "user_browse_history"],
-      "migrations": ["user/20260530_user_attendee.sql", "user/20260601_privacy_audit_log.sql", "user/20260601_support_center.sql", "user/20260601_user_browse_history.sql"]
+      "tables": ["user", "user_auth", "sms_code", "organizer_application", "user_asset", "user_attendee", "privacy_audit_log", "support_account", "support_conversation", "support_message", "user_browse_history"],
+      "migrations": ["user/20260530_user_attendee.sql", "user/20260601_privacy_audit_log.sql", "user/20260601_support_account.sql", "user/20260601_support_center.sql", "user/20260601_support_close_requested.sql", "user/20260601_user_browse_history.sql"]
     },
     {
       "service": "java-ticket",

@@ -6,7 +6,7 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { listMyNotifications } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
-import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationAction, getNotificationReadAt, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt } from '@/components/notification-state'
+import { filterVisibleNotifications, getHiddenNotificationIds, getLatestNotificationTime, getNotificationAction, getNotificationContentSegments, getNotificationReadAt, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread, setHiddenNotificationIds, setNotificationReadAt, shouldRenderNotificationActionButton } from '@/components/notification-state'
 import type { NotificationVO, UserRole } from '@/types/api'
 
 function formatTime(value?: string | null): string {
@@ -115,6 +115,7 @@ export default function NotificationsPage() {
           {visibleNotifications.map((item) => {
             const meta = getNotificationTypeMeta(item)
             const action = getNotificationAction(item, role)
+            const contentSegments = getNotificationContentSegments(item.content, action)
             const unread = isNotificationUnread(item, readAt)
             return (
               <div key={item.id} className="rounded border border-[#eee] bg-white px-4 py-4">
@@ -122,7 +123,7 @@ export default function NotificationsPage() {
                   <span className="rounded-full px-2 py-0.5 text-[12px]" style={{ color: meta.color, backgroundColor: meta.bg }}>{meta.label}</span>
                   {unread && <span className="rounded-full bg-[#ff1268] px-2 py-0.5 text-[11px] text-white">未读</span>}
                   <span className="text-[12px] text-[#999]">{formatTime(item.createTime)}</span>
-                  {action && (
+                  {shouldRenderNotificationActionButton(item.content, action) && action && (
                     <button
                       type="button"
                       onClick={() => router.push(action.href)}
@@ -132,7 +133,20 @@ export default function NotificationsPage() {
                     </button>
                   )}
                 </div>
-                <div className="mt-2 whitespace-pre-line text-[14px] leading-6 text-[#333]">{item.content}</div>
+                <div className="mt-2 whitespace-pre-line text-[14px] leading-6 text-[#333]">
+                  {contentSegments.map((segment, index) => segment.href ? (
+                    <button
+                      key={`${segment.text}-${index}`}
+                      type="button"
+                      onClick={() => router.push(segment.href as string)}
+                      className="inline cursor-pointer border-none bg-transparent p-0 text-[#3b82f6] outline-none hover:underline"
+                    >
+                      {segment.text}
+                    </button>
+                  ) : (
+                    <span key={`${segment.text}-${index}`}>{segment.text}</span>
+                  ))}
+                </div>
               </div>
             )
           })}

@@ -8,6 +8,7 @@ public class SupportMessageResponse {
     private Long conversationId;
     private Long senderUserId;
     private String senderType;
+    private String senderDisplayName;
     private String content;
     private LocalDateTime createTime;
 
@@ -22,6 +23,9 @@ public class SupportMessageResponse {
 
     public String getSenderType() { return senderType; }
     public void setSenderType(String senderType) { this.senderType = senderType; }
+
+    public String getSenderDisplayName() { return senderDisplayName; }
+    public void setSenderDisplayName(String senderDisplayName) { this.senderDisplayName = senderDisplayName; }
 
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }

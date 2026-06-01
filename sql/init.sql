@@ -22,6 +22,16 @@ CREATE TABLE "user" (
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE support_account (
+    user_id BIGINT PRIMARY KEY REFERENCES "user"(id),
+    phone VARCHAR(20) NOT NULL UNIQUE,
+    nickname VARCHAR(50) NOT NULL,
+    status SMALLINT NOT NULL DEFAULT 1,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_support_account_status CHECK (status IN (0, 1))
+);
+
 CREATE TABLE organizer_application (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES "user"(id),
@@ -78,7 +88,7 @@ CREATE TABLE support_conversation (
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     closed_at TIMESTAMP,
-    CONSTRAINT chk_support_conversation_status CHECK (status IN ('OPEN', 'WAITING_AGENT', 'ASSIGNED', 'CLOSED')),
+    CONSTRAINT chk_support_conversation_status CHECK (status IN ('OPEN', 'WAITING_AGENT', 'ASSIGNED', 'CLOSE_REQUESTED', 'CLOSED')),
     CONSTRAINT chk_support_conversation_source CHECK (source_type IN ('AI', 'HUMAN'))
 );
 
@@ -944,6 +954,7 @@ CREATE INDEX idx_support_conversation_user_time ON support_conversation(user_id,
 CREATE INDEX idx_support_conversation_agent_status ON support_conversation(assigned_agent_id, status, update_time DESC);
 CREATE INDEX idx_support_conversation_status_time ON support_conversation(status, update_time DESC);
 CREATE INDEX idx_support_message_conversation_time ON support_message(conversation_id, id ASC);
+CREATE INDEX idx_support_account_status_time ON support_account(status, update_time DESC);
 CREATE UNIQUE INDEX uk_user_browse_history_user_activity ON user_browse_history(user_id, activity_id);
 CREATE INDEX idx_user_browse_history_user_time ON user_browse_history(user_id, viewed_at DESC, id DESC);
 CREATE INDEX idx_order_user ON "order"(user_id);

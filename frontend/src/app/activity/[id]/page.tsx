@@ -19,6 +19,7 @@ import { canJoinWaitlistFromGrabStatus } from '@/lib/waitlist'
 import { formatAttendeeSummary, getAttendeeIdTypeLabel, normalizeChineseIdCard, removeAttendeeById, validateAttendeeSelection } from '@/lib/attendees'
 import { ACTIVITY_VIEW_SIGNAL_KEY, addActivityViewSignal, parseActivityViewSignals } from '@/lib/personalized-recommendations'
 import { getActivitySubscriptionActions, type ActivitySubscriptionActionType } from '@/lib/activity-actions'
+import { buildActivityDetailTabs, type ActivityDetailTabKey } from '@/lib/activity-detail-content'
 import type { ActivityDetailVO, ActivityQuestionVO, ActivityReviewListVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
 
 const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
@@ -93,6 +94,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [questions, setQuestions] = useState<ActivityQuestionVO[]>([])
   const [reviewForm, setReviewForm] = useState({ rating: 5, content: '', images: '' })
   const [questionContent, setQuestionContent] = useState('')
+  const [activeDetailTab, setActiveDetailTab] = useState<ActivityDetailTabKey>('project')
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [questionSubmitting, setQuestionSubmitting] = useState(false)
   const seatMapRequestIdRef = useRef(0)
@@ -107,6 +109,13 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     if (!seatMap?.layout || selectedTicket?.id == null) return null
     return buildZoomTargetFromTicketGroup(seatMap.layout, selectedTicket.id)
   }, [seatMap?.layout, selectedTicket?.id])
+  const detailTabs = useMemo(() => detail ? buildActivityDetailTabs(detail) : null, [detail])
+  const detailTabItems = useMemo(() => detailTabs ? [
+    ['project', detailTabs.project],
+    ['purchase', detailTabs.purchase],
+    ['attendance', detailTabs.attendance],
+  ] as const : [], [detailTabs])
+  const activeDetailContent = detailTabs?.[activeDetailTab]
   const showsSeatCraftSelection = Boolean(seatMap?.layout && (seatMap.layout.blockLayout?.blocks?.length || seatMap.layout.blocks?.length) && seatCraftSelectionModel)
   const availableSeatIdSet = useMemo(() => {
     if (!seatMap) return null
@@ -1252,32 +1261,41 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             {/* 下方：项目详情 */}
             <div className="bg-white rounded-lg overflow-hidden border border-[#e5e5e5]">
             {/* 标签栏 */}
-            <div className="flex items-center px-6 border-b border-[#e5e5e5]">
-              <div className="py-4 px-2 text-[#ff1268] font-medium border-b-2 border-[#ff1268] cursor-pointer text-[15px] mr-10">项目详情</div>
-              <div className="py-4 px-2 text-[#333] hover:text-[#ff1268] cursor-pointer transition-colors text-[15px] mr-10">购票须知</div>
-              <div className="py-4 px-2 text-[#333] hover:text-[#ff1268] cursor-pointer transition-colors text-[15px]">观演须知</div>
+            <div className="flex items-center overflow-x-auto px-6 border-b border-[#e5e5e5]">
+              {detailTabItems.map(([key, tab]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveDetailTab(key)}
+                  className={`mr-10 shrink-0 border-b-2 px-2 py-4 text-[15px] font-medium outline-none transition-colors last:mr-0 ${
+                    activeDetailTab === key
+                      ? 'border-[#ff1268] text-[#ff1268]'
+                      : 'border-transparent text-[#333] hover:text-[#ff1268]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
             
             {/* 详情内容 */}
             <div className="p-8">
-              <h2 className="text-[18px] font-medium text-[#111] mb-6">演出介绍</h2>
-              {/* 模拟详情大图 */}
-              <div className="w-full bg-[#f8f8f8] p-10 flex flex-col items-center justify-center rounded-lg border border-[#eee]">
-                <h3 className="text-2xl font-bold text-[#ff1268] mb-4">人、票、证信息不匹配 无法入场</h3>
-                <p className="text-[#333] text-center max-w-[600px] leading-relaxed">
-                  根据文化和旅游部公安部联合下发的《关于进一步加强大型营业性演出活动规范管理促进演出市场健康有序发展的通知》（文旅市场发[2023]96号）要求：<br/>
-                  <strong>购票人需与入场观演人身份信息保持一致。</strong>
-                  观演人入场时需提供与电子票信息一致的身份证原件，并进行人脸识别验证与安检。
-                </p>
-                <div className="mt-10 p-4 border border-[#e5e5e5] rounded flex items-center gap-4 bg-white">
-                  <div className="w-24 h-24 bg-gray-200">
-                    <img src="/1.png" alt="二维码示意图" className="w-full h-full object-cover" />
-                  </div>
-                  <div>
-                    <div className="font-bold mb-1">万象应用扫码购票</div>
-                    <div className="text-sm text-gray-500">该渠道不支持购买</div>
-                  </div>
-                </div>
+              <div className="space-y-8">
+                {activeDetailContent?.sections.map(section => (
+                  <section key={section.title}>
+                    <h2 className="mb-4 text-[18px] font-medium text-[#111]">{section.title}</h2>
+                    <div className="rounded-lg border border-[#eee] bg-[#f8f8f8] p-6">
+                      <ul className="space-y-3">
+                        {section.items.map(item => (
+                          <li key={item} className="flex gap-3 text-[15px] leading-7 text-[#333]">
+                            <span className="mt-[11px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff1268]" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </section>
+                ))}
                 </div>
               </div>
             </div>

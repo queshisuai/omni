@@ -5,6 +5,7 @@ public class SupportAccountRequest {
     private String phone;
     private String nickname;
     private String password;
+    private Integer status;
 
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
@@ -14,4 +15,7 @@ public class SupportAccountRequest {
 
     public String getPassword() { return password; }
     public void setPassword(String password) { this.password = password; }
+
+    public Integer getStatus() { return status; }
+    public void setStatus(Integer status) { this.status = status; }
 }

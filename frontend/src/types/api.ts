@@ -694,6 +694,7 @@ export interface SupportMessageVO {
   conversationId: number
   senderUserId?: number | null
   senderType: SupportMessageSenderType
+  senderDisplayName?: string | null
   content: string
   createTime?: string | null
 }

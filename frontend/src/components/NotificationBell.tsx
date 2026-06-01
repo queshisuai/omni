@@ -140,13 +140,19 @@ export function NotificationBell() {
     >
       <button
         onClick={handleClickBell}
-        className="relative flex items-center gap-1 text-sm text-[#111] hover:text-[#ff1268] bg-transparent border-none cursor-pointer outline-none h-full"
+        className={`group flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm transition-all outline-none ${
+          unreadCount > 0
+            ? 'border-[#ffd8e7] bg-[#fff7fa] text-[#111] shadow-[0_4px_14px_rgba(255,18,104,0.08)] hover:border-[#ffb8d2] hover:bg-[#fff2f7]'
+            : 'border-transparent bg-transparent text-[#111] hover:bg-gray-50 hover:text-[#ff1268]'
+        }`}
         aria-label="站内消息"
       >
-        <Bell className="w-5 h-5" />
-        <span>消息</span>
+        <span className="flex h-5 w-5 items-center justify-center">
+          <Bell className={`h-[18px] w-[18px] ${unreadCount > 0 ? 'text-[#ff1268]' : ''}`} />
+        </span>
+        <span className="leading-none">消息</span>
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 left-3 inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[#ff1268] px-1 text-[10px] font-medium leading-none text-white">
+          <span className="ml-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#ff1268] px-1.5 text-[10px] font-semibold leading-none text-white shadow-[0_2px_7px_rgba(255,18,104,0.28)]">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}

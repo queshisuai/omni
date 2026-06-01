@@ -12,7 +12,7 @@ import {
   sendSupportMessage,
 } from '@/lib/api'
 import { logout } from '@/lib/auth'
-import { filterSupportConversations, formatSupportConversationStatus, formatSupportSender, shouldPollSupportConversation, type SupportConversationFilter } from '@/lib/support-tools'
+import { filterSupportConversations, formatSupportConversationStatus, formatSupportMessageSender, mergeSupportConversations, shouldPollSupportConversation, type SupportConversationFilter } from '@/lib/support-tools'
 import type { SupportConversationVO, SupportMessageVO } from '@/types/api'
 
 function getConversationUserDisplay(conversation: SupportConversationVO) {
@@ -31,7 +31,11 @@ export default function SupportWorkbenchPage() {
   const [error, setError] = useState('')
 
   const loadConversations = async () => {
-    const data = await listAgentSupportConversations()
+    const [activeItems, closedItems] = await Promise.all([
+      listAgentSupportConversations(),
+      listAgentSupportConversations('CLOSED'),
+    ])
+    const data = mergeSupportConversations([...(activeItems || []), ...(closedItems || [])])
     setConversations(data)
     setActive(current => current ? data.find(item => item.id === current.id) || current : data[0] || null)
   }
@@ -46,7 +50,7 @@ export default function SupportWorkbenchPage() {
     { value: 'closed', label: '已结束', count: filterSupportConversations(conversations, 'closed').length },
     { value: 'all', label: '全部', count: conversations.length },
   ]
-  const canReply = active?.status === 'ASSIGNED'
+  const canReply = active?.status === 'ASSIGNED' || active?.status === 'CLOSE_REQUESTED'
 
   const loadMessages = async (conversationId: number) => {
     const data = await listSupportMessages(conversationId)
@@ -142,7 +146,7 @@ export default function SupportWorkbenchPage() {
       setActive(updated)
       await loadConversations()
       await loadMessages(updated.id)
-      setStatus('会话已结束')
+      setStatus('已向用户发送结束确认')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '结束会话失败')
     }
@@ -218,8 +222,8 @@ export default function SupportWorkbenchPage() {
                   <div className="mt-1 text-[12px] text-gray-500">用户：{getConversationUserDisplay(active)} · ID：{active.userId} · {formatSupportConversationStatus(active.status)}</div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={claim} disabled={active.status === 'CLOSED' || active.status === 'ASSIGNED'} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50">接入</button>
-                  <button onClick={close} disabled={active.status === 'CLOSED'} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] text-gray-600 hover:border-red-300 hover:text-red-500 disabled:opacity-50">结束</button>
+                  <button onClick={claim} disabled={active.status === 'CLOSED' || active.status === 'ASSIGNED' || active.status === 'CLOSE_REQUESTED'} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50">接入</button>
+                  <button onClick={close} disabled={active.status === 'CLOSED' || active.status === 'CLOSE_REQUESTED'} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] text-gray-600 hover:border-red-300 hover:text-red-500 disabled:opacity-50">申请结束</button>
                 </div>
               </div>
 
@@ -230,7 +234,7 @@ export default function SupportWorkbenchPage() {
                     return (
                       <div key={item.id || `${item.senderType}-${item.content}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[68%] rounded-2xl px-4 py-3 text-[13px] leading-6 ${mine ? 'bg-[#1a1a2e] text-white' : item.senderType === 'AI' ? 'bg-[#fff0f5] text-gray-700' : 'bg-white text-gray-700 shadow-sm'}`}>
-                          <div className={`mb-1 text-[11px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>{formatSupportSender(item.senderType)}</div>
+                          <div className={`mb-1 text-[11px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>{formatSupportMessageSender(item, 'agent')}</div>
                           {item.content}
                         </div>
                       </div>
