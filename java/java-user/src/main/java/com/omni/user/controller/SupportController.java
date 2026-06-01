@@ -117,10 +117,11 @@ public class SupportController {
     @GetMapping("/support/agent/conversations")
     public Result<List<SupportConversationResponse>> listAgentConversations(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @RequestParam(required = false) String status) {
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String queue) {
         Long userId = parseUserId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
-        return Result.success(customerSupportService.listAgentConversations(userId, status));
+        return Result.success(customerSupportService.listAgentConversations(userId, status, queue));
     }
 
     @PostMapping("/support/agent/conversations/{id}/claim")

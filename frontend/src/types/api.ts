@@ -701,6 +701,12 @@ export interface SupportConversationVO {
   createTime?: string | null
   updateTime?: string | null
   closedAt?: string | null
+  firstResponseDueAt?: string | null
+  firstAgentRepliedAt?: string | null
+  lastUserMessageAt?: string | null
+  lastAgentMessageAt?: string | null
+  userWaitingSeconds?: number | null
+  slaOverdue?: boolean | null
 }
 
 export interface SupportMessageVO {

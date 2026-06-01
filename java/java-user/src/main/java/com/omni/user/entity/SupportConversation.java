@@ -20,6 +20,10 @@ public class SupportConversation {
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     private LocalDateTime closedAt;
+    private LocalDateTime firstResponseDueAt;
+    private LocalDateTime firstAgentRepliedAt;
+    private LocalDateTime lastUserMessageAt;
+    private LocalDateTime lastAgentMessageAt;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -50,4 +54,16 @@ public class SupportConversation {
 
     public LocalDateTime getClosedAt() { return closedAt; }
     public void setClosedAt(LocalDateTime closedAt) { this.closedAt = closedAt; }
+
+    public LocalDateTime getFirstResponseDueAt() { return firstResponseDueAt; }
+    public void setFirstResponseDueAt(LocalDateTime firstResponseDueAt) { this.firstResponseDueAt = firstResponseDueAt; }
+
+    public LocalDateTime getFirstAgentRepliedAt() { return firstAgentRepliedAt; }
+    public void setFirstAgentRepliedAt(LocalDateTime firstAgentRepliedAt) { this.firstAgentRepliedAt = firstAgentRepliedAt; }
+
+    public LocalDateTime getLastUserMessageAt() { return lastUserMessageAt; }
+    public void setLastUserMessageAt(LocalDateTime lastUserMessageAt) { this.lastUserMessageAt = lastUserMessageAt; }
+
+    public LocalDateTime getLastAgentMessageAt() { return lastAgentMessageAt; }
+    public void setLastAgentMessageAt(LocalDateTime lastAgentMessageAt) { this.lastAgentMessageAt = lastAgentMessageAt; }
 }

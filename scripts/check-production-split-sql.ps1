@@ -46,6 +46,13 @@ function Get-ColumnList([string] $columns) {
 
 function Test-SqlStatementTargetOwner($match, [string] $filePath, [string] $serviceKey, [int] $quotedGroup, [int] $bareGroup, [string] $operation) {
     $table = Get-IdentifierFromMatch $match $quotedGroup $bareGroup
+    if ($operation -eq "UPDATE" -and $table -eq "set") {
+        $prefixStart = [Math]::Max(0, $match.Index - 20)
+        $prefix = $content.Substring($prefixStart, $match.Index - $prefixStart)
+        if ($prefix -match '(?i)DO\s*$') {
+            return
+        }
+    }
     $owner = $statementTableOwner[$table]
     $lineNumber = 1 + ($content.Substring(0, $match.Index).Split("`n").Count - 1)
     if (-not $owner) {
@@ -92,7 +99,8 @@ $schemaColumns = @{
     "station" = New-ColumnSet @("id", "tour_id")
     "station_config_version" = New-ColumnSet @("id", "station_id", "activity_id", "tour_id", "venue_id", "venue_application_id", "reviewer_id", "created_by")
     "stock_log" = New-ColumnSet @("id", "session_id", "ticket_type_id")
-    "support_conversation" = New-ColumnSet @("id", "user_id", "subject", "status", "source_type", "assigned_agent_id", "last_message", "create_time", "update_time", "closed_at")
+    "support_account" = New-ColumnSet @("id", "user_id", "phone", "nickname", "status", "create_time", "update_time")
+    "support_conversation" = New-ColumnSet @("id", "user_id", "subject", "status", "source_type", "assigned_agent_id", "last_message", "create_time", "update_time", "closed_at", "first_response_due_at", "first_agent_replied_at", "last_user_message_at", "last_agent_message_at")
     "support_message" = New-ColumnSet @("id", "conversation_id", "sender_user_id", "sender_type", "content", "create_time")
     "team_grab_request" = New-ColumnSet @("id", "request_id", "grab_request_id", "team_id", "trigger_user_id", "payer_user_id", "session_id", "ticket_type_id", "order_id")
     "team_seat_assignment" = New-ColumnSet @("id", "team_id", "user_id", "order_id", "order_seat_id", "session_seat_id", "seat_label")

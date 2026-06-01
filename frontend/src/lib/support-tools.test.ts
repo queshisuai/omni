@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSupportSubject, canRequestSupportHandoff, filterSupportConversations, formatSupportConversationStatus, formatSupportMessageSender, getLoginRedirectForRole, getSupportConversationRecordsHref, isSupportHelpConversationPath, mergeSupportConversations, pickDefaultUserSupportConversation, shouldPollSupportConversation } from './support-tools.ts'
+import { buildSupportSubject, canRequestSupportHandoff, filterSupportConversations, formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, getLoginRedirectForRole, getSupportConversationRecordsHref, getSupportQueueTabs, isSupportHelpConversationPath, mergeSupportConversations, pickDefaultUserSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue } from './support-tools.ts'
 
 test('routes support role to support workbench after login', () => {
   assert.equal(getLoginRedirectForRole('support'), '/support')
@@ -38,6 +38,40 @@ test('filters support conversations by workbench tab', () => {
   assert.deepEqual(filterSupportConversations(conversations, 'active').map(item => item.id), [1, 2])
   assert.deepEqual(filterSupportConversations(conversations, 'closed').map(item => item.id), [3])
   assert.deepEqual(filterSupportConversations(conversations, 'all').map(item => item.id), [1, 2, 3])
+})
+
+test('groups support conversations into queue tabs', () => {
+  const conversations = [
+    { id: 1, status: 'WAITING_AGENT', slaOverdue: false },
+    { id: 2, status: 'ASSIGNED', slaOverdue: false },
+    { id: 3, status: 'ASSIGNED', slaOverdue: true },
+    { id: 4, status: 'CLOSE_REQUESTED', slaOverdue: false },
+    { id: 5, status: 'CLOSED', slaOverdue: false },
+  ] as any[]
+
+  const tabs = getSupportQueueTabs(conversations)
+
+  assert.deepEqual(tabs.map(tab => [tab.value, tab.count]), [
+    ['pending', 1],
+    ['in_progress', 1],
+    ['overdue', 1],
+    ['close_requested', 1],
+    ['closed', 1],
+  ])
+})
+
+test('sorts urgent support conversations first', () => {
+  const sorted = sortSupportConversationsForQueue([
+    { id: 1, status: 'WAITING_AGENT', slaOverdue: false, updateTime: '2026-06-02T10:00:00' },
+    { id: 2, status: 'ASSIGNED', slaOverdue: true, updateTime: '2026-06-02T09:00:00' },
+  ] as any[])
+
+  assert.deepEqual(sorted.map(item => item.id), [2, 1])
+})
+
+test('formats SLA text in Chinese', () => {
+  assert.equal(formatSupportSlaText({ status: 'WAITING_AGENT', firstResponseDueAt: '2026-06-02T10:05:00', slaOverdue: false } as any, new Date('2026-06-02T10:03:00')), '首次响应剩余 2 分钟')
+  assert.equal(formatSupportSlaText({ status: 'ASSIGNED', userWaitingSeconds: 660, slaOverdue: true } as any, new Date('2026-06-02T10:03:00')), '用户已等待 11 分钟')
 })
 
 test('merges active and closed support conversations for workbench tabs', () => {

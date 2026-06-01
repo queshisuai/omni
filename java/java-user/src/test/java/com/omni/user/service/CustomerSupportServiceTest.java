@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -423,6 +424,64 @@ class CustomerSupportServiceTest {
     }
 
     @Test
+    void supportAgentPendingQueueOnlyShowsUnclaimedWaitingConversations() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        SupportConversation publicWaiting = supportConversation(1L, 10L, "WAITING_AGENT", null);
+        SupportConversation assignedWaiting = supportConversation(2L, 11L, "WAITING_AGENT", 31L);
+        SupportConversation ownAssigned = supportConversation(3L, 12L, "ASSIGNED", 30L);
+        when(conversationMapper.selectList(any())).thenReturn(List.of(publicWaiting, assignedWaiting, ownAssigned));
+
+        List<SupportConversationResponse> response = service.listAgentConversations(30L, null, "pending");
+
+        assertEquals(List.of(1L), response.stream().map(SupportConversationResponse::getId).collect(Collectors.toList()));
+    }
+
+    @Test
+    void supportAgentInProgressQueueOnlyShowsOwnAssignedConversations() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        SupportConversation ownAssigned = supportConversation(1L, 10L, "ASSIGNED", 30L);
+        SupportConversation otherAssigned = supportConversation(2L, 11L, "ASSIGNED", 31L);
+        SupportConversation publicWaiting = supportConversation(3L, 12L, "WAITING_AGENT", null);
+        when(conversationMapper.selectList(any())).thenReturn(List.of(ownAssigned, otherAssigned, publicWaiting));
+
+        List<SupportConversationResponse> response = service.listAgentConversations(30L, null, "in_progress");
+
+        assertEquals(List.of(1L), response.stream().map(SupportConversationResponse::getId).collect(Collectors.toList()));
+    }
+
+    @Test
+    void responseIncludesSlaWhenHumanConversationWaitsForFirstResponse() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        SupportConversation conversation = supportConversation(1L, 10L, "WAITING_AGENT", null);
+        conversation.setFirstResponseDueAt(LocalDateTime.of(2026, 6, 2, 10, 5));
+        conversation.setLastUserMessageAt(LocalDateTime.of(2026, 6, 2, 10, 0));
+        when(conversationMapper.selectList(any())).thenReturn(List.of(conversation));
+
+        List<SupportConversationResponse> response = service.listAgentConversations(30L, null, "pending");
+
+        assertEquals(LocalDateTime.of(2026, 6, 2, 10, 5), response.get(0).getFirstResponseDueAt());
+        assertTrue(response.get(0).getUserWaitingSeconds() >= 0);
+    }
+
+    @Test
+    void supportAgentOverdueQueueShowsOnlyVisibleOverdueConversations() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        SupportConversation overduePublic = supportConversation(1L, 10L, "WAITING_AGENT", null);
+        overduePublic.setFirstResponseDueAt(LocalDateTime.now().minusMinutes(1));
+        SupportConversation overdueOwn = supportConversation(2L, 11L, "ASSIGNED", 30L);
+        overdueOwn.setLastUserMessageAt(LocalDateTime.now().minusMinutes(11));
+        SupportConversation overdueOther = supportConversation(3L, 12L, "ASSIGNED", 31L);
+        overdueOther.setLastUserMessageAt(LocalDateTime.now().minusMinutes(11));
+        SupportConversation normalPublic = supportConversation(4L, 13L, "WAITING_AGENT", null);
+        normalPublic.setFirstResponseDueAt(LocalDateTime.now().plusMinutes(4));
+        when(conversationMapper.selectList(any())).thenReturn(List.of(overduePublic, overdueOwn, overdueOther, normalPublic));
+
+        List<SupportConversationResponse> response = service.listAgentConversations(30L, null, "overdue");
+
+        assertEquals(List.of(1L, 2L), response.stream().map(SupportConversationResponse::getId).collect(Collectors.toList()));
+    }
+
+    @Test
     void supportAgentDefaultQueueExcludesAiOnlyOpenConversations() {
         when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
         SupportConversation aiOnly = new SupportConversation();
@@ -467,5 +526,17 @@ class CustomerSupportServiceTest {
         user.setRole(role);
         user.setStatus(1);
         return user;
+    }
+
+    private SupportConversation supportConversation(Long id, Long userId, String status, Long assignedAgentId) {
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(id);
+        conversation.setUserId(userId);
+        conversation.setStatus(status);
+        conversation.setSourceType("HUMAN");
+        conversation.setAssignedAgentId(assignedAgentId);
+        conversation.setCreateTime(LocalDateTime.of(2026, 6, 2, 10, 0));
+        conversation.setUpdateTime(LocalDateTime.of(2026, 6, 2, 10, 0));
+        return conversation;
     }
 }

@@ -1,5 +1,12 @@
 # 大麦迁移体验改进进度
 
+## 2026-06-02 客服工作台队列与 SLA 优化
+- 按推荐优先级完成第一轮客服优化：客服工作台改为待处理、处理中、超时、已申请结束、已关闭五组；客服账号只展示公共池未接入会话和自己名下会话，管理员记录页保留全量查看。
+- 后端 `support_conversation` 新增首次响应截止、首次人工回复、最后用户消息、最后人工回复 SLA 字段；响应对象返回用户等待秒数和超时标记。
+- 前端补充 SLA 工具函数和类型：队列计数、超时优先排序、首次响应/用户等待/最后回复中文文案。
+- SQL 分库 manifest 登记 `user/20260602_support_workbench_sla.sql`，并补齐生产 SQL 校验脚本的 `support_account` 与客服 SLA 字段白名单；修正校验脚本对 `ON CONFLICT ... DO UPDATE SET` 的误判。
+- 验证：`node --test frontend/src/lib/support-tools.test.ts` 16 个测试通过；`cd frontend && npm run typecheck` 通过；`cd java && mvn -pl java-user "-Dtest=CustomerSupportServiceTest" test` 24 个测试通过；`powershell -ExecutionPolicy Bypass -File scripts\check-production-split-sql.ps1` 通过；`git diff --check` 退出 0，仅提示 CRLF 换行转换警告。
+
 ## 2026-06-01 消息铃 / 消息中心业务入口补强
 - 消息铃与消息中心统一使用通知类型元数据和业务动作映射：候补、小队抢票、订单、客服、风控/待办消息可直接跳转到对应订单、候补、客服会话或后台处理页。
 - 按产品反馈去掉“来自哪个服务/服务来源”展示，前端动作对象只保留跳转地址和按钮文案，避免用户看到技术服务归属。

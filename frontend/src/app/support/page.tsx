@@ -12,7 +12,7 @@ import {
   sendSupportMessage,
 } from '@/lib/api'
 import { logout } from '@/lib/auth'
-import { filterSupportConversations, formatSupportConversationStatus, formatSupportMessageSender, mergeSupportConversations, shouldPollSupportConversation, type SupportConversationFilter } from '@/lib/support-tools'
+import { formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, getSupportQueueTabs, mergeSupportConversations, shouldPollSupportConversation, sortSupportConversationsForQueue, type SupportQueueFilter } from '@/lib/support-tools'
 import type { SupportConversationVO, SupportMessageVO } from '@/types/api'
 
 function getConversationUserDisplay(conversation: SupportConversationVO) {
@@ -25,31 +25,41 @@ export default function SupportWorkbenchPage() {
   const [conversations, setConversations] = useState<SupportConversationVO[]>([])
   const [active, setActive] = useState<SupportConversationVO | null>(null)
   const [messages, setMessages] = useState<SupportMessageVO[]>([])
-  const [conversationFilter, setConversationFilter] = useState<SupportConversationFilter>('active')
+  const [conversationFilter, setConversationFilter] = useState<SupportQueueFilter>('pending')
   const [text, setText] = useState('')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
 
   const loadConversations = async () => {
-    const [activeItems, closedItems] = await Promise.all([
-      listAgentSupportConversations(),
-      listAgentSupportConversations('CLOSED'),
+    const [pending, inProgress, overdue, closeRequested, closed] = await Promise.all([
+      listAgentSupportConversations({ queue: 'pending' }),
+      listAgentSupportConversations({ queue: 'in_progress' }),
+      listAgentSupportConversations({ queue: 'overdue' }),
+      listAgentSupportConversations({ queue: 'close_requested' }),
+      listAgentSupportConversations({ queue: 'closed' }),
     ])
-    const data = mergeSupportConversations([...(activeItems || []), ...(closedItems || [])])
+    const data = sortSupportConversationsForQueue(mergeSupportConversations([
+      ...(pending || []),
+      ...(inProgress || []),
+      ...(overdue || []),
+      ...(closeRequested || []),
+      ...(closed || []),
+    ]))
     setConversations(data)
     setActive(current => current ? data.find(item => item.id === current.id) || current : data[0] || null)
   }
 
-  const visibleConversations = useMemo(
-    () => filterSupportConversations(conversations, conversationFilter),
-    [conversations, conversationFilter],
-  )
+  const visibleConversations = useMemo(() => {
+    return sortSupportConversationsForQueue(conversations.filter(item => {
+      if (conversationFilter === 'closed') return item.status === 'CLOSED'
+      if (conversationFilter === 'overdue') return item.status !== 'CLOSED' && Boolean(item.slaOverdue)
+      if (conversationFilter === 'pending') return item.status === 'WAITING_AGENT' && !item.slaOverdue
+      if (conversationFilter === 'close_requested') return item.status === 'CLOSE_REQUESTED' && !item.slaOverdue
+      return item.status === 'ASSIGNED' && !item.slaOverdue
+    }))
+  }, [conversations, conversationFilter])
 
-  const filterTabs: Array<{ value: SupportConversationFilter; label: string; count: number }> = [
-    { value: 'active', label: '处理中', count: filterSupportConversations(conversations, 'active').length },
-    { value: 'closed', label: '已结束', count: filterSupportConversations(conversations, 'closed').length },
-    { value: 'all', label: '全部', count: conversations.length },
-  ]
+  const filterTabs = getSupportQueueTabs(conversations)
   const canReply = active?.status === 'ASSIGNED' || active?.status === 'CLOSE_REQUESTED'
 
   const loadMessages = async (conversationId: number) => {
@@ -177,7 +187,7 @@ export default function SupportWorkbenchPage() {
       <main className="grid min-h-0 flex-1 grid-cols-[320px_1fr]">
         <aside className="min-h-0 border-r border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-4 py-3 text-[13px] font-medium text-gray-500">待处理会话</div>
-          <div className="flex gap-2 border-b border-gray-100 px-4 py-3">
+          <div className="flex flex-wrap gap-2 border-b border-gray-100 px-4 py-3">
             {filterTabs.map(tab => (
               <button
                 key={tab.value}
@@ -208,6 +218,9 @@ export default function SupportWorkbenchPage() {
                 </div>
                 <div className="truncate text-[12px] text-gray-500">{item.subject}</div>
                 <div className="line-clamp-2 text-[12px] leading-5 text-gray-500">{item.lastMessage || '暂无消息'}</div>
+                <div className={`mt-2 text-[12px] ${item.slaOverdue ? 'text-red-500' : 'text-gray-400'}`}>
+                  {formatSupportSlaText(item)}
+                </div>
               </button>
             ))}
           </div>
@@ -220,6 +233,7 @@ export default function SupportWorkbenchPage() {
                 <div>
                   <div className="text-[16px] font-bold text-[#111]">{active.subject}</div>
                   <div className="mt-1 text-[12px] text-gray-500">用户：{getConversationUserDisplay(active)} · ID：{active.userId} · {formatSupportConversationStatus(active.status)}</div>
+                  <div className={`mt-1 text-[12px] ${active.slaOverdue ? 'text-red-500' : 'text-gray-500'}`}>{formatSupportSlaText(active)}</div>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={claim} disabled={active.status === 'CLOSED' || active.status === 'ASSIGNED' || active.status === 'CLOSE_REQUESTED'} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50">接入</button>

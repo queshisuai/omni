@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Headphones, MessageSquareText, RefreshCcw, UserRound } from 'lucide-react'
 import { listAgentSupportConversations, listSupportMessages } from '@/lib/api'
-import { filterSupportConversations, formatSupportConversationStatus, formatSupportSender, shouldPollSupportConversation, type SupportConversationFilter } from '@/lib/support-tools'
+import { filterSupportConversations, formatSupportConversationStatus, formatSupportSender, formatSupportSlaText, shouldPollSupportConversation, type SupportConversationFilter } from '@/lib/support-tools'
 import type { SupportConversationVO, SupportMessageVO } from '@/types/api'
 
 function formatTime(value?: string | null) {
@@ -159,6 +159,9 @@ export default function ConsoleSupportConversationsPage() {
                 </div>
                 <div className="truncate text-[12px] text-gray-500">{item.subject}</div>
                 <div className="mt-1 line-clamp-2 text-[12px] leading-5 text-gray-400">{item.lastMessage || '暂无消息'}</div>
+                <div className={`mt-2 text-[12px] ${item.slaOverdue ? 'text-red-500' : 'text-gray-400'}`}>
+                  {formatSupportSlaText(item)}
+                </div>
               </button>
             ))}
           </div>
@@ -177,6 +180,7 @@ export default function ConsoleSupportConversationsPage() {
                     <div className="mt-1 text-[12px] text-gray-500">
                       用户 ID：{active.userId} · {formatSupportConversationStatus(active.status)} · {active.sourceType === 'AI' ? 'AI 客服' : '人工客服'}
                     </div>
+                    <div className={`mt-1 text-[12px] ${active.slaOverdue ? 'text-red-500' : 'text-gray-500'}`}>{formatSupportSlaText(active)}</div>
                   </div>
                   <div className="text-[12px] text-gray-400">{formatTime(active.updateTime || active.createTime)}</div>
                 </div>

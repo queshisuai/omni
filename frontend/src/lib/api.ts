@@ -357,9 +357,14 @@ export async function confirmCloseSupportConversation(conversationId: number) {
   })
 }
 
-export async function listAgentSupportConversations(status?: string) {
+export async function listAgentSupportConversations(statusOrOptions?: string | { status?: string; queue?: string }) {
   const params = new URLSearchParams()
-  if (status) params.set('status', status)
+  if (typeof statusOrOptions === 'string') {
+    params.set('status', statusOrOptions)
+  } else {
+    if (statusOrOptions?.status) params.set('status', statusOrOptions.status)
+    if (statusOrOptions?.queue) params.set('queue', statusOrOptions.queue)
+  }
   const qs = params.toString()
   return request<import('@/types/api').SupportConversationVO[]>(`/api/user/support/agent/conversations${qs ? `?${qs}` : ''}`)
 }

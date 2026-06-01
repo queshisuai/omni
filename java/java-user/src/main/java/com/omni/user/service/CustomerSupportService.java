@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -79,6 +80,13 @@ public class CustomerSupportService {
         conversation.setStatus(preferHuman ? STATUS_WAITING_AGENT : STATUS_OPEN);
         conversation.setSourceType(preferHuman ? SOURCE_HUMAN : SOURCE_AI);
         conversation.setLastMessage(initialMessage == null ? "用户发起在线客服咨询" : initialMessage);
+        if (preferHuman) {
+            LocalDateTime now = LocalDateTime.now();
+            conversation.setFirstResponseDueAt(now.plusMinutes(5));
+            if (initialMessage != null) {
+                conversation.setLastUserMessageAt(now);
+            }
+        }
         touch(conversation);
         conversationMapper.insert(conversation);
 
@@ -107,32 +115,64 @@ public class CustomerSupportService {
     }
 
     public List<SupportConversationResponse> listAgentConversations(Long agentUserId, String status) {
+        return listAgentConversations(agentUserId, status, null);
+    }
+
+    public List<SupportConversationResponse> listAgentConversations(Long agentUserId, String status, String queue) {
         User agent = requireSupportOrAdmin(agentUserId);
         LambdaQueryWrapper<SupportConversation> wrapper = new LambdaQueryWrapper<SupportConversation>()
                 .orderByDesc(SupportConversation::getUpdateTime)
                 .orderByDesc(SupportConversation::getId);
         String normalizedStatus = trimToNull(status);
+        String normalizedQueue = trimToNull(queue);
         if (normalizedStatus != null) {
             wrapper.eq(SupportConversation::getStatus, normalizedStatus);
+        } else if ("closed".equals(normalizedQueue)) {
+            wrapper.eq(SupportConversation::getStatus, STATUS_CLOSED);
         } else {
             wrapper.ne(SupportConversation::getStatus, STATUS_CLOSED);
-            if (ROLE_SUPPORT.equals(agent.getRole())) {
-                wrapper.in(SupportConversation::getStatus, STATUS_WAITING_AGENT, STATUS_ASSIGNED, STATUS_CLOSE_REQUESTED);
-            }
         }
-        if (ROLE_SUPPORT.equals(agent.getRole())) {
-            wrapper.and(w -> w.isNull(SupportConversation::getAssignedAgentId)
+        if (ROLE_SUPPORT.equals(agent.getRole()) && normalizedStatus == null && normalizedQueue == null) {
+            wrapper.and(w -> w.eq(SupportConversation::getStatus, STATUS_WAITING_AGENT)
+                    .isNull(SupportConversation::getAssignedAgentId)
                     .or()
                     .eq(SupportConversation::getAssignedAgentId, agentUserId));
         }
         return conversationMapper.selectList(wrapper).stream()
-                .filter(conversation -> !ROLE_SUPPORT.equals(agent.getRole())
-                        || normalizedStatus != null
-                        || STATUS_WAITING_AGENT.equals(conversation.getStatus())
-                        || STATUS_ASSIGNED.equals(conversation.getStatus())
-                        || STATUS_CLOSE_REQUESTED.equals(conversation.getStatus()))
+                .filter(conversation -> isVisibleInAgentQueue(conversation, agent, agentUserId, normalizedStatus, normalizedQueue))
                 .map(this::toConversationResponse)
                 .collect(Collectors.toList());
+    }
+
+    private boolean isVisibleInAgentQueue(SupportConversation conversation, User agent, Long agentUserId, String status, String queue) {
+        if (!ROLE_SUPPORT.equals(agent.getRole())) {
+            return true;
+        }
+        if (status != null) {
+            if (STATUS_WAITING_AGENT.equals(status)) {
+                return conversation.getAssignedAgentId() == null;
+            }
+            return agentUserId.equals(conversation.getAssignedAgentId());
+        }
+        if ("overdue".equals(queue)) {
+            boolean visible = (STATUS_WAITING_AGENT.equals(conversation.getStatus()) && conversation.getAssignedAgentId() == null)
+                    || agentUserId.equals(conversation.getAssignedAgentId());
+            return visible && isSlaOverdue(conversation, LocalDateTime.now());
+        }
+        if ("pending".equals(queue)) {
+            return STATUS_WAITING_AGENT.equals(conversation.getStatus()) && conversation.getAssignedAgentId() == null;
+        }
+        if ("in_progress".equals(queue)) {
+            return STATUS_ASSIGNED.equals(conversation.getStatus()) && agentUserId.equals(conversation.getAssignedAgentId());
+        }
+        if ("close_requested".equals(queue)) {
+            return STATUS_CLOSE_REQUESTED.equals(conversation.getStatus()) && agentUserId.equals(conversation.getAssignedAgentId());
+        }
+        if ("closed".equals(queue)) {
+            return STATUS_CLOSED.equals(conversation.getStatus()) && agentUserId.equals(conversation.getAssignedAgentId());
+        }
+        return (STATUS_WAITING_AGENT.equals(conversation.getStatus()) && conversation.getAssignedAgentId() == null)
+                || agentUserId.equals(conversation.getAssignedAgentId());
     }
 
     public List<SupportMessageResponse> listMessages(Long actorUserId, Long conversationId) {
@@ -174,7 +214,17 @@ public class CustomerSupportService {
         SupportConversation conversation = requireVisibleConversation(actorUserId, conversationId);
         String senderType = actorUserId.equals(conversation.getUserId()) ? "USER" : "AGENT";
         SupportMessage message = insertMessage(conversation.getId(), actorUserId, senderType, content);
+        LocalDateTime messageTime = message.getCreateTime() == null ? LocalDateTime.now() : message.getCreateTime();
         conversation.setLastMessage(content);
+        if ("USER".equals(senderType)) {
+            conversation.setLastUserMessageAt(messageTime);
+        }
+        if ("AGENT".equals(senderType)) {
+            if (conversation.getFirstAgentRepliedAt() == null) {
+                conversation.setFirstAgentRepliedAt(messageTime);
+            }
+            conversation.setLastAgentMessageAt(messageTime);
+        }
         if ("USER".equals(senderType) && STATUS_CLOSE_REQUESTED.equals(conversation.getStatus())) {
             conversation.setStatus(STATUS_ASSIGNED);
         }
@@ -205,6 +255,9 @@ public class CustomerSupportService {
         conversation.setSourceType(SOURCE_HUMAN);
         conversation.setStatus(STATUS_WAITING_AGENT);
         conversation.setLastMessage("用户已申请转人工客服");
+        if (conversation.getFirstResponseDueAt() == null) {
+            conversation.setFirstResponseDueAt(LocalDateTime.now().plusMinutes(5));
+        }
         touch(conversation);
         conversationMapper.updateById(conversation);
         insertMessage(conversation.getId(), null, "SYSTEM", "人工介入请等待");
@@ -441,7 +494,38 @@ public class CustomerSupportService {
         response.setCreateTime(conversation.getCreateTime());
         response.setUpdateTime(conversation.getUpdateTime());
         response.setClosedAt(conversation.getClosedAt());
+        response.setFirstResponseDueAt(conversation.getFirstResponseDueAt());
+        response.setFirstAgentRepliedAt(conversation.getFirstAgentRepliedAt());
+        response.setLastUserMessageAt(conversation.getLastUserMessageAt());
+        response.setLastAgentMessageAt(conversation.getLastAgentMessageAt());
+        LocalDateTime now = LocalDateTime.now();
+        response.setUserWaitingSeconds(computeUserWaitingSeconds(conversation, now));
+        response.setSlaOverdue(isSlaOverdue(conversation, now));
         return response;
+    }
+
+    private Long computeUserWaitingSeconds(SupportConversation conversation, LocalDateTime now) {
+        if (conversation.getLastUserMessageAt() == null) {
+            return null;
+        }
+        LocalDateTime lastAgent = conversation.getLastAgentMessageAt();
+        if (lastAgent != null && !conversation.getLastUserMessageAt().isAfter(lastAgent)) {
+            return 0L;
+        }
+        return Math.max(0L, Duration.between(conversation.getLastUserMessageAt(), now).getSeconds());
+    }
+
+    private boolean isSlaOverdue(SupportConversation conversation, LocalDateTime now) {
+        if (STATUS_CLOSED.equals(conversation.getStatus())) {
+            return false;
+        }
+        if (conversation.getFirstAgentRepliedAt() == null
+                && conversation.getFirstResponseDueAt() != null
+                && now.isAfter(conversation.getFirstResponseDueAt())) {
+            return true;
+        }
+        Long waitingSeconds = computeUserWaitingSeconds(conversation, now);
+        return waitingSeconds != null && waitingSeconds > 10 * 60;
     }
 
     private String maskPhone(String phone) {

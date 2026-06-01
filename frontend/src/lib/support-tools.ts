@@ -2,6 +2,7 @@ import type { SupportConversationVO, SupportMessageVO, UserRole } from '@/types/
 
 export type SupportConversationStatus = 'OPEN' | 'WAITING_AGENT' | 'ASSIGNED' | 'CLOSED' | string
 export type SupportConversationFilter = 'active' | 'closed' | 'all'
+export type SupportQueueFilter = 'pending' | 'in_progress' | 'overdue' | 'close_requested' | 'closed'
 
 export function getLoginRedirectForRole(role: UserRole | string | null | undefined) {
   if (role === 'support') return '/support'
@@ -50,6 +51,53 @@ export function filterSupportConversations<T extends Pick<SupportConversationVO,
   if (filter === 'all') return conversations
   if (filter === 'closed') return conversations.filter(item => item.status === 'CLOSED')
   return conversations.filter(item => item.status !== 'CLOSED')
+}
+
+export function getSupportQueueTabs(conversations: SupportConversationVO[]) {
+  const tabs: Array<{ value: SupportQueueFilter; label: string; count: number }> = [
+    { value: 'pending', label: '待处理', count: 0 },
+    { value: 'in_progress', label: '处理中', count: 0 },
+    { value: 'overdue', label: '超时', count: 0 },
+    { value: 'close_requested', label: '已申请结束', count: 0 },
+    { value: 'closed', label: '已关闭', count: 0 },
+  ]
+  for (const item of conversations) {
+    if (item.status === 'CLOSED') tabs[4].count += 1
+    else if (item.slaOverdue) tabs[2].count += 1
+    else if (item.status === 'WAITING_AGENT') tabs[0].count += 1
+    else if (item.status === 'CLOSE_REQUESTED') tabs[3].count += 1
+    else if (item.status === 'ASSIGNED') tabs[1].count += 1
+  }
+  return tabs
+}
+
+export function sortSupportConversationsForQueue<T extends Pick<SupportConversationVO, 'slaOverdue' | 'updateTime' | 'createTime'>>(items: T[]) {
+  return [...items].sort((a, b) => {
+    if (Boolean(a.slaOverdue) !== Boolean(b.slaOverdue)) return a.slaOverdue ? -1 : 1
+    const left = new Date(a.updateTime || a.createTime || 0).getTime()
+    const right = new Date(b.updateTime || b.createTime || 0).getTime()
+    return right - left
+  })
+}
+
+export function formatSupportSlaText(conversation: SupportConversationVO, now = new Date()) {
+  if (conversation.userWaitingSeconds && conversation.userWaitingSeconds > 0) {
+    return `用户已等待 ${Math.ceil(conversation.userWaitingSeconds / 60)} 分钟`
+  }
+  if (conversation.firstResponseDueAt && !conversation.firstAgentRepliedAt) {
+    const due = new Date(conversation.firstResponseDueAt).getTime()
+    const remainingMinutes = Math.max(0, Math.ceil((due - now.getTime()) / 60000))
+    return conversation.slaOverdue ? '首次响应已超时' : `首次响应剩余 ${remainingMinutes} 分钟`
+  }
+  if (conversation.lastAgentMessageAt) return `最后回复：${formatSupportRelativeMinute(conversation.lastAgentMessageAt, now)}`
+  return '等待会话更新'
+}
+
+function formatSupportRelativeMinute(value: string, now: Date) {
+  const time = new Date(value).getTime()
+  if (Number.isNaN(time)) return value
+  const minutes = Math.max(0, Math.floor((now.getTime() - time) / 60000))
+  return minutes === 0 ? '刚刚' : `${minutes} 分钟前`
 }
 
 export function mergeSupportConversations<T extends Pick<SupportConversationVO, 'id' | 'createTime' | 'updateTime'>>(
