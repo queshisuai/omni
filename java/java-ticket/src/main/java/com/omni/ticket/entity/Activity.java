@@ -33,6 +33,7 @@ public class Activity {
     private String seatMapVisibility;
     private Integer perUserLimit;
     private Boolean realNameRequired;
+    private Boolean ticketTransferAllowed;
     private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
@@ -83,6 +84,8 @@ public class Activity {
     public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
     public Boolean getRealNameRequired() { return realNameRequired; }
     public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
+    public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }
+    public void setTicketTransferAllowed(Boolean ticketTransferAllowed) { this.ticketTransferAllowed = ticketTransferAllowed; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public LocalDateTime getCreateTime() { return createTime; }

@@ -1,52 +1,28 @@
-# Team Grab Planning Findings
+# 大麦迁移体验改进发现
 
-## Existing Grab-Service Shape
+## 当前工作区
 
-- `grab_request.request_type` already allows `NORMAL_GRAB`, `TEAM_GRAB`, and `WAITLIST_OFFER`.
-- `GrabRequestRecord.requestType` is already typed with `TEAM_GRAB`.
-- Current worker path assumes a user-owned normal grab and calls order-service with `userId`, `quantity`, `seatIds`, and downgrade metadata.
-- Redis queue and idempotency infrastructure exists for normal requests, but team-level idempotency still needs a separate key such as `grab:team:{teamId}:{sessionId}:{ticketTypeId}`.
+- 当前分支：`master`，领先远端较多提交。
+- 当前存在未提交改动；其中实名证件号加密相关代码属于上一轮实现，文档草稿属于既有工作区状态。
+- `frontend/src/app/orders/page.tsx` 是订单页，不是票夹闭环。
 
-## Existing Ticket-Service Shape
+## 票夹相关现状
 
-- `TicketSalesInternalService.lockSeats()` supports explicit seat ids and random allocation.
-- There is no strategy-based group seat finder yet.
-- `session_seat` has the required minimal fields for first version: `session_id`, `ticket_type_id`, `status`, `order_id`, `lock_expire_time`, `layout_section_id`, `row_no`, `seat_no`, `seat_label`, and `seat_block_id`.
-- The first version can implement `STRICT_CONTIGUOUS`, `SAME_BLOCK`, and `SAME_TICKET_TYPE` using existing `session_seat` fields.
+- `java-order` 已有 `order_attendee` 实名快照表，可提供脱敏观演人信息。
+- `java-order` 已有 `order_seat`，可提供座位和票状态基础。
+- 当前没有一票一条的电子票表，也没有动态入场码、核销和转赠接口。
+- 支付成功入口在 `OrderService.markPaid(...)`；这是生成电子票的合适位置。
+- 用户订单列表接口在 `OrderController.listOrders(...)`，但它返回订单聚合，不适合作为票夹数据源。
 
-## Existing Order-Service Shape
+## 设计约束
 
-- `OrderService.createOrderWithSeats()` already locks seats through ticket-service, creates `order_seat`, and writes order snapshots.
-- `OrderService.markPaid()` confirms locked seats as sold.
-- Pending order expiration and release flows already exist around `order_seat` status and `lock_expire_time`.
-- Team order support should extend the seated order path instead of creating a parallel order flow.
+- 电子票应归 `java-order` 所有，因为它与订单、实名快照、退款/取消状态强相关。
+- 入场码不落明文，使用短期签名码即可。
+- 核销接口应使用内部令牌或后续验票端令牌，不应暴露为普通用户可写接口。
+- 强实名转赠规则需要由活动规则下发并在订单快照固化；P0-A 先打通票夹/核销，P0-B 再补规则和转赠状态机。
 
-## Product/Architecture Decisions
+## P2 发现
 
-- Version 1 should use leader unified payment.
-- Limit purchase by leader for version 1 to avoid cross-member purchase-limit accounting.
-- Team seat assignment should be written after successful payment, when `order_seat` records are sold.
-- Team lock must be triggered by any joined/confirmed member but must be fenced by team-level idempotency so concurrent clicks create one request.
-
-## Plan Review Findings 2026-05-30
-
-- Current workspace does have async grab queue, `grab-worker.service.ts`, `grab-queue.service.ts`, `ticket-client.service.ts`, and `request_type`; isolated-agent findings that said these files were missing were stale and should be ignored.
-- The plan should add `requestType?: 'NORMAL_GRAB' | 'TEAM_GRAB' | 'WAITLIST_OFFER'` to `CreateQueuedGrabRequestInput`; the DB column already exists in `sql/production-split/grab/001_create_grab_request.sql` and `20260529_grab_progress_async_queue.sql`.
-- `TicketSalesInternalService.lockTeamSeats()` must be explicitly `@Transactional(rollbackFor = Exception.class)` so `FOR UPDATE SKIP LOCKED` selection and update stay in one transaction.
-- Adding `session_seat.lock_request_id` also requires adding `SessionSeat.lockRequestId`, clearing it in `releaseLockedSeat`, and adding a stale pre-order team-lock recovery path for seats locked before order creation.
-- `java-order` currently cannot return per-seat labels from `order_seat`; the team order API must either store order-owned structured seat labels or return labels from team/order snapshot data passed at creation time, without cross-querying ticket DB.
-- Frontend checks should use `pnpm typecheck` and `pnpm build`; grab-service checks should continue using `npm test`.
-- Notification client can target existing internal endpoint `POST /api/notification/internal/messages` with `X-Internal-Token`.
-- `sql/production-split/manifest.json` must be updated to include new grab/ticket/order migrations.
-- Verified current code shape for the revision:
-  - `SessionSeat.java` currently has no `lockRequestId`.
-  - `SessionSeatMapper.releaseLockedSeat()` and `markSeatSold()` currently do not clear `lock_request_id` because the column does not exist yet.
-  - `OrderSeat.java` currently has no `seatLabel`.
-  - `CreateQueuedGrabRequestInput` currently has no `requestType`, while `GrabRequestRecord.requestType` already includes `NORMAL_GRAB | TEAM_GRAB | WAITLIST_OFFER`.
-
-## Current Workspace Note
-
-- There are existing uncommitted frontend changes from the previous browser-back fix:
-  - `frontend/src/app/page.tsx`
-  - `frontend/src/lib/home-resume-refresh.ts`
-  - `frontend/src/lib/home-resume-refresh.test.ts`
+- 主办方营销工具归 `java-ticket` 更合适，因为规则绑定活动和票档配置；本次先完成优惠券/满减配置落库，不直接改变支付实收金额。
+- 活动漏斗可从 ticket 侧订阅/想看、order 侧订单状态聚合出基础闭环；曝光和详情页埋点后续可继续补真实采集。
+- 平台驾驶舱需要跨服务数据：ticket 提供活动/风控/订单热度，payment 前端现有退款列表可计算退款异常率，grab-service 提供抢票失败分布和候补转化。

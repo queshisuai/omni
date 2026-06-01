@@ -1061,6 +1061,45 @@ class TicketSalesInternalServiceTest {
         assertEquals(true, response.getRealNameRequired());
     }
 
+    @Test
+    void quoteReturnsTicketTransferAllowedFromActivity() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionMapper sessionMapper = mock(SessionMapper.class);
+        ActivityMapper activityMapper = mock(ActivityMapper.class);
+        VenueMapper venueMapper = mock(VenueMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = new TicketSalesInternalService(
+                ticketTypeMapper, sessionMapper, activityMapper, venueMapper, sessionSeatMapper);
+
+        TicketType ticketType = new TicketType();
+        ticketType.setId(3001L);
+        ticketType.setSessionId(2001L);
+        ticketType.setName("A");
+        ticketType.setPrice(new BigDecimal("380.00"));
+        ticketType.setStatus(1);
+        when(ticketTypeMapper.selectById(3001L)).thenReturn(ticketType);
+        when(sessionSeatMapper.selectSessionSellable(2001L)).thenReturn(true);
+
+        Session session = new Session();
+        session.setId(2001L);
+        session.setActivityId(1001L);
+        when(sessionMapper.selectById(2001L)).thenReturn(session);
+
+        Activity activity = new Activity();
+        activity.setId(1001L);
+        activity.setTicketTransferAllowed(false);
+        when(activityMapper.selectById(1001L)).thenReturn(activity);
+
+        TicketSalesQuoteRequest request = new TicketSalesQuoteRequest();
+        request.setSessionId(2001L);
+        request.setTicketTypeId(3001L);
+        request.setQuantity(1);
+
+        TicketSalesQuoteResponse response = service.quote(request);
+
+        assertEquals(false, response.getTicketTransferAllowed());
+    }
+
     private TicketSalesInternalService service(TicketTypeMapper ticketTypeMapper, SessionSeatMapper sessionSeatMapper) {
         when(sessionSeatMapper.selectSessionSellable(3001L)).thenReturn(true);
         return new TicketSalesInternalService(

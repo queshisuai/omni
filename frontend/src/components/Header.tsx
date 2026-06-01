@@ -13,6 +13,8 @@ export const OTHER_CITIES = Array.from(new Set([
   '阿坝', '阿克苏', '阿拉善', '安康', '安庆', '鞍山', '安顺', '安阳', '澳门', '巴中', '白城', '百色', '白山', '保定', '宝鸡', '保山', '包头', '北海', '本溪', '蚌埠', '毕节', '滨州', '博尔塔拉', '亳州', '沧州', '长春', '常德', '昌吉', '长沙', '长治', '常州', '朝阳', '潮州', '郴州', '承德', '赤峰', '池州', '重庆', '崇左', '楚雄', '滁州', '大理', '大连', '大庆', '大同', '大兴安岭', '达州', '丹东', '儋州', '德宏', '德阳', '德州', '迪庆', '定西', '东方', '东莞', '东营', '鄂尔多斯', '鄂州', '恩施', '佛山', '抚顺', '阜新', '阜阳', '福州', '抚州', '甘南', '赣州', '甘孜', '高雄', '固原', '广安', '广元', '广州', '贵港', '桂林', '贵阳', '哈尔滨', '哈密', '海北', '海口', '海南州', '海外', '海西', '邯郸', '汉中', '杭州', '鹤壁', '河池', '合肥', '和田', '河源', '菏泽', '贺州', '黑河', '衡水', '衡阳', '红河', '呼和浩特', '葫芦岛', '呼伦贝尔', '湖州', '淮安', '怀化', '淮南', '黄冈', '黄山', '黄石', '惠州', '吉安', '吉林', '济南', '济宁', '鸡西', '佳木斯', '嘉兴', '嘉峪关', '江门', '焦作', '揭阳', '晋城', '金华', '晋中', '锦州', '景德镇', '荆门', '荆州', '金昌', '九江', '酒泉', '喀什', '开封', '克拉玛依', '昆明', '兰州', '廊坊', '拉萨', '乐山', '凉山', '连云港', '聊城', '辽阳', '辽源', '丽江', '临沧', '临汾', '临夏', '临沂', '林芝', '丽水', '六盘水', '柳州', '六安', '陇南', '龙岩', '娄底', '六安', '漯河', '洛阳', '泸州', '吕梁', '马鞍山', '茂名', '眉山', '梅州', '绵阳', '牡丹江', '南昌', '南充', '南京', '南宁', '南平', '南通', '南阳', '内江', '宁波', '宁德', '怒江', '盘锦', '攀枝花', '平顶山', '平凉', '萍乡', '莆田', '濮阳', '齐齐哈尔', '黔东南', '潜江', '黔南', '黔西南', '钦州', '秦皇岛', '青岛', '庆阳', '清远', '泉州', '曲靖', '衢州', '日喀则', '日照', '三门峡', '三明', '三亚', '商洛', '商丘', '上饶', '山南', '汕头', '汕尾', '韶关', '绍兴', '邵阳', '神农架', '沈阳', '深圳', '十堰', '石家庄', '石嘴山', '双鸭山', '朔州', '四平', '松原', '绥化', '随州', '遂宁', '苏州', '宿迁', '宿州', '塔城', '泰安', '台北', '太原', '台州', '泰州', '唐山', '天津', '天门', '天水', '铁岭', '铜川', '通化', '通辽', '铜陵', '铜仁', '吐鲁番', '威海', '潍坊', '渭南', '文山', '温州', '乌海', '乌兰察布', '乌鲁木齐', '无锡', '吴忠', '梧州', '芜湖', '武威', '武汉', '西安', '项城', '香港', '湘潭', '湘西', '襄阳', '咸宁', '咸阳', '孝感', '锡林郭勒', '兴安', '邢台', '西宁', '新乡', '信阳', '新余', '忻州', '西双版纳', '宣城', '许昌', '徐州', '雅安', '延安', '延边', '盐城', '阳江', '阳泉', '扬州', '烟台', '宜宾', '宜昌', '伊春', '宜春', '伊犁', '银川', '营口', '鹰潭', '益阳', '永州', '岳阳', '榆林', '玉林', '运城', '云浮', '玉树', '玉溪', '枣庄', '张家界', '张家口', '张掖', '漳州', '湛江', '肇庆', '昭通', '郑州', '镇江', '中山', '中卫', '周口', '舟山', '珠海', '驻马店', '株洲', '淄博', '自贡', '资阳', '遵义'
 ]));
 
+const CITY_KEY = 'omni_current_city'
+
 export function Header() {
   const router = useRouter();
   const pathname = usePathname();
@@ -28,10 +30,25 @@ export function Header() {
 
   const handleSearch = () => {
     const keyword = searchText.trim()
-    if (keyword) {
-      router.push(`/search?keyword=${encodeURIComponent(keyword)}`)
-    } else {
-      router.push('/search')
+    const params = new URLSearchParams()
+    if (keyword) params.set('keyword', keyword)
+    if (currentCity) params.set('city', currentCity)
+    const qs = params.toString()
+    router.push(`/search${qs ? `?${qs}` : ''}`)
+  }
+
+  const selectCity = (city: string) => {
+    setCurrentCity(city)
+    setShowCityDropdown(false)
+    setCitySearch('')
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(CITY_KEY, city)
+      window.dispatchEvent(new CustomEvent('omni-city-updated', { detail: city }))
+    }
+    if (pathname.startsWith('/search')) {
+      const params = new URLSearchParams(window.location.search)
+      params.set('city', city)
+      router.replace(`/search?${params.toString()}`)
     }
   }
 
@@ -50,13 +67,21 @@ export function Header() {
         setRole(null)
       }
     }
+    const storedCity = localStorage.getItem(CITY_KEY)
+    if (storedCity) setCurrentCity(storedCity)
+    const handleCityUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail
+      if (detail) setCurrentCity(detail)
+    }
     checkAuth()
     // 监听路由变化重新检查
     window.addEventListener("focus", checkAuth)
     window.addEventListener('damai-user-updated', checkAuth)
+    window.addEventListener('omni-city-updated', handleCityUpdate)
     return () => {
       window.removeEventListener("focus", checkAuth)
       window.removeEventListener('damai-user-updated', checkAuth)
+      window.removeEventListener('omni-city-updated', handleCityUpdate)
     }
   }, [])
 
@@ -122,7 +147,7 @@ export function Header() {
                     {HOT_CITIES.map(city => (
                       <button 
                         key={city} 
-                        onClick={() => { setCurrentCity(city); setShowCityDropdown(false); setCitySearch(''); }}
+                        onClick={() => selectCity(city)}
                         className="text-xs text-gray-700 bg-gray-50/80 hover:bg-[#fff4f8] hover:text-[#ff1268] py-2 rounded-xl transition-all hover:scale-105 active:scale-95"
                       >
                         {city}
@@ -141,7 +166,7 @@ export function Header() {
                   {OTHER_CITIES.filter(c => c.includes(citySearch)).map((city, index) => (
                     <button 
                       key={`${city}-${index}`} 
-                      onClick={() => { setCurrentCity(city); setShowCityDropdown(false); setCitySearch(''); }}
+                      onClick={() => selectCity(city)}
                       className="text-[13px] text-gray-600 hover:text-[#ff1268] hover:bg-gray-50 py-1.5 rounded-lg transition-colors text-center truncate"
                     >
                       {city}
@@ -175,6 +200,14 @@ export function Header() {
             }`}
           >
             分类
+          </Link>
+          <Link
+            href="/help"
+            className={`text-[16px] font-medium transition-colors ${
+              pathname.startsWith('/help') ? 'text-[#ff1268]' : 'text-[#111] hover:text-[#ff1268]'
+            }`}
+          >
+            客服
           </Link>
         </nav>
 
@@ -265,6 +298,18 @@ export function Header() {
                     实名观演人
                   </button>
                   <button
+                    onClick={() => { setShowUserDropdown(false); router.push("/tickets") }}
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
+                  >
+                    我的票夹
+                  </button>
+                  <button
+                    onClick={() => { setShowUserDropdown(false); router.push("/subscriptions") }}
+                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
+                  >
+                    想看与提醒
+                  </button>
+                  <button
                     onClick={() => { setShowUserDropdown(false); router.push("/orders") }}
                     className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                   >
@@ -276,6 +321,14 @@ export function Header() {
                   >
                     我的候补
                   </button>
+                  {role === 'support' && (
+                    <button
+                      onClick={() => { setShowUserDropdown(false); router.push("/support") }}
+                      className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
+                    >
+                      客服工作台
+                    </button>
+                  )}
                   {(role === 'admin' || role === 'organizer') && (
                     <button
                       onClick={() => { setShowUserDropdown(false); router.push("/console") }}

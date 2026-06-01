@@ -18,7 +18,9 @@ public class ActivityVO {
     private String venueCity;
     private LocalDateTime startTime;
     private BigDecimal minPrice;
+    private String seatMapVisibility;
     private Boolean realNameRequired;
+    private Boolean ticketTransferAllowed;
     private Integer status;
     private List<ActivityArtistDto> artists;
 
@@ -40,8 +42,12 @@ public class ActivityVO {
     public void setStartTime(LocalDateTime startTime) { this.startTime = startTime; }
     public BigDecimal getMinPrice() { return minPrice; }
     public void setMinPrice(BigDecimal minPrice) { this.minPrice = minPrice; }
+    public String getSeatMapVisibility() { return seatMapVisibility; }
+    public void setSeatMapVisibility(String seatMapVisibility) { this.seatMapVisibility = seatMapVisibility; }
     public Boolean getRealNameRequired() { return realNameRequired; }
     public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
+    public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }
+    public void setTicketTransferAllowed(Boolean ticketTransferAllowed) { this.ticketTransferAllowed = ticketTransferAllowed; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public List<ActivityArtistDto> getArtists() { return artists; }

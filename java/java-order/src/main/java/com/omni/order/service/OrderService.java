@@ -99,6 +99,7 @@ public class OrderService {
     private final WaitlistInternalClient waitlistInternalClient;
     private final String internalApiToken;
     private OrderAttendeeMapper orderAttendeeMapper;
+    private TicketWalletService ticketWalletService;
 
     public OrderService(OrderMapper orderMapper) {
         this(orderMapper, null, null, null, null, null, null, (String) null);
@@ -187,6 +188,11 @@ public class OrderService {
         this.orderAttendeeMapper = orderAttendeeMapper;
     }
 
+    @Autowired(required = false)
+    public void setTicketWalletService(TicketWalletService ticketWalletService) {
+        this.ticketWalletService = ticketWalletService;
+    }
+
     @GlobalTransactional(name = "omni-create-order", rollbackFor = Exception.class)
     @Transactional(rollbackFor = Exception.class)
     public Order createOrder(CreateOrderRequest request) {
@@ -218,6 +224,7 @@ public class OrderService {
         }
         if (order.getStatus() == STATUS_PAID) {
             confirmTicketsSold(order);
+            issueElectronicTickets(order);
             return order;
         }
         if (order.getStatus() != STATUS_PENDING) {
@@ -234,6 +241,7 @@ public class OrderService {
         order.setStatus(STATUS_PAID);
         order.setUpdateTime(LocalDateTime.now());
         confirmTicketsSold(order);
+        issueElectronicTickets(order);
         notifyWaitlistPaid(order.getId());
         log.info("订单已标记为已支付: id={}, orderNo={}", id, order.getOrderNo());
         return order;
@@ -912,6 +920,7 @@ public class OrderService {
         snapshot.setTeamGrabRequestId(teamGrabRequestId);
         snapshot.setTeamOrder(Boolean.TRUE.equals(teamOrder));
         snapshot.setSeatSelectionMode(seatSelectionMode);
+        snapshot.setTicketTransferAllowed(!Boolean.FALSE.equals(quote.getTicketTransferAllowed()));
         LocalDateTime now = LocalDateTime.now();
         snapshot.setCreateTime(now);
         snapshot.setUpdateTime(now);
@@ -1392,7 +1401,7 @@ public class OrderService {
             snapshot.setIdType(attendee.getIdType());
             snapshot.setIdNoHash(attendee.getIdNoHash());
             snapshot.setIdNoMask(attendee.getIdNoMask());
-            snapshot.setIdNoEncrypted(null);
+            snapshot.setIdNoEncrypted(attendee.getIdNoEncrypted());
             snapshot.setPhone(attendee.getPhone());
             snapshot.setStatus(ORDER_ATTENDEE_ACTIVE);
             snapshot.setCreateTime(now);
@@ -1772,6 +1781,12 @@ public class OrderService {
         event.setQuantity(response.getRestoredQuantity());
         event.setSeatIds(response.getSeatIds() != null ? response.getSeatIds() : Collections.emptyList());
         return event;
+    }
+
+    private void issueElectronicTickets(Order order) {
+        if (ticketWalletService != null) {
+            ticketWalletService.issueForPaidOrder(order);
+        }
     }
 
     private String orderTimeoutEventKey(Order order) {

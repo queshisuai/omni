@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { canCancelWaitlistEntry, canJoinWaitlistFromGrabStatus, getWaitlistPrimaryAction, getWaitlistStatusLabel } from './waitlist.ts'
+import { canCancelWaitlistEntry, canJoinWaitlistFromGrabStatus, getWaitlistChanceStyle, getWaitlistPrimaryAction, getWaitlistStatusLabel } from './waitlist.ts'
 
 test('enables waitlist entry for sold-out grab terminal states', () => {
   assert.equal(canJoinWaitlistFromGrabStatus('SOLD_OUT'), true)
@@ -31,4 +31,10 @@ test('returns primary waitlist action for user list page', () => {
   assert.equal(getWaitlistPrimaryAction('OFFERED', 88), '去支付')
   assert.equal(getWaitlistPrimaryAction('OFFERED', null), null)
   assert.equal(getWaitlistPrimaryAction('PAID', 88), null)
+})
+
+test('returns chance styles for waitlist opportunity display', () => {
+  assert.equal(getWaitlistChanceStyle('HIGH'), 'border-[#52c41a]/20 bg-[#f6ffed] text-[#389e0d]')
+  assert.equal(getWaitlistChanceStyle('MEDIUM'), 'border-[#faad14]/30 bg-[#fff7e6] text-[#ad6800]')
+  assert.equal(getWaitlistChanceStyle('LOW'), 'border-[#ddd] bg-[#f7f7f7] text-[#777]')
 })

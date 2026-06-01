@@ -13,6 +13,8 @@ import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.ActivityArtistDto;
+import com.omni.ticket.dto.ActivityMarketingOverviewResponse;
+import com.omni.ticket.dto.ActivityMarketingRuleRequest;
 import com.omni.ticket.dto.ActivityRiskCaseResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
@@ -48,6 +50,7 @@ import com.omni.ticket.mapper.*;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
 import com.omni.ticket.service.ActivityDraftService;
+import com.omni.ticket.service.ActivityMarketingService;
 import com.omni.ticket.service.ArtistAdminService;
 import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivityRiskResponseService;
@@ -136,6 +139,7 @@ public class AdminController {
     private final SeatCraftLayoutVersionService seatCraftLayoutVersionService;
     private final ActivityDraftService activityDraftService;
     private final StationConfigVersionService stationConfigVersionService;
+    private final ActivityMarketingService activityMarketingService;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -150,7 +154,7 @@ public class AdminController {
                                  VenueDefaultLayoutService venueDefaultLayoutService) {
         this(activityMapper, null, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService,
                 sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService,
-                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Autowired
@@ -179,7 +183,8 @@ public class AdminController {
                                          PrivateAssetService privateAssetService,
                                          SeatCraftLayoutVersionService seatCraftLayoutVersionService,
                                          ActivityDraftService activityDraftService,
-                                         StationConfigVersionService stationConfigVersionService) {
+                                         StationConfigVersionService stationConfigVersionService,
+                                         ActivityMarketingService activityMarketingService) {
         this.activityMapper = activityMapper;
         this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
@@ -209,6 +214,7 @@ public class AdminController {
         this.seatCraftLayoutVersionService = seatCraftLayoutVersionService;
         this.activityDraftService = activityDraftService;
         this.stationConfigVersionService = stationConfigVersionService;
+        this.activityMarketingService = activityMarketingService;
     }
 
     @GetMapping("/seatcraft/{ownerType}/{ownerId}/draft")
@@ -589,6 +595,29 @@ public class AdminController {
         return Result.success(adminSummaryService.getSummary(userId));
     }
 
+    @GetMapping("/activities/{id}/marketing")
+    public Result<ActivityMarketingOverviewResponse> getActivityMarketing(
+            @PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(activityMarketingService.getMarketing(operatorId, id));
+    }
+
+    @PutMapping("/activities/{id}/marketing")
+    public Result<ActivityMarketingOverviewResponse> updateActivityMarketing(
+            @PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody(required = false) ActivityMarketingRuleRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(activityMarketingService.saveMarketing(operatorId, id, request));
+    }
+
     @PostMapping("/activities/draft")
     public Result<ActivityDraftResponse> createActivityDraft(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -863,6 +892,7 @@ public class AdminController {
             return Result.fail(400, e.getMessage());
         }
         activity.setRealNameRequired(parseBooleanFlag(safeBody.get("realNameRequired")));
+        activity.setTicketTransferAllowed(!Boolean.FALSE.equals(parseBooleanFlag(safeBody.get("ticketTransferAllowed"))));
         activity.setName(name);
         activity.setDescription(safeBody.get("description") != null ? safeBody.get("description").toString() : null);
         activity.setPoster(safeBody.get("poster") != null ? safeBody.get("poster").toString() : null);
@@ -937,6 +967,9 @@ public class AdminController {
         }
         if (body.containsKey("realNameRequired")) {
             activity.setRealNameRequired(parseBooleanFlag(body.get("realNameRequired")));
+        }
+        if (body.containsKey("ticketTransferAllowed")) {
+            activity.setTicketTransferAllowed(!Boolean.FALSE.equals(parseBooleanFlag(body.get("ticketTransferAllowed"))));
         }
         activityMapper.updateById(activity);
         return Result.success(activity);

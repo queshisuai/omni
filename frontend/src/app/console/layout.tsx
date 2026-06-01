@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
-import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones } from 'lucide-react'
 
 const menuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
@@ -21,6 +21,7 @@ const menuItems = [
   { href: '/console/venue/applications', label: '场馆资料审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/station-config-reviews', label: '站点变更审核', icon: GitPullRequestArrow, roles: ['admin'] },
   { href: '/console/organizer-applications', label: '入驻审核', icon: ClipboardList, roles: ['admin'] },
+  { href: '/console/support-accounts', label: '客服账号管理', icon: Headphones, roles: ['admin'] },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
 ]
 

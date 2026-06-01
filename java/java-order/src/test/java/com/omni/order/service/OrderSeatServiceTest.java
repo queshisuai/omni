@@ -329,6 +329,8 @@ class OrderSeatServiceTest {
     void markPaidReconfirmsLockedSeatsWhenOrderAlreadyPaid() {
         Order order = paidOrder(1006L, 106L, 2006L);
         OrderSeat lockedSeat = lockedOrderSeat(9006L, order.getId(), 3006L, 106L, 2006L);
+        TicketWalletService ticketWalletService = mock(TicketWalletService.class);
+        service.setTicketWalletService(ticketWalletService);
         when(orderMapper.selectById(1006L)).thenReturn(order);
         when(orderSeatMapper.selectList(any())).thenReturn(List.of(lockedSeat));
         when(ticketSalesInternalClient.confirmSold(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
@@ -341,6 +343,7 @@ class OrderSeatServiceTest {
         ArgumentCaptor<TicketSalesOrderRequest> captor = ArgumentCaptor.forClass(TicketSalesOrderRequest.class);
         verify(ticketSalesInternalClient).confirmSold(captor.capture(), eq("test-internal-token"));
         assertEquals(List.of(3006L), captor.getValue().getSeatIds());
+        verify(ticketWalletService).issueForPaidOrder(order);
     }
 
     @Test

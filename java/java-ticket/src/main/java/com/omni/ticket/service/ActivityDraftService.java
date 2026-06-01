@@ -77,6 +77,7 @@ public class ActivityDraftService {
         activity.setSeatMapVisibility(seatMapVisibility);
         activity.setPerUserLimit(parsePerUserLimit(body.get("perUserLimit")));
         activity.setRealNameRequired(parseBooleanFlag(body.get("realNameRequired")));
+        activity.setTicketTransferAllowed(!Boolean.FALSE.equals(parseBooleanFlag(body.get("ticketTransferAllowed"))));
         activity.setStatus(1);
         activity.setOrganizerId(userId);
         activity.setCreateTime(now);

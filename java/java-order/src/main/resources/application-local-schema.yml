@@ -3,7 +3,7 @@ spring:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/omni_ticket?currentSchema=order_service,public
 
 seata:
-  enabled: true
+  enabled: ${SEATA_ENABLED:false}
   application-id: ${spring.application.name}
   tx-service-group: omni_tx_group
   enable-auto-data-source-proxy: true

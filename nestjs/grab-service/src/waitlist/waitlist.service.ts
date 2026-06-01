@@ -50,6 +50,7 @@ export class WaitlistService {
   }
 
   private toResponse(entry: WaitlistEntryRecord, rank: number | null): WaitlistEntryResponse {
+    const estimate = this.estimateChance(entry, rank);
     return {
       id: entry.id,
       sessionId: entry.sessionId,
@@ -57,9 +58,55 @@ export class WaitlistService {
       quantity: entry.quantity,
       status: entry.status,
       rank,
+      estimatedChance: estimate.estimatedChance,
+      estimatedChanceText: estimate.estimatedChanceText,
+      estimatedWaitText: estimate.estimatedWaitText,
       offerOrderId: entry.offerOrderId,
       offerExpireTime: entry.offerExpireTime ? entry.offerExpireTime.toISOString() : null,
       failReason: entry.failReason,
+    };
+  }
+
+  private estimateChance(entry: WaitlistEntryRecord, rank: number | null): Pick<WaitlistEntryResponse, 'estimatedChance' | 'estimatedChanceText' | 'estimatedWaitText'> {
+    if (entry.status === 'OFFERED') {
+      return {
+        estimatedChance: 'HIGH',
+        estimatedChanceText: '已获得资格',
+        estimatedWaitText: '请在截止时间前完成支付',
+      };
+    }
+    if (entry.status !== 'WAITING' && entry.status !== 'ALLOCATING') {
+      return {
+        estimatedChance: 'UNKNOWN',
+        estimatedChanceText: '已结束',
+        estimatedWaitText: '候补已不再等待释放票',
+      };
+    }
+    if (rank == null) {
+      return {
+        estimatedChance: 'UNKNOWN',
+        estimatedChanceText: '计算中',
+        estimatedWaitText: '等待系统刷新排位',
+      };
+    }
+    if (rank <= 10) {
+      return {
+        estimatedChance: 'HIGH',
+        estimatedChanceText: '机会较高',
+        estimatedWaitText: '排位靠前，释放票后会优先通知',
+      };
+    }
+    if (rank <= 50) {
+      return {
+        estimatedChance: 'MEDIUM',
+        estimatedChanceText: '机会中等',
+        estimatedWaitText: '仍在有效候补范围内，请留意通知',
+      };
+    }
+    return {
+      estimatedChance: 'LOW',
+      estimatedChanceText: '机会较低',
+      estimatedWaitText: '排位靠后，建议关注其他日期或票档',
     };
   }
 }

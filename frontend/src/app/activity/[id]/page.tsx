@@ -2,20 +2,23 @@
 
 import { useState, useEffect, use, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { Bell, CalendarDays, Heart, MessageCircle, Star, UserRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
-import { cancelGrabRequest, createAlipayQrPay, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listUserAttendees, submitGrabRequest } from '@/lib/api'
+import { cancelGrabRequest, createActivityQuestion, createActivityReview, createAlipayQrPay, createSubscription, createSubscriptionCalendar, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listActivityQuestions, listActivityReviews, listUserAttendees, submitGrabRequest } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, canShowWaitlistEntry, getPurchaseConfirmCopy, getPurchaseQuantityMax, getWaitlistQuantityMax, shouldResetGrabIdempotencyForStatus, type PurchaseConfirmMode } from '@/lib/purchase-intent'
+import { getCountdownText } from '@/lib/subscription'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import { defaultTeamFallbacks } from '@/lib/team-grab'
-import { getGrabProgressDisplayMessage, localizeGrabProgressMessage } from '@/lib/grab-progress'
+import { getAutoDowngradeDisplay, getGrabProgressDisplayMessage, getQueueRankTrendLabel, localizeGrabProgressMessage } from '@/lib/grab-progress'
 import { canJoinWaitlistFromGrabStatus } from '@/lib/waitlist'
 import { formatAttendeeSummary, getAttendeeIdTypeLabel, normalizeChineseIdCard, removeAttendeeById, validateAttendeeSelection } from '@/lib/attendees'
-import type { ActivityDetailVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
+import { ACTIVITY_VIEW_SIGNAL_KEY, addActivityViewSignal, parseActivityViewSignals } from '@/lib/personalized-recommendations'
+import type { ActivityDetailVO, ActivityQuestionVO, ActivityReviewListVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
 
 const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
 const GRAB_STATUS_LABELS: Record<string, string> = {
@@ -42,6 +45,12 @@ const GRAB_ATTEMPT_STATUS_LABELS: Record<string, string> = {
   LIMITED: '限购失败',
 }
 
+function artistSummaryFromDetail(detail: ActivityDetailVO) {
+  return detail.artists?.length
+    ? detail.artists.map(item => item.name).filter(Boolean).join('、')
+    : detail.artist?.name || ''
+}
+
 export default function ActivityDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -53,6 +62,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [quantity, setQuantity] = useState(1)
   const [showConfirm, setShowConfirm] = useState(false)
   const [confirmMode, setConfirmMode] = useState<PurchaseConfirmMode>('purchase')
+  const [refundPolicyAccepted, setRefundPolicyAccepted] = useState(false)
   const [ordering, setOrdering] = useState(false)
   const [orderError, setOrderError] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
@@ -69,6 +79,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [teamActionLoading, setTeamActionLoading] = useState(false)
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false)
   const [waitlistMessage, setWaitlistMessage] = useState('')
+  const [subscriptionLoading, setSubscriptionLoading] = useState<string | null>(null)
   const [visibleStock, setVisibleStock] = useState<SessionVisibleStockResult | null>(null)
   const [attendees, setAttendees] = useState<UserAttendeeVO[]>([])
   const [attendeesLoading, setAttendeesLoading] = useState(false)
@@ -77,6 +88,12 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [attendeeSaving, setAttendeeSaving] = useState(false)
   const [attendeeDeletingId, setAttendeeDeletingId] = useState<number | null>(null)
   const [attendeeForm, setAttendeeForm] = useState({ realName: '', idNo: '', phone: '' })
+  const [reviewData, setReviewData] = useState<ActivityReviewListVO | null>(null)
+  const [questions, setQuestions] = useState<ActivityQuestionVO[]>([])
+  const [reviewForm, setReviewForm] = useState({ rating: 5, content: '', images: '' })
+  const [questionContent, setQuestionContent] = useState('')
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const [questionSubmitting, setQuestionSubmitting] = useState(false)
   const seatMapRequestIdRef = useRef(0)
   const progressPaymentOrderIdRef = useRef<number | null>(null)
   const progressPaymentInFlightOrderIdRef = useRef<number | null>(null)
@@ -168,6 +185,16 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     try {
       const data = await getActivityDetail(Number(id))
       setDetail(data)
+      if (typeof window !== 'undefined') {
+        const firstVenue = data.sessions[0]?.venue?.city || ''
+        const next = addActivityViewSignal(parseActivityViewSignals(localStorage.getItem(ACTIVITY_VIEW_SIGNAL_KEY)), {
+          activityId: String(data.activity.id),
+          category: data.category?.name || null,
+          artist: artistSummaryFromDetail(data) || null,
+          city: firstVenue || null,
+        })
+        localStorage.setItem(ACTIVITY_VIEW_SIGNAL_KEY, JSON.stringify(next))
+      }
       if (data.sessions.length > 0) {
         setSelectedSession(data.sessions[0])
         if (data.sessions[0].ticketTypes.length > 0) {
@@ -193,6 +220,25 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
   useEffect(() => {
     void loadDetail()
+  }, [id])
+
+  const loadReviewsAndQuestions = async () => {
+    const activityId = Number(id)
+    try {
+      const [reviews, questionList] = await Promise.all([
+        listActivityReviews(activityId),
+        listActivityQuestions(activityId),
+      ])
+      setReviewData(reviews)
+      setQuestions(questionList)
+    } catch {
+      setReviewData(null)
+      setQuestions([])
+    }
+  }
+
+  useEffect(() => {
+    void loadReviewsAndQuestions()
   }, [id])
 
   useEffect(() => {
@@ -271,7 +317,12 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     const fetchProgress = () => {
       getGrabProgress(grabProgress.requestId)
         .then((progress) => {
-          if (!cancelled) setGrabProgress(progress)
+          if (!cancelled) {
+            setGrabProgress((prev) => ({
+              ...progress,
+              queueRankPrevious: prev?.queueRank ?? null,
+            }))
+          }
         })
         .catch((err: unknown) => {
           if (!cancelled) setOrderError(err instanceof Error ? err.message : '抢票进度查询失败')
@@ -414,6 +465,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setOrderError('')
     setWaitlistMessage('')
     setConfirmMode('purchase')
+    setRefundPolicyAccepted(false)
     setShowConfirm(true)
   }
 
@@ -426,6 +478,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setOrderError('')
     setWaitlistMessage('')
     setConfirmMode('waitlist')
+    setRefundPolicyAccepted(true)
     setShowConfirm(true)
   }
 
@@ -433,6 +486,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     if (ordering || waitlistSubmitting) return
     setShowConfirm(false)
     setConfirmMode('purchase')
+    setRefundPolicyAccepted(false)
     resetGrabIdempotencyKey()
   }
 
@@ -669,6 +723,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           name: ticket.name ?? null,
           maxPrice: ticket.maxPrice ?? null,
         })),
+        allowAutoDowngrade: allowAutoDowngrade && !showsSeatCraftSelection,
         attempts: ticketTypePreferences.map((ticket, index) => ({
           ticketTypeId: ticket.ticketTypeId,
           name: ticket.name ?? null,
@@ -676,6 +731,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           message: index === 0 ? `等待尝试 ${ticket.name ?? `票档 ${ticket.ticketTypeId}`}` : '待尝试',
         })),
         visibleStock: null,
+        fairnessNotes: [
+          '同一账号相同购票意图会复用已有排队请求，避免重复挤占队列。',
+          '活动限购规则会在锁票和创建订单阶段校验。',
+          '异常高频请求会触发风控拦截，请使用当前页面正常刷新。',
+        ],
         message: grab.message ?? null,
         matchedTicketTypeId: null,
         updateTime: new Date().toISOString(),
@@ -743,6 +803,114 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  const handleSubscription = async (targetType: 'ACTIVITY_WANT' | 'SALE_REMINDER' | 'WAITLIST_REMINDER' | 'ARTIST_FOLLOW') => {
+    if (!isAuthenticated()) {
+      router.push(`/login?ru=/activity/${id}`)
+      return
+    }
+    if (!detail) return
+    if (targetType === 'ARTIST_FOLLOW' && !detail.artist?.id) {
+      await globalAlert('当前活动暂无可关注艺人')
+      return
+    }
+    setSubscriptionLoading(targetType)
+    try {
+      await createSubscription({
+        targetType,
+        targetId: targetType === 'ARTIST_FOLLOW' ? detail.artist.id : detail.activity.id,
+        activityId: targetType === 'ARTIST_FOLLOW' ? null : detail.activity.id,
+        artistId: detail.artist?.id ?? null,
+      })
+      const message = targetType === 'ACTIVITY_WANT'
+        ? '已加入想看'
+        : targetType === 'SALE_REMINDER'
+          ? '开售提醒已开启'
+          : targetType === 'WAITLIST_REMINDER'
+            ? '候补提醒已开启'
+            : '艺人关注已开启'
+      await globalAlert(message)
+    } catch (err) {
+      await globalAlert(err instanceof Error ? err.message : '操作失败')
+    } finally {
+      setSubscriptionLoading(null)
+    }
+  }
+
+  const handleCalendarDownload = async () => {
+    if (!isAuthenticated()) {
+      router.push(`/login?ru=/activity/${id}`)
+      return
+    }
+    setSubscriptionLoading('CALENDAR')
+    try {
+      await createSubscription({ targetType: 'ACTIVITY_WANT', targetId: Number(id), activityId: Number(id), artistId: detail?.artist?.id ?? null })
+      const calendar = await createSubscriptionCalendar()
+      const blob = new Blob([calendar.content], { type: 'text/calendar;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = calendar.fileName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      await globalAlert(err instanceof Error ? err.message : '生成日历失败')
+    } finally {
+      setSubscriptionLoading(null)
+    }
+  }
+
+  const handleSubmitReview = async () => {
+    if (!isAuthenticated()) {
+      router.push(`/login?ru=/activity/${id}`)
+      return
+    }
+    const content = reviewForm.content.trim()
+    if (!content) {
+      await globalAlert('请填写评价内容')
+      return
+    }
+    setReviewSubmitting(true)
+    try {
+      await createActivityReview(Number(id), {
+        rating: reviewForm.rating,
+        content,
+        images: reviewForm.images.trim() || null,
+      })
+      setReviewForm({ rating: 5, content: '', images: '' })
+      await loadReviewsAndQuestions()
+      await globalAlert('评价已提交')
+    } catch (err) {
+      await globalAlert(err instanceof Error ? err.message : '提交评价失败')
+    } finally {
+      setReviewSubmitting(false)
+    }
+  }
+
+  const handleSubmitQuestion = async () => {
+    if (!isAuthenticated()) {
+      router.push(`/login?ru=/activity/${id}`)
+      return
+    }
+    const content = questionContent.trim()
+    if (!content) {
+      await globalAlert('请填写问题内容')
+      return
+    }
+    setQuestionSubmitting(true)
+    try {
+      await createActivityQuestion(Number(id), content)
+      setQuestionContent('')
+      await loadReviewsAndQuestions()
+      await globalAlert('问题已提交，等待主办方回复')
+    } catch (err) {
+      await globalAlert(err instanceof Error ? err.message : '提交问题失败')
+    } finally {
+      setQuestionSubmitting(false)
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -805,6 +973,56 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             {activity.description && (
               <p className="text-[14px] text-[#999] leading-relaxed mt-4">{activity.description}</p>
             )}
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSubscription('ACTIVITY_WANT')}
+                disabled={subscriptionLoading === 'ACTIVITY_WANT'}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#ff1268] bg-[#ff1268] px-4 text-[14px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Heart className="h-4 w-4" />
+                {subscriptionLoading === 'ACTIVITY_WANT' ? '添加中...' : '想看'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSubscription('SALE_REMINDER')}
+                disabled={subscriptionLoading === 'SALE_REMINDER'}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#ff1268] bg-white px-4 text-[14px] font-medium text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Bell className="h-4 w-4" />
+                {subscriptionLoading === 'SALE_REMINDER' ? '开启中...' : '开售提醒'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSubscription('WAITLIST_REMINDER')}
+                disabled={subscriptionLoading === 'WAITLIST_REMINDER'}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-4 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Bell className="h-4 w-4" />
+                {subscriptionLoading === 'WAITLIST_REMINDER' ? '开启中...' : '候补提醒'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSubscription('ARTIST_FOLLOW')}
+                disabled={subscriptionLoading === 'ARTIST_FOLLOW'}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-4 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <UserRound className="h-4 w-4" />
+                {subscriptionLoading === 'ARTIST_FOLLOW' ? '关注中...' : '关注艺人'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCalendarDownload()}
+                disabled={subscriptionLoading === 'CALENDAR'}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-4 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <CalendarDays className="h-4 w-4" />
+                {subscriptionLoading === 'CALENDAR' ? '生成中...' : '加入日历'}
+              </button>
+            </div>
+            <div className="mt-4 rounded-lg bg-[#fafafa] px-4 py-3 text-[13px] text-[#666]">
+              {selectedSession?.session.startTime ? `倒计时：${getCountdownText(selectedSession.session.startTime)}` : '倒计时：场次时间待定'}
+            </div>
           </div>
         </div>
 
@@ -1063,6 +1281,125 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             </div>
           </div>
 
+          <div className="bg-white rounded-lg overflow-hidden border border-[#e5e5e5]">
+            <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-4">
+              <div>
+                <h2 className="text-[18px] font-medium text-[#111]">评价与问答</h2>
+                <p className="mt-1 text-[13px] text-[#999]">看真实观演反馈，购票前也可以提问</p>
+              </div>
+              <div className="flex items-center gap-2 text-[#ff1268]">
+                <Star className="h-5 w-5 fill-[#ff1268]" />
+                <span className="text-[22px] font-bold">{reviewData?.summary.averageRating ?? '0.0'}</span>
+                <span className="text-[13px] text-[#999]">/ 5</span>
+              </div>
+            </div>
+
+            <div className="grid gap-0 lg:grid-cols-2">
+              <section className="border-b border-[#f0f0f0] p-6 lg:border-b-0 lg:border-r">
+                <div className="mb-5 flex items-center justify-between">
+                  <h3 className="text-[16px] font-medium text-[#111]">观演评价</h3>
+                  <span className="text-[13px] text-[#999]">{reviewData?.summary.reviewCount ?? 0} 条评价</span>
+                </div>
+
+                <div className="mb-5 rounded-lg bg-[#fafafa] p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    {[1, 2, 3, 4, 5].map(value => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setReviewForm({ ...reviewForm, rating: value })}
+                        className="text-[#ff1268]"
+                        title={`${value}星`}
+                      >
+                        <Star className={`h-5 w-5 ${value <= reviewForm.rating ? 'fill-[#ff1268]' : ''}`} />
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={reviewForm.content}
+                    onChange={event => setReviewForm({ ...reviewForm, content: event.target.value })}
+                    placeholder="写下观演体验、入场动线、座位视野等感受"
+                    className="mb-3 h-20 w-full resize-none rounded-lg border border-[#e5e5e5] bg-white p-3 text-[13px] outline-none focus:border-[#ff1268]"
+                  />
+                  <input
+                    value={reviewForm.images}
+                    onChange={event => setReviewForm({ ...reviewForm, images: event.target.value })}
+                    placeholder="图片地址，可选，多个用英文逗号分隔"
+                    className="mb-3 h-9 w-full rounded-lg border border-[#e5e5e5] px-3 text-[13px] outline-none focus:border-[#ff1268]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSubmitReview()}
+                    disabled={reviewSubmitting}
+                    className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-60"
+                  >
+                    {reviewSubmitting ? '提交中...' : '提交评价'}
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {(reviewData?.reviews || []).slice(0, 5).map(item => (
+                    <div key={item.id || `${item.userId}-${item.content}`} className="rounded-lg border border-[#f0f0f0] p-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <div className="flex items-center gap-1 text-[#ff1268]">
+                          {Array.from({ length: item.rating }).map((_, index) => <Star key={index} className="h-3.5 w-3.5 fill-[#ff1268]" />)}
+                        </div>
+                        <span className="text-[12px] text-[#aaa]">用户 {item.userId}</span>
+                      </div>
+                      <p className="text-[13px] leading-6 text-[#555]">{item.content || '用户未填写文字评价'}</p>
+                      {item.images && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {item.images.split(',').map(url => url.trim()).filter(Boolean).slice(0, 3).map(url => (
+                            <img key={url} src={url} alt="评价图片" className="h-16 w-16 rounded object-cover" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {(!reviewData || reviewData.reviews.length === 0) && (
+                    <div className="rounded-lg bg-[#fafafa] py-8 text-center text-[13px] text-[#999]">暂无评价，购票观演后可以来分享体验</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="p-6">
+                <div className="mb-5 flex items-center justify-between">
+                  <h3 className="text-[16px] font-medium text-[#111]">问答区</h3>
+                  <MessageCircle className="h-5 w-5 text-[#ff1268]" />
+                </div>
+                <div className="mb-5 rounded-lg bg-[#fafafa] p-4">
+                  <textarea
+                    value={questionContent}
+                    onChange={event => setQuestionContent(event.target.value)}
+                    placeholder="例如：几点检票、是否可带相机、儿童是否需购票"
+                    className="mb-3 h-20 w-full resize-none rounded-lg border border-[#e5e5e5] bg-white p-3 text-[13px] outline-none focus:border-[#ff1268]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSubmitQuestion()}
+                    disabled={questionSubmitting}
+                    className="rounded-lg border border-[#ff1268] bg-white px-4 py-2 text-[13px] font-medium text-[#ff1268] disabled:opacity-60"
+                  >
+                    {questionSubmitting ? '提交中...' : '我要提问'}
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  {questions.slice(0, 6).map(item => (
+                    <div key={item.id || `${item.userId}-${item.content}`} className="rounded-lg border border-[#f0f0f0] p-4">
+                      <div className="mb-2 text-[13px] font-medium text-[#333]">问：{item.content}</div>
+                      <div className="text-[13px] leading-6 text-[#666]">
+                        答：{item.answer || (item.status === 'PENDING' ? '已提交，等待回复' : '暂无回复')}
+                      </div>
+                    </div>
+                  ))}
+                  {questions.length === 0 && (
+                    <div className="rounded-lg bg-[#fafafa] py-8 text-center text-[13px] text-[#999]">暂无问答，购票前可以先提一个问题</div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </div>
+
           {/* 右侧：占比约 1/3 */}
           <div className="w-[300px] flex-shrink-0 flex flex-col gap-5">
             {/* 购票保障 / 服务说明 */}
@@ -1104,6 +1441,35 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                   <img src="/1.png" alt="二维码" className="w-full h-full object-cover" />
                 </div>
               </div>
+            </div>
+
+            <div className="bg-white rounded-lg p-5 border border-[#e5e5e5]">
+              <h2 className="text-[16px] font-medium text-[#111] mb-4">抢票准备检查</h2>
+              <div className="space-y-3 text-[13px] text-[#666]">
+                <div className="flex items-center justify-between gap-3">
+                  <span>登录状态</span>
+                  <span className={isAuthenticated() ? 'text-[#16a34a]' : 'text-[#ff1268]'}>{isAuthenticated() ? '已登录' : '待登录'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>实名观演人</span>
+                  <span className={realNameRequired ? 'text-[#ff1268]' : 'text-[#16a34a]'}>{realNameRequired ? '需提前维护' : '非必填'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>场次</span>
+                  <span className={selectedSession ? 'text-[#16a34a]' : 'text-[#999]'}>{selectedSession ? '已选择' : '待选择'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>票档</span>
+                  <span className={selectedTicket ? 'text-[#16a34a]' : 'text-[#999]'}>{selectedTicket ? '已选择' : '待选择'}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push('/subscriptions')}
+                className="mt-4 w-full rounded-lg border border-[#ff1268] bg-white px-4 py-2 text-[13px] font-medium text-[#ff1268] hover:bg-[#fff0f5]"
+              >
+                管理想看与提醒
+              </button>
             </div>
 
             {/* 为你推荐 */}
@@ -1289,6 +1655,19 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         候补成功后不会立即扣款；有名额释放时系统会生成待支付订单，请在通知时间内完成支付。
                       </div>
                     )}
+                    {confirmMode === 'purchase' && (
+                      <label className="flex items-start gap-2 rounded border border-[#f0f0f0] bg-[#fafafa] p-3 text-[13px] leading-relaxed text-[#666]">
+                        <input
+                          type="checkbox"
+                          checked={refundPolicyAccepted}
+                          onChange={(event) => setRefundPolicyAccepted(event.target.checked)}
+                          className="mt-1"
+                        />
+                        <span>
+                          我已阅读退票规则：已支付订单可在订单页申请退款，退款金额以可退票数和支付渠道结果为准；改期、取消或阵容变更可选择专属原因提交。
+                        </span>
+                      </label>
+                    )}
                     <div className="flex justify-between text-[16px] font-medium pt-3 border-t border-[#f0f0f0]">
                       <span>{confirmCopy.totalLabel}</span>
                       <span className="text-[#ff1268]">¥{(selectedTicket.price * quantity).toFixed(2)}</span>
@@ -1317,9 +1696,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         }
                         void handleConfirmOrder()
                       }}
-                      disabled={confirmSubmitting}
-                      className="cursor-pointer border-none outline-none text-white text-[14px] px-6 py-2 rounded"
-                      style={{ backgroundColor: '#ff1268', opacity: confirmSubmitting ? 0.7 : 1 }}
+                      disabled={confirmSubmitting || (confirmMode === 'purchase' && !refundPolicyAccepted)}
+                      className="cursor-pointer border-none outline-none text-white text-[14px] px-6 py-2 rounded disabled:cursor-not-allowed"
+                      style={{ backgroundColor: '#ff1268', opacity: confirmSubmitting || (confirmMode === 'purchase' && !refundPolicyAccepted) ? 0.7 : 1 }}
                     >
                       {confirmSubmitting ? confirmCopy.submittingLabel : confirmCopy.submitLabel}
                     </button>
@@ -1392,6 +1771,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       <div className="mt-1 text-[#333]">
                         {grabProgress.queueRank != null ? `前方 ${grabProgress.queueRank} 人` : `序号 ${grabProgress.queueSeq ?? '-'}`}
                       </div>
+                      {getQueueRankTrendLabel(grabProgress.queueRank, grabProgress.queueRankPrevious) && (
+                        <div className="mt-1 text-[12px] text-[#999]">
+                          {getQueueRankTrendLabel(grabProgress.queueRank, grabProgress.queueRankPrevious)}
+                        </div>
+                      )}
                     </div>
                     <div className="rounded border border-[#f0f0f0] p-3">
                       <div className="text-[#999]">预计等待</div>
@@ -1399,6 +1783,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                         {grabProgress.estimatedWaitSeconds != null ? `${grabProgress.estimatedWaitSeconds} 秒` : '计算中'}
                       </div>
                     </div>
+                  </div>
+
+                  <div className="mb-4 rounded border border-[#f0f0f0] p-3 text-[13px]">
+                    <div className="text-[#999]">自动降档</div>
+                    <div className="mt-1 text-[#333]">{getAutoDowngradeDisplay(grabProgress)}</div>
                   </div>
 
                   <div className="mb-4">
@@ -1433,11 +1822,22 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                     <div className="mt-1">
                       {grabProgress.visibleStock?.visibleStock != null
                         ? `当前档位剩余约 ${grabProgress.visibleStock.visibleStock} 张`
-                        : currentProgressStock?.visibleStock != null
+                      : currentProgressStock?.visibleStock != null
                           ? `${currentProgressStock.name} 剩余约 ${currentProgressStock.visibleStock} 张`
                           : '当前档位库存变化较快'}
                     </div>
                   </div>
+
+                  {grabProgress.fairnessNotes && grabProgress.fairnessNotes.length > 0 && (
+                    <div className="mb-5 rounded bg-[#fafafa] p-3 text-[12px] text-[#777]">
+                      <div className="font-medium text-[#555]">公平规则</div>
+                      <ul className="mt-1 space-y-1">
+                        {grabProgress.fairnessNotes.map((note) => (
+                          <li key={note}>{note}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
                   {orderError && (
                     <div className="mb-4 rounded border border-[#ffcccc] bg-[#fff0f0] p-2.5 text-[13px] text-[#e74c3c]">

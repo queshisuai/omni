@@ -14,6 +14,8 @@ import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.dto.ActivityArtistDto;
 import com.omni.ticket.dto.ActivityDraftResponse;
+import com.omni.ticket.dto.ActivityMarketingOverviewResponse;
+import com.omni.ticket.dto.ActivityMarketingRuleRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
@@ -55,6 +57,7 @@ import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
 import com.omni.ticket.service.ActivityDraftService;
+import com.omni.ticket.service.ActivityMarketingService;
 import com.omni.ticket.service.ArtistAdminService;
 import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivityRiskResponseService;
@@ -168,6 +171,8 @@ class AdminControllerTest {
     private ActivityDraftService activityDraftService;
     @Mock
     private StationConfigVersionService stationConfigVersionService;
+    @Mock
+    private ActivityMarketingService activityMarketingService;
 
     @Test
     void listAdminVenuesUsesStableDisplayOrder() {
@@ -1125,6 +1130,21 @@ class AdminControllerTest {
     }
 
     @Test
+    void createActivityStoresTicketTransferRule() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Map<String, Object> body = validCreateActivityBody();
+        body.put("ticketTransferAllowed", false);
+
+        Result<Activity> result = controller.createActivity(organizerToken(), body);
+
+        ArgumentCaptor<Activity> captor = ArgumentCaptor.forClass(Activity.class);
+        verify(activityMapper).insert(captor.capture());
+        assertEquals(200, result.getCode());
+        assertEquals(Boolean.FALSE, captor.getValue().getTicketTransferAllowed());
+    }
+
+    @Test
     void createActivityRejectsNonNumericPerUserLimit() {
         AdminController controller = controller();
         when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
@@ -1174,6 +1194,26 @@ class AdminControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals(Boolean.TRUE, result.getData().getRealNameRequired());
+        verify(activityMapper).updateById(activity);
+    }
+
+    @Test
+    void updateActivityStoresTicketTransferRule() {
+        AdminController controller = controller();
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setOrganizerId(2003L);
+        activity.setTicketTransferAllowed(true);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+
+        Result<Activity> result = controller.updateActivity(10L, organizerToken(), Map.of(
+                "userId", 2003L,
+                "ticketTransferAllowed", false
+        ));
+
+        assertEquals(200, result.getCode());
+        assertEquals(Boolean.FALSE, result.getData().getTicketTransferAllowed());
         verify(activityMapper).updateById(activity);
     }
 
@@ -2013,6 +2053,34 @@ class AdminControllerTest {
     }
 
     @Test
+    void getActivityMarketingUsesAuthorizationToken() {
+        AdminController controller = controller();
+        ActivityMarketingOverviewResponse overview = new ActivityMarketingOverviewResponse();
+        overview.setActivityId(101L);
+        when(activityMarketingService.getMarketing(2003L, 101L)).thenReturn(overview);
+
+        Result<ActivityMarketingOverviewResponse> result = controller.getActivityMarketing(101L, organizerToken());
+
+        assertEquals(200, result.getCode());
+        assertEquals(101L, result.getData().getActivityId());
+        verify(activityMarketingService).getMarketing(2003L, 101L);
+    }
+
+    @Test
+    void updateActivityMarketingUsesAuthorizationToken() {
+        AdminController controller = controller();
+        ActivityMarketingRuleRequest request = new ActivityMarketingRuleRequest();
+        ActivityMarketingOverviewResponse overview = new ActivityMarketingOverviewResponse();
+        overview.setActivityId(101L);
+        when(activityMarketingService.saveMarketing(2003L, 101L, request)).thenReturn(overview);
+
+        Result<ActivityMarketingOverviewResponse> result = controller.updateActivityMarketing(101L, organizerToken(), request);
+
+        assertEquals(200, result.getCode());
+        verify(activityMarketingService).saveMarketing(2003L, 101L, request);
+    }
+
+    @Test
     void listRiskCasesUsesAuthorizationToken() {
         AdminController controller = controller();
 
@@ -2143,7 +2211,7 @@ class AdminControllerTest {
     }
 
     private AdminController controller() {
-        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, orderAdminQueryService, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService, privateAssetService, seatCraftLayoutVersionService, activityDraftService, stationConfigVersionService);
+        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, orderAdminQueryService, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService, privateAssetService, seatCraftLayoutVersionService, activityDraftService, stationConfigVersionService, activityMarketingService);
     }
 
     private StationConfigVersionRequest stationConfigRequest(Long userId) {

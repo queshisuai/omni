@@ -5,7 +5,7 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD}
 
 seata:
-  enabled: true
+  enabled: ${SEATA_ENABLED:true}
   application-id: ${spring.application.name}
   tx-service-group: omni_tx_group
   enable-auto-data-source-proxy: true

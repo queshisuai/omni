@@ -20,6 +20,7 @@ public class TicketSalesQuoteResponse {
     private String seatLabels;
     private Integer perUserLimit;
     private Boolean realNameRequired;
+    private Boolean ticketTransferAllowed;
 
     public Long getSessionId() { return sessionId; }
     public void setSessionId(Long sessionId) { this.sessionId = sessionId; }
@@ -53,4 +54,6 @@ public class TicketSalesQuoteResponse {
     public void setPerUserLimit(Integer perUserLimit) { this.perUserLimit = perUserLimit; }
     public Boolean getRealNameRequired() { return realNameRequired; }
     public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
+    public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }
+    public void setTicketTransferAllowed(Boolean ticketTransferAllowed) { this.ticketTransferAllowed = ticketTransferAllowed; }
 }

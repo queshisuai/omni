@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getToken, getUser } from '@/lib/auth'
 import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
-import { getRealNameRequirementLabel } from '@/lib/activity-flags'
+import { getRealNameRequirementLabel, getTicketTransferAllowedLabel } from '@/lib/activity-flags'
 import { Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
 import type { ActivityEntity, RefundImpactResponse, UserRole } from '@/types/api'
@@ -484,9 +484,14 @@ export default function ActivitiesPage() {
                   <td className="p-3">
                     <div className="font-medium text-[#333]">{a.name}</div>
                     {!isTour && (
-                      <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[12px] ${a.realNameRequired ? 'bg-[#fff7ed] text-[#f97316]' : 'bg-[#f5f5f5] text-[#999]'}`}>
-                        {getRealNameRequirementLabel(a.realNameRequired)}
-                      </span>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[12px] ${a.realNameRequired ? 'bg-[#fff7ed] text-[#f97316]' : 'bg-[#f5f5f5] text-[#999]'}`}>
+                          {getRealNameRequirementLabel(a.realNameRequired)}
+                        </span>
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[12px] ${a.ticketTransferAllowed === false ? 'bg-[#fef2f2] text-[#dc2626]' : 'bg-[#f0fff4] text-[#16a34a]'}`}>
+                          {getTicketTransferAllowedLabel(a.ticketTransferAllowed)}
+                        </span>
+                      </div>
                     )}
                     {a.artistName ? <div className="mt-1 text-[12px] font-normal text-[#999]">阵容：{a.artistName}</div> : null}
                   </td>
@@ -509,6 +514,9 @@ export default function ActivitiesPage() {
                       )}
                       <Link href={configHref} className="rounded px-2 py-1 text-[12px] text-[#3b82f6] hover:bg-[#eff6ff]">继续配置</Link>
                       <Link href={seatHref} className="rounded px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]">座位票档</Link>
+                      {!isTour && (
+                        <Link href={`/console/activities/${a.id}/marketing`} className="rounded px-2 py-1 text-[12px] text-[#7c3aed] hover:bg-[#f5f3ff]">营销</Link>
+                      )}
                       {canPublishDraft(a) && (
                         <button
                           onClick={() => handlePublishDraft(a)}

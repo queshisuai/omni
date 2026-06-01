@@ -5,10 +5,14 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.ResolvedAttendeeResponse;
+import com.omni.user.dto.UserAttendeeExportResponse;
 import com.omni.user.dto.UserAttendeeRequest;
 import com.omni.user.dto.UserAttendeeResponse;
+import com.omni.user.entity.PrivacyAuditLog;
 import com.omni.user.entity.UserAttendee;
+import com.omni.user.mapper.PrivacyAuditLogMapper;
 import com.omni.user.mapper.UserAttendeeMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -29,11 +33,23 @@ public class UserAttendeeService {
     private static final int STATUS_ACTIVE = 1;
     private static final int STATUS_DELETED = 0;
     private static final String ID_CARD = "ID_CARD";
+    private static final String AUDIT_TARGET_ATTENDEE = "USER_ATTENDEE";
 
     private final UserAttendeeMapper mapper;
+    private final IdNoEncryptionService idNoEncryptionService;
+    private final PrivacyAuditLogMapper privacyAuditLogMapper;
 
-    public UserAttendeeService(UserAttendeeMapper mapper) {
+    @Autowired
+    public UserAttendeeService(UserAttendeeMapper mapper,
+                               IdNoEncryptionService idNoEncryptionService,
+                               PrivacyAuditLogMapper privacyAuditLogMapper) {
         this.mapper = mapper;
+        this.idNoEncryptionService = idNoEncryptionService;
+        this.privacyAuditLogMapper = privacyAuditLogMapper;
+    }
+
+    public UserAttendeeService(UserAttendeeMapper mapper, IdNoEncryptionService idNoEncryptionService) {
+        this(mapper, idNoEncryptionService, null);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -47,15 +63,22 @@ public class UserAttendeeService {
         if (userId == null) {
             return Collections.emptyList();
         }
-        List<UserAttendee> attendees = mapper.selectList(new LambdaQueryWrapper<UserAttendee>()
-                .eq(UserAttendee::getUserId, userId)
-                .eq(UserAttendee::getStatus, STATUS_ACTIVE)
-                .orderByDesc(UserAttendee::getIsDefault)
-                .orderByDesc(UserAttendee::getCreateTime));
-        if (attendees == null) {
-            return Collections.emptyList();
-        }
+        List<UserAttendee> attendees = fetchActiveAttendees(userId);
+        audit(userId, "QUERY_ATTENDEE_MASKED", null, "count=" + attendees.size());
         return attendees.stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    public UserAttendeeExportResponse exportMine(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        List<UserAttendee> attendees = fetchActiveAttendees(userId);
+        UserAttendeeExportResponse response = new UserAttendeeExportResponse();
+        response.setFileName("实名观演人-" + userId + ".csv");
+        response.setContentType("text/csv;charset=UTF-8");
+        response.setContent(buildMaskedCsv(attendees));
+        audit(userId, "EXPORT_ATTENDEE_MASKED", null, "count=" + attendees.size());
+        return response;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -99,7 +122,55 @@ public class UserAttendeeService {
             }
             resolved.add(toResolved(attendee));
         }
+        audit(userId, "VERIFY_ATTENDEE", null, "count=" + resolved.size());
         return resolved;
+    }
+
+    private List<UserAttendee> fetchActiveAttendees(Long userId) {
+        List<UserAttendee> attendees = mapper.selectList(new LambdaQueryWrapper<UserAttendee>()
+                .eq(UserAttendee::getUserId, userId)
+                .eq(UserAttendee::getStatus, STATUS_ACTIVE)
+                .orderByDesc(UserAttendee::getIsDefault)
+                .orderByDesc(UserAttendee::getCreateTime));
+        return attendees == null ? Collections.emptyList() : attendees;
+    }
+
+    private String buildMaskedCsv(List<UserAttendee> attendees) {
+        StringBuilder builder = new StringBuilder("姓名,证件类型,脱敏证件号,手机号,默认观演人\n");
+        for (UserAttendee attendee : attendees) {
+            builder.append(csvValue(attendee.getRealName())).append(',')
+                    .append(csvValue(attendee.getIdType())).append(',')
+                    .append(csvValue(attendee.getIdNoMask())).append(',')
+                    .append(csvValue(attendee.getPhone())).append(',')
+                    .append(Boolean.TRUE.equals(attendee.getIsDefault()) ? "是" : "否")
+                    .append('\n');
+        }
+        return builder.toString();
+    }
+
+    private String csvValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        String escaped = value.replace("\"", "\"\"");
+        if (escaped.contains(",") || escaped.contains("\"") || escaped.contains("\n") || escaped.contains("\r")) {
+            return "\"" + escaped + "\"";
+        }
+        return escaped;
+    }
+
+    private void audit(Long actorUserId, String action, Long targetId, String detail) {
+        if (privacyAuditLogMapper == null || actorUserId == null) {
+            return;
+        }
+        PrivacyAuditLog log = new PrivacyAuditLog();
+        log.setActorUserId(actorUserId);
+        log.setAction(action);
+        log.setTargetType(AUDIT_TARGET_ATTENDEE);
+        log.setTargetId(targetId);
+        log.setDetail(detail);
+        log.setCreateTime(LocalDateTime.now());
+        privacyAuditLogMapper.insert(log);
     }
 
     private UserAttendee buildAttendee(Long userId, UserAttendeeRequest request) {
@@ -122,7 +193,7 @@ public class UserAttendeeService {
         attendee.setIdType(idType);
         attendee.setIdNoHash(hashIdNo(idType, normalizedIdNo));
         attendee.setIdNoMask(maskIdNo(normalizedIdNo));
-        attendee.setIdNoEncrypted(null);
+        attendee.setIdNoEncrypted(idNoEncryptionService.encrypt(idType, normalizedIdNo));
         attendee.setPhone(trimToNull(request.getPhone()));
         attendee.setIsDefault(Boolean.TRUE.equals(request.getIsDefault()));
         attendee.setStatus(STATUS_ACTIVE);
@@ -163,6 +234,7 @@ public class UserAttendeeService {
         response.setIdType(attendee.getIdType());
         response.setIdNoHash(attendee.getIdNoHash());
         response.setIdNoMask(attendee.getIdNoMask());
+        response.setIdNoEncrypted(attendee.getIdNoEncrypted());
         response.setPhone(attendee.getPhone());
         return response;
     }

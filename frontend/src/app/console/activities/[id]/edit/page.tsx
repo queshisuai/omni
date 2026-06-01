@@ -18,6 +18,7 @@ type ActivityForm = {
   description: string
   perUserLimit: string
   realNameRequired: boolean
+  ticketTransferAllowed: boolean
 }
 
 const emptyForm: ActivityForm = {
@@ -28,6 +29,7 @@ const emptyForm: ActivityForm = {
   description: '',
   perUserLimit: '',
   realNameRequired: false,
+  ticketTransferAllowed: true,
 }
 
 export default function EditActivityPage() {
@@ -83,6 +85,7 @@ export default function EditActivityPage() {
         description: activity.description || '',
         perUserLimit: activity.perUserLimit == null ? '' : String(activity.perUserLimit),
         realNameRequired: Boolean(activity.realNameRequired),
+        ticketTransferAllowed: activity.ticketTransferAllowed !== false,
       })
       setCategories(categoryList)
       setSessions(sessionPage.records || [])
@@ -146,6 +149,7 @@ export default function EditActivityPage() {
         description: form.description.trim() || null,
         perUserLimit: limitText ? Number(limitText) : null,
         realNameRequired: form.realNameRequired,
+        ticketTransferAllowed: form.ticketTransferAllowed,
       })
       setMessage(role === 'admin' ? '平台活动基础信息已保存' : '我的活动基础信息已保存')
     } catch (err) {
@@ -354,6 +358,13 @@ export default function EditActivityPage() {
             <span>
               <span className="font-medium">实名制购票</span>
               <span className="mt-1 block text-[#999]">开启后，用户下单和候补时需要选择对应数量的实名观演人。</span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
+            <input type="checkbox" checked={form.ticketTransferAllowed} onChange={event => setForm({ ...form, ticketTransferAllowed: event.target.checked })} className="mt-0.5 accent-[#ff1268]" />
+            <span>
+              <span className="font-medium">允许电子票转赠</span>
+              <span className="mt-1 block text-[#999]">关闭后，已出票用户不能发起转赠；已固化到订单快照的历史订单不受影响。</span>
             </span>
           </label>
         </div>

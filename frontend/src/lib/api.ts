@@ -23,6 +23,8 @@ import type {
   TicketTeamDetailVO,
   TicketTeamVO,
   UpdateTeamGrabStrategyPayload,
+  ActivityMarketingRulePayload,
+  UserAttendeeExportVO,
   UserAttendeePayload,
   UserAttendeeVO,
   UserInfo,
@@ -209,6 +211,10 @@ export async function listUserAttendees() {
   return request<UserAttendeeVO[]>('/api/user/attendees')
 }
 
+export async function exportUserAttendees() {
+  return request<UserAttendeeExportVO>('/api/user/attendees/export')
+}
+
 export async function createUserAttendee(params: UserAttendeePayload) {
   return request<UserAttendeeVO>('/api/user/attendees', {
     method: 'POST',
@@ -279,15 +285,113 @@ export async function sendSmsCode(phone: string) {
   })
 }
 
+export async function listHelpFaqs() {
+  return request<import('@/types/api').HelpFaqVO[]>('/api/user/help/faqs')
+}
+
+export async function startSupportConversation(params: { subject?: string | null; initialMessage?: string | null; preferHuman?: boolean }) {
+  return request<import('@/types/api').SupportConversationVO>('/api/user/support/conversations', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function listMySupportConversations() {
+  return request<import('@/types/api').SupportConversationVO[]>('/api/user/support/conversations/my')
+}
+
+export async function listSupportMessages(conversationId: number) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportMessageVO[]>(`/api/user/support/conversations/${conversationId}/messages`)
+}
+
+export async function sendSupportMessage(conversationId: number, content: string) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportMessageVO>(`/api/user/support/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+}
+
+export async function handoffSupportConversation(conversationId: number) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportConversationVO>(`/api/user/support/conversations/${conversationId}/handoff`, {
+    method: 'POST',
+  })
+}
+
+export async function listAgentSupportConversations(status?: string) {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  const qs = params.toString()
+  return request<import('@/types/api').SupportConversationVO[]>(`/api/user/support/agent/conversations${qs ? `?${qs}` : ''}`)
+}
+
+export async function claimSupportConversation(conversationId: number) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportConversationVO>(`/api/user/support/agent/conversations/${conversationId}/claim`, {
+    method: 'POST',
+  })
+}
+
+export async function closeSupportConversation(conversationId: number) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportConversationVO>(`/api/user/support/agent/conversations/${conversationId}/close`, {
+    method: 'POST',
+  })
+}
+
+export async function listSupportAccounts() {
+  return request<import('@/types/api').SupportAccountVO[]>('/api/user/support/admin/accounts')
+}
+
+export async function createSupportAccount(params: { phone: string; nickname: string; password: string }) {
+  return request<import('@/types/api').SupportAccountVO>('/api/user/support/admin/accounts', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function deactivateSupportAccount(id: number) {
+  assertPositiveInteger(id, '客服账号ID')
+  return request<import('@/types/api').SupportAccountVO>(`/api/user/support/admin/accounts/${id}/deactivate`, {
+    method: 'POST',
+  })
+}
+
 export { ApiError }
 
 // ========== 票务服务 ==========
 
-export async function listActivities(params: { page?: number; size?: number; categoryId?: number }) {
+export async function listActivities(params: {
+  page?: number
+  size?: number
+  categoryId?: number
+  keyword?: string
+  city?: string
+  dateFrom?: string
+  dateTo?: string
+  minPrice?: number
+  maxPrice?: number
+  saleStatus?: string
+  seatMapOnly?: boolean
+  realNameRequired?: boolean
+  sort?: string
+}) {
   const searchParams = new URLSearchParams()
   if (params.page) searchParams.set('page', String(params.page))
   if (params.size) searchParams.set('size', String(params.size))
   if (params.categoryId) searchParams.set('categoryId', String(params.categoryId))
+  if (params.keyword?.trim()) searchParams.set('keyword', params.keyword.trim())
+  if (params.city?.trim()) searchParams.set('city', params.city.trim())
+  if (params.dateFrom) searchParams.set('dateFrom', params.dateFrom)
+  if (params.dateTo) searchParams.set('dateTo', params.dateTo)
+  if (params.minPrice != null) searchParams.set('minPrice', String(params.minPrice))
+  if (params.maxPrice != null) searchParams.set('maxPrice', String(params.maxPrice))
+  if (params.saleStatus) searchParams.set('saleStatus', params.saleStatus)
+  if (params.seatMapOnly !== undefined) searchParams.set('seatMapOnly', String(params.seatMapOnly))
+  if (params.realNameRequired !== undefined) searchParams.set('realNameRequired', String(params.realNameRequired))
+  if (params.sort) searchParams.set('sort', params.sort)
   const qs = searchParams.toString()
   return request<import('@/types/api').PageResult<import('@/types/api').ActivityVO>>(
     `/api/ticket/activities${qs ? `?${qs}` : ''}`
@@ -296,6 +400,32 @@ export async function listActivities(params: { page?: number; size?: number; cat
 
 export async function getActivityDetail(id: number) {
   return request<import('@/types/api').ActivityDetailVO>(`/api/ticket/activities/${id}`)
+}
+
+export async function listActivityReviews(activityId: number) {
+  assertPositiveInteger(activityId, '活动ID')
+  return request<import('@/types/api').ActivityReviewListVO>(`/api/ticket/activities/${activityId}/reviews`)
+}
+
+export async function createActivityReview(activityId: number, params: { orderId?: number | null; rating: number; content?: string | null; images?: string | null }) {
+  assertPositiveInteger(activityId, '活动ID')
+  return request<import('@/types/api').ActivityReviewVO>(`/api/ticket/activities/${activityId}/reviews`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function listActivityQuestions(activityId: number) {
+  assertPositiveInteger(activityId, '活动ID')
+  return request<import('@/types/api').ActivityQuestionVO[]>(`/api/ticket/activities/${activityId}/questions`)
+}
+
+export async function createActivityQuestion(activityId: number, content: string) {
+  assertPositiveInteger(activityId, '活动ID')
+  return request<import('@/types/api').ActivityQuestionVO>(`/api/ticket/activities/${activityId}/questions`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
 }
 
 export async function getSeatMap(sessionId: number, ticketTypeId: number) {
@@ -435,6 +565,26 @@ export async function listReservations(_userId: number) {
   return request<import('@/types/api').ReservationEntity[]>('/api/ticket/reservations')
 }
 
+export async function createSubscription(params: import('@/types/api').SubscriptionPayload) {
+  return request<import('@/types/api').SubscriptionVO>('/api/ticket/subscriptions', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function listSubscriptions() {
+  return request<import('@/types/api').SubscriptionVO[]>('/api/ticket/subscriptions')
+}
+
+export async function cancelSubscription(id: number) {
+  assertPositiveInteger(id, '订阅ID')
+  return request<void>(`/api/ticket/subscriptions/${id}`, { method: 'DELETE' })
+}
+
+export async function createSubscriptionCalendar() {
+  return request<import('@/types/api').SubscriptionCalendarVO>('/api/ticket/subscriptions/calendar')
+}
+
 // ========== 订单服务 ==========
 
 export async function submitGrabRequest(params: SubmitGrabRequestPayload) {
@@ -569,6 +719,32 @@ export async function listOrders() {
   return request<import('@/types/api').OrderEntity[]>('/api/order/my')
 }
 
+export async function listMyTickets() {
+  return request<import('@/types/api').TicketWalletItemVO[]>('/api/order/tickets')
+}
+
+export async function createTicketEntryCode(ticketId: number) {
+  assertPositiveInteger(ticketId, '电子票ID')
+  return request<import('@/types/api').TicketEntryCodeVO>(`/api/order/tickets/${ticketId}/entry-code`, { method: 'POST' })
+}
+
+export async function createTicketTransfer(ticketId: number) {
+  assertPositiveInteger(ticketId, '电子票ID')
+  return request<import('@/types/api').TicketTransferCreateVO>(`/api/order/tickets/${ticketId}/transfer`, { method: 'POST' })
+}
+
+export async function revokeTicketTransfer(ticketId: number) {
+  assertPositiveInteger(ticketId, '电子票ID')
+  return request<import('@/types/api').TicketTransferRevokeVO>(`/api/order/tickets/${ticketId}/transfer/revoke`, { method: 'POST' })
+}
+
+export async function claimTicketTransfer(transferCode: string) {
+  return request<import('@/types/api').TicketTransferClaimVO>('/api/order/tickets/transfers/claim', {
+    method: 'POST',
+    body: JSON.stringify({ transferCode }),
+  })
+}
+
 export async function listTrashOrders() {
   return request<import('@/types/api').OrderEntity[]>('/api/order/my/trash')
 }
@@ -671,6 +847,24 @@ export function submitPayForm(payForm: string) {
 
 export async function getAdminSummary() {
   return request<import('@/types/api').AdminSummaryVO>('/api/ticket/admin/summary')
+}
+
+export async function getActivityMarketing(activityId: number) {
+  assertPositiveInteger(activityId, 'activityId')
+  return request<import('@/types/api').ActivityMarketingOverviewVO>(`/api/ticket/admin/activities/${activityId}/marketing`)
+}
+
+export async function updateActivityMarketing(activityId: number, body: ActivityMarketingRulePayload) {
+  assertPositiveInteger(activityId, 'activityId')
+  const { userId: _userId, ...safeBody } = body
+  return request<import('@/types/api').ActivityMarketingOverviewVO>(`/api/ticket/admin/activities/${activityId}/marketing`, {
+    method: 'PUT',
+    body: JSON.stringify(safeBody),
+  })
+}
+
+export async function getGrabOpsSummary() {
+  return request<import('@/types/api').GrabOpsSummaryVO>('/api/grab/admin/ops-summary')
 }
 
 export async function listConsoleOrders(params: { paidOnly?: boolean } = {}) {

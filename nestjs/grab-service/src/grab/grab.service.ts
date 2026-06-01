@@ -137,12 +137,22 @@ export class GrabService {
       currentTicketTypeId: record.currentTicketTypeId,
       currentAttemptIndex: record.currentAttemptIndex,
       requestedTicketTypes: record.requestedTicketTypes,
+      allowAutoDowngrade: Boolean(record.allowAutoDowngrade),
       attempts: record.attemptsSnapshot,
       visibleStock,
+      fairnessNotes: this.buildFairnessNotes(),
       message: record.progressMessage,
       matchedTicketTypeId: record.matchedTicketTypeId,
       updateTime: record.updatedAt.toISOString(),
     };
+  }
+
+  private buildFairnessNotes(): string[] {
+    return [
+      '同一账号相同购票意图会复用已有排队请求，避免重复挤占队列。',
+      '活动限购规则会在锁票和创建订单阶段校验。',
+      '异常高频请求会触发风控拦截，请使用当前页面正常刷新。',
+    ];
   }
 
   async cancelRequest(userId: number, requestId: string): Promise<GrabRequestResponse> {

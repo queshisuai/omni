@@ -57,6 +57,7 @@ class OrderSnapshotServiceTest {
         assertEquals("看台A", snapshot.getTicketName());
         assertEquals(new BigDecimal("380.00"), snapshot.getUnitPrice());
         assertEquals(2, snapshot.getQuantity());
+        assertEquals(false, snapshot.getTicketTransferAllowed());
     }
 
     @Test
@@ -101,6 +102,7 @@ class OrderSnapshotServiceTest {
         quote.setQuantity(withSeats ? 2 : 2);
         quote.setSeatBased(withSeats);
         quote.setSeatLabels(withSeats ? "A-1, A-2" : null);
+        quote.setTicketTransferAllowed(false);
         return quote;
     }
 }

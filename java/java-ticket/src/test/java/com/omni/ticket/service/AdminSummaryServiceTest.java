@@ -7,6 +7,8 @@ import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.dto.AdminSummaryResponse;
 import com.omni.ticket.dto.PaidOrderCountRequest;
 import com.omni.ticket.dto.PaidOrderCountResponse;
+import com.omni.ticket.dto.PaidOrdersBySessionsRequest;
+import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.mapper.TourMapper;
@@ -99,6 +101,38 @@ class AdminSummaryServiceTest {
     }
 
     @Test
+    void adminSummaryIncludesOperationalDashboardMetrics() {
+        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        Activity first = activity(101L, 2003L);
+        first.setName("热门活动A");
+        Activity second = activity(102L, 2003L);
+        second.setName("热门活动B");
+        second.setPublishStatus("risk_suspended");
+        when(activityMapper.selectList(any())).thenReturn(Arrays.asList(first, second));
+        when(tourMapper.selectCount(any())).thenReturn(0L);
+        when(sessionMapper.selectList(any())).thenReturn(Arrays.asList(session(10L, 101L), session(11L, 102L)));
+        when(ticketTypeMapper.selectCount(any())).thenReturn(2L);
+        when(orderInternalClient.countPaidBySessions(any(PaidOrderCountRequest.class), eq("internal-token")))
+                .thenReturn(Result.success(new PaidOrderCountResponse(2L)));
+        when(orderInternalClient.listPaidBySessions(any(PaidOrdersBySessionsRequest.class), eq("internal-token")))
+                .thenReturn(Result.success(List.of(
+                        order(1L, 10L, 2),
+                        order(2L, 10L, 2),
+                        order(3L, 11L, 3)
+                )));
+
+        AdminSummaryResponse summary = service.getSummary(2002L);
+
+        assertEquals(2L, summary.getHotActivities().get(0).getOrderCount());
+        assertEquals("热门活动A", summary.getHotActivities().get(0).getActivityName());
+        assertEquals(1L, summary.getPaymentTimeoutCount());
+        assertEquals(3L, summary.getOrderCount());
+        assertEquals(1L, summary.getRiskHitCount());
+        assertEquals(2L, summary.getRiskCheckCount());
+        verify(orderInternalClient).listPaidBySessions(any(PaidOrdersBySessionsRequest.class), eq("internal-token"));
+    }
+
+    @Test
     void returnsZeroPaidOrderCountAndSkipsOrderServiceWhenNoSessions() {
         when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
         when(activityMapper.selectList(any())).thenReturn(Collections.singletonList(activity(101L, 2003L)));
@@ -178,5 +212,19 @@ class AdminSummaryServiceTest {
         Session session = new Session();
         session.setId(id);
         return session;
+    }
+
+    private Session session(Long id, Long activityId) {
+        Session session = session(id);
+        session.setActivityId(activityId);
+        return session;
+    }
+
+    private OrderInfoResponse order(Long id, Long sessionId, Integer status) {
+        OrderInfoResponse order = new OrderInfoResponse();
+        order.setId(id);
+        order.setSessionId(sessionId);
+        order.setStatus(status);
+        return order;
     }
 }

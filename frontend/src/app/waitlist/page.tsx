@@ -8,7 +8,7 @@ import { Header } from '@/components/Header'
 import { globalConfirm } from '@/components/GlobalDialog'
 import { cancelWaitlistEntry, listMyWaitlistEntries } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import { canCancelWaitlistEntry, getWaitlistPrimaryAction, getWaitlistStatusLabel } from '@/lib/waitlist'
+import { canCancelWaitlistEntry, getWaitlistChanceStyle, getWaitlistPrimaryAction, getWaitlistStatusLabel } from '@/lib/waitlist'
 import type { WaitlistEntryVO } from '@/types/api'
 
 function formatTime(value: string | null | undefined) {
@@ -138,6 +138,11 @@ export default function WaitlistPage() {
                             {getWaitlistStatusLabel(entry.status)}
                           </span>
                           {entry.rank != null && <span className="text-xs text-[#777]">当前约第 {entry.rank} 位</span>}
+                          {entry.estimatedChanceText && (
+                            <span className={`rounded-full border px-3 py-1 text-xs font-medium ${getWaitlistChanceStyle(entry.estimatedChance)}`}>
+                              {entry.estimatedChanceText}
+                            </span>
+                          )}
                         </div>
                         <div className="mt-3 grid gap-2 text-sm text-[#555] sm:grid-cols-3">
                           <span>场次：{entry.sessionId}</span>
@@ -148,6 +153,7 @@ export default function WaitlistPage() {
                           <Clock3 className="h-3.5 w-3.5" />
                           待支付截止：{formatTime(entry.offerExpireTime)}
                         </div>
+                        {entry.estimatedWaitText && <div className="mt-2 text-xs text-[#777]">预计机会：{entry.estimatedWaitText}</div>}
                         {entry.failReason && <div className="mt-2 text-xs text-[#b91c1c]">失败原因：{entry.failReason}</div>}
                       </div>
 

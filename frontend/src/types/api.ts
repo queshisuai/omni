@@ -85,7 +85,7 @@ export interface PrivateAssetVO {
   createTime?: string | null
 }
 
-export type UserRole = 'user' | 'organizer' | 'admin'
+export type UserRole = 'user' | 'organizer' | 'admin' | 'support'
 export type OrganizerApplicationStatus = 0 | 1 | 2
 export type OrganizerStatus = 0 | 1 | 2 | 3
 export type SubjectType = 'personal' | 'enterprise'
@@ -159,12 +159,15 @@ export interface GrabProgressResult extends GrabRequestResult {
   sessionId: number
   queueSeq: number | null
   queueRank: number | null
+  queueRankPrevious?: number | null
   estimatedWaitSeconds: number | null
   currentTicketTypeId: number | null
   currentAttemptIndex: number
   requestedTicketTypes: GrabTicketPreference[]
+  allowAutoDowngrade: boolean
   attempts: GrabAttemptProgress[]
   visibleStock: VisibleStockSnapshot | null
+  fairnessNotes?: string[]
   message: string | null
   matchedTicketTypeId: number | null
   updateTime: string
@@ -197,6 +200,9 @@ export interface WaitlistEntryVO {
   quantity: number
   status: WaitlistEntryStatus
   rank: number | null
+  estimatedChance?: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN'
+  estimatedChanceText?: string | null
+  estimatedWaitText?: string | null
   offerOrderId: number | null
   offerExpireTime: string | null
   failReason: string | null
@@ -219,6 +225,12 @@ export interface UserAttendeeVO {
   isDefault?: boolean | null
   createTime?: string | null
   updateTime?: string | null
+}
+
+export interface UserAttendeeExportVO {
+  fileName: string
+  contentType: string
+  content: string
 }
 
 export interface OrderAttendeeVO {
@@ -471,7 +483,9 @@ export interface ActivityVO {
   startTime: string
   minPrice: number | null
   status: number
+  seatMapVisibility?: 'published' | 'hidden' | string | null
   realNameRequired?: boolean | null
+  ticketTransferAllowed?: boolean | null
   artists?: ActivityArtistVO[]
 }
 
@@ -507,6 +521,7 @@ export interface ActivityEntity {
   seatMapVisibility?: 'published' | 'hidden' | null
   perUserLimit?: number | null
   realNameRequired?: boolean | null
+  ticketTransferAllowed?: boolean | null
   status: number
   createTime: string
 }
@@ -566,6 +581,113 @@ export interface AdminSummaryVO {
   activityCount: number
   ticketTypeCount: number
   paidOrderCount: number
+  orderCount?: number
+  paymentTimeoutCount?: number
+  refundRequestCount?: number
+  refundAbnormalCount?: number
+  riskCheckCount?: number
+  riskHitCount?: number
+  hotActivities?: HotActivityVO[]
+}
+
+export interface HotActivityVO {
+  activityId: number
+  activityName: string
+  orderCount: number
+  paidOrderCount: number
+}
+
+export type ActivityMarketingDiscountType = 'NONE' | 'FULL_REDUCTION' | 'DIRECT_REDUCTION' | string
+
+export interface ActivityMarketingRuleVO {
+  enabled: boolean
+  couponName?: string | null
+  discountType: ActivityMarketingDiscountType
+  thresholdAmount?: number | null
+  discountAmount?: number | null
+  maxCouponCount?: number | null
+  perUserLimit?: number | null
+  claimedCount?: number | null
+  usedCount?: number | null
+  status: number
+  startTime?: string | null
+  endTime?: string | null
+}
+
+export interface ActivityMarketingRulePayload {
+  userId?: number
+  enabled: boolean
+  couponName?: string | null
+  discountType: ActivityMarketingDiscountType
+  thresholdAmount?: number | null
+  discountAmount?: number | null
+  maxCouponCount?: number | null
+  perUserLimit?: number | null
+  startTime?: string | null
+  endTime?: string | null
+}
+
+export interface ActivityFunnelStepVO {
+  key: string
+  label: string
+  count: number
+}
+
+export interface ActivityMarketingOverviewVO {
+  activityId: number
+  activityName: string
+  rule: ActivityMarketingRuleVO
+  funnelSteps: ActivityFunnelStepVO[]
+}
+
+export interface GrabOpsSummaryVO {
+  failureReasons: Array<{ reason: string; count: number }>
+  waitlist: {
+    totalCount: number
+    paidCount: number
+    conversionRate: number
+  }
+}
+
+export interface HelpFaqVO {
+  category: string
+  question: string
+  answer: string
+}
+
+export type SupportConversationStatus = 'OPEN' | 'WAITING_AGENT' | 'ASSIGNED' | 'CLOSED' | string
+export type SupportMessageSenderType = 'USER' | 'AI' | 'AGENT' | 'SYSTEM' | string
+
+export interface SupportConversationVO {
+  id: number
+  userId: number
+  subject: string
+  status: SupportConversationStatus
+  sourceType: 'AI' | 'HUMAN' | string
+  assignedAgentId?: number | null
+  lastMessage?: string | null
+  createTime?: string | null
+  updateTime?: string | null
+  closedAt?: string | null
+}
+
+export interface SupportMessageVO {
+  id: number
+  conversationId: number
+  senderUserId?: number | null
+  senderType: SupportMessageSenderType
+  content: string
+  createTime?: string | null
+}
+
+export interface SupportAccountVO {
+  id: number
+  phone: string
+  nickname: string | null
+  role: 'support'
+  status: number
+  createTime?: string | null
+  updateTime?: string | null
 }
 
 export interface TourEntity {
@@ -687,6 +809,7 @@ export interface ActivityDraftPayload {
   seatMapVisibility?: 'published' | 'hidden' | null
   perUserLimit?: number | null
   realNameRequired?: boolean | null
+  ticketTransferAllowed?: boolean | null
 }
 
 export interface StationConfigVersionPayload {
@@ -1090,12 +1213,95 @@ export interface ActivityDetailVO {
   sessions: SessionDetail[]
 }
 
+export interface ActivityReviewSummaryVO {
+  reviewCount: number
+  averageRating: number
+  ratingDistribution: Record<string, number>
+}
+
+export interface ActivityReviewVO {
+  id?: number | null
+  activityId: number
+  userId: number
+  orderId?: number | null
+  rating: number
+  content?: string | null
+  images?: string | null
+  likeCount?: number | null
+  status?: number | null
+  createTime?: string | null
+}
+
+export interface ActivityReviewListVO {
+  summary: ActivityReviewSummaryVO
+  reviews: ActivityReviewVO[]
+}
+
+export interface ActivityQuestionVO {
+  id?: number | null
+  activityId: number
+  userId: number
+  content: string
+  answer?: string | null
+  answeredBy?: number | null
+  status: 'PENDING' | 'ANSWERED' | 'HIDDEN' | string
+  createTime?: string | null
+  answeredAt?: string | null
+}
+
 /** 预约 */
 export interface ReservationEntity {
   id: number
   userId: number
   sessionId: number
   createTime: string
+}
+
+export type SubscriptionTargetType =
+  | 'ACTIVITY_WANT'
+  | 'SALE_REMINDER'
+  | 'WAITLIST_REMINDER'
+  | 'TOUR_CITY_REMINDER'
+  | 'ARTIST_FOLLOW'
+  | 'CITY_FOLLOW'
+  | string
+
+export interface SubscriptionPayload {
+  targetType: SubscriptionTargetType
+  targetId?: number | null
+  targetValue?: string | null
+  activityId?: number | null
+  artistId?: number | null
+  city?: string | null
+  remindBeforeMinutes?: number | null
+}
+
+export interface SubscriptionVO {
+  id: number
+  userId: number
+  targetType: SubscriptionTargetType
+  targetId?: number | null
+  targetValue?: string | null
+  targetName?: string | null
+  activityId?: number | null
+  activityName?: string | null
+  activityPoster?: string | null
+  artistId?: number | null
+  artistName?: string | null
+  city?: string | null
+  sessionId?: number | null
+  startTime?: string | null
+  venueName?: string | null
+  saleStatusText?: string | null
+  readyChecklist?: string[] | null
+  remindBeforeMinutes?: number | null
+  status: number
+  createTime?: string | null
+}
+
+export interface SubscriptionCalendarVO {
+  fileName: string
+  content: string
 }
 
 /** 订单 */
@@ -1125,6 +1331,56 @@ export interface OrderEntity {
   matchedTicketTypeId?: number | null
   autoDowngraded?: boolean | null
   attendees?: OrderAttendeeVO[]
+}
+
+export interface TicketWalletItemVO {
+  ticketId: number
+  ticketNo: string
+  orderId: number
+  orderSeatId?: number | null
+  sessionId: number
+  ticketTypeId: number
+  activityName?: string | null
+  activityPoster?: string | null
+  venueName?: string | null
+  sessionTime?: string | null
+  ticketName?: string | null
+  seatLabel?: string | null
+  realName?: string | null
+  idNoMask?: string | null
+  status: 1 | 2 | 3 | 4 | number
+  statusText?: string | null
+  checkedInAt?: string | null
+}
+
+export interface TicketEntryCodeVO {
+  ticketId: number
+  entryCode: string
+  expiresAt: string
+}
+
+export interface TicketTransferCreateVO {
+  transferId?: number | null
+  ticketId: number
+  transferCode: string
+  status: number
+  statusText?: string | null
+  expiresAt: string
+}
+
+export interface TicketTransferClaimVO {
+  transferId?: number | null
+  originalTicketId: number
+  ticketId: number
+  status: number
+  statusText?: string | null
+}
+
+export interface TicketTransferRevokeVO {
+  transferId?: number | null
+  ticketId: number
+  status: number
+  statusText?: string | null
 }
 
 export interface PagePayResponse {

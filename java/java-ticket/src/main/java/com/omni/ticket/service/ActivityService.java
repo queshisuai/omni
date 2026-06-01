@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
@@ -140,8 +141,10 @@ public class ActivityService {
             vo.setItemType("activity");
             vo.setName(activity.getName());
             vo.setPoster(activity.getPoster());
+            vo.setSeatMapVisibility(activity.getSeatMapVisibility());
             vo.setStatus(activity.getStatus());
             vo.setRealNameRequired(Boolean.TRUE.equals(activity.getRealNameRequired()));
+            vo.setTicketTransferAllowed(!Boolean.FALSE.equals(activity.getTicketTransferAllowed()));
 
             Category category = categoryMap.get(activity.getCategoryId());
             if (category != null) vo.setCategoryName(category.getName());
@@ -183,6 +186,95 @@ public class ActivityService {
         voPage.setRecords(voList);
         voPage.setTotal(activityPage.getTotal() + tourTotal);
         return voPage;
+    }
+
+    public Page<ActivityVO> searchActivities(Integer page,
+                                             Integer size,
+                                             Long categoryId,
+                                             String keyword,
+                                             String city,
+                                             LocalDate dateFrom,
+                                             LocalDate dateTo,
+                                             BigDecimal minPrice,
+                                             BigDecimal maxPrice,
+                                             String saleStatus,
+                                             Boolean seatMapOnly,
+                                             Boolean realNameRequired,
+                                             String sort) {
+        int safePage = page == null || page <= 0 ? 1 : page;
+        int safeSize = size == null || size <= 0 ? 10 : size;
+        int fetchSize = Math.max(safeSize * safePage, safeSize);
+        Page<ActivityVO> source = listActivities(1, fetchSize, categoryId);
+        List<ActivityVO> filtered = source.getRecords().stream()
+                .filter(vo -> matchesKeyword(vo, keyword))
+                .filter(vo -> matchesCity(vo, city))
+                .filter(vo -> matchesDate(vo, dateFrom, dateTo))
+                .filter(vo -> matchesPrice(vo, minPrice, maxPrice))
+                .filter(vo -> matchesSaleStatus(vo, saleStatus))
+                .filter(vo -> !Boolean.TRUE.equals(seatMapOnly) || "published".equals(vo.getSeatMapVisibility()))
+                .filter(vo -> realNameRequired == null || Boolean.valueOf(realNameRequired).equals(Boolean.TRUE.equals(vo.getRealNameRequired())))
+                .collect(Collectors.toList());
+        filtered.sort(searchComparator(sort));
+        int from = Math.min((safePage - 1) * safeSize, filtered.size());
+        int to = Math.min(from + safeSize, filtered.size());
+        Page<ActivityVO> result = new Page<>(safePage, safeSize, filtered.size());
+        result.setRecords(new ArrayList<>(filtered.subList(from, to)));
+        result.setTotal(filtered.size());
+        result.setPages((filtered.size() + safeSize - 1L) / safeSize);
+        return result;
+    }
+
+    private boolean matchesKeyword(ActivityVO vo, String keyword) {
+        if (!StringUtils.hasText(keyword)) return true;
+        String normalized = keyword.trim().toLowerCase(Locale.ROOT);
+        return containsText(vo.getName(), normalized)
+                || containsText(vo.getArtistName(), normalized)
+                || containsText(vo.getVenueCity(), normalized)
+                || containsText(vo.getCategoryName(), normalized);
+    }
+
+    private boolean matchesCity(ActivityVO vo, String city) {
+        return !StringUtils.hasText(city) || containsText(vo.getVenueCity(), city.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private boolean matchesDate(ActivityVO vo, LocalDate dateFrom, LocalDate dateTo) {
+        if (dateFrom == null && dateTo == null) return true;
+        if (vo.getStartTime() == null) return false;
+        LocalDate date = vo.getStartTime().toLocalDate();
+        if (dateFrom != null && date.isBefore(dateFrom)) return false;
+        return dateTo == null || !date.isAfter(dateTo);
+    }
+
+    private boolean matchesPrice(ActivityVO vo, BigDecimal minPrice, BigDecimal maxPrice) {
+        if (minPrice == null && maxPrice == null) return true;
+        if (vo.getMinPrice() == null) return false;
+        if (minPrice != null && vo.getMinPrice().compareTo(minPrice) < 0) return false;
+        return maxPrice == null || vo.getMinPrice().compareTo(maxPrice) <= 0;
+    }
+
+    private boolean matchesSaleStatus(ActivityVO vo, String saleStatus) {
+        if (!StringUtils.hasText(saleStatus)) return true;
+        String normalized = saleStatus.trim().toLowerCase(Locale.ROOT);
+        if ("on_sale".equals(normalized)) return Integer.valueOf(1).equals(vo.getStatus());
+        if ("coming_soon".equals(normalized)) return Integer.valueOf(2).equals(vo.getStatus()) || vo.getMinPrice() == null;
+        if ("sold_out".equals(normalized)) return Integer.valueOf(0).equals(vo.getStatus()) || Integer.valueOf(3).equals(vo.getStatus());
+        return true;
+    }
+
+    private Comparator<ActivityVO> searchComparator(String sort) {
+        String normalized = StringUtils.hasText(sort) ? sort.trim().toLowerCase(Locale.ROOT) : "";
+        Comparator<ActivityVO> byStart = Comparator.comparing(ActivityVO::getStartTime, Comparator.nullsLast(Comparator.naturalOrder()));
+        Comparator<ActivityVO> byPrice = Comparator.comparing(ActivityVO::getMinPrice, Comparator.nullsLast(Comparator.naturalOrder()));
+        if ("recent".equals(normalized)) return byStart;
+        if ("newest".equals(normalized)) return Comparator.comparing(ActivityVO::getId, Comparator.nullsLast(Comparator.reverseOrder()));
+        if ("price_asc".equals(normalized)) return byPrice;
+        if ("price_desc".equals(normalized)) return byPrice.reversed();
+        return Comparator.comparing((ActivityVO vo) -> Integer.valueOf(1).equals(vo.getStatus()) ? 0 : 1)
+                .thenComparing(byStart);
+    }
+
+    private boolean containsText(String value, String normalizedKeyword) {
+        return StringUtils.hasText(value) && value.toLowerCase(Locale.ROOT).contains(normalizedKeyword);
     }
 
     private Page<Tour> selectAnnouncedTours(Integer page, Integer size, Long categoryId) {

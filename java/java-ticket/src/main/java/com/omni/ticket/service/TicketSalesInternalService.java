@@ -590,6 +590,7 @@ public class TicketSalesInternalService {
             response.setStationId(activity.getStationId());
             response.setPerUserLimit(activity.getPerUserLimit());
             response.setRealNameRequired(Boolean.TRUE.equals(activity.getRealNameRequired()));
+            response.setTicketTransferAllowed(!Boolean.FALSE.equals(activity.getTicketTransferAllowed()));
         }
         Venue venue = venueMapper.selectById(session.getVenueId());
         if (venue != null) {

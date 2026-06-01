@@ -50,6 +50,9 @@ export interface WaitlistEntryResponse {
   quantity: number;
   status: WaitlistEntryStatus;
   rank: number | null;
+  estimatedChance: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
+  estimatedChanceText: string;
+  estimatedWaitText: string;
   offerOrderId: number | null;
   offerExpireTime: string | null;
   failReason: string | null;

@@ -1,0 +1,17 @@
+services:
+  grab-service:
+    depends_on: !override
+      redis:
+        condition: service_healthy
+    environment:
+      GRAB_SERVICE_PORT: 3001
+      GRAB_DB_HOST: host.docker.internal
+      GRAB_DB_PORT: 5432
+      GRAB_DB_NAME: omni_grab
+      GRAB_DB_USER: postgres
+      GRAB_DB_PASSWORD: "123456"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ORDER_SERVICE_URL: http://host.docker.internal:8088
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-omni-local-internal-token}
+      JWT_SECRET: ${JWT_SECRET:-omni-local-jwt-secret-must-be-at-least-32-bytes}

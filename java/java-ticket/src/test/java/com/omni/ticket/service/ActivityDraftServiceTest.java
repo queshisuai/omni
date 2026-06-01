@@ -67,18 +67,20 @@ class ActivityDraftServiceTest {
                 Map.of("artistId", 11L, "roleName", "嘉宾")
         );
 
-        ActivityDraftResponse response = service.createDraft(2003L, Map.of(
-                "categoryId", 5L,
-                "name", "万象音乐节",
-                "artistId", 10L,
-                "artists", artists,
-                "seatMapVisibility", "published",
-                "perUserLimit", "2",
-                "realNameRequired", true,
-                "venueApprovalNo", "NO-1",
-                "venueApprovalFileUrl", "https://example.test/proof.pdf",
-                "venueApprovalNote", "无需写入"
-        ));
+        Map<String, Object> body = new HashMap<>();
+        body.put("categoryId", 5L);
+        body.put("name", "万象音乐节");
+        body.put("artistId", 10L);
+        body.put("artists", artists);
+        body.put("seatMapVisibility", "published");
+        body.put("perUserLimit", "2");
+        body.put("realNameRequired", true);
+        body.put("ticketTransferAllowed", false);
+        body.put("venueApprovalNo", "NO-1");
+        body.put("venueApprovalFileUrl", "https://example.test/proof.pdf");
+        body.put("venueApprovalNote", "无需写入");
+
+        ActivityDraftResponse response = service.createDraft(2003L, body);
 
         ArgumentCaptor<Activity> activityCaptor = ArgumentCaptor.forClass(Activity.class);
         verify(activityMapper).insert(activityCaptor.capture());
@@ -92,6 +94,7 @@ class ActivityDraftServiceTest {
         assertEquals("published", activity.getSeatMapVisibility());
         assertEquals(2, activity.getPerUserLimit());
         assertEquals(Boolean.TRUE, activity.getRealNameRequired());
+        assertEquals(Boolean.FALSE, activity.getTicketTransferAllowed());
         assertNull(activity.getVenueApplicationId());
         assertNull(activity.getVenueApprovalNo());
         assertNull(activity.getVenueApprovalFileUrl());

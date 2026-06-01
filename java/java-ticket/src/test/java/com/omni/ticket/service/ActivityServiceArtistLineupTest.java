@@ -25,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -153,6 +154,48 @@ class ActivityServiceArtistLineupTest {
         assertEquals("tour", vo.getItemType());
         assertEquals("涓婃捣", vo.getVenueCity());
         assertEquals(2, vo.getStatus());
+    }
+
+    @Test
+    void searchActivitiesFiltersByKeywordCityPriceAndRealName() {
+        Activity activity = new Activity();
+        activity.setId(10L);
+        activity.setName("周末演唱会");
+        activity.setArtistId(99L);
+        activity.setRealNameRequired(true);
+        activity.setStatus(1);
+        activity.setPublishStatus("published");
+        Page<Activity> page = new Page<>(1, 10, 1);
+        page.setRecords(List.of(activity));
+        when(activityMapper.selectPage(any(), any())).thenReturn(page);
+        when(artistMapper.selectBatchIds(any())).thenReturn(List.of(artist(99L, "周杰伦")));
+        Session session = new Session();
+        session.setId(60L);
+        session.setActivityId(10L);
+        session.setVenueId(8L);
+        session.setStartTime(LocalDateTime.of(2026, 6, 20, 19, 30));
+        when(sessionMapper.selectList(any())).thenReturn(List.of(session));
+        com.omni.ticket.entity.Venue venue = new com.omni.ticket.entity.Venue();
+        venue.setId(8L);
+        venue.setCity("上海");
+        when(venueMapper.selectBatchIds(any())).thenReturn(List.of(venue));
+        TicketType ticketType = new TicketType();
+        ticketType.setId(70L);
+        ticketType.setSessionId(60L);
+        ticketType.setPrice(new BigDecimal("380.00"));
+        ticketType.setStatus(1);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
+
+        ActivityService service = new ActivityService(activityMapper, categoryMapper, artistMapper, sessionMapper,
+                venueMapper, ticketTypeMapper, activityArtistService);
+
+        Page<ActivityVO> result = service.searchActivities(1, 10, null, "周杰伦", "上海",
+                LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30),
+                new BigDecimal("180.00"), new BigDecimal("580.00"),
+                "on_sale", null, true, "price_asc");
+
+        assertEquals(1, result.getTotal());
+        assertEquals("周末演唱会", result.getRecords().get(0).getName());
     }
 
     @Test

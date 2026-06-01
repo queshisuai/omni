@@ -26,3 +26,9 @@ export function getWaitlistPrimaryAction(status: string | null | undefined, offe
   if (status === 'OFFERED' && offerOrderId) return '去支付'
   return null
 }
+
+export function getWaitlistChanceStyle(chance: string | null | undefined) {
+  if (chance === 'HIGH') return 'border-[#52c41a]/20 bg-[#f6ffed] text-[#389e0d]'
+  if (chance === 'MEDIUM') return 'border-[#faad14]/30 bg-[#fff7e6] text-[#ad6800]'
+  return 'border-[#ddd] bg-[#f7f7f7] text-[#777]'
+}

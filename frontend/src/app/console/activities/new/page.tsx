@@ -41,6 +41,7 @@ export default function NewActivityPage() {
   const [seatMapVisibility, setSeatMapVisibility] = useState<SeatMapVisibility>('hidden')
   const [perUserLimit, setPerUserLimit] = useState('')
   const [realNameRequired, setRealNameRequired] = useState(false)
+  const [ticketTransferAllowed, setTicketTransferAllowed] = useState(true)
 
   // 步骤2：站点配置。普通活动一个站点，巡演多个站点。
   const [stationConfig, setStationConfig] = useState(() => createEmptyStationVenueApprovalValue())
@@ -226,6 +227,7 @@ export default function NewActivityPage() {
         seatMapVisibility,
         perUserLimit: limitText ? Number(limitText) : null,
         realNameRequired,
+        ticketTransferAllowed,
       })
 
       let version
@@ -377,13 +379,22 @@ export default function NewActivityPage() {
               <p className="mt-1 text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</p>
             </div>
             {activityMode === 'single' && (
-              <label className="mb-4 flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
-                <input type="checkbox" checked={realNameRequired} onChange={e => setRealNameRequired(e.target.checked)} className="mt-0.5 accent-[#ff1268]" />
-                <span>
-                  <span className="font-medium">实名制购票</span>
-                  <span className="mt-1 block text-[#999]">开启后，用户下单和候补时需要选择对应数量的实名观演人。</span>
-                </span>
-              </label>
+              <div className="mb-4 grid gap-3">
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
+                  <input type="checkbox" checked={realNameRequired} onChange={e => setRealNameRequired(e.target.checked)} className="mt-0.5 accent-[#ff1268]" />
+                  <span>
+                    <span className="font-medium">实名制购票</span>
+                    <span className="mt-1 block text-[#999]">开启后，用户下单和候补时需要选择对应数量的实名观演人。</span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] p-3 text-[13px] text-[#333]">
+                  <input type="checkbox" checked={ticketTransferAllowed} onChange={e => setTicketTransferAllowed(e.target.checked)} className="mt-0.5 accent-[#ff1268]" />
+                  <span>
+                    <span className="font-medium">允许电子票转赠</span>
+                    <span className="mt-1 block text-[#999]">关闭后，已出票用户不能发起转赠。</span>
+                  </span>
+                </label>
+              </div>
             )}
             <div className="mt-4 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4">
               <div className="mb-2 text-[14px] font-semibold text-[#1a1a2e]">座位图展示策略</div>
@@ -473,6 +484,7 @@ export default function NewActivityPage() {
                 <div>活动名称：{name.trim() || '未填写'}</div>
                 <div>活动类型：{activityMode === 'tour' ? '巡演活动' : '普通活动'}</div>
                 {activityMode === 'single' && <div>实名制购票：{realNameRequired ? '开启' : '关闭'}</div>}
+                {activityMode === 'single' && <div>电子票转赠：{ticketTransferAllowed ? '允许' : '禁止'}</div>}
                 {activityMode === 'tour' ? (
                   <>
                     <div className="sm:col-span-2">城市站点：{tourStations.map(item => item.value.city.trim()).filter(Boolean).join('、') || '未填写'}</div>

@@ -8,6 +8,7 @@ import { SectionRow } from '@/components/SectionRow'
 import { Footer } from '@/components/Footer'
 import { listActivities, listCategories } from '@/lib/api'
 import { createHomeResumeRefreshHandlers, createLatestRequestGate } from '@/lib/home-resume-refresh'
+import { ACTIVITY_VIEW_SIGNAL_KEY, buildPersonalizedActivities, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
 import { categories as mockCategories, sections as mockSections, banners } from '@/lib/mock-data'
 import type { CategoryVO, ActivityVO } from '@/types/api'
 import type { SectionData, Activity } from '@/types/damai'
@@ -47,6 +48,11 @@ export default function HomePage() {
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [sections, setSections] = useState<SectionData[]>([])
   const [loading, setLoading] = useState(true)
+  const [viewSignals, setViewSignals] = useState<ActivityViewSignal[]>([])
+  const [currentCity, setCurrentCity] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('omni_current_city') || ''
+    return ''
+  })
   const [requestGate] = useState(() => createLatestRequestGate())
   const fetchDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
@@ -57,11 +63,16 @@ export default function HomePage() {
     try {
       const [catData, actData] = await Promise.all([
         listCategories(),
-        listActivities({ page: 1, size: 50 }),
+        listActivities({ page: 1, size: 50, city: currentCity || undefined }),
       ])
       if (!requestGate.isCurrent(requestId)) return
       setCategories(catData)
-      setSections(groupByCategory(actData.records.map(toActivity)))
+      const mappedActivities = actData.records.map(toActivity)
+      const personalized = buildPersonalizedActivities(mappedActivities, viewSignals)
+      setSections([
+        ...(personalized.length ? [{ id: 'personalized', title: '猜你喜欢', category: 'personalized', viewAllUrl: '/search', items: personalized }] : []),
+        ...groupByCategory(mappedActivities),
+      ])
     } catch {
       if (!requestGate.isCurrent(requestId)) return
       // 降级到 mock 数据
@@ -72,7 +83,7 @@ export default function HomePage() {
         setLoading(false)
       }
     }
-  }, [requestGate])
+  }, [requestGate, currentCity, viewSignals])
 
   fetchDataRef.current = fetchData
 
@@ -86,6 +97,21 @@ export default function HomePage() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setViewSignals(parseActivityViewSignals(localStorage.getItem(ACTIVITY_VIEW_SIGNAL_KEY)))
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleCityUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail
+      setCurrentCity(detail || '')
+    }
+    window.addEventListener('omni-city-updated', handleCityUpdate)
+    return () => window.removeEventListener('omni-city-updated', handleCityUpdate)
+  }, [])
 
   useEffect(() => {
     const handlers = createHomeResumeRefreshHandlers(

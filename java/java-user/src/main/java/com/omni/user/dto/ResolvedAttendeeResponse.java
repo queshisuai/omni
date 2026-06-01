@@ -6,6 +6,7 @@ public class ResolvedAttendeeResponse {
     private String idType;
     private String idNoHash;
     private String idNoMask;
+    private String idNoEncrypted;
     private String phone;
 
     public Long getId() { return id; }
@@ -18,6 +19,8 @@ public class ResolvedAttendeeResponse {
     public void setIdNoHash(String idNoHash) { this.idNoHash = idNoHash; }
     public String getIdNoMask() { return idNoMask; }
     public void setIdNoMask(String idNoMask) { this.idNoMask = idNoMask; }
+    public String getIdNoEncrypted() { return idNoEncrypted; }
+    public void setIdNoEncrypted(String idNoEncrypted) { this.idNoEncrypted = idNoEncrypted; }
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
 }

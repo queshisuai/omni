@@ -1,27 +1,83 @@
-# Team Grab Implementation Planning
+# 大麦迁移体验改进执行计划
 
-## Goal
+## 目标
 
-Create a concrete implementation plan for first-version team grab: 2-6 confirmed members, leader-managed strategy, any member can trigger one team grab, one leader-paid order, and member seat assignments after payment.
+把当前项目从“能买票和看订单”推进到“可替代大麦的完整履约体验”。执行顺序严格按 P0 -> P1 -> P2；每个阶段都以可测试、可提交的闭环为准。
 
-## Current Status
+## 当前状态
 
-- [x] Confirmed current grab-service already has async queue and `request_type` support for `TEAM_GRAB`.
-- [x] Confirmed current ticket-service has internal lock APIs but no strategy-based group seat selection yet.
-- [x] Confirmed order-service already supports seat orders and payment-time confirmation/release flows.
-- [x] Confirmed first version should use leader unified payment, not split member payments.
-- [x] Create detailed implementation plan document.
-- [x] Incorporate review corrections for transaction boundaries, lock ownership, order-owned seat labels, manifest updates, retry rules, and pnpm frontend checks.
-- [ ] Wait for user approval before implementation.
+- [x] P0 隐私基础：实名观演人 `id_no_encrypted` 已接入应用层 AES-GCM 加密，订单实名快照已复制密文。
+- [x] P0-A 票夹/电子票/入场凭证/核销：已完成。
+- [x] P0-B 转赠流程：已完成。
+- [x] P0-C 前端 `/tickets` 我的票夹：已完成。
+- [x] P0-D 开售前想看/预约/提醒/日历体系：已完成。
+- [x] P0-E 搜索推荐升级：已完成。
+- [x] P0-F 隐私审计升级：已完成。
+- [x] P1 抢票公平感与退款/改期信任体验：已完成。
+- [x] P2 主办方营销工具与平台运营驾驶舱：已完成。
+- [x] P3-A 帮助中心 / 在线客服 / 本地 AI 客服 / 人工客服账号与工作台：已完成最小闭环。
+- [x] P3-B 搜索历史 / 热门搜索 / 移动端底部 Tab / 城市筛选联动：已完成。
+- [x] P3-C 评价 / 评分 / 问答体系：已完成 C 端最小闭环。
+- [x] P3-D 个性化推荐与订单详情页体验：已完成。
 
-## Scope
+## P0-A 票夹后端闭环
 
-Planning only. Do not implement team grab production code in this phase.
+验收标准：
 
-## Output
+- 支付成功后为订单生成电子票，一票一条。
+- `/api/order/tickets` 返回当前用户可用票夹，不暴露完整证件号。
+- 每张电子票有入场状态：未入场、已验票、已失效、已转赠。
+- 电子票可生成短期有效动态入场码。
+- 核销接口能校验动态码并把未入场票改成已验票。
 
-- `docs/superpowers/plans/2026-05-30-team-grab.md`
+## P0-B 转赠闭环
 
-## Historical Note
+验收标准：
 
-Previous root planning files covered Feign API refactor. That plan remains at `docs/superpowers/plans/2026-05-27-feign-api-refactor.md`.
+- 用户可发起转赠、撤回未领取转赠。
+- 受赠人可领取未过期转赠。
+- 过期转赠不会被领取。
+- 强实名票是否允许转赠由活动规则控制，并在下单快照中固化。
+
+## P0-C 前端票夹
+
+验收标准：
+
+- 新增 `/tickets` 页面。
+- 展示电子票、状态、活动/场次/座位/观演人信息。
+- 支持查看动态码、转赠、撤回、领取后的状态刷新。
+
+## 后续阶段
+
+- P2 已新增主办方活动营销配置：优惠券/满减规则落库、活动列表入口、单活动营销页。
+- P2 已新增活动漏斗：候补/想看、下单、支付、取消/超时等关键节点聚合。
+- P2 已扩展平台运营驾驶舱：热门活动、抢票失败原因、候补转化率、支付超时率、退款异常率、风控命中率。
+- P3 已新增帮助中心 FAQ、在线客服会话、可选本地大模型客服、项目规则兜底回复、人工客服工作台、平台管理员客服账号创建/注销、客服会话与消息落库。
+- P3 已新增移动端底部 Tab、在线客服浮动入口、搜索历史/热门搜索/联想组合和 Header 城市筛选联动。
+- P3 已新增活动详情评价/评分/问答、首页个性化推荐、订单详情页和生产分库 SQL 清单校验。
+
+## P3-C 评价 / 评分 / 问答
+
+验收标准：
+
+- 活动详情展示评分概览、评价列表和问答入口。
+- 用户可提交 1-5 星评分、文字评价和可选图片地址。
+- 同一用户同一订单只允许一条有效评价。
+- 后端提供活动评价列表、评分统计、提交评价接口。
+- 问答可先做活动级问答列表和提问入口，后续再接主办方回答工作流。
+
+## P3-D 个性化推荐与订单详情
+
+验收标准：
+
+- 活动浏览信号写入本地状态，并按最近浏览的品类、艺人、城市生成首页“猜你喜欢”。
+- 搜索、首页和城市选择使用统一城市状态，城市切换能影响结果筛选。
+- 新增 `/orders/[id]` 订单详情页，展示订单状态、履约时间线、实名观演人、电子票入口和退款时间线。
+- 订单列表提供详情入口，避免所有操作挤在列表弹窗里。
+
+## 注意事项
+
+- 不回滚用户已有文档草稿和未提交改动。
+- 不引入新依赖，优先使用 JDK/现有 Spring/MyBatis 能力。
+- 涉及用户可见文案必须使用中文。
+- 每个后端行为先补红灯测试，再实现。

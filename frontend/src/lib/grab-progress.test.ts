@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { getGrabProgressDisplayMessage, localizeGrabProgressMessage } from './grab-progress.ts'
+import { getAutoDowngradeDisplay, getGrabProgressDisplayMessage, getQueueRankTrendLabel, localizeGrabProgressMessage } from './grab-progress.ts'
 
 test('localizes pending recovery message for display', () => {
   assert.equal(
@@ -59,4 +59,28 @@ test('keeps unknown display messages unchanged', () => {
 
 test('uses Chinese fallback for unknown English progress messages', () => {
   assert.equal(localizeGrabProgressMessage('backend timeout'), '抢票状态更新中，请稍后查看')
+})
+
+test('describes queue rank changes between refreshes', () => {
+  assert.equal(getQueueRankTrendLabel(6, 9), '较上次前进 3 位')
+  assert.equal(getQueueRankTrendLabel(12, 9), '较上次后退 3 位')
+  assert.equal(getQueueRankTrendLabel(9, 9), '排位暂未变化')
+  assert.equal(getQueueRankTrendLabel(null, 9), null)
+})
+
+test('describes auto downgrade state and matched ticket type', () => {
+  assert.equal(getAutoDowngradeDisplay({
+    allowAutoDowngrade: true,
+    matchedTicketTypeId: 203,
+    requestedTicketTypes: [
+      { ticketTypeId: 202, name: 'A档' },
+      { ticketTypeId: 203, name: 'B档' },
+    ],
+  }), '已自动降档至 B档')
+  assert.equal(getAutoDowngradeDisplay({
+    allowAutoDowngrade: true,
+    matchedTicketTypeId: null,
+    requestedTicketTypes: [{ ticketTypeId: 202, name: 'A档' }],
+  }), '已开启，按票档顺序尝试')
+  assert.equal(getAutoDowngradeDisplay({ allowAutoDowngrade: false, matchedTicketTypeId: null, requestedTicketTypes: [] }), '未开启自动降档')
 })

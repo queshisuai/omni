@@ -11,6 +11,8 @@ import { TeamPaymentSyncService } from '../team-grab/team-payment-sync.service';
 import { GrabAdmissionService } from './grab-admission.service';
 import { GrabCompensationService } from './grab-compensation.service';
 import { GrabController, GrabSessionController } from './grab.controller';
+import { GrabOpsController } from './grab-ops.controller';
+import { GrabOpsService } from './grab-ops.service';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository } from './grab.repository';
 import { GrabService } from './grab.service';
@@ -22,12 +24,13 @@ import { VisibleStockService } from './visible-stock.service';
 
 @Module({
   imports: [AuthModule, DatabaseModule],
-  controllers: [GrabController, GrabSessionController, TeamGrabController],
+  controllers: [GrabController, GrabSessionController, GrabOpsController, TeamGrabController],
   providers: [
     GrabService,
     GrabRepository,
     GrabAdmissionService,
     GrabCompensationService,
+    GrabOpsService,
     GrabQueueService,
     GrabWorkerService,
     OrderClientService,

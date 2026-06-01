@@ -2,11 +2,11 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Edit3, Loader2, Plus, Save, Trash2, UserRound, X } from 'lucide-react'
+import { Download, Edit3, Loader2, Plus, Save, Trash2, UserRound, X } from 'lucide-react'
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
 import { globalConfirm } from '@/components/GlobalDialog'
-import { createUserAttendee, deleteUserAttendee, listUserAttendees, updateUserAttendee } from '@/lib/api'
+import { createUserAttendee, deleteUserAttendee, exportUserAttendees, listUserAttendees, updateUserAttendee } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { getAttendeeIdTypeLabel } from '@/lib/attendees'
 import type { UserAttendeePayload, UserAttendeeVO } from '@/types/api'
@@ -35,6 +35,7 @@ export default function ProfileAttendeesPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [exporting, setExporting] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -131,6 +132,29 @@ export default function ProfileAttendeesPage() {
     }
   }
 
+  const handleExport = async () => {
+    setExporting(true)
+    setError('')
+    setMessage('')
+    try {
+      const exported = await exportUserAttendees()
+      const blob = new Blob([exported.content], { type: exported.contentType || 'text/csv;charset=UTF-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = exported.fileName || '实名观演人.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setMessage('已导出脱敏实名观演人')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '导出实名观演人失败')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <>
       <Header />
@@ -200,9 +224,20 @@ export default function ProfileAttendeesPage() {
             </section>
 
             <section className="rounded-lg border border-[#eee] bg-white p-5 shadow-sm">
-              <div className="mb-5 flex items-center justify-between">
-                <h2 className="text-[18px] font-semibold text-[#111]">常用观演人</h2>
-                <span className="text-sm text-[#777]">共 {attendees.length} 位</span>
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-[18px] font-semibold text-[#111]">常用观演人</h2>
+                  <span className="text-sm text-[#777]">共 {attendees.length} 位</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleExport()}
+                  disabled={exporting || attendees.length === 0}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-[#ddd] bg-white px-4 text-sm font-medium text-[#555] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  导出脱敏 CSV
+                </button>
               </div>
               {loading ? (
                 <div className="flex min-h-[260px] items-center justify-center text-[#666]">

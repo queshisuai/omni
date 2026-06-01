@@ -28,7 +28,35 @@ function Start-Service-InBackground {
     return $proc
 }
 
+function Import-DotEnv {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    Get-Content -LiteralPath $Path | ForEach-Object {
+        $line = $_.Trim()
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith("#")) {
+            return
+        }
+        if ($line -notmatch "^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$") {
+            return
+        }
+
+        $name = $Matches[1]
+        $value = $Matches[2].Trim()
+        if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+
+        if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name, "Process"))) {
+            [Environment]::SetEnvironmentVariable($name, $value, "Process")
+        }
+    }
+}
+
 Write-Host "`n  Omni Ticket Platform - Startup`n" -ForegroundColor Magenta
+Import-DotEnv -Path (Join-Path $projectRoot ".env")
 
 # 1. Check Environment
 Write-Step "Checking Environment..."
@@ -69,6 +97,9 @@ if ([string]::IsNullOrWhiteSpace($env:JWT_SECRET)) {
 }
 if ([string]::IsNullOrWhiteSpace($env:INTERNAL_API_TOKEN)) {
     $env:INTERNAL_API_TOKEN = "omni-local-internal-token"
+}
+if ([string]::IsNullOrWhiteSpace($env:OMNI_ID_NO_KEY)) {
+    $env:OMNI_ID_NO_KEY = "omni-local-dev-id-no-key-change-me"
 }
 
 if ($UseDockerInfra) {

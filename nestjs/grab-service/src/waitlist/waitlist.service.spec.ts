@@ -27,7 +27,14 @@ describe('WaitlistService', () => {
     const result = await service.createEntry(2004, { sessionId: 101, ticketTypeId: 202, quantity: 1, attendeeIds: [501] });
 
     expect(repository.createEntry).toHaveBeenCalledWith({ userId: 2004, sessionId: 101, ticketTypeId: 202, quantity: 1, attendeeIds: [501] });
-    expect(result).toMatchObject({ id: 1, status: 'WAITING', rank: 3 });
+    expect(result).toMatchObject({
+      id: 1,
+      status: 'WAITING',
+      rank: 3,
+      estimatedChance: 'HIGH',
+      estimatedChanceText: '机会较高',
+      estimatedWaitText: '排位靠前，释放票后会优先通知',
+    });
   });
 
   it('rejects invalid quantity', async () => {

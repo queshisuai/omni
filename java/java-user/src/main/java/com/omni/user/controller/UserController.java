@@ -17,6 +17,7 @@ import com.omni.user.dto.ResolveAttendeesRequest;
 import com.omni.user.dto.ResolvedAttendeeResponse;
 import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UpdateProfileRequest;
+import com.omni.user.dto.UserAttendeeExportResponse;
 import com.omni.user.dto.UserAttendeeRequest;
 import com.omni.user.dto.UserAttendeeResponse;
 import com.omni.user.dto.UserInfoResponse;
@@ -147,6 +148,13 @@ public class UserController {
             @RequestHeader(value = "Authorization", required = false) String authorization) {
         Long userId = requireAuthUserId(authorization);
         return Result.success(requireUserAttendeeService().listMine(userId));
+    }
+
+    @GetMapping("/attendees/export")
+    public Result<UserAttendeeExportResponse> exportAttendees(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthUserId(authorization);
+        return Result.success(requireUserAttendeeService().exportMine(userId));
     }
 
     @PostMapping("/attendees")

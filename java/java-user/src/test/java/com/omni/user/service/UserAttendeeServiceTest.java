@@ -2,18 +2,23 @@ package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.user.dto.ResolvedAttendeeResponse;
+import com.omni.user.dto.UserAttendeeExportResponse;
 import com.omni.user.dto.UserAttendeeRequest;
 import com.omni.user.dto.UserAttendeeResponse;
+import com.omni.user.entity.PrivacyAuditLog;
 import com.omni.user.entity.UserAttendee;
+import com.omni.user.mapper.PrivacyAuditLogMapper;
 import com.omni.user.mapper.UserAttendeeMapper;
 import com.omni.exception.BusinessException;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.stream.Collectors;
 import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,7 +29,12 @@ import static org.mockito.Mockito.when;
 class UserAttendeeServiceTest {
 
     private final UserAttendeeMapper mapper = mock(UserAttendeeMapper.class);
-    private final UserAttendeeService service = new UserAttendeeService(mapper);
+    private final PrivacyAuditLogMapper auditLogMapper = mock(PrivacyAuditLogMapper.class);
+    private final UserAttendeeService service = new UserAttendeeService(
+            mapper,
+            new IdNoEncryptionService("omni-test-id-no-encryption-key"),
+            auditLogMapper
+    );
 
     @Test
     void createHashesAndMasksIdCard() {
@@ -38,20 +48,30 @@ class UserAttendeeServiceTest {
 
         assertEquals("Zhang San", response.getRealName());
         assertEquals("110***********01X", response.getIdNoMask());
-        verify(mapper).insert(any(UserAttendee.class));
+        ArgumentCaptor<UserAttendee> captor = ArgumentCaptor.forClass(UserAttendee.class);
+        verify(mapper).insert(captor.capture());
+        assertNotNull(captor.getValue().getIdNoEncrypted());
+        assertFalse(captor.getValue().getIdNoEncrypted().contains("11010119900307001X"));
     }
 
     @Test
-    void resolveKeepsRequestedOrderAndReturnsHashOnly() {
+    void resolveKeepsRequestedOrderAndReturnsEncryptedSnapshotValue() {
         UserAttendee first = attendee(11L, 2004L, "Alice", "hash-a", "110***********011");
         UserAttendee second = attendee(12L, 2004L, "Bob", "hash-b", "110***********022");
+        first.setIdNoEncrypted("enc-a");
+        second.setIdNoEncrypted("enc-b");
         when(mapper.selectBatchIds(List.of(12L, 11L))).thenReturn(List.of(first, second));
 
         List<ResolvedAttendeeResponse> resolved = service.resolve(2004L, List.of(12L, 11L));
 
         assertEquals(List.of(12L, 11L), resolved.stream().map(ResolvedAttendeeResponse::getId).collect(Collectors.toList()));
         assertEquals(List.of("hash-b", "hash-a"), resolved.stream().map(ResolvedAttendeeResponse::getIdNoHash).collect(Collectors.toList()));
+        assertEquals(List.of("enc-b", "enc-a"), resolved.stream().map(ResolvedAttendeeResponse::getIdNoEncrypted).collect(Collectors.toList()));
         assertNotNull(resolved.get(0).getIdNoMask());
+        ArgumentCaptor<PrivacyAuditLog> captor = ArgumentCaptor.forClass(PrivacyAuditLog.class);
+        verify(auditLogMapper).insert(captor.capture());
+        assertEquals("VERIFY_ATTENDEE", captor.getValue().getAction());
+        assertEquals(2004L, captor.getValue().getActorUserId());
     }
 
     @Test
@@ -59,6 +79,25 @@ class UserAttendeeServiceTest {
         service.listMine(2004L);
 
         verify(mapper).selectList(any(LambdaQueryWrapper.class));
+        ArgumentCaptor<PrivacyAuditLog> captor = ArgumentCaptor.forClass(PrivacyAuditLog.class);
+        verify(auditLogMapper).insert(captor.capture());
+        assertEquals("QUERY_ATTENDEE_MASKED", captor.getValue().getAction());
+    }
+
+    @Test
+    void exportMineReturnsOnlyMaskedDataAndAuditsExport() {
+        UserAttendee attendee = attendee(11L, 2004L, "Alice", "hash-a", "110***********011");
+        attendee.setIdNoEncrypted("enc-a");
+        when(mapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(attendee));
+
+        UserAttendeeExportResponse response = service.exportMine(2004L);
+
+        assertEquals("实名观演人-2004.csv", response.getFileName());
+        assertEquals(true, response.getContent().contains("110***********011"));
+        assertEquals(false, response.getContent().contains("enc-a"));
+        ArgumentCaptor<PrivacyAuditLog> captor = ArgumentCaptor.forClass(PrivacyAuditLog.class);
+        verify(auditLogMapper).insert(captor.capture());
+        assertEquals("EXPORT_ATTENDEE_MASKED", captor.getValue().getAction());
     }
 
     @Test

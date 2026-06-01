@@ -185,7 +185,7 @@ class OrderServiceTest {
 
         BusinessException exception = assertThrows(BusinessException.class, () -> service.createOrder(request));
 
-        assertTrue(exception.getMessage().contains("authorized price"));
+        assertTrue(exception.getMessage().contains("授权价格"));
         verify(orderMapper, never()).insert(any(Order.class));
         verify(orderSnapshotMapper, never()).insert(any(OrderSnapshot.class));
     }
@@ -266,7 +266,7 @@ class OrderServiceTest {
         when(userInternalClient.getUserRef(eq(2004L), anyString())).thenReturn(Result.success(activeUser()));
         when(ticketSalesInternalClient.quote(any(), anyString())).thenReturn(Result.success(quote));
         when(userInternalClient.resolveAttendees(any(), anyString())).thenReturn(Result.success(List.of(
-                resolvedAttendee(501L, "Alice", "hash-a", "110***********011")
+                resolvedAttendee(501L, "Alice", "hash-a", "110***********011", "enc-a")
         )));
         when(ticketSalesInternalClient.lockStock(any(), anyString())).thenReturn(Result.success());
         when(orderMapper.insert(any(Order.class))).thenAnswer(invocation -> {
@@ -283,6 +283,7 @@ class OrderServiceTest {
         assertEquals(10L, captor.getValue().getSessionId());
         assertEquals(501L, captor.getValue().getAttendeeUserProfileId());
         assertEquals("hash-a", captor.getValue().getIdNoHash());
+        assertEquals("enc-a", captor.getValue().getIdNoEncrypted());
     }
 
     @Test
@@ -364,7 +365,7 @@ class OrderServiceTest {
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(request));
 
         assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
-        assertEquals("grab request belongs to a different order intent", ex.getMessage());
+        assertEquals("抢票请求与当前订单意图不一致", ex.getMessage());
         verify(ticketSalesInternalClient, never()).quote(any(), anyString());
         verify(ticketSalesInternalClient, never()).lockStock(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
@@ -581,7 +582,7 @@ class OrderServiceTest {
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
 
         assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
-        assertEquals("grab request belongs to a different order intent", ex.getMessage());
+        assertEquals("抢票请求与当前订单意图不一致", ex.getMessage());
         verify(ticketSalesInternalClient, never()).quote(any(), anyString());
         verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
@@ -611,7 +612,7 @@ class OrderServiceTest {
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrderWithSeats(request));
 
         assertEquals(ResultCode.CONFLICT.getCode(), ex.getCode());
-        assertEquals("grab request belongs to a different order intent", ex.getMessage());
+        assertEquals("抢票请求与当前订单意图不一致", ex.getMessage());
         verify(ticketSalesInternalClient, never()).quote(any(), anyString());
         verify(ticketSalesInternalClient, never()).lockSeats(any(), anyString());
         verify(orderMapper, never()).insert(any(Order.class));
@@ -1244,7 +1245,7 @@ class OrderServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
 
-        assertEquals("team grab request id must differ from grab request id", ex.getMessage());
+        assertEquals("组队抢票请求标识不能与普通抢票请求标识相同", ex.getMessage());
         verify(orderMapper, never()).acquireAdvisoryTransactionLock(anyString());
         verify(orderMapper, never()).selectTeamOrderListItemByTeamGrabRequestId(anyString());
         verify(orderMapper, never()).selectOrderListItemByGrabRequestId(anyString());
@@ -1322,7 +1323,7 @@ class OrderServiceTest {
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
 
         assertEquals(ResultCode.BAD_REQUEST.getCode(), ex.getCode());
-        assertEquals("team id is required for team order", ex.getMessage());
+        assertEquals("组队订单缺少队伍标识", ex.getMessage());
         verify(orderMapper, never()).acquireAdvisoryTransactionLock(anyString());
         verify(orderMapper, never()).selectTeamOrderListItemByTeamGrabRequestId(anyString());
         verify(orderMapper, never()).selectOrderListItemByGrabRequestId(anyString());
@@ -1374,7 +1375,7 @@ class OrderServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.createTeamOrderWithLockedSeats(request));
 
-        assertEquals("grab request id is required for team order", ex.getMessage());
+        assertEquals("组队订单缺少抢票请求标识", ex.getMessage());
         verify(orderMapper, never()).acquireAdvisoryTransactionLock(anyString());
         verify(orderMapper, never()).selectTeamOrderListItemByTeamGrabRequestId(anyString());
         verify(orderMapper, never()).selectOrderListItemByGrabRequestId(anyString());
@@ -2081,13 +2082,14 @@ class OrderServiceTest {
         return user;
     }
 
-    private ResolvedAttendeeResponse resolvedAttendee(Long id, String name, String hash, String mask) {
+    private ResolvedAttendeeResponse resolvedAttendee(Long id, String name, String hash, String mask, String encrypted) {
         ResolvedAttendeeResponse attendee = new ResolvedAttendeeResponse();
         attendee.setId(id);
         attendee.setRealName(name);
         attendee.setIdType("ID_CARD");
         attendee.setIdNoHash(hash);
         attendee.setIdNoMask(mask);
+        attendee.setIdNoEncrypted(encrypted);
         return attendee;
     }
 

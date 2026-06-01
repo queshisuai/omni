@@ -37,6 +37,7 @@ public class OrderSnapshot {
     private String teamGrabRequestId;
     private Boolean teamOrder;
     private String seatSelectionMode;
+    private Boolean ticketTransferAllowed;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -86,6 +87,8 @@ public class OrderSnapshot {
     public void setTeamOrder(Boolean teamOrder) { this.teamOrder = teamOrder; }
     public String getSeatSelectionMode() { return seatSelectionMode; }
     public void setSeatSelectionMode(String seatSelectionMode) { this.seatSelectionMode = seatSelectionMode; }
+    public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }
+    public void setTicketTransferAllowed(Boolean ticketTransferAllowed) { this.ticketTransferAllowed = ticketTransferAllowed; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getUpdateTime() { return updateTime; }

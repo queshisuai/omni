@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { login, sendSmsCode } from '@/lib/api'
 import { setToken, setUser } from '@/lib/auth'
+import { getLoginRedirectForRole } from '@/lib/support-tools'
 import { Mail, Lock, Phone, KeyRound, QrCode, ArrowRight } from 'lucide-react'
 
 type LoginTab = 'password' | 'sms' | 'qrcode'
@@ -39,11 +40,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
       const data = await login({ loginType: 'password', account: account.trim(), password })
       setToken(data.token)
       setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, avatar: data.avatar || null, role: data.role })
-      if (data.role === 'admin' || data.role === 'organizer') {
-        router.push('/console')
-      } else {
-        router.push('/')
-      }
+      router.push(getLoginRedirectForRole(data.role))
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : '登录失败')
     } finally {
@@ -62,11 +59,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
       const data = await login({ loginType: 'sms', account: smsMobile.trim(), smsCode: smsCode.trim() })
       setToken(data.token)
       setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, avatar: data.avatar || null, role: data.role })
-      if (data.role === 'admin' || data.role === 'organizer') {
-        router.push('/console')
-      } else {
-        router.push('/')
-      }
+      router.push(getLoginRedirectForRole(data.role))
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : '登录失败')
     } finally {

@@ -8,6 +8,8 @@ import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.dto.AdminSummaryResponse;
 import com.omni.ticket.dto.PaidOrderCountRequest;
 import com.omni.ticket.dto.PaidOrderCountResponse;
+import com.omni.ticket.dto.PaidOrdersBySessionsRequest;
+import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
@@ -24,6 +26,8 @@ import org.springframework.util.StringUtils;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -62,7 +66,6 @@ public class AdminSummaryService {
             activityWrapper.eq(Activity::getOrganizerId, userId);
         }
         activityWrapper.eq(Activity::getStatus, 1)
-                .eq(Activity::getPublishStatus, "published")
                 .isNull(Activity::getDeletedAt);
         List<Activity> activities = activityMapper.selectList(activityWrapper);
         if (activities == null) {
@@ -82,9 +85,12 @@ public class AdminSummaryService {
                 ? 0L
                 : ticketTypeMapper.selectCount(new LambdaQueryWrapper<TicketType>().in(TicketType::getSessionId, sessionIds));
         Long paidOrderCount = sessionIds.isEmpty() ? 0L : countPaidOrders(sessionIds);
+        List<OrderInfoResponse> orders = listOrders(sessionIds);
 
         Long announcedTourCount = countAnnouncedTours(role, userId);
-        return new AdminSummaryResponse(activities.size() + announcedTourCount, ticketTypeCount != null ? ticketTypeCount : 0L, paidOrderCount);
+        AdminSummaryResponse response = new AdminSummaryResponse(activities.size() + announcedTourCount, ticketTypeCount != null ? ticketTypeCount : 0L, paidOrderCount);
+        enrichOperationalMetrics(response, activities, sessions, orders);
+        return response;
     }
 
     private Long countAnnouncedTours(String role, Long userId) {
@@ -110,5 +116,75 @@ public class AdminSummaryService {
         }
         PaidOrderCountResponse data = result.getData();
         return data != null && data.getPaidOrderCount() != null ? data.getPaidOrderCount() : 0L;
+    }
+
+    private List<OrderInfoResponse> listOrders(List<Long> sessionIds) {
+        if (sessionIds.isEmpty() || !StringUtils.hasText(internalApiToken)) {
+            return Collections.emptyList();
+        }
+        Result<List<OrderInfoResponse>> result = orderInternalClient.listPaidBySessions(
+                new PaidOrdersBySessionsRequest(sessionIds, false), internalApiToken);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+            return Collections.emptyList();
+        }
+        return result.getData();
+    }
+
+    private void enrichOperationalMetrics(AdminSummaryResponse response,
+                                          List<Activity> activities,
+                                          List<Session> sessions,
+                                          List<OrderInfoResponse> orders) {
+        Map<Long, Activity> activityById = activities.stream()
+                .filter(activity -> activity.getId() != null)
+                .collect(Collectors.toMap(Activity::getId, activity -> activity, (a, b) -> a));
+        Map<Long, Long> activityIdBySessionId = sessions.stream()
+                .filter(session -> session.getId() != null && session.getActivityId() != null)
+                .collect(Collectors.toMap(Session::getId, Session::getActivityId, (a, b) -> a));
+
+        response.setOrderCount((long) orders.size());
+        response.setPaymentTimeoutCount(orders.stream()
+                .filter(order -> Integer.valueOf(3).equals(order.getStatus()))
+                .count());
+        response.setRiskCheckCount((long) activities.size());
+        response.setRiskHitCount(activities.stream()
+                .filter(this::isRiskHit)
+                .count());
+
+        Map<Long, List<OrderInfoResponse>> ordersByActivity = orders.stream()
+                .map(order -> new OrderActivityPair(order, activityIdBySessionId.get(order.getSessionId())))
+                .filter(pair -> pair.activityId != null)
+                .collect(Collectors.groupingBy(pair -> pair.activityId,
+                        Collectors.mapping(pair -> pair.order, Collectors.toList())));
+        List<AdminSummaryResponse.HotActivityResponse> hotActivities = ordersByActivity.entrySet().stream()
+                .map(entry -> {
+                    Activity activity = activityById.get(entry.getKey());
+                    String name = activity != null ? activity.getName() : "活动 " + entry.getKey();
+                    long paidCount = entry.getValue().stream()
+                            .filter(order -> Integer.valueOf(2).equals(order.getStatus()))
+                            .count();
+                    return new AdminSummaryResponse.HotActivityResponse(entry.getKey(), name, (long) entry.getValue().size(), paidCount);
+                })
+                .sorted((a, b) -> {
+                    int byOrder = b.getOrderCount().compareTo(a.getOrderCount());
+                    return byOrder != 0 ? byOrder : a.getActivityId().compareTo(b.getActivityId());
+                })
+                .limit(5)
+                .collect(Collectors.toList());
+        response.setHotActivities(hotActivities);
+    }
+
+    private boolean isRiskHit(Activity activity) {
+        return activity != null
+                && ("risk_suspended".equals(activity.getPublishStatus()) || activity.getRiskSuspendedAt() != null);
+    }
+
+    private static class OrderActivityPair {
+        private final OrderInfoResponse order;
+        private final Long activityId;
+
+        private OrderActivityPair(OrderInfoResponse order, Long activityId) {
+            this.order = Objects.requireNonNull(order);
+            this.activityId = activityId;
+        }
     }
 }

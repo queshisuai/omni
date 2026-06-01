@@ -14,7 +14,7 @@ CREATE TABLE "user" (
     nickname VARCHAR(50),
     email VARCHAR(100),
     avatar VARCHAR(255),
-    role VARCHAR(20) NOT NULL DEFAULT 'user',       -- 'user' | 'organizer' | 'admin'
+    role VARCHAR(20) NOT NULL DEFAULT 'user',       -- 'user' | 'organizer' | 'admin' | 'support'
     organizer_status SMALLINT DEFAULT 0,            -- 0:待审核 1:已认证 2:已拒绝 3:已取消资格
     organizer_name VARCHAR(100),                    -- 主办方名称
     status SMALLINT DEFAULT 1,
@@ -55,6 +55,41 @@ CREATE TABLE user_attendee (
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_user_attendee_status CHECK (status IN (0, 1))
+);
+
+CREATE TABLE privacy_audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    actor_user_id BIGINT NOT NULL REFERENCES "user"(id),
+    action VARCHAR(64) NOT NULL,
+    target_type VARCHAR(64) NOT NULL,
+    target_id BIGINT,
+    detail TEXT,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE support_conversation (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES "user"(id),
+    subject VARCHAR(120) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'OPEN',
+    source_type VARCHAR(16) NOT NULL DEFAULT 'AI',
+    assigned_agent_id BIGINT REFERENCES "user"(id),
+    last_message TEXT,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMP,
+    CONSTRAINT chk_support_conversation_status CHECK (status IN ('OPEN', 'WAITING_AGENT', 'ASSIGNED', 'CLOSED')),
+    CONSTRAINT chk_support_conversation_source CHECK (source_type IN ('AI', 'HUMAN'))
+);
+
+CREATE TABLE support_message (
+    id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES support_conversation(id),
+    sender_user_id BIGINT REFERENCES "user"(id),
+    sender_type VARCHAR(16) NOT NULL,
+    content TEXT NOT NULL,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_support_message_sender CHECK (sender_type IN ('USER', 'AI', 'AGENT', 'SYSTEM'))
 );
 
 COMMENT ON TABLE organizer_application IS '商户入驻申请表';
@@ -198,6 +233,7 @@ CREATE TABLE activity (
     poster VARCHAR(255),
     status SMALLINT DEFAULT 1,
     real_name_required BOOLEAN NOT NULL DEFAULT FALSE,
+    ticket_transfer_allowed BOOLEAN NOT NULL DEFAULT TRUE,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -232,6 +268,54 @@ CREATE TABLE reservation (
     status SMALLINT DEFAULT 1,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, session_id)
+);
+
+CREATE TABLE performance_subscription (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    target_type VARCHAR(40) NOT NULL,
+    target_id BIGINT,
+    target_value VARCHAR(120),
+    target_name VARCHAR(200),
+    activity_id BIGINT REFERENCES activity(id),
+    artist_id BIGINT REFERENCES artist(id),
+    city VARCHAR(64),
+    remind_before_minutes INTEGER DEFAULT 30,
+    status SMALLINT DEFAULT 1,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_performance_subscription_status CHECK (status IN (0, 1))
+);
+
+CREATE TABLE activity_marketing_rule (
+    id BIGSERIAL PRIMARY KEY,
+    activity_id BIGINT NOT NULL REFERENCES activity(id) ON DELETE CASCADE,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    coupon_name VARCHAR(120),
+    discount_type VARCHAR(32) NOT NULL DEFAULT 'NONE',
+    threshold_amount NUMERIC(12, 2),
+    discount_amount NUMERIC(12, 2),
+    max_coupon_count INTEGER,
+    per_user_limit INTEGER,
+    claimed_count INTEGER NOT NULL DEFAULT 0,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    status SMALLINT NOT NULL DEFAULT 0,
+    start_time TIMESTAMP,
+    end_time TIMESTAMP,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_activity_marketing_discount_type CHECK (discount_type IN ('NONE', 'FULL_REDUCTION', 'DIRECT_REDUCTION')),
+    CONSTRAINT chk_activity_marketing_status CHECK (status IN (0, 1)),
+    CONSTRAINT chk_activity_marketing_amount CHECK (
+        (threshold_amount IS NULL OR threshold_amount >= 0)
+        AND (discount_amount IS NULL OR discount_amount >= 0)
+    ),
+    CONSTRAINT chk_activity_marketing_count CHECK (
+        (max_coupon_count IS NULL OR max_coupon_count > 0)
+        AND (per_user_limit IS NULL OR per_user_limit > 0)
+        AND claimed_count >= 0
+        AND used_count >= 0
+    )
 );
 
 -- 订单表
@@ -319,8 +403,47 @@ CREATE TABLE order_snapshot (
     team_id BIGINT,
     team_grab_request_id VARCHAR(64),
     team_order BOOLEAN NOT NULL DEFAULT FALSE,
+    ticket_transfer_allowed BOOLEAN NOT NULL DEFAULT TRUE,
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE electronic_ticket (
+    id BIGSERIAL PRIMARY KEY,
+    ticket_no VARCHAR(64) NOT NULL UNIQUE,
+    order_id BIGINT NOT NULL REFERENCES "order"(id) ON DELETE CASCADE,
+    order_seat_id BIGINT REFERENCES order_seat(id) ON DELETE SET NULL,
+    user_id BIGINT NOT NULL,
+    original_user_id BIGINT NOT NULL,
+    session_id BIGINT NOT NULL,
+    ticket_type_id BIGINT NOT NULL,
+    attendee_user_profile_id BIGINT,
+    real_name VARCHAR(80),
+    id_type VARCHAR(32),
+    id_no_mask VARCHAR(64),
+    phone VARCHAR(32),
+    seat_label VARCHAR(128),
+    status INTEGER NOT NULL DEFAULT 1,
+    checked_in_at TIMESTAMP,
+    invalid_reason VARCHAR(128),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_electronic_ticket_status CHECK (status IN (1, 2, 3, 4))
+);
+
+CREATE TABLE ticket_transfer (
+    id BIGSERIAL PRIMARY KEY,
+    transfer_code VARCHAR(64) NOT NULL UNIQUE,
+    ticket_id BIGINT NOT NULL REFERENCES electronic_ticket(id) ON DELETE CASCADE,
+    new_ticket_id BIGINT REFERENCES electronic_ticket(id) ON DELETE SET NULL,
+    from_user_id BIGINT NOT NULL,
+    to_user_id BIGINT,
+    status INTEGER NOT NULL DEFAULT 1,
+    expires_at TIMESTAMP NOT NULL,
+    claimed_at TIMESTAMP,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_ticket_transfer_status CHECK (status IN (1, 2, 3, 4))
 );
 
 CREATE TABLE grab_request (
@@ -758,17 +881,30 @@ CREATE TABLE user_auth (
 );
 
 -- 评价表
-CREATE TABLE review (
+CREATE TABLE activity_review (
     id BIGSERIAL PRIMARY KEY,
     activity_id BIGINT NOT NULL REFERENCES activity(id),
-    user_id BIGINT NOT NULL REFERENCES "user"(id),
-    order_id BIGINT REFERENCES "order"(id),         -- 关联订单（购票后才能评价）
+    user_id BIGINT NOT NULL,
+    order_id BIGINT,                                -- 关联订单（购票后评价时传入）
     rating SMALLINT NOT NULL CHECK(rating >= 1 AND rating <= 5),
     content TEXT,
     images TEXT,                                     -- JSON数组，最多9张图
-    like_count INTEGER DEFAULT 0,
-    status SMALLINT DEFAULT 1,                       -- 1:正常 0:隐藏
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    like_count INTEGER NOT NULL DEFAULT 0,
+    status SMALLINT NOT NULL DEFAULT 1,              -- 1:正常 0:隐藏
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE activity_question (
+    id BIGSERIAL PRIMARY KEY,
+    activity_id BIGINT NOT NULL REFERENCES activity(id),
+    user_id BIGINT NOT NULL,
+    content TEXT NOT NULL,
+    answer TEXT,
+    answered_by BIGINT,
+    status VARCHAR(16) NOT NULL DEFAULT 'PENDING',   -- PENDING/ANSWERED/HIDDEN
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    answered_at TIMESTAMP,
+    CONSTRAINT chk_activity_question_status CHECK (status IN ('PENDING', 'ANSWERED', 'HIDDEN'))
 );
 
 -- 动态表
@@ -789,6 +925,11 @@ CREATE INDEX idx_user_phone ON "user"(phone);
 CREATE INDEX idx_user_auth_user ON user_auth(user_id);
 CREATE INDEX idx_user_attendee_user_status ON user_attendee(user_id, status, is_default DESC, create_time DESC);
 CREATE UNIQUE INDEX uk_user_attendee_active_identity ON user_attendee(user_id, id_type, id_no_hash) WHERE status = 1;
+CREATE INDEX idx_privacy_audit_actor_time ON privacy_audit_log(actor_user_id, create_time DESC);
+CREATE INDEX idx_support_conversation_user_time ON support_conversation(user_id, update_time DESC, id DESC);
+CREATE INDEX idx_support_conversation_agent_status ON support_conversation(assigned_agent_id, status, update_time DESC);
+CREATE INDEX idx_support_conversation_status_time ON support_conversation(status, update_time DESC);
+CREATE INDEX idx_support_message_conversation_time ON support_message(conversation_id, id ASC);
 CREATE INDEX idx_order_user ON "order"(user_id);
 CREATE INDEX idx_order_no ON "order"(order_no);
 CREATE INDEX idx_order_status ON "order"(status);
@@ -805,6 +946,12 @@ CREATE INDEX idx_order_snapshot_grab_request_id ON order_snapshot(grab_request_i
 CREATE UNIQUE INDEX uk_order_snapshot_grab_request_id ON order_snapshot(grab_request_id) WHERE grab_request_id IS NOT NULL;
 CREATE INDEX idx_order_snapshot_team_id ON order_snapshot(team_id) WHERE team_id IS NOT NULL;
 CREATE UNIQUE INDEX uk_order_snapshot_team_grab_request ON order_snapshot(team_grab_request_id) WHERE team_order = TRUE AND team_grab_request_id IS NOT NULL;
+CREATE INDEX idx_electronic_ticket_user_status ON electronic_ticket(user_id, status, create_time DESC);
+CREATE INDEX idx_electronic_ticket_order ON electronic_ticket(order_id);
+CREATE INDEX idx_electronic_ticket_session ON electronic_ticket(session_id, ticket_type_id, status);
+CREATE INDEX idx_ticket_transfer_ticket_status ON ticket_transfer(ticket_id, status, create_time DESC);
+CREATE INDEX idx_ticket_transfer_from_user ON ticket_transfer(from_user_id, create_time DESC);
+CREATE INDEX idx_ticket_transfer_to_user ON ticket_transfer(to_user_id, create_time DESC) WHERE to_user_id IS NOT NULL;
 CREATE INDEX idx_grab_request_status_expire_time ON grab_request(status, expire_time);
 CREATE INDEX idx_grab_request_user_created_at ON grab_request(user_id, created_at DESC);
 CREATE INDEX idx_grab_request_session_queue_seq ON grab_request(session_id, queue_seq);
@@ -855,12 +1002,19 @@ CREATE UNIQUE INDEX idx_ticket_type_area_session_area_unique ON ticket_type_area
 CREATE INDEX idx_notification_user ON notification(user_id);
 CREATE INDEX idx_stock_log_session ON stock_log(session_id);
 CREATE INDEX idx_reservation_user ON reservation(user_id);
+CREATE INDEX idx_performance_subscription_user ON performance_subscription(user_id, status, create_time DESC);
+CREATE INDEX idx_performance_subscription_activity ON performance_subscription(activity_id) WHERE activity_id IS NOT NULL;
+CREATE INDEX idx_performance_subscription_artist ON performance_subscription(artist_id) WHERE artist_id IS NOT NULL;
+CREATE UNIQUE INDEX uk_performance_subscription_active_target ON performance_subscription(user_id, target_type, COALESCE(target_id, 0), COALESCE(target_value, '')) WHERE status = 1;
+CREATE UNIQUE INDEX uk_activity_marketing_rule_activity ON activity_marketing_rule(activity_id);
+CREATE INDEX idx_activity_marketing_rule_status ON activity_marketing_rule(status, enabled);
 CREATE INDEX idx_session_activity ON session(activity_id);
 CREATE INDEX idx_ticket_type_session ON ticket_type(session_id);
 CREATE INDEX idx_seat_session ON seat(session_id);
 CREATE INDEX idx_seat_ticket_type ON seat(ticket_type_id);
-CREATE INDEX idx_review_activity ON review(activity_id);
-CREATE INDEX idx_review_user ON review(user_id);
-CREATE INDEX idx_review_order ON review(order_id);
+CREATE UNIQUE INDEX uk_activity_review_order_active ON activity_review(activity_id, user_id, order_id) WHERE order_id IS NOT NULL AND status = 1;
+CREATE INDEX idx_activity_review_activity_time ON activity_review(activity_id, status, create_time DESC);
+CREATE INDEX idx_activity_review_user ON activity_review(user_id);
+CREATE INDEX idx_activity_question_activity_time ON activity_question(activity_id, status, create_time DESC);
 CREATE INDEX idx_moment_user ON moment(user_id);
 CREATE INDEX idx_moment_activity ON moment(activity_id);

@@ -9,6 +9,7 @@ import { Pagination, DEFAULT_PAGE_SIZE } from '@/components/Pagination'
 import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund, getRefundOptions } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { formatOrderAttendees } from '@/lib/console-orders'
+import { buildRefundTimeline, getRefundSupportCopy } from '@/lib/refund-flow'
 import { ArrowLeft, Check, Ticket as TicketIcon, Search, PackageOpen, Trash2, RotateCcw, AlertCircle, RefreshCw, EyeOff, Loader2 } from 'lucide-react'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import type { OrderEntity, QrPayResponse, RefundOptionsVO, RefundRequestVO, RefundStatus } from '@/types/api'
@@ -31,6 +32,13 @@ const REFUND_STATUS_MAP: Record<RefundStatus, { label: string; color: string }> 
 }
 
 const ACTIVE_REFUND_STATUSES = new Set<RefundStatus>([0, 1, 4])
+
+function refundTimelineStyle(state: string) {
+  if (state === 'done') return 'bg-[#52c41a] text-white'
+  if (state === 'active') return 'bg-[#1677ff] text-white'
+  if (state === 'failed') return 'bg-[#ff4d4f] text-white'
+  return 'bg-[#e5e5e5] text-[#777]'
+}
 
 interface EnrichedOrder extends OrderEntity {
   activityName: string
@@ -415,6 +423,7 @@ export default function OrdersPage() {
               const activeRefund = refundInfo?.active
               const latestRefund = refundInfo?.latest
               const lastRefundNote = latestRefund?.reviewNote || latestRefund?.reason
+              const refundSupportCopy = getRefundSupportCopy(latestRefund)
               return (
                 <div
                   key={order.id}
@@ -480,6 +489,34 @@ export default function OrdersPage() {
                           实名观演人：<span className="text-gray-700">{formatOrderAttendees(order)}</span>
                         </div>
                       ) : null}
+                      {latestRefund && (
+                        <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-[12px] text-gray-500">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <span className="font-medium text-gray-700">退款进度</span>
+                            <span style={{ color: REFUND_STATUS_MAP[latestRefund.status].color }}>{REFUND_STATUS_MAP[latestRefund.status].label}</span>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            {buildRefundTimeline(latestRefund).map((step) => (
+                              <div key={step.label} className="flex items-center gap-2">
+                                <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${refundTimelineStyle(step.state)}`}>✓</span>
+                                <span className="min-w-0">
+                                  <span className="block text-gray-700">{step.label}</span>
+                                  <span className="block truncate text-gray-400">{step.time ? step.time.slice(0, 16).replace('T', ' ') : '待更新'}</span>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          {refundSupportCopy && (
+                            <button
+                              type="button"
+                              onClick={() => void globalAlert('已记录客服介入请求，客服会根据退款单号与支付流水继续跟进。')}
+                              className="mt-3 cursor-pointer rounded-full border border-[#ff1268] bg-white px-3 py-1.5 text-[12px] font-medium text-[#ff1268] outline-none"
+                            >
+                              {refundSupportCopy}
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <div className="text-[22px] text-[#ff1268] font-bold mt-2">
                         <span className="text-[14px] font-medium mr-1">¥</span>{order.amount.toFixed(2)}
                       </div>
@@ -487,6 +524,12 @@ export default function OrdersPage() {
 
                     {/* 操作按钮 */}
                     <div className="flex-shrink-0 flex sm:flex-col items-stretch justify-end sm:justify-start gap-3 mt-4 sm:mt-0 sm:w-[140px]">
+                      <button
+                        onClick={() => router.push(`/orders/${order.id}`)}
+                        className="cursor-pointer border border-gray-200 bg-white text-gray-600 text-[14px] font-medium px-5 py-2.5 rounded-full outline-none transition-colors hover:border-[#ff1268] hover:text-[#ff1268]"
+                      >
+                        查看详情
+                      </button>
                       {activeTab !== 'trash' && order.status === 1 && (
                         <>
                           <button

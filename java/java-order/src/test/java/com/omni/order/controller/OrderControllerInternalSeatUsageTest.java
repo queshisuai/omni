@@ -4,7 +4,10 @@ import com.omni.common.result.Result;
 import com.omni.order.dto.SessionSeatUsageItemResponse;
 import com.omni.order.dto.SessionSeatUsageRequest;
 import com.omni.order.dto.SessionSeatUsageResponse;
+import com.omni.order.dto.TicketCheckInRequest;
+import com.omni.order.dto.TicketCheckInResponse;
 import com.omni.order.service.OrderService;
+import com.omni.order.service.TicketWalletService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,12 +24,14 @@ import static org.mockito.Mockito.when;
 class OrderControllerInternalSeatUsageTest {
 
     private OrderService orderService;
+    private TicketWalletService ticketWalletService;
     private OrderController controller;
 
     @BeforeEach
     void setUp() {
         orderService = mock(OrderService.class);
-        controller = new OrderController(orderService, "test-internal-token", "omni-jwt-secretomni-jwt-secretomni-jwt-secret");
+        ticketWalletService = mock(TicketWalletService.class);
+        controller = new OrderController(orderService, ticketWalletService, "test-internal-token", "omni-jwt-secretomni-jwt-secretomni-jwt-secret");
     }
 
     @Test
@@ -67,5 +72,31 @@ class OrderControllerInternalSeatUsageTest {
         assertEquals(200, result.getCode());
         assertEquals(response, result.getData());
         verify(orderService).inspectSessionSeatUsage(Collections.emptyList());
+    }
+
+    @Test
+    void checkInTicketRejectsInvalidToken() {
+        TicketCheckInRequest request = new TicketCheckInRequest();
+        request.setEntryCode("code");
+
+        Result<TicketCheckInResponse> result = controller.checkInTicket(request, "wrong-token");
+
+        assertEquals(403, result.getCode());
+        verify(ticketWalletService, never()).checkIn("code");
+    }
+
+    @Test
+    void checkInTicketDelegatesToWalletServiceWhenTokenIsValid() {
+        TicketCheckInRequest request = new TicketCheckInRequest();
+        request.setEntryCode("code");
+        TicketCheckInResponse response = new TicketCheckInResponse();
+        response.setTicketId(3001L);
+        when(ticketWalletService.checkIn("code")).thenReturn(response);
+
+        Result<TicketCheckInResponse> result = controller.checkInTicket(request, "test-internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals(3001L, result.getData().getTicketId());
+        verify(ticketWalletService).checkIn("code");
     }
 }

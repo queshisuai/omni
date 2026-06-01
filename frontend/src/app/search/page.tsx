@@ -6,18 +6,23 @@ import { Header, HOT_CITIES, OTHER_CITIES } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { TicketCard } from '@/components/TicketCard'
 import { listActivities, listCategories } from '@/lib/api'
+import { DEFAULT_POPULAR_SEARCHES, SEARCH_HISTORY_KEY, addSearchHistoryTerm, buildSearchSuggestions, parseSearchHistory } from '@/lib/search-experience'
 import { categories as mockCategories, sections as mockSections } from '@/lib/mock-data'
 import type { CategoryVO, ActivityVO } from '@/types/api'
 import type { Activity } from '@/types/damai'
 
-type SortType = 'recommend' | 'relevance' | 'recent' | 'newest'
+type SortType = 'recommend' | 'relevance' | 'recent' | 'newest' | 'price_asc' | 'price_desc'
 type TimeFilter = 'all' | 'today' | 'tomorrow' | 'weekend' | 'month' | 'custom'
+type SaleStatusFilter = '' | 'on_sale' | 'coming_soon' | 'sold_out'
+type BooleanFilter = '' | 'true' | 'false'
 
 const SORT_LABELS: Record<SortType, string> = {
   recommend: '推荐排序',
   relevance: '相关度排序',
   recent: '最近开场',
   newest: '最新上架',
+  price_asc: '价格升序',
+  price_desc: '价格降序',
 }
 
 const TIME_LABELS: Record<Exclude<TimeFilter, 'custom'>, string> = {
@@ -159,6 +164,7 @@ function SearchContent() {
   const searchParams = useSearchParams()
   const initialCategory = searchParams.get('category') || ''
   const initialKeyword = searchParams.get('keyword') || ''
+  const initialCity = searchParams.get('city') || ''
 
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
@@ -169,9 +175,54 @@ function SearchContent() {
   const [activeCategory, setActiveCategory] = useState(initialCategory)
   const [activeTime, setActiveTime] = useState<TimeFilter>('all')
   const [sort, setSort] = useState<SortType>('recommend')
+  const [activeCity, setActiveCity] = useState(() => {
+    if (initialCity) return initialCity
+    if (typeof window !== 'undefined') return localStorage.getItem('omni_current_city') || '全部'
+    return '全部'
+  })
+  const [searchHistory, setSearchHistory] = useState<string[]>([])
+  const [showAllCities, setShowAllCities] = useState(false)
+  const [citySearchKeyword, setCitySearchKeyword] = useState('')
+  const [customDate, setCustomDate] = useState('')
+  const [minPrice, setMinPrice] = useState('')
+  const [maxPrice, setMaxPrice] = useState('')
+  const [saleStatus, setSaleStatus] = useState<SaleStatusFilter>('')
+  const [seatMapOnly, setSeatMapOnly] = useState(false)
+  const [realNameFilter, setRealNameFilter] = useState<BooleanFilter>('')
   const usingMock = useRef(false)
   const mockAllActivities = useRef<Activity[]>([])
   const dateInputRef = useRef<HTMLInputElement>(null)
+
+  const toLocalDateStr = (d: Date) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  const getDateRange = () => {
+    const now = new Date()
+    const todayStr = toLocalDateStr(now)
+    if (activeTime === 'today') return { dateFrom: todayStr, dateTo: todayStr }
+    if (activeTime === 'tomorrow') {
+      const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1)
+      const value = toLocalDateStr(tomorrow)
+      return { dateFrom: value, dateTo: value }
+    }
+    if (activeTime === 'weekend') {
+      const day = now.getDay()
+      const satOffset = day === 0 ? -1 : 6 - day
+      const sat = new Date(now); sat.setDate(now.getDate() + satOffset)
+      const sun = new Date(sat); sun.setDate(sat.getDate() + 1)
+      return { dateFrom: toLocalDateStr(sat), dateTo: toLocalDateStr(sun) }
+    }
+    if (activeTime === 'month') {
+      const monthLater = new Date(now); monthLater.setMonth(monthLater.getMonth() + 1)
+      return { dateFrom: todayStr, dateTo: toLocalDateStr(monthLater) }
+    }
+    if (activeTime === 'custom' && customDate) return { dateFrom: customDate, dateTo: customDate }
+    return {}
+  }
 
   const fetchActivities = async (cat: string, p: number) => {
     setLoading(true)
@@ -180,9 +231,22 @@ function SearchContent() {
       if (currentCats.length === 0) {
         // 如果没有指定分类，可以并行请求分类和活动以提升首屏速度
         if (!cat) {
+          const dateRange = getDateRange()
           const [catData, actData] = await Promise.all([
             listCategories(),
-            listActivities({ page: p, size: 20 })
+            listActivities({
+              page: p,
+              size: 20,
+              keyword: initialKeyword,
+              city: activeCity === '全部' ? undefined : activeCity,
+              ...dateRange,
+              minPrice: minPrice ? Number(minPrice) : undefined,
+              maxPrice: maxPrice ? Number(maxPrice) : undefined,
+              saleStatus: saleStatus || undefined,
+              seatMapOnly: seatMapOnly || undefined,
+              realNameRequired: realNameFilter === '' ? undefined : realNameFilter === 'true',
+              sort: sort === 'recommend' ? undefined : sort,
+            })
           ])
           setCategories(catData)
           setActivities(actData.records.map(toActivity))
@@ -203,7 +267,21 @@ function SearchContent() {
         if (found) categoryId = found.id
       }
 
-      const data = await listActivities({ page: p, size: 20, categoryId })
+      const dateRange = getDateRange()
+      const data = await listActivities({
+        page: p,
+        size: 20,
+        categoryId,
+        keyword: initialKeyword,
+        city: activeCity === '全部' ? undefined : activeCity,
+        ...dateRange,
+        minPrice: minPrice ? Number(minPrice) : undefined,
+        maxPrice: maxPrice ? Number(maxPrice) : undefined,
+        saleStatus: saleStatus || undefined,
+        seatMapOnly: seatMapOnly || undefined,
+        realNameRequired: realNameFilter === '' ? undefined : realNameFilter === 'true',
+        sort: sort === 'recommend' ? undefined : sort,
+      })
       setActivities(data.records.map(toActivity))
       setTotal(data.total)
       setTotalPages(data.pages)
@@ -235,21 +313,28 @@ function SearchContent() {
   }
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setSearchHistory(parseSearchHistory(localStorage.getItem(SEARCH_HISTORY_KEY)))
+    }
+  }, [])
+
+  useEffect(() => {
+    if (initialCity) {
+      setActiveCity(initialCity)
+    }
+  }, [initialCity])
+
+  useEffect(() => {
+    if (initialKeyword && typeof window !== 'undefined') {
+      const next = addSearchHistoryTerm(parseSearchHistory(localStorage.getItem(SEARCH_HISTORY_KEY)), initialKeyword)
+      localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next))
+      setSearchHistory(next)
+    }
+  }, [initialKeyword])
+
+  useEffect(() => {
     fetchActivities(activeCategory, page)
-  }, [activeCategory, page])
-
-  const [activeCity, setActiveCity] = useState('全部')
-  const [showAllCities, setShowAllCities] = useState(false)
-  const [citySearchKeyword, setCitySearchKeyword] = useState('')
-  const [customDate, setCustomDate] = useState('')
-
-  // 时间过滤辅助函数
-  const toLocalDateStr = (d: Date) => {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}`
-  }
+  }, [activeCategory, page, activeCity, activeTime, customDate, sort, minPrice, maxPrice, saleStatus, seatMapOnly, realNameFilter, initialKeyword])
 
   const matchTime = (showTime: string): boolean => {
     if (activeTime === 'all') return true
@@ -288,21 +373,30 @@ function SearchContent() {
   // 当前页数据：mock 模式客户端切片，API 模式服务端已分页
   const pageSize = 20
   const keyword = searchParams.get('keyword') || ''
-  const allFiltered = activities.filter((a) => {
+  const allFiltered = usingMock.current ? activities.filter((a) => {
     const matchKeyword = keyword ? a.title.toLowerCase().includes(keyword.toLowerCase()) : true
     const matchCity = activeCity === '全部' || a.venue.includes(activeCity) || a.title.includes(activeCity)
     const matchTimeFilter = matchTime(a.showTime)
-    return matchKeyword && matchCity && matchTimeFilter
-  })
+    const matchPrice = (!minPrice || a.price >= Number(minPrice)) && (!maxPrice || a.price <= Number(maxPrice))
+    const matchSaleStatus = !saleStatus || a.status === saleStatus
+    return matchKeyword && matchCity && matchTimeFilter && matchPrice && matchSaleStatus
+  }) : activities
   
-  const isFiltering = keyword || activeCity !== '全部' || activeTime !== 'all'
-  const displayTotal = usingMock.current ? allFiltered.length : (isFiltering ? allFiltered.length : total)
+  const displayTotal = usingMock.current ? allFiltered.length : total
   const pageData = usingMock.current
     ? allFiltered.slice((page - 1) * pageSize, page * pageSize)
-    : allFiltered
+    : activities
   const displayTotalPages = usingMock.current
     ? Math.ceil(allFiltered.length / pageSize) || 1
-    : (isFiltering ? Math.ceil(allFiltered.length / pageSize) || 1 : totalPages)
+    : totalPages
+  const resultTerms = Array.from(new Set(activities.flatMap(item => [item.title, item.venue].filter(Boolean) as string[])))
+  const suggestions = buildSearchSuggestions({
+    keyword,
+    history: searchHistory,
+    popular: DEFAULT_POPULAR_SEARCHES,
+    resultTerms,
+    limit: 8,
+  })
 
   const handlePageChange = (p: number) => {
     setPage(p)
@@ -317,7 +411,15 @@ function SearchContent() {
     const params = new URLSearchParams()
     if (newCat) params.set('category', newCat)
     if (initialKeyword) params.set('keyword', initialKeyword)
+    if (activeCity !== '全部') params.set('city', activeCity)
     router.replace(`/search${params.toString() ? `?${params.toString()}` : ''}`)
+  }
+
+  const searchWithKeyword = (nextKeyword: string) => {
+    const params = new URLSearchParams()
+    params.set('keyword', nextKeyword)
+    if (activeCity !== '全部') params.set('city', activeCity)
+    router.push(`/search?${params.toString()}`)
   }
 
   // 客户端关键字过滤（已在上方计算 pageData 时使用，此处保留变量兼容旧代码）
@@ -327,6 +429,22 @@ function SearchContent() {
     setActiveTime(time)
     if (time !== 'custom') setCustomDate('')
     setPage(1)
+  }
+
+  const clearFilters = () => {
+    mockAllActivities.current = []
+    setActiveCategory('')
+    setActiveCity('全部')
+    setActiveTime('all')
+    setCustomDate('')
+    setMinPrice('')
+    setMaxPrice('')
+    setSaleStatus('')
+    setSeatMapOnly(false)
+    setRealNameFilter('')
+    setSort('recommend')
+    setPage(1)
+    router.replace('/search')
   }
 
   return (
@@ -456,10 +574,94 @@ function SearchContent() {
                 </div>
               </div>
             </div>
+
+            <div className="flex items-start py-4 border-t border-gray-100 border-dashed">
+              <FactorTitle>价 格：</FactorTitle>
+              <div className="flex flex-1 flex-wrap items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  value={minPrice}
+                  onChange={(event) => { setMinPrice(event.target.value); setPage(1) }}
+                  placeholder="最低价"
+                  className="h-8 w-28 rounded-full border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
+                />
+                <span className="text-[13px] text-gray-400">至</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={maxPrice}
+                  onChange={(event) => { setMaxPrice(event.target.value); setPage(1) }}
+                  placeholder="最高价"
+                  className="h-8 w-28 rounded-full border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
+                />
+                {[
+                  { label: '180以下', min: '', max: '180' },
+                  { label: '180-580', min: '180', max: '580' },
+                  { label: '580以上', min: '580', max: '' },
+                ].map(option => (
+                  <FilterItem
+                    key={option.label}
+                    active={minPrice === option.min && maxPrice === option.max}
+                    onClick={() => { setMinPrice(option.min); setMaxPrice(option.max); setPage(1) }}
+                  >
+                    {option.label}
+                  </FilterItem>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-start pt-4 border-t border-gray-100 border-dashed">
+              <FactorTitle>条 件：</FactorTitle>
+              <div className="flex flex-1 flex-wrap items-center gap-2">
+                {[
+                  { value: '', label: '全部状态' },
+                  { value: 'on_sale', label: '售票中' },
+                  { value: 'coming_soon', label: '待开票' },
+                  { value: 'sold_out', label: '已售罄' },
+                ].map(option => (
+                  <FilterItem
+                    key={option.value || 'all-sale'}
+                    active={saleStatus === option.value}
+                    onClick={() => { setSaleStatus(option.value as SaleStatusFilter); setPage(1) }}
+                  >
+                    {option.label}
+                  </FilterItem>
+                ))}
+                <label className="ml-1 inline-flex h-8 cursor-pointer items-center gap-2 rounded-full border border-gray-200 px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
+                  <input type="checkbox" checked={seatMapOnly} onChange={(event) => { setSeatMapOnly(event.target.checked); setPage(1) }} className="accent-[#ff1268]" />
+                  可选座
+                </label>
+                <select
+                  value={realNameFilter}
+                  onChange={(event) => { setRealNameFilter(event.target.value as BooleanFilter); setPage(1) }}
+                  className="h-8 rounded-full border border-gray-200 px-3 text-[13px] text-gray-600 outline-none focus:border-[#ff1268]"
+                >
+                  <option value="">实名不限</option>
+                  <option value="true">实名制</option>
+                  <option value="false">非实名制</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* 排序栏 */}
-          <SortBar sort={sort} onSortChange={setSort} page={page} totalPages={displayTotalPages} />
+          <SortBar sort={sort} onSortChange={(value) => { setSort(value); setPage(1) }} page={page} totalPages={displayTotalPages} />
+
+          {suggestions.length > 0 && (
+            <div className="mb-5 flex flex-wrap items-center gap-2 text-[13px] text-gray-500">
+              <span>{keyword ? '搜索联想' : searchHistory.length > 0 ? '搜索历史' : '热门搜索'}</span>
+              {suggestions.map((text) => (
+                <button
+                  key={text}
+                  onClick={() => searchWithKeyword(text)}
+                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]"
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* 结果网格 */}
           {loading ? (
@@ -468,8 +670,14 @@ function SearchContent() {
               <div className="text-[14px] font-medium tracking-wider">努力搜索中...</div>
             </div>
           ) : pageData.length === 0 ? (
-            <div className="text-center py-32 text-gray-400 text-[14px] font-medium tracking-wider">
-              暂无符合条件的商品
+            <div className="rounded-3xl border border-gray-100 bg-white px-6 py-20 text-center text-[14px] text-gray-500">
+              <div className="font-medium text-gray-600">暂无符合条件的演出</div>
+              <div className="mt-2 text-[13px] text-gray-400">可以放宽筛选条件，或先关注城市和候补提醒。</div>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                <button onClick={clearFilters} className="rounded-lg border border-[#ff1268] bg-white px-4 py-2 text-[13px] text-[#ff1268]">清空筛选</button>
+                <button onClick={() => router.push('/subscriptions')} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] text-white">关注提醒</button>
+                <button onClick={() => router.push('/waitlist')} className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-[13px] text-gray-600">查看候补</button>
+              </div>
             </div>
           ) : (
             <>

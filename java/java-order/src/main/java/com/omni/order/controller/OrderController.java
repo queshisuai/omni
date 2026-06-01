@@ -16,11 +16,21 @@ import com.omni.order.dto.PaidOrdersBySessionsRequest;
 import com.omni.order.dto.RefundOptionsResponse;
 import com.omni.order.dto.SessionSeatUsageRequest;
 import com.omni.order.dto.SessionSeatUsageResponse;
+import com.omni.order.dto.TicketCheckInRequest;
+import com.omni.order.dto.TicketCheckInResponse;
+import com.omni.order.dto.TicketEntryCodeResponse;
+import com.omni.order.dto.TicketTransferClaimRequest;
+import com.omni.order.dto.TicketTransferClaimResponse;
+import com.omni.order.dto.TicketTransferCreateResponse;
+import com.omni.order.dto.TicketTransferRevokeResponse;
+import com.omni.order.dto.TicketWalletItemResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.service.OrderService;
+import com.omni.order.service.TicketWalletService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -36,13 +46,23 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+    private final TicketWalletService ticketWalletService;
     private final String internalApiToken;
     private final String jwtSecret;
 
     public OrderController(OrderService orderService,
                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
                            @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
+        this(orderService, null, internalApiToken, jwtSecret);
+    }
+
+    @Autowired
+    public OrderController(OrderService orderService,
+                           TicketWalletService ticketWalletService,
+                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
+                           @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
         this.orderService = orderService;
+        this.ticketWalletService = ticketWalletService;
         this.internalApiToken = internalApiToken;
         this.jwtSecret = jwtSecret;
     }
@@ -127,6 +147,60 @@ public class OrderController {
         }
         List<OrderListItemResponse> orders = orderService.listOrderItems(userId);
         return Result.success(orders);
+    }
+
+    @GetMapping("/tickets")
+    public Result<List<TicketWalletItemResponse>> listMyTickets(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
+        return Result.success(ticketWalletService.listMyTickets(userId));
+    }
+
+    @PostMapping("/tickets/{ticketId}/entry-code")
+    public Result<TicketEntryCodeResponse> createTicketEntryCode(
+            @PathVariable Long ticketId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
+        return Result.success(ticketWalletService.createEntryCode(userId, ticketId));
+    }
+
+    @PostMapping("/tickets/{ticketId}/transfer")
+    public Result<TicketTransferCreateResponse> createTicketTransfer(
+            @PathVariable Long ticketId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
+        return Result.success(ticketWalletService.createTransfer(userId, ticketId));
+    }
+
+    @PostMapping("/tickets/transfers/claim")
+    public Result<TicketTransferClaimResponse> claimTicketTransfer(
+            @RequestBody(required = false) TicketTransferClaimRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
+        return Result.success(ticketWalletService.claimTransfer(userId, request != null ? request.getTransferCode() : null));
+    }
+
+    @PostMapping("/tickets/{ticketId}/transfer/revoke")
+    public Result<TicketTransferRevokeResponse> revokeTicketTransfer(
+            @PathVariable Long ticketId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = requireAuthenticatedUserId(authorization);
+        if (userId == null) {
+            return unauthorized();
+        }
+        return Result.success(ticketWalletService.revokeTransfer(userId, ticketId));
     }
 
     @GetMapping("/user/{userId}")
@@ -269,6 +343,16 @@ public class OrderController {
         }
         List<Long> sessionSeatIds = request != null ? request.getSessionSeatIds() : java.util.Collections.emptyList();
         return Result.success(orderService.inspectSessionSeatUsage(sessionSeatIds));
+    }
+
+    @PostMapping("/internal/tickets/check-in")
+    public Result<TicketCheckInResponse> checkInTicket(
+            @RequestBody(required = false) TicketCheckInRequest request,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(ticketWalletService.checkIn(request != null ? request.getEntryCode() : null));
     }
 
     /**

@@ -129,8 +129,10 @@ export interface GrabProgressResponse extends GrabRequestResponse {
   currentTicketTypeId: number | null;
   currentAttemptIndex: number;
   requestedTicketTypes: GrabTicketPreference[];
+  allowAutoDowngrade: boolean;
   attempts: GrabAttemptSnapshot[];
   visibleStock: VisibleStockSnapshot | null;
+  fairnessNotes: string[];
   matchedTicketTypeId: number | null;
   updateTime: string;
 }
