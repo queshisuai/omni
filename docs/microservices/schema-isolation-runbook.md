@@ -104,7 +104,7 @@ powershell -ExecutionPolicy Bypass -File scripts/apply-local-schema-isolation.ps
 ## 执行前准备
 
 1. 停止依赖本地数据库的后端服务，避免实验期间写入数据。
-2. 备份当前本地 `omni_ticket`，或确认可以通过 `sql/init.sql` 和 `sql/seed.sql` 重建。
+2. 备份当前本地 `omni_ticket`，或确认可以通过 `sql/migrations/shared/` 和 `sql/seed.sql` 重建。
 3. 确认本地库不是 staging / production 连接。
 4. 先运行只读检查：
 
@@ -203,7 +203,7 @@ Profile 对应关系：
 本地实验的回滚方式是重建本地数据库：
 
 1. 删除本地 `omni_ticket`。
-2. 重新执行 `sql/init.sql`。
+2. 重新执行 `sql/migrations/shared/` 下的增量 SQL。
 3. 重新执行 `sql/seed.sql`。
 4. 重新运行边界脚本、FK 脚本和关键 Maven 测试。
 

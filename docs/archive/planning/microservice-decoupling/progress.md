@@ -20,7 +20,7 @@
 - 已重新运行 `powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1`，Maven Reactor `BUILD SUCCESS`，最终输出 `All microservice boundary checks passed.`。
 - 已在用户手动启动全部服务后检查运行端口：Nacos `8848`、user `8081`、ticket `8082`、order `8083`、payment `8084`、notification `8085` 均可连接。
 - 已重新运行边界守护：`check-service-boundaries.ps1`、`check-local-schema-profiles.ps1`、`check-local-schema-sql.ps1`、`check-cross-owner-fks.ps1` 均通过。
-- 已确认当前本地数据库实际 service schema 中无跨 owner FK 查询结果；但 `sql/init.sql` 等正式建表 SQL 仍保留 22 个已知 cross-owner FK，属于共享数据库部署阶段例外。
+- 已确认当前本地数据库实际 service schema 中无跨 owner FK 查询结果；但共享库建表 SQL 仍保留 22 个已知 cross-owner FK，属于共享数据库部署阶段例外（原 `sql/init.sql` 已移除，相关定义现由 `sql/migrations/shared/` 管理）。
 - 已运行完整 `scripts/verify-microservice-boundaries.ps1`，最终 `BUILD SUCCESS` 且输出 `All microservice boundary checks passed.`。
 - 运行时抽查 internal API 直接调用当前返回 500，原因需要进一步查服务日志；当前可证明代码/数据库边界守护通过，但不能据此宣称完整业务流已在运行态通过。
 - 已停止混用 profile 的业务服务进程，并统一以 `local-schema` profile 重启 user/ticket/order/payment/notification；五个业务服务日志均显示 active profile 为 `local-schema`，端口 `8081`-`8085` 均可连接。

@@ -22,36 +22,24 @@ function Normalize-TableName {
 }
 
 # --- Known cross-owner allowlist (from cross-service-db-constraints.md) ---
-# Key format: "sql/file.sql:childtable.column -> referencedtable" (all lowercase, no quotes)
+# Key format: "sql/migrations/shared/file.sql:childtable.column -> referencedtable" (all lowercase, no quotes)
 $knownCrossOwner = @{}
 function Add-Known {
     param([string]$File, [string]$Child, [string]$Column, [string]$Ref)
     $childNorm = Normalize-TableName -Name $Child
     $refNorm = Normalize-TableName -Name $Ref
-    $key = "sql/$($file):$childNorm.$column -> $refNorm"
+    $key = "$($file):$childNorm.$column -> $refNorm"
     $knownCrossOwner[$key.ToLower()] = $true
 }
 
 $knownEntries = @(
-    @{Files=@("init.sql", "20260518_create_venue_application.sql"); Child="venue_application"; Column="applicant_id"; Ref="user"},
-    @{Files=@("init.sql", "20260518_create_venue_application.sql"); Child="venue_application"; Column="reviewer_id"; Ref="user"},
-    @{Files=@("init.sql"); Child="activity"; Column="organizer_id"; Ref="user"},
-    @{Files=@("init.sql"); Child="reservation"; Column="user_id"; Ref="user"},
-    @{Files=@("init.sql"); Child="order"; Column="user_id"; Ref="user"},
-    @{Files=@("init.sql"); Child="order"; Column="session_id"; Ref="session"},
-    @{Files=@("init.sql"); Child="order"; Column="ticket_type_id"; Ref="ticket_type"},
-    @{Files=@("init.sql", "20260518_create_order_seat.sql"); Child="order_seat"; Column="session_seat_id"; Ref="session_seat"},
-    @{Files=@("init.sql", "20260518_create_session_seat.sql"); Child="session_seat"; Column="order_id"; Ref="order"},
-    @{Files=@("init.sql"); Child="payment"; Column="order_id"; Ref="order"},
-    @{Files=@("init.sql", "20260517_create_refund_request.sql"); Child="refund_request"; Column="order_id"; Ref="order"},
-    @{Files=@("init.sql", "20260517_create_refund_request.sql"); Child="refund_request"; Column="user_id"; Ref="user"},
-    @{Files=@("init.sql", "20260517_create_refund_request.sql"); Child="refund_request"; Column="reviewer_id"; Ref="user"},
-    @{Files=@("init.sql"); Child="notification"; Column="user_id"; Ref="user"},
-    @{Files=@("init.sql"); Child="notification"; Column="order_id"; Ref="order"},
-    @{Files=@("init.sql"); Child="stock_log"; Column="order_id"; Ref="order"},
-    @{Files=@("init.sql"); Child="review"; Column="user_id"; Ref="user"},
-    @{Files=@("init.sql"); Child="review"; Column="order_id"; Ref="order"},
-    @{Files=@("init.sql"); Child="moment"; Column="user_id"; Ref="user"}
+    @{Files=@("sql/migrations/shared/20260518_create_venue_application.sql"); Child="venue_application"; Column="applicant_id"; Ref="user"},
+    @{Files=@("sql/migrations/shared/20260518_create_venue_application.sql"); Child="venue_application"; Column="reviewer_id"; Ref="user"},
+    @{Files=@("sql/migrations/shared/20260517_create_refund_request.sql"); Child="refund_request"; Column="order_id"; Ref="order"},
+    @{Files=@("sql/migrations/shared/20260517_create_refund_request.sql"); Child="refund_request"; Column="user_id"; Ref="user"},
+    @{Files=@("sql/migrations/shared/20260517_create_refund_request.sql"); Child="refund_request"; Column="reviewer_id"; Ref="user"},
+    @{Files=@("sql/migrations/shared/20260518_create_order_seat.sql"); Child="order_seat"; Column="session_seat_id"; Ref="session_seat"},
+    @{Files=@("sql/migrations/shared/20260518_create_session_seat.sql"); Child="session_seat"; Column="order_id"; Ref="order"}
 )
 
 foreach ($entry in $knownEntries) {
@@ -60,9 +48,9 @@ foreach ($entry in $knownEntries) {
     }
 }
 
-# --- Scan all SQL files ---
+# --- Scan all SQL files (recursive) ---
 $sqlDir = Join-Path -Path $repoRoot -ChildPath "sql"
-$sqlFiles = Get-ChildItem -Path $sqlDir -Filter "*.sql" | Sort-Object Name
+$sqlFiles = Get-ChildItem -Path $sqlDir -Filter "*.sql" -Recurse | Sort-Object FullName
 
 $allFks = @()        # Array of discovered FK objects
 $unknownCrossOwners = @()
@@ -70,7 +58,7 @@ $unclassifiedTables = @{}
 $exitCode = 0
 
 foreach ($sqlFile in $sqlFiles) {
-    $relPath = "sql/$($sqlFile.Name)"
+    $relPath = $sqlFile.FullName.Substring($repoRoot.Length + 1).Replace("\", "/")
     $lines = Get-Content -Path $sqlFile.FullName
     $currentTable = $null
     $inCreateBlock = $false

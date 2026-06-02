@@ -458,8 +458,8 @@ psql -h localhost -p 5432 -U postgres -d postgres -t -A -c "SELECT datname, appl
 
 ## 生产物理拆库资产
 
-- 已批准设计：`docs/superpowers/specs/2026-05-20-production-physical-db-split-design.md`
-- 实施计划：`docs/superpowers/plans/2026-05-20-production-physical-db-split-implementation.md`
+- 已批准设计：`docs/operations/2026-05-20-production-physical-db-split-design.md`
+- 实施计划：`docs/operations/2026-05-20-production-physical-db-split-implementation.md`
 - Cutover checklist：`docs/operations/production-db-split-cutover-checklist.md`
 - Manifest：`sql/production-split/manifest.json`
 - 导出脚本：`scripts/export-production-split.ps1`

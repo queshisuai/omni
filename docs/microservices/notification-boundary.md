@@ -31,7 +31,7 @@
 
 ## Local-Only / Runtime-Only Constraints
 
-- `sql/init.sql` contains `notification.user_id -> "user"(id)` and `notification.order_id -> "order"(id)` as schema-level foreign keys.
+- Baseline shared migrations contain `notification.user_id -> "user"(id)` and `notification.order_id -> "order"(id)` as schema-level foreign keys.
 - These are shared-database deployment constraints, not runtime code dependencies.
 - Before schema isolation, these FKs should be replaced with copied-id-only columns.
 - The copied-id-only design is already reflected in the production code.
