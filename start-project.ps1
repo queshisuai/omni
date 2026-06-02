@@ -12,7 +12,67 @@ $ErrorActionPreference = "Continue"
 $projectRoot = $PSScriptRoot
 if (-not $projectRoot) { $projectRoot = Get-Location }
 
-$nacosHome = if (Test-Path "C:\nacos") { "C:\nacos" } elseif (Test-Path "D:\nacos") { "D:\nacos" } else { $null }
+function Find-NacosHome {
+    param([string[]]$SearchRoots = @("C:\", "D:\"))
+
+    # 1. 优先读取环境变量 NACOS_HOME
+    $envHome = [Environment]::GetEnvironmentVariable("NACOS_HOME", "User")
+    if (-not $envHome) { $envHome = [Environment]::GetEnvironmentVariable("NACOS_HOME", "Machine") }
+    if ($envHome -and (Test-Path "$envHome\bin\startup.cmd")) {
+        Write-Host "[Nacos] Found via NACOS_HOME: $envHome" -ForegroundColor Green
+        return $envHome
+    }
+
+    # 2. 检查常见安装路径
+    $commonPaths = @(
+        "C:\nacos",
+        "D:\nacos",
+        "D:\Development-Environment\nacos",
+        "C:\Program Files\nacos",
+        "$env:USERPROFILE\nacos",
+        "$env:USERPROFILE\Downloads\nacos"
+    )
+    foreach ($p in $commonPaths) {
+        if (Test-Path "$p\bin\startup.cmd") {
+            Write-Host "[Nacos] Found at: $p" -ForegroundColor Green
+            return $p
+        }
+    }
+
+    # 3. 自动扫描磁盘根目录及一级子目录（深度可控）
+    foreach ($root in $SearchRoots) {
+        if (-not (Test-Path $root)) { continue }
+        $found = Get-ChildItem -Path $root -Directory -Depth 0 -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq "nacos" } |
+            Select-Object -First 1
+        if ($found) {
+            $p = $found.FullName
+            if (Test-Path "$p\bin\startup.cmd") {
+                Write-Host "[Nacos] Found at: $p" -ForegroundColor Green
+                return $p
+            }
+        }
+    }
+
+    # 4. 深层扫描（最多两级子目录，覆盖常见嵌套场景）
+    foreach ($root in $SearchRoots) {
+        if (-not (Test-Path $root)) { continue }
+        $found = Get-ChildItem -Path $root -Directory -Depth 2 -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -eq "nacos" } |
+            Select-Object -First 1
+        if ($found) {
+            $p = $found.FullName
+            if (Test-Path "$p\bin\startup.cmd") {
+                Write-Host "[Nacos] Found at: $p" -ForegroundColor Green
+                return $p
+            }
+        }
+    }
+
+    return $null
+}
+
+$nacosHome = Find-NacosHome
 
 function Write-Step {
     param([string]$Message)
