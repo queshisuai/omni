@@ -87,7 +87,7 @@ export interface PrivateAssetVO {
   createTime?: string | null
 }
 
-export type UserRole = 'user' | 'organizer' | 'admin' | 'support'
+export type UserRole = 'user' | 'organizer' | 'admin' | 'support' | 'organizer_admin'
 export type OrganizerApplicationStatus = 0 | 1 | 2
 export type OrganizerStatus = 0 | 1 | 2 | 3
 export type SubjectType = 'personal' | 'enterprise'
@@ -726,9 +726,61 @@ export interface SupportAccountVO {
   phone: string
   nickname: string | null
   role: 'support'
+  supportRole?: 'support_manager' | 'support_agent' | string | null
   status: number
   createTime?: string | null
   updateTime?: string | null
+}
+
+export interface RbacRoleVO {
+  code: string
+  name: string
+  status: number
+  permissionCodes: string[]
+}
+
+export interface RbacPermissionVO {
+  code: string
+  name: string
+  description?: string | null
+}
+
+export interface OrganizerAdminAccountVO {
+  id: number
+  phone: string
+  nickname: string | null
+  role: 'organizer_admin'
+  status: number
+  createTime?: string | null
+  updateTime?: string | null
+}
+
+export interface ExceptionTaskVO {
+  id: number
+  taskType: string
+  businessNo?: string | null
+  orderNo?: string | null
+  paymentNo?: string | null
+  refundNo?: string | null
+  ticketNo?: string | null
+  severity: string
+  status: string
+  reason?: string | null
+  result?: string | null
+  operatorId?: number | null
+  operatorRole?: string | null
+  traceId?: string | null
+  createTime?: string | null
+}
+
+export interface ReconciliationBatchVO {
+  id: number
+  batchNo: string
+  bizDate: string
+  sourceType: string
+  status: string
+  summaryJson?: string | null
+  createTime?: string | null
 }
 
 export interface TourEntity {

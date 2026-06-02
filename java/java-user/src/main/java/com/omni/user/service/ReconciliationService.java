@@ -9,7 +9,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ReconciliationService {
@@ -33,6 +35,13 @@ public class ReconciliationService {
         batch.setUpdateTime(LocalDateTime.now());
         batchMapper.insert(batch);
         return toResponse(batch);
+    }
+
+    public List<ReconciliationBatchResponse> listBatches() {
+        List<ReconciliationBatch> batches = batchMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ReconciliationBatch>()
+                .orderByDesc(ReconciliationBatch::getBizDate)
+                .orderByDesc(ReconciliationBatch::getId));
+        return batches.stream().map(this::toResponse).collect(Collectors.toList());
     }
 
     private ReconciliationBatchResponse toResponse(ReconciliationBatch batch) {

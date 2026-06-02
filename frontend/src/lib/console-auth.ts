@@ -6,6 +6,8 @@ const PATH_PERMISSION_MAP: Record<string, string[]> = {
   '/console/risk-resolutions': ['risk.review'],
   '/console/risk-cases': ['risk.view'],
   '/console/organizer-applications': ['organizer.review'],
+  '/console/organizer-admins': ['organizer.account.manage'],
+  '/console/roles': ['rbac.manage'],
   '/console/activities': ['activity.manage'],
   '/console/tours': ['tour.manage'],
   '/console/sessions': ['session.manage'],
@@ -17,6 +19,11 @@ const PATH_PERMISSION_MAP: Record<string, string[]> = {
   '/console/exception-tasks': ['compensation.execute'],
   '/console/reconciliation': ['reconcile.view'],
 }
+
+const SUPPORT_CONSOLE_PERMISSIONS = [
+  'support.account.manage',
+  'support.conversation.view',
+]
 
 function getPathPermission(pathname: string): string[] {
   if (pathname === '/console' || pathname === '/console/profile') return ['*']
@@ -37,4 +44,10 @@ export function canAccessConsolePath(pathname: string, permissionCodes: string[]
 
 export function canUseConsoleAction(action: string, permissionCodes: string[]): boolean {
   return permissionCodes.includes(action)
+}
+
+export function canEnterConsole(role: string | null | undefined, permissionCodes: string[] = []): boolean {
+  if (role === 'admin' || role === 'organizer' || role === 'organizer_admin') return true
+  if (role !== 'support') return false
+  return SUPPORT_CONSOLE_PERMISSIONS.some(permission => permissionCodes.includes(permission))
 }

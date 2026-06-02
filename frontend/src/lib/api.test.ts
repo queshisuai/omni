@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, createAlipayQrPay, createWaitlistEntry, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, listActivities, removeTeamGrabMember, updateActivityMarketing } from './api.ts'
+import { ApiError, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, listActivities, listExceptionTasks, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, removeTeamGrabMember, updateActivityMarketing, updateRbacRolePermissions } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -140,7 +140,7 @@ test('updates activity marketing without leaking body user id', async () => {
       discountAmount: 30,
       maxCouponCount: 500,
       perUserLimit: 1,
-    } as any)
+    })
 
     assert.equal(requestedUrl, '/api/ticket/admin/activities/101/marketing')
     assert.equal(requestedMethod, 'PUT')
@@ -171,6 +171,123 @@ test('loads grab operations summary for platform dashboard', async () => {
     assert.equal(requestedUrl, '/api/grab/admin/ops-summary')
     assert.equal(result.failureReasons[0].count, 7)
     assert.equal(result.waitlist.conversionRate, 0.4)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads exception tasks through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: [{ id: 1, taskType: 'abnormal_refund', businessNo: 'RF1', severity: 'high', status: 'pending', reason: '退款结果未知' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await listExceptionTasks()
+
+    assert.equal(requestedUrl, '/api/user/console/exception-tasks')
+    assert.equal(result[0].taskType, 'abnormal_refund')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads and creates reconciliation batches through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: init?.method === 'POST'
+        ? { id: 2, batchNo: 'REC20260602-00000002', bizDate: '2026-06-02', sourceType: 'local', status: 'generated' }
+        : [{ id: 1, batchNo: 'REC20260601-00000001', bizDate: '2026-06-01', sourceType: 'local', status: 'generated' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const batches = await listReconciliationBatches()
+    const created = await createReconciliationBatch('2026-06-02')
+
+    assert.equal(requested[0].url, '/api/user/console/reconciliation/batches')
+    assert.equal(requested[1].url, '/api/user/console/reconciliation/batches')
+    assert.equal(requested[1].method, 'POST')
+    assert.equal(requested[1].body, JSON.stringify({ bizDate: '2026-06-02' }))
+    assert.equal(batches[0].batchNo, 'REC20260601-00000001')
+    assert.equal(created.batchNo, 'REC20260602-00000002')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads and updates rbac roles through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    const url = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: url.endsWith('/rbac/permissions')
+          ? [{ code: 'rbac.manage', name: '角色权限管理', description: '管理后台角色授权' }]
+          : url.includes('/rbac/roles/') && url.endsWith('/permissions')
+            ? undefined
+            : [{ code: 'platform_super_admin', name: '平台超管', status: 1, permissionCodes: ['rbac.manage'] }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const roles = await listRbacRoles()
+    const permissions = await listRbacPermissions()
+    await updateRbacRolePermissions('support_manager', ['support.account.manage'])
+
+    assert.equal(requested[0].url, '/api/user/console/rbac/roles')
+    assert.equal(requested[1].url, '/api/user/console/rbac/permissions')
+    assert.equal(requested[2].url, '/api/user/console/rbac/roles/support_manager/permissions')
+    assert.equal(requested[2].method, 'PUT')
+    assert.equal(requested[2].body, JSON.stringify({ permissionCodes: ['support.account.manage'] }))
+    assert.equal(roles[0].code, 'platform_super_admin')
+    assert.equal(permissions[0].code, 'rbac.manage')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('manages organizer admin accounts through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: init?.method === 'POST'
+        ? { id: 12, phone: '13900000004', nickname: '主办方管理员', role: 'organizer_admin', status: 1 }
+        : [{ id: 11, phone: '13900000003', nickname: '主办方管理员', role: 'organizer_admin', status: 1 }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const accounts = await listOrganizerAdminAccounts()
+    const created = await createOrganizerAdminAccount({ phone: '13900000004', nickname: '主办方管理员', password: 'admin123' })
+    await deactivateOrganizerAdminAccount(11)
+
+    assert.equal(requested[0].url, '/api/user/console/organizer-admins')
+    assert.equal(requested[1].url, '/api/user/console/organizer-admins')
+    assert.equal(requested[1].method, 'POST')
+    assert.equal(requested[1].body, JSON.stringify({ phone: '13900000004', nickname: '主办方管理员', password: 'admin123' }))
+    assert.equal(requested[2].url, '/api/user/console/organizer-admins/11')
+    assert.equal(requested[2].method, 'DELETE')
+    assert.equal(accounts[0].role, 'organizer_admin')
+    assert.equal(created.id, 12)
   } finally {
     globalThis.fetch = originalFetch
   }

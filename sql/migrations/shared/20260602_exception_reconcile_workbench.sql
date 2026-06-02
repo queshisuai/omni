@@ -37,6 +37,17 @@ CREATE TABLE IF NOT EXISTS reconciliation_batch (
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS reconciliation_detail (
+    id BIGSERIAL PRIMARY KEY,
+    batch_no VARCHAR(128) NOT NULL,
+    business_no VARCHAR(128) NOT NULL,
+    business_type VARCHAR(32) NOT NULL,
+    expected_amount NUMERIC(18,2),
+    actual_amount NUMERIC(18,2),
+    status VARCHAR(32) NOT NULL DEFAULT 'matched',
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS reconciliation_difference (
     id BIGSERIAL PRIMARY KEY,
     batch_no VARCHAR(128) NOT NULL,
@@ -56,5 +67,7 @@ CREATE INDEX IF NOT EXISTS idx_exception_task_business_no
     ON exception_task(business_no);
 CREATE INDEX IF NOT EXISTS idx_reconciliation_batch_biz_date
     ON reconciliation_batch(biz_date DESC);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_detail_batch
+    ON reconciliation_detail(batch_no);
 CREATE INDEX IF NOT EXISTS idx_reconciliation_diff_batch
     ON reconciliation_difference(batch_no);

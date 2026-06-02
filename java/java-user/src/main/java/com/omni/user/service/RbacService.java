@@ -5,8 +5,10 @@ import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.user.entity.RbacRolePermission;
+import com.omni.user.entity.SupportAccount;
 import com.omni.user.entity.User;
 import com.omni.user.mapper.RbacRolePermissionMapper;
+import com.omni.user.mapper.SupportAccountMapper;
 import com.omni.user.mapper.UserMapper;
 import org.springframework.stereotype.Service;
 
@@ -17,10 +19,14 @@ import java.util.stream.Collectors;
 public class RbacService {
 
     private final UserMapper userMapper;
+    private final SupportAccountMapper supportAccountMapper;
     private final RbacRolePermissionMapper rbacRolePermissionMapper;
 
-    public RbacService(UserMapper userMapper, RbacRolePermissionMapper rbacRolePermissionMapper) {
+    public RbacService(UserMapper userMapper,
+                       SupportAccountMapper supportAccountMapper,
+                       RbacRolePermissionMapper rbacRolePermissionMapper) {
         this.userMapper = userMapper;
+        this.supportAccountMapper = supportAccountMapper;
         this.rbacRolePermissionMapper = rbacRolePermissionMapper;
     }
 
@@ -29,7 +35,7 @@ public class RbacService {
         if (user == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
-        String effectiveRole = resolveRole(user);
+        String effectiveRole = resolveRole(user, resolveSupportAccount(user));
         List<RbacRolePermission> rolePermissions = rbacRolePermissionMapper.selectList(
                 new LambdaQueryWrapper<RbacRolePermission>().eq(RbacRolePermission::getRoleCode, effectiveRole)
         );
@@ -41,7 +47,7 @@ public class RbacService {
         response.setUserId(userId);
         response.setRole(user.getRole());
         response.setEffectiveRole(effectiveRole);
-        response.setSupportRole(resolveSupportRole(user));
+        response.setSupportRole(resolveSupportRole(effectiveRole));
         response.setPermissionCodes(permissions);
         response.setScopeType(resolveScopeType(effectiveRole));
         response.setScopeId(resolveScopeId(user));
@@ -49,18 +55,35 @@ public class RbacService {
     }
 
     public static String resolveRole(User user) {
+        return resolveRole(user, null);
+    }
+
+    private static String resolveRole(User user, SupportAccount supportAccount) {
         String role = user.getRole();
         if (role == null) return "user";
         switch (role) {
             case "admin": return "platform_super_admin";
-            case "support": return "support_agent";
+            case "support": return resolveSupportAccountRole(supportAccount);
             case "organizer": return "organizer";
             default: return role;
         }
     }
 
-    private static String resolveSupportRole(User user) {
-        String effectiveRole = resolveRole(user);
+    private static String resolveSupportAccountRole(SupportAccount supportAccount) {
+        if (supportAccount != null && supportAccount.getSupportRole() != null) {
+            return supportAccount.getSupportRole();
+        }
+        return "support_agent";
+    }
+
+    private SupportAccount resolveSupportAccount(User user) {
+        if (user == null || !"support".equals(user.getRole())) {
+            return null;
+        }
+        return supportAccountMapper.selectById(user.getId());
+    }
+
+    private static String resolveSupportRole(String effectiveRole) {
         if (effectiveRole.startsWith("support_")) {
             return effectiveRole;
         }
@@ -69,17 +92,18 @@ public class RbacService {
 
     private static String resolveScopeType(String effectiveRole) {
         switch (effectiveRole) {
-            case "organizer_admin": return "organizer";
             case "platform_super_admin":
+            case "organizer_admin":
             case "support_manager":
             case "support_agent": return "platform";
+            case "organizer": return "organizer";
             default: return null;
         }
     }
 
     private static Long resolveScopeId(User user) {
         String effectiveRole = resolveRole(user);
-        if ("organizer_admin".equals(effectiveRole)) {
+        if ("organizer".equals(effectiveRole)) {
             return user.getId();
         }
         return null;

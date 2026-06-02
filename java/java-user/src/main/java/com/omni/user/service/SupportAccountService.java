@@ -79,6 +79,7 @@ public class SupportAccountService {
             auditWrite(operatorId, "support.account.create", "phone", phone, "手机号已存在", false);
             throw new BusinessException(ResultCode.CONFLICT, "该手机号已存在");
         }
+        String supportRole = normalizeSupportRole(request.getSupportRole(), "support_agent");
         User user = new User();
         user.setPhone(phone);
         user.setNickname(nickname);
@@ -86,10 +87,6 @@ public class SupportAccountService {
         user.setRole(ROLE_SUPPORT);
         user.setStatus(1);
         userMapper.insert(user);
-        String supportRole = request.getSupportRole();
-        if (supportRole == null) {
-            supportRole = "support_agent";
-        }
         SupportAccount account = new SupportAccount();
         account.setUserId(user.getId());
         account.setPhone(phone);
@@ -149,6 +146,7 @@ public class SupportAccountService {
         }
         account.setPhone(phone);
         account.setNickname(nickname);
+        account.setSupportRole(normalizeSupportRole(request.getSupportRole(), account.getSupportRole()));
         account.setStatus(status);
         account.setUpdateTime(LocalDateTime.now());
         userMapper.updateById(user);
@@ -218,6 +216,8 @@ public class SupportAccountService {
         try {
             OperationAuditWriteRequest req = new OperationAuditWriteRequest();
             req.setOperatorId(operatorId);
+            InternalAuthContextResponse auth = rbacService.getInternalAuthContext(operatorId);
+            req.setOperatorRole(auth.getEffectiveRole() == null ? "unknown" : auth.getEffectiveRole());
             req.setAction(action);
             req.setTargetType("support_account");
             req.setTargetRef(targetRef);
@@ -236,5 +236,14 @@ public class SupportAccountService {
         if (!StringUtils.hasText(value)) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeSupportRole(String value, String fallback) {
+        String role = trimToNull(value);
+        if (role == null) return fallback == null ? "support_agent" : fallback;
+        if ("support_manager".equals(role) || "support_agent".equals(role)) {
+            return role;
+        }
+        throw new BusinessException(ResultCode.BAD_REQUEST, "客服业务角色不正确");
     }
 }

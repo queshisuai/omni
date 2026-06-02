@@ -33,6 +33,7 @@ INSERT INTO rbac_role (code, name) VALUES
     ('platform_super_admin', '平台超管'),
     ('support_manager', '客服主管'),
     ('support_agent', '普通客服'),
+    ('organizer', '主办方'),
     ('organizer_admin', '主办方管理员')
 ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, update_time = CURRENT_TIMESTAMP;
 
@@ -46,6 +47,8 @@ INSERT INTO rbac_permission (code, name) VALUES
     ('risk.review', '风险审核'),
     ('risk.view', '风险查看'),
     ('organizer.review', '入驻审核'),
+    ('organizer.account.manage', '主办方账号管理'),
+    ('rbac.manage', '角色权限管理'),
     ('activity.manage', '活动管理'),
     ('tour.manage', '巡演管理'),
     ('session.manage', '场次管理'),
@@ -70,6 +73,21 @@ INSERT INTO rbac_role_permission (role_code, permission_code) VALUES
     ('support_agent', 'support.conversation.view')
 ON CONFLICT DO NOTHING;
 
+INSERT INTO rbac_role_permission (role_code, permission_code) VALUES
+    ('organizer', 'activity.manage'),
+    ('organizer', 'tour.manage'),
+    ('organizer', 'session.manage'),
+    ('organizer', 'artist.manage'),
+    ('organizer', 'order.view'),
+    ('organizer', 'refund.review'),
+    ('organizer', 'venue.manage'),
+    ('organizer', 'risk.view')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO rbac_role_permission (role_code, permission_code) VALUES
+    ('organizer_admin', 'organizer.account.manage')
+ON CONFLICT DO NOTHING;
+
 -- 创建职位对应账号（密码均为 123456，仅用于开发/测试环境）
 INSERT INTO "user" (role, phone, nickname, password, status) VALUES
     ('admin', '13900000001', '平台超管', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
@@ -82,6 +100,10 @@ ON CONFLICT (phone) DO NOTHING;
 INSERT INTO "user" (role, phone, nickname, password, status) VALUES
     ('organizer_admin', '13900000003', '主办方管理员', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
 ON CONFLICT (phone) DO NOTHING;
+
+UPDATE "user"
+SET role = 'organizer_admin', update_time = CURRENT_TIMESTAMP
+WHERE phone = '13900000003' AND role = 'organizer';
 
 INSERT INTO support_account (user_id, phone, nickname, status, support_role)
 SELECT u.id, u.phone, u.nickname, 1, 'support_manager'

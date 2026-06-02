@@ -119,18 +119,39 @@ class SupportAccountServiceTest {
 
         SupportAccountRequest request = request("13900000004", "客服四号", "newpass123");
         request.setStatus(1);
+        request.setSupportRole("support_manager");
         SupportAccountResponse response = service.update(1L, 3L, request);
 
         assertEquals("13900000004", response.getPhone());
         assertEquals("客服四号", response.getNickname());
+        assertEquals("support_manager", response.getSupportRole());
         assertEquals(1, response.getStatus());
         assertEquals("13900000004", support.getPhone());
         assertEquals("客服四号", support.getNickname());
         assertEquals("encoded-newpass123", support.getPassword());
         assertEquals("13900000004", account.getPhone());
         assertEquals("客服四号", account.getNickname());
+        assertEquals("support_manager", account.getSupportRole());
         verify(userMapper).updateById(support);
         verify(supportAccountMapper).updateById(account);
+    }
+
+    @Test
+    void rejectsUnknownSupportRoleWhenCreatingSupportAccount() {
+        when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
+        when(rbacService.getInternalAuthContext(1L)).thenReturn(authContextWithPermission("support.account.manage"));
+
+        SupportAccountRequest request = request("13900000002", "客服一号", "support123");
+        request.setSupportRole("support_admin");
+
+        BusinessException error = assertThrows(
+                BusinessException.class,
+                () -> service.create(1L, request)
+        );
+
+        assertEquals("客服业务角色不正确", error.getMessage());
+        verify(userMapper, never()).insert(any());
+        verify(supportAccountMapper, never()).insert(any());
     }
 
     @Test

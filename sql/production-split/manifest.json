@@ -6,7 +6,7 @@
       "key": "user",
       "targetInstance": "pg-user",
       "targetDatabase": "omni_user",
-      "tables": ["user", "user_auth", "sms_code", "organizer_application", "user_asset", "user_attendee", "privacy_audit_log", "support_account", "support_conversation", "support_message", "user_browse_history", "rbac_role", "rbac_permission", "rbac_role_permission", "operation_audit_log", "exception_task", "exception_task_evidence", "reconciliation_batch", "reconciliation_difference"],
+      "tables": ["user", "user_auth", "sms_code", "organizer_application", "user_asset", "user_attendee", "privacy_audit_log", "support_account", "support_conversation", "support_message", "user_browse_history", "rbac_role", "rbac_permission", "rbac_role_permission", "operation_audit_log", "exception_task", "exception_task_evidence", "reconciliation_batch", "reconciliation_detail", "reconciliation_difference"],
       "migrations": ["user/20260530_user_attendee.sql", "user/20260601_privacy_audit_log.sql", "user/20260601_support_account.sql", "user/20260601_support_center.sql", "user/20260601_support_close_requested.sql", "user/20260601_user_browse_history.sql", "user/20260602_support_workbench_sla.sql", "user/20260602_rbac_permission_base.sql", "user/20260602_operation_audit_log.sql", "user/20260602_exception_reconcile_workbench.sql"]
     },
     {

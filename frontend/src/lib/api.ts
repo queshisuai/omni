@@ -387,14 +387,14 @@ export async function listSupportAccounts() {
   return request<import('@/types/api').SupportAccountVO[]>('/api/user/support/admin/accounts')
 }
 
-export async function createSupportAccount(params: { phone: string; nickname: string; password: string }) {
+export async function createSupportAccount(params: { phone: string; nickname: string; password: string; supportRole?: string }) {
   return request<import('@/types/api').SupportAccountVO>('/api/user/support/admin/accounts', {
     method: 'POST',
     body: JSON.stringify(params),
   })
 }
 
-export async function updateSupportAccount(id: number, params: { phone: string; nickname: string; password?: string; status?: number }) {
+export async function updateSupportAccount(id: number, params: { phone: string; nickname: string; password?: string; status?: number; supportRole?: string }) {
   assertPositiveInteger(id, '客服账号ID')
   return request<import('@/types/api').SupportAccountVO>(`/api/user/support/admin/accounts/${id}`, {
     method: 'PUT',
@@ -405,6 +405,55 @@ export async function updateSupportAccount(id: number, params: { phone: string; 
 export async function deactivateSupportAccount(id: number) {
   assertPositiveInteger(id, '客服账号ID')
   return request<import('@/types/api').SupportAccountVO>(`/api/user/support/admin/accounts/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function listExceptionTasks(status?: string) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : ''
+  return request<import('@/types/api').ExceptionTaskVO[]>(`/api/user/console/exception-tasks${qs}`)
+}
+
+export async function listReconciliationBatches() {
+  return request<import('@/types/api').ReconciliationBatchVO[]>('/api/user/console/reconciliation/batches')
+}
+
+export async function createReconciliationBatch(bizDate: string) {
+  return request<import('@/types/api').ReconciliationBatchVO>('/api/user/console/reconciliation/batches', {
+    method: 'POST',
+    body: JSON.stringify({ bizDate }),
+  })
+}
+
+export async function listRbacRoles() {
+  return request<import('@/types/api').RbacRoleVO[]>('/api/user/console/rbac/roles')
+}
+
+export async function listRbacPermissions() {
+  return request<import('@/types/api').RbacPermissionVO[]>('/api/user/console/rbac/permissions')
+}
+
+export async function updateRbacRolePermissions(roleCode: string, permissionCodes: string[]) {
+  return request<void>(`/api/user/console/rbac/roles/${encodeURIComponent(roleCode)}/permissions`, {
+    method: 'PUT',
+    body: JSON.stringify({ permissionCodes }),
+  })
+}
+
+export async function listOrganizerAdminAccounts() {
+  return request<import('@/types/api').OrganizerAdminAccountVO[]>('/api/user/console/organizer-admins')
+}
+
+export async function createOrganizerAdminAccount(params: { phone: string; nickname: string; password: string }) {
+  return request<import('@/types/api').OrganizerAdminAccountVO>('/api/user/console/organizer-admins', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function deactivateOrganizerAdminAccount(id: number) {
+  assertPositiveInteger(id, '主办方管理员账号ID')
+  return request<import('@/types/api').OrganizerAdminAccountVO>(`/api/user/console/organizer-admins/${id}`, {
     method: 'DELETE',
   })
 }

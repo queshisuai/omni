@@ -5,9 +5,9 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
-import { canAccessConsolePath, canUseConsoleAction } from '@/lib/console-auth'
+import { canAccessConsolePath, canEnterConsole } from '@/lib/console-auth'
 import { isConsolePathAllowedForRole } from '@/lib/console-paths'
-import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones, ShieldAlert, FileSearch } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones, ShieldAlert, FileSearch, ShieldCheck } from 'lucide-react'
 
 const menuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
@@ -26,6 +26,8 @@ const menuItems = [
   { href: '/console/organizer-applications', label: '入驻审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/support-accounts', label: '客服账号管理', icon: Headphones, roles: ['admin'] },
   { href: '/console/support-conversations', label: '客服会话记录', icon: Headphones, roles: ['admin'] },
+  { href: '/console/roles', label: '角色权限', icon: ShieldCheck, roles: ['admin'] },
+  { href: '/console/organizer-admins', label: '主办方管理员', icon: Users, roles: ['admin'] },
   { href: '/console/exception-tasks', label: '异常任务', icon: ShieldAlert, roles: ['admin'] },
   { href: '/console/reconciliation', label: '日结对账', icon: FileSearch, roles: ['admin'] },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
@@ -91,17 +93,18 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       try {
         const latest = await getUserInfo()
         if (!active) return
-        if (latest.role !== 'admin' && latest.role !== 'organizer') {
+        const latestPermissions = latest.permissionCodes || []
+        if (!canEnterConsole(latest.role, latestPermissions)) {
           router.push('/')
           return
         }
-        updateStoredUser({ nickname: latest.nickname, role: latest.role, permissionCodes: latest.permissionCodes })
+        updateStoredUser({ nickname: latest.nickname, role: latest.role, permissionCodes: latestPermissions })
         setNickname(latest.nickname || latest.phone || '')
         setAvatar(latest.avatar || '')
         setRole(latest.role)
-        setPermissionCodes(latest.permissionCodes || [])
-        if (latest.permissionCodes && latest.permissionCodes.length > 0) {
-          if (!canAccessConsolePath(pathname, latest.permissionCodes)) {
+        setPermissionCodes(latestPermissions)
+        if (latestPermissions.length > 0) {
+          if (!canAccessConsolePath(pathname, latestPermissions)) {
             setRedirecting(true)
             router.replace('/console')
             return
@@ -113,13 +116,21 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         }
       } catch {
         if (!active) return
-        if (!cached || (cached.role !== 'admin' && cached.role !== 'organizer')) {
+        const cachedPermissions = cached?.permissionCodes || []
+        if (!cached || !canEnterConsole(cached.role, cachedPermissions)) {
           router.push('/')
           return
         }
         setNickname(cached.nickname || cached.phone || '')
         setRole(cached.role || '')
-        if (!isConsolePathAllowedForRole(cached.role, pathname)) {
+        setPermissionCodes(cachedPermissions)
+        if (cachedPermissions.length > 0) {
+          if (!canAccessConsolePath(pathname, cachedPermissions)) {
+            setRedirecting(true)
+            router.replace('/console')
+            return
+          }
+        } else if (!isConsolePathAllowedForRole(cached.role, pathname)) {
           setRedirecting(true)
           router.replace('/console')
           return
@@ -135,8 +146,8 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 
   const handleLogout = () => logout()
   const roleReady = !checking && Boolean(role)
-  const brandLabel = roleReady ? role === 'admin' ? '平台后台' : '主办方后台' : '后台'
-  const roleLabel = roleReady ? role === 'admin' ? '平台管理员' : '主办方' : '校验中'
+  const brandLabel = roleReady ? role === 'admin' ? '平台后台' : role === 'support' ? '客服后台' : role === 'organizer_admin' ? '主办方管理后台' : '主办方后台' : '后台'
+  const roleLabel = roleReady ? role === 'admin' ? '平台管理员' : role === 'support' ? '客服人员' : role === 'organizer_admin' ? '主办方管理员' : '主办方' : '校验中'
 
   return (
     <div className="min-h-screen bg-gray-50 flex font-sans">

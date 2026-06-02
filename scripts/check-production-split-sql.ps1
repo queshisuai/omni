@@ -93,6 +93,7 @@ $schemaColumns = @{
     "exception_task" = New-ColumnSet @("id", "task_type", "business_no", "order_no", "payment_no", "refund_no", "ticket_no", "severity", "status", "reason", "result", "operator_id", "operator_role", "trace_id", "create_time", "update_time")
     "exception_task_evidence" = New-ColumnSet @("id", "exception_id", "url", "create_time")
     "reconciliation_batch" = New-ColumnSet @("id", "batch_no", "biz_date", "source_type", "status", "summary_json", "create_time", "update_time")
+    "reconciliation_detail" = New-ColumnSet @("id", "batch_no", "business_no", "business_type", "expected_amount", "actual_amount", "status", "create_time")
     "reconciliation_difference" = New-ColumnSet @("id", "batch_no", "diff_type", "business_no", "expected_amount", "actual_amount", "diff_amount", "reason", "status", "create_time")
     "refund_request" = New-ColumnSet @("id", "payment_id", "quantity", "order_seat_ids", "refund_type")
     "reservation" = New-ColumnSet @("id", "session_id")

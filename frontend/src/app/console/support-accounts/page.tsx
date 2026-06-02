@@ -5,8 +5,20 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Check, Headphones, MessageSquareText, Pencil, Plus, ShieldOff, X } from 'lucide-react'
 import { createSupportAccount, deactivateSupportAccount, getUserInfo, listSupportAccounts, updateSupportAccount } from '@/lib/api'
+import { canUseConsoleAction } from '@/lib/console-auth'
 import { getSupportConversationRecordsHref } from '@/lib/support-tools'
 import type { SupportAccountVO } from '@/types/api'
+
+type SupportRole = 'support_manager' | 'support_agent'
+
+const supportRoleOptions: Array<{ value: SupportRole; label: string }> = [
+  { value: 'support_agent', label: '普通客服' },
+  { value: 'support_manager', label: '客服主管' },
+]
+
+function formatSupportRole(role: string | null | undefined) {
+  return supportRoleOptions.find(option => option.value === role)?.label || '普通客服'
+}
 
 export default function SupportAccountsPage() {
   const router = useRouter()
@@ -15,9 +27,9 @@ export default function SupportAccountsPage() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ phone: '', nickname: '', password: '' })
+  const [form, setForm] = useState<{ phone: string; nickname: string; password: string; supportRole: SupportRole }>({ phone: '', nickname: '', password: '', supportRole: 'support_agent' })
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [editForm, setEditForm] = useState({ phone: '', nickname: '', password: '', status: 1 })
+  const [editForm, setEditForm] = useState<{ phone: string; nickname: string; password: string; status: number; supportRole: SupportRole }>({ phone: '', nickname: '', password: '', status: 1, supportRole: 'support_agent' })
 
   const load = async () => {
     const data = await listSupportAccounts()
@@ -27,7 +39,7 @@ export default function SupportAccountsPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (info.role !== 'admin') {
+        if (!canUseConsoleAction('support.account.manage', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }
@@ -50,8 +62,9 @@ export default function SupportAccountsPage() {
         phone: form.phone.trim(),
         nickname: form.nickname.trim(),
         password: form.password.trim(),
+        supportRole: form.supportRole,
       })
-      setForm({ phone: '', nickname: '', password: '' })
+      setForm({ phone: '', nickname: '', password: '', supportRole: 'support_agent' })
       await load()
       setMessage('客服账号已创建')
     } catch (err: unknown) {
@@ -85,12 +98,13 @@ export default function SupportAccountsPage() {
       nickname: account.nickname || '',
       password: '',
       status: account.status,
+      supportRole: account.supportRole === 'support_manager' ? 'support_manager' : 'support_agent',
     })
   }
 
   const cancelEdit = () => {
     setEditingId(null)
-    setEditForm({ phone: '', nickname: '', password: '', status: 1 })
+    setEditForm({ phone: '', nickname: '', password: '', status: 1, supportRole: 'support_agent' })
   }
 
   const saveEdit = async () => {
@@ -108,6 +122,7 @@ export default function SupportAccountsPage() {
         nickname: editForm.nickname.trim(),
         password: editForm.password.trim() || undefined,
         status: editForm.status,
+        supportRole: editForm.supportRole,
       })
       cancelEdit()
       await load()
@@ -147,10 +162,13 @@ export default function SupportAccountsPage() {
           <Plus className="h-4 w-4 text-[#ff1268]" />
           新建人工客服
         </div>
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+        <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_140px_auto]">
           <input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} placeholder="手机号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
           <input value={form.nickname} onChange={event => setForm({ ...form, nickname: event.target.value })} placeholder="客服昵称" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
           <input value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} placeholder="初始密码" type="password" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+          <select value={form.supportRole} onChange={event => setForm({ ...form, supportRole: event.target.value as SupportRole })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
+            {supportRoleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
           <button onClick={submit} disabled={saving} className="h-10 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">创建</button>
         </div>
       </section>
@@ -167,10 +185,13 @@ export default function SupportAccountsPage() {
                   <Headphones className="h-5 w-5" />
                 </div>
                 {editingId === account.id ? (
-                  <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-[150px_150px_150px_110px]">
+                  <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-[150px_150px_150px_120px_110px]">
                     <input value={editForm.phone} onChange={event => setEditForm({ ...editForm, phone: event.target.value })} placeholder="手机号" className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
                     <input value={editForm.nickname} onChange={event => setEditForm({ ...editForm, nickname: event.target.value })} placeholder="客服昵称" className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
                     <input value={editForm.password} onChange={event => setEditForm({ ...editForm, password: event.target.value })} placeholder="新密码（可不填）" type="password" className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+                    <select value={editForm.supportRole} onChange={event => setEditForm({ ...editForm, supportRole: event.target.value as SupportRole })} className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
+                      {supportRoleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
                     <select value={editForm.status} onChange={event => setEditForm({ ...editForm, status: Number(event.target.value) })} className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
                       <option value={1}>启用</option>
                       <option value={0}>停用</option>
@@ -179,7 +200,7 @@ export default function SupportAccountsPage() {
                 ) : (
                   <div className="min-w-0">
                     <div className="truncate text-[14px] font-semibold text-[#111]">{account.nickname || '未命名客服'}</div>
-                    <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {account.status === 1 ? '启用中' : '已停用'}</div>
+                    <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {formatSupportRole(account.supportRole)} · {account.status === 1 ? '启用中' : '已停用'}</div>
                   </div>
                 )}
               </div>

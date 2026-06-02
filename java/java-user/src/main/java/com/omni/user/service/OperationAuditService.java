@@ -19,7 +19,7 @@ public class OperationAuditService {
     public void write(OperationAuditWriteRequest request) {
         OperationAuditLog log = new OperationAuditLog();
         log.setOperatorId(request.getOperatorId());
-        log.setOperatorRole(request.getOperatorRole());
+        log.setOperatorRole(request.getOperatorRole() == null ? "unknown" : request.getOperatorRole());
         log.setAction(request.getAction());
         log.setTargetType(request.getTargetType());
         log.setTargetId(request.getTargetId());
