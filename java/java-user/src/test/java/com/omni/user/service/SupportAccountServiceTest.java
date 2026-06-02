@@ -27,7 +27,8 @@ class SupportAccountServiceTest {
     private final SupportAccountMapper supportAccountMapper = mock(SupportAccountMapper.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final RbacService rbacService = mock(RbacService.class);
-    private final SupportAccountService service = new SupportAccountService(userMapper, supportAccountMapper, passwordEncoder, rbacService);
+    private final OperationAuditService auditService = mock(OperationAuditService.class);
+    private final SupportAccountService service = new SupportAccountService(userMapper, supportAccountMapper, passwordEncoder, rbacService, auditService);
 
     @Test
     void adminCreatesSupportAccountWithSupportRoleAndSupportAccountRow() {
@@ -143,6 +144,24 @@ class SupportAccountServiceTest {
         );
 
         assertEquals("无权限", error.getMessage());
+    }
+
+    @Test
+    void auditWrittenWhenCreateFailsDueToDuplicatePhone() {
+        when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
+        when(rbacService.getInternalAuthContext(1L)).thenReturn(authContextWithPermission("support.account.manage"));
+        when(userMapper.selectOne(any())).thenReturn(new User());
+
+        BusinessException error = assertThrows(
+                BusinessException.class,
+                () -> service.create(1L, request("13900000002", "客服一号", "support123"))
+        );
+
+        assertEquals("该手机号已存在", error.getMessage());
+        verify(auditService).write(org.mockito.ArgumentMatchers.argThat(req ->
+                "support.account.create".equals(req.getAction())
+                        && Boolean.FALSE.equals(req.getSuccess())
+        ));
     }
 
     private InternalAuthContextResponse authContextWithPermission(String permissionCode) {
