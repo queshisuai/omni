@@ -32,7 +32,7 @@ export default function OrganizerAdminsPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (!canUseConsoleAction('organizer.account.manage', info.permissionCodes || [])) {
+        if (info.role !== 'admin' && !canUseConsoleAction('organizer.account.manage', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }

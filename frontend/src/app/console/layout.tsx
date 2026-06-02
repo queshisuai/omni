@@ -23,7 +23,7 @@ const menuItems = [
   { href: '/console/venue', label: '场馆记录', icon: MapPin, roles: ['admin'] },
   { href: '/console/venue/applications', label: '场馆资料审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/station-config-reviews', label: '站点变更审核', icon: GitPullRequestArrow, roles: ['admin'] },
-  { href: '/console/organizer-applications', label: '入驻审核', icon: ClipboardList, roles: ['admin'] },
+  { href: '/console/organizer-applications', label: '主办方管理', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/support-accounts', label: '客服账号管理', icon: Headphones, roles: ['admin'] },
   { href: '/console/support-conversations', label: '客服会话记录', icon: Headphones, roles: ['admin'] },
   { href: '/console/roles', label: '角色权限', icon: ShieldCheck, roles: ['admin'] },
@@ -60,6 +60,9 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const [redirecting, setRedirecting] = useState(false)
   const visibleMenuItems = useMemo(() => {
     if (checking || !role) return []
+    if (role === 'admin') {
+      return menuItems
+    }
     if (permissionCodes.length > 0) {
       return menuItems.filter((item) => {
         return canAccessConsolePath(item.href, permissionCodes)
@@ -104,16 +107,18 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setAvatar(latest.avatar || '')
         setRole(latest.role)
         setPermissionCodes(latestPermissions)
-        if (latestPermissions.length > 0) {
-          if (!canAccessConsolePath(pathname, latestPermissions)) {
+        if (latest.role !== 'admin') {
+          if (latestPermissions.length > 0) {
+            if (!canAccessConsolePath(pathname, latestPermissions)) {
+              setRedirecting(true)
+              router.replace('/console')
+              return
+            }
+          } else if (!isConsolePathAllowedForRole(latest.role, pathname)) {
             setRedirecting(true)
             router.replace('/console')
             return
           }
-        } else if (!isConsolePathAllowedForRole(latest.role, pathname)) {
-          setRedirecting(true)
-          router.replace('/console')
-          return
         }
       } catch {
         if (!active) return
@@ -125,16 +130,18 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setNickname(cached.nickname || cached.phone || '')
         setRole(cached.role || '')
         setPermissionCodes(cachedPermissions)
-        if (cachedPermissions.length > 0) {
-          if (!canAccessConsolePath(pathname, cachedPermissions)) {
+        if (cached.role !== 'admin') {
+          if (cachedPermissions.length > 0) {
+            if (!canAccessConsolePath(pathname, cachedPermissions)) {
+              setRedirecting(true)
+              router.replace('/console')
+              return
+            }
+          } else if (!isConsolePathAllowedForRole(cached.role, pathname)) {
             setRedirecting(true)
             router.replace('/console')
             return
           }
-        } else if (!isConsolePathAllowedForRole(cached.role, pathname)) {
-          setRedirecting(true)
-          router.replace('/console')
-          return
         }
       } finally {
         if (active) setChecking(false)

@@ -39,7 +39,7 @@ export default function SupportAccountsPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (!canUseConsoleAction('support.account.manage', info.permissionCodes || [])) {
+        if (info.role !== 'admin' && !canUseConsoleAction('support.account.manage', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }

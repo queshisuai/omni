@@ -76,7 +76,7 @@ export default function ConsoleRolesPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (!canUseConsoleAction('rbac.manage', info.permissionCodes || [])) {
+        if (info.role !== 'admin' && !canUseConsoleAction('rbac.manage', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }

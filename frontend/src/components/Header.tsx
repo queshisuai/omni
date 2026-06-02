@@ -319,14 +319,6 @@ export function Header() {
                   >
                     我的候补
                   </button>
-                  {role === 'support' && (
-                    <button
-                      onClick={() => { setShowUserDropdown(false); router.push("/support") }}
-                      className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
-                    >
-                      客服工作台
-                    </button>
-                  )}
                   {(role === 'admin' || role === 'organizer') && (
                     <button
                       onClick={() => { setShowUserDropdown(false); router.push("/console") }}

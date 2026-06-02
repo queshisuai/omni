@@ -46,7 +46,7 @@ INSERT INTO rbac_permission (code, name) VALUES
     ('venue.manage', '场馆管理'),
     ('risk.review', '风险审核'),
     ('risk.view', '风险查看'),
-    ('organizer.review', '入驻审核'),
+    ('organizer.review', '主办方管理'),
     ('organizer.account.manage', '主办方账号管理'),
     ('rbac.manage', '角色权限管理'),
     ('activity.manage', '活动管理'),
@@ -90,23 +90,37 @@ ON CONFLICT DO NOTHING;
 
 -- 创建职位对应账号（密码均为 123456，仅用于开发/测试环境）
 INSERT INTO "user" (role, phone, nickname, password, status) VALUES
-    ('admin', '13900000001', '平台超管', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
+    ('admin', '13910000001', '平台超管', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
 ON CONFLICT (phone) DO NOTHING;
 
 INSERT INTO "user" (role, phone, nickname, password, status) VALUES
-    ('support', '13900000002', '客服主管', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
+    ('support', '13910000002', '客服主管', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1),
+    ('support', '13910000003', '普通客服', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
 ON CONFLICT (phone) DO NOTHING;
 
 INSERT INTO "user" (role, phone, nickname, password, status) VALUES
-    ('organizer_admin', '13900000003', '主办方管理员', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
+    ('organizer_admin', '13910000004', '主办方管理员', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
 ON CONFLICT (phone) DO NOTHING;
 
 UPDATE "user"
 SET role = 'organizer_admin', update_time = CURRENT_TIMESTAMP
-WHERE phone = '13900000003' AND role = 'organizer';
+WHERE phone = '13910000004' AND role = 'organizer';
+
+DELETE FROM support_account
+WHERE phone = '13900000002' AND support_role = 'support_manager';
+
+UPDATE "user"
+SET role = 'user', nickname = '观演用户小夏', update_time = CURRENT_TIMESTAMP
+WHERE phone = '13900000002' AND role = 'support';
 
 INSERT INTO support_account (user_id, phone, nickname, status, support_role)
 SELECT u.id, u.phone, u.nickname, 1, 'support_manager'
 FROM "user" u
-WHERE u.phone = '13900000002'
-ON CONFLICT (user_id) DO UPDATE SET support_role = 'support_manager';
+WHERE u.phone = '13910000002'
+ON CONFLICT (user_id) DO UPDATE SET phone = EXCLUDED.phone, nickname = EXCLUDED.nickname, status = EXCLUDED.status, support_role = 'support_manager';
+
+INSERT INTO support_account (user_id, phone, nickname, status, support_role)
+SELECT u.id, u.phone, u.nickname, 1, 'support_agent'
+FROM "user" u
+WHERE u.phone = '13910000003'
+ON CONFLICT (user_id) DO UPDATE SET phone = EXCLUDED.phone, nickname = EXCLUDED.nickname, status = EXCLUDED.status, support_role = 'support_agent';

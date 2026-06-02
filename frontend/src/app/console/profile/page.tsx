@@ -118,7 +118,7 @@ export default function ConsoleProfilePage() {
                 <p className="mt-2 text-sm leading-6 text-[#666]">
                   {role === 'admin'
                     ? '展示管理员账号资料、安全状态与后台管理快捷入口。'
-                    : '展示商户主体资料、入驻审核状态和经营信息。'}
+                    : '展示商户主体资料、主办方状态和经营信息。'}
                 </p>
               </div>
             </div>
@@ -170,7 +170,7 @@ export default function ConsoleProfilePage() {
               <div className="mt-5 grid gap-3">
                 {role === 'admin' ? (
                   <>
-                    <ActionLink href="/console/organizer-applications" title="入驻审核" desc="审核主办方入驻申请" />
+                    <ActionLink href="/console/organizer-applications" title="主办方管理" desc="管理主办方入驻申请" />
                     <ActionLink href="/console/venue" title="场馆记录" desc="创建和维护场馆记录" />
                   </>
                 ) : (
@@ -187,7 +187,7 @@ export default function ConsoleProfilePage() {
               <h3 className="text-[18px] font-semibold text-[#111]">角色说明</h3>
               <p className="mt-3 text-sm leading-6 text-[#666]">
                 {role === 'admin'
-                  ? '管理员可访问所有后台功能，并可进入入驻审核页面处理主办方申请。'
+                  ? '管理员可访问所有后台功能，并可进入主办方管理页面处理主办方申请。'
                   : '主办方可查看自己的商户主体信息和入驻状态，并进入商户后台进行业务管理。'}
               </p>
             </section>

@@ -22,7 +22,7 @@ function statusMeta(status: OrganizerApplicationStatus) {
 }
 
 function organizerStatusMeta(status: OrganizerApplicationVO['organizerStatus']) {
-  if (status === 3) return { text: '已取消资格', color: '#ef4444', bg: '#fef2f2' }
+  if (status === 3) return { text: '已取消主办方', color: '#ef4444', bg: '#fef2f2' }
   if (status === 1) return { text: '主办方有效', color: '#16a34a', bg: '#f0fdf4' }
   if (status === 2) return { text: '认证已拒绝', color: '#ef4444', bg: '#fef2f2' }
   if (status === 0) return { text: '认证待审核', color: '#ff7a00', bg: '#fff7ed' }
@@ -131,7 +131,7 @@ export default function OrganizerApplicationsPage() {
 
   const handleDeactivate = async (item: OrganizerApplicationVO) => {
     if (!user) return
-    const confirmed = await globalConfirm(`取消主办方资格后，${item.organizerName} 将降级为普通用户并无法继续访问后台；其旗下全部活动、场次、票档将下架，并直接为关联已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这批已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意取消资格并同意退款。`)
+    const confirmed = await globalConfirm(`取消主办方后，${item.organizerName} 将降级为普通用户并无法继续访问后台；其旗下全部活动、场次、票档将下架，并直接为关联已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这批已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意取消主办方并同意退款。`)
     if (!confirmed) return
     setSavingId(item.id)
     setError('')
@@ -140,14 +140,14 @@ export default function OrganizerApplicationsPage() {
         userId: user.id,
         organizerId: item.userId,
         confirmRefund: true,
-        reason: '管理员取消主办方资格自动退款',
+        reason: '管理员取消主办方自动退款',
       })
       const abnormalCount = result.refundFailedCount + result.refundUnknownCount + result.refundCompensationRequiredCount
       const summary = `已下架活动 ${result.deactivatedActivityCount} 个，已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
-      await globalAlert(abnormalCount > 0 ? `主办方资格已取消，但部分退款异常。${summary}` : `主办方资格已取消。${summary}`)
+      await globalAlert(abnormalCount > 0 ? `主办方已取消，但部分退款异常。${summary}` : `主办方已取消。${summary}`)
       await loadData(statusFilter)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '取消主办方资格失败')
+      setError(err instanceof Error ? err.message : '取消主办方失败')
     } finally {
       setSavingId(null)
     }
@@ -157,8 +157,8 @@ export default function OrganizerApplicationsPage() {
     <div>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[24px] font-bold text-[#1a1a2e]">入驻审核</h1>
-          <p className="mt-2 text-sm text-[#666]">管理员审核主办方入驻申请，支持通过与驳回。</p>
+          <h1 className="text-[24px] font-bold text-[#1a1a2e]">主办方管理</h1>
+          <p className="mt-2 text-sm text-[#666]">管理员管理主办方入驻申请，支持通过、驳回与取消主办方。</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {STATUS_OPTIONS.map((item) => (
@@ -283,7 +283,7 @@ export default function OrganizerApplicationsPage() {
                       className="inline-flex items-center justify-center gap-2 rounded-full border border-[#f97316] px-4 py-2 text-sm font-medium text-[#f97316] transition-colors hover:bg-[#fff7ed] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <ShieldOff className="h-4 w-4" />
-                      {isCancelled ? '已取消资格' : '取消资格'}
+                      {isCancelled ? '已取消主办方' : '取消主办方'}
                     </button>
                     <div className="text-xs text-[#999]">驳回前请在上方备注框填写原因</div>
                   </div>

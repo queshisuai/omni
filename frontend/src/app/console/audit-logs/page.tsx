@@ -53,7 +53,7 @@ export default function AuditLogsPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (!canUseConsoleAction('audit.view', info.permissionCodes || [])) {
+        if (info.role !== 'admin' && !canUseConsoleAction('audit.view', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }
