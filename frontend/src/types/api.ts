@@ -25,6 +25,7 @@ export interface LoginResponse {
   avatar?: string | null
   token: string
   role: UserRole
+  permissionCodes?: string[]
 }
 
 /** 注册请求 */
@@ -61,6 +62,7 @@ export interface UserInfo {
   role: UserRole
   organizerStatus: OrganizerStatus | null
   organizerName: string | null
+  permissionCodes?: string[]
   createTime: string
   updateTime: string | null
 }

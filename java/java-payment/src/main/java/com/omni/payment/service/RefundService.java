@@ -11,6 +11,7 @@ import com.alipay.api.request.AlipayTradeRefundRequest;
 import com.alipay.api.response.AlipayTradeRefundResponse;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
@@ -599,11 +600,28 @@ public class RefundService {
 
     private void requireReviewPermission(Long reviewerId, OrderInfoResponse order) {
         InternalUserRefResponse reviewer = requireReviewer(reviewerId);
+        requireRefundPermission(reviewerId);
         if (ROLE_ADMIN.equals(reviewer.getRole())) {
             return;
         }
         if (!canOrganizerReview(order, reviewerId)) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权审核该活动退款");
+        }
+    }
+
+    private void requireRefundPermission(Long reviewerId) {
+        try {
+            Result<InternalAuthContextResponse> result = userInternalClient.getAuthContext(reviewerId, internalApiToken);
+            if (result != null && result.getCode() == 200 && result.getData() != null) {
+                InternalAuthContextResponse auth = result.getData();
+                if (!auth.getPermissionCodes().contains("refund.review")) {
+                    throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
+                }
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("RBAC权限查询失败，降级使用角色检查: reviewerId={}", reviewerId, e);
         }
     }
 

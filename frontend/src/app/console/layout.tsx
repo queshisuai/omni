@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
+import { canAccessConsolePath, canUseConsoleAction } from '@/lib/console-auth'
 import { isConsolePathAllowedForRole } from '@/lib/console-paths'
 import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones } from 'lucide-react'
 
@@ -48,17 +49,23 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const [nickname, setNickname] = useState('')
   const [avatar, setAvatar] = useState('')
   const [role, setRole] = useState('')
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [checking, setChecking] = useState(true)
   const [redirecting, setRedirecting] = useState(false)
   const visibleMenuItems = useMemo(() => {
     if (checking || !role) return []
+    if (permissionCodes.length > 0) {
+      return menuItems.filter((item) => {
+        return canAccessConsolePath(item.href, permissionCodes)
+      })
+    }
     if (role === 'organizer') return organizerMenuItems
     return menuItems.filter((item) => {
       if (!('roles' in item) || !item.roles) return true
       return item.roles.includes(role as 'admin' | 'organizer')
     })
-  }, [checking, role])
+  }, [checking, role, permissionCodes])
   const activeMenuHref = useMemo(() => {
     let bestMatch = ''
 
@@ -86,11 +93,18 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           router.push('/')
           return
         }
-        updateStoredUser({ nickname: latest.nickname, role: latest.role })
+        updateStoredUser({ nickname: latest.nickname, role: latest.role, permissionCodes: latest.permissionCodes })
         setNickname(latest.nickname || latest.phone || '')
         setAvatar(latest.avatar || '')
         setRole(latest.role)
-        if (!isConsolePathAllowedForRole(latest.role, pathname)) {
+        setPermissionCodes(latest.permissionCodes || [])
+        if (latest.permissionCodes && latest.permissionCodes.length > 0) {
+          if (!canAccessConsolePath(pathname, latest.permissionCodes)) {
+            setRedirecting(true)
+            router.replace('/console')
+            return
+          }
+        } else if (!isConsolePathAllowedForRole(latest.role, pathname)) {
           setRedirecting(true)
           router.replace('/console')
           return

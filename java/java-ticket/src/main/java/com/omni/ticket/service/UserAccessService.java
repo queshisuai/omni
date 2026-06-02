@@ -1,5 +1,6 @@
 package com.omni.ticket.service;
 
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
@@ -60,6 +61,34 @@ public class UserAccessService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
         }
         return user;
+    }
+
+    public InternalAuthContextResponse requirePermission(Long userId, String permissionCode) {
+        InternalAuthContextResponse auth = getAuthContext(userId);
+        if (!auth.getPermissionCodes().contains(permissionCode)) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
+        }
+        return auth;
+    }
+
+    public InternalAuthContextResponse getAuthContext(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        if (!StringUtils.hasText(internalApiToken)) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "内部接口令牌未配置");
+        }
+        try {
+            Result<InternalAuthContextResponse> result = userInternalClient.getAuthContext(userId, internalApiToken);
+            if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
+                throw new BusinessException(ResultCode.INTERNAL_ERROR, "用户服务无响应");
+            }
+            return result.getData();
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "用户服务无响应");
+        }
     }
 
     public String requireAdminOrOrganizerRole(Long userId) {

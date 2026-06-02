@@ -165,6 +165,7 @@ public class StationConfigVersionService {
     public StationConfigVersionResponse approve(Long versionId, StationConfigVersionReviewRequest request) {
         requireReviewRequest(request);
         userAccessService.requireAdmin(request.getReviewerId());
+        userAccessService.requirePermission(request.getReviewerId(), "station.review");
         StationConfigVersion version = requireVersion(versionId);
         requireStatus(version, STATUS_SUBMITTED, "仅已提交版本可审核通过");
         validateBeforeApprove(version);
@@ -194,6 +195,7 @@ public class StationConfigVersionService {
     public StationConfigVersionResponse reject(Long versionId, StationConfigVersionReviewRequest request) {
         requireReviewRequest(request);
         userAccessService.requireAdmin(request.getReviewerId());
+        userAccessService.requirePermission(request.getReviewerId(), "station.review");
         StationConfigVersion version = requireVersion(versionId);
         requireStatus(version, STATUS_SUBMITTED, "仅已提交版本可驳回");
         LocalDateTime now = LocalDateTime.now();

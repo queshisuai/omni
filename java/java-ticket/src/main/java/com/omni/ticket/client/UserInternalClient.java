@@ -1,5 +1,6 @@
 package com.omni.ticket.client;
 
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.Result;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -13,4 +14,8 @@ public interface UserInternalClient {
     @GetMapping("/api/user/internal/{id}")
     Result<InternalUserRefResponse> getUserRef(@PathVariable("id") Long id,
                                                @RequestHeader("X-Internal-Token") String internalToken);
+
+    @GetMapping("/api/user/internal/auth/context/{id}")
+    Result<InternalAuthContextResponse> getAuthContext(@PathVariable("id") Long id,
+                                                       @RequestHeader("X-Internal-Token") String internalToken);
 }

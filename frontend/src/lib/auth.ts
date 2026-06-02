@@ -13,6 +13,7 @@ interface StoredUser {
   nickname: string | null
   avatar?: string | null
   role?: UserRole
+  permissionCodes?: string[]
 }
 
 export function setToken(token: string) {
