@@ -54,7 +54,7 @@ public class RbacService {
         switch (role) {
             case "admin": return "platform_super_admin";
             case "support": return "support_agent";
-            case "organizer": return "organizer_admin";
+            case "organizer": return "organizer";
             default: return role;
         }
     }

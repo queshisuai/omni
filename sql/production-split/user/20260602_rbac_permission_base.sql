@@ -69,3 +69,22 @@ ON CONFLICT DO NOTHING;
 INSERT INTO rbac_role_permission (role_code, permission_code) VALUES
     ('support_agent', 'support.conversation.view')
 ON CONFLICT DO NOTHING;
+
+-- 创建职位对应账号（密码均为 123456，仅用于开发/测试环境）
+INSERT INTO "user" (role, phone, nickname, password, status) VALUES
+    ('admin', '13900000001', '平台超管', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
+ON CONFLICT (phone) DO NOTHING;
+
+INSERT INTO "user" (role, phone, nickname, password, status) VALUES
+    ('support', '13900000002', '客服主管', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
+ON CONFLICT (phone) DO NOTHING;
+
+INSERT INTO "user" (role, phone, nickname, password, status) VALUES
+    ('organizer_admin', '13900000003', '主办方管理员', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
+ON CONFLICT (phone) DO NOTHING;
+
+INSERT INTO support_account (user_id, phone, nickname, status, support_role)
+SELECT u.id, u.phone, u.nickname, 1, 'support_manager'
+FROM "user" u
+WHERE u.phone = '13900000002'
+ON CONFLICT (user_id) DO UPDATE SET support_role = 'support_manager';
