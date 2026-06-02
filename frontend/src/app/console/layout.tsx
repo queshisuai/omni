@@ -7,7 +7,7 @@ import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
 import { canAccessConsolePath, canUseConsoleAction } from '@/lib/console-auth'
 import { isConsolePathAllowedForRole } from '@/lib/console-paths'
-import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones, ShieldAlert, FileSearch } from 'lucide-react'
 
 const menuItems = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
@@ -26,6 +26,8 @@ const menuItems = [
   { href: '/console/organizer-applications', label: '入驻审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/support-accounts', label: '客服账号管理', icon: Headphones, roles: ['admin'] },
   { href: '/console/support-conversations', label: '客服会话记录', icon: Headphones, roles: ['admin'] },
+  { href: '/console/exception-tasks', label: '异常任务', icon: ShieldAlert, roles: ['admin'] },
+  { href: '/console/reconciliation', label: '日结对账', icon: FileSearch, roles: ['admin'] },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
 ]
 

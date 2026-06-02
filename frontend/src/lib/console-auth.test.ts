@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canAccessConsolePath, canUseConsoleAction } from './console-auth'
+import { canAccessConsolePath, canUseConsoleAction } from './console-auth.ts'
 
 test('support manager can access support pages but not audit pages', () => {
   const permissions = ['support.conversation.view', 'support.account.manage']
