@@ -53,6 +53,14 @@ public class SupportAccountService {
         return accounts.stream().map(this::toResponse).collect(Collectors.toList());
     }
 
+    public List<SupportAccountResponse> listEnabledAgents(Long actorUserId) {
+        requireSupportOrAdmin(actorUserId);
+        List<SupportAccount> accounts = supportAccountMapper.selectList(new LambdaQueryWrapper<SupportAccount>()
+                .eq(SupportAccount::getStatus, 1)
+                .orderByDesc(SupportAccount::getUserId));
+        return accounts.stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
     @Transactional
     public SupportAccountResponse create(Long operatorId, SupportAccountRequest request) {
         requirePermission(operatorId, "support.account.manage");
@@ -236,6 +244,17 @@ public class SupportAccountService {
         if (!StringUtils.hasText(value)) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void requireSupportOrAdmin(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null || Integer.valueOf(0).equals(user.getStatus())
+                || (!ROLE_SUPPORT.equals(user.getRole()) && !"admin".equals(user.getRole()))) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "仅客服或平台管理员可以查看客服账号");
+        }
     }
 
     private String normalizeSupportRole(String value, String fallback) {

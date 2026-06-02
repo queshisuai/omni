@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { SupportConversationVO } from '@/types/api'
-import { buildSupportSubject, canRequestSupportHandoff, filterSupportConversations, formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, getLoginRedirectForRole, getSupportConversationRecordsHref, getSupportQueueTabs, isSupportHelpConversationPath, mergeSupportConversations, pickDefaultUserSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue } from './support-tools.ts'
+import { appendQuickReply, buildCloseRequestMessage, buildSupportSubject, canRequestSupportHandoff, filterSupportConversations, formatSupportAuditAction, formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getLoginRedirectForRole, getSupportConversationRecordsHref, getSupportQueueTabs, getSupportTagOptions, isSupportHelpConversationPath, mergeSupportConversations, pickDefaultUserSupportConversation, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue } from './support-tools.ts'
 
 test('routes support role to support workbench after login', () => {
   assert.equal(getLoginRedirectForRole('support'), '/support')
@@ -143,4 +143,28 @@ test('does not reopen a closed conversation as the default user help session', (
   ] as SupportConversationVO[]
 
   assert.equal(pickDefaultUserSupportConversation(conversations, 2002), null)
+})
+
+test('formats support operation labels and close request copy', () => {
+  assert.equal(formatSupportTagLabel('REFUND'), '退款')
+  assert.equal(formatSupportAuditAction('TRANSFERRED'), '转接客服')
+  assert.equal(buildCloseRequestMessage(' 已解决 '), '人工客服申请结束会话，原因：已解决')
+  assert.equal(buildCloseRequestMessage(''), '人工客服申请结束会话，请确认是否结束。')
+  assert.deepEqual(getSupportTagOptions().map(item => item.value), ['REFUND', 'TICKET', 'ADMISSION', 'ACCOUNT', 'PAYMENT_EXCEPTION'])
+})
+
+test('appends quick replies without dropping existing draft text', () => {
+  assert.equal(appendQuickReply('', '您好，请提供订单号。'), '您好，请提供订单号。')
+  assert.equal(appendQuickReply('先看下订单', '请稍等'), '先看下订单\n请稍等')
+})
+
+test('keeps the active support conversation fresh after list reloads', () => {
+  const conversations = [
+    { id: 1, updateTime: '2026-06-02T10:01:00' },
+    { id: 2, updateTime: '2026-06-02T10:02:00' },
+  ] as SupportConversationVO[]
+
+  assert.equal(pickLatestSupportConversation({ id: 1 } as SupportConversationVO, conversations)?.updateTime, '2026-06-02T10:01:00')
+  assert.equal(pickLatestSupportConversation(null, conversations)?.id, 2)
+  assert.equal(pickLatestSupportConversation({ id: 3 } as SupportConversationVO, conversations)?.id, 2)
 })

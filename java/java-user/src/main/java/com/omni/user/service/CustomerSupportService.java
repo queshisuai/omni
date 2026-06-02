@@ -5,15 +5,31 @@ import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.common.mq.message.NotificationMessage;
 import com.omni.user.mq.NotificationMqProducer;
+import com.omni.user.dto.SupportAuditResponse;
+import com.omni.user.dto.SupportCloseRejectRequest;
+import com.omni.user.dto.SupportCloseRequest;
 import com.omni.user.dto.SupportConversationRequest;
 import com.omni.user.dto.SupportConversationResponse;
 import com.omni.user.dto.SupportMessageRequest;
 import com.omni.user.dto.SupportMessageResponse;
+import com.omni.user.dto.SupportNoteRequest;
+import com.omni.user.dto.SupportNoteResponse;
+import com.omni.user.dto.SupportQuickReplyResponse;
+import com.omni.user.dto.SupportTagUpdateRequest;
+import com.omni.user.dto.SupportTransferRequest;
 import com.omni.user.entity.SupportConversation;
+import com.omni.user.entity.SupportConversationAudit;
+import com.omni.user.entity.SupportConversationNote;
+import com.omni.user.entity.SupportConversationTag;
 import com.omni.user.entity.SupportMessage;
+import com.omni.user.entity.SupportQuickReply;
 import com.omni.user.entity.User;
+import com.omni.user.mapper.SupportConversationAuditMapper;
 import com.omni.user.mapper.SupportConversationMapper;
+import com.omni.user.mapper.SupportConversationNoteMapper;
+import com.omni.user.mapper.SupportConversationTagMapper;
 import com.omni.user.mapper.SupportMessageMapper;
+import com.omni.user.mapper.SupportQuickReplyMapper;
 import com.omni.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +41,8 @@ import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -49,6 +67,10 @@ public class CustomerSupportService {
 
     private final SupportConversationMapper conversationMapper;
     private final SupportMessageMapper messageMapper;
+    private final SupportConversationNoteMapper noteMapper;
+    private final SupportConversationTagMapper tagMapper;
+    private final SupportConversationAuditMapper auditMapper;
+    private final SupportQuickReplyMapper quickReplyMapper;
     private final UserMapper userMapper;
     private final SupportAiService supportAiService;
     private final NotificationMqProducer notificationProducer;
@@ -57,12 +79,20 @@ public class CustomerSupportService {
 
     public CustomerSupportService(SupportConversationMapper conversationMapper,
                                   SupportMessageMapper messageMapper,
+                                  SupportConversationNoteMapper noteMapper,
+                                  SupportConversationTagMapper tagMapper,
+                                  SupportConversationAuditMapper auditMapper,
+                                  SupportQuickReplyMapper quickReplyMapper,
                                   UserMapper userMapper,
                                   SupportAiService supportAiService,
                                   NotificationMqProducer notificationProducer,
                                   @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
+        this.noteMapper = noteMapper;
+        this.tagMapper = tagMapper;
+        this.auditMapper = auditMapper;
+        this.quickReplyMapper = quickReplyMapper;
         this.userMapper = userMapper;
         this.supportAiService = supportAiService;
         this.notificationProducer = notificationProducer;
@@ -185,6 +215,71 @@ public class CustomerSupportService {
                 .collect(Collectors.toList());
     }
 
+    public List<SupportNoteResponse> listNotes(Long actorUserId, Long conversationId) {
+        requireSupportOrAdmin(actorUserId);
+        requireConversation(conversationId);
+        List<SupportConversationNote> notes = noteMapper.selectList(new LambdaQueryWrapper<SupportConversationNote>()
+                .eq(SupportConversationNote::getConversationId, conversationId)
+                .orderByDesc(SupportConversationNote::getCreateTime)
+                .orderByDesc(SupportConversationNote::getId));
+        if (notes == null) {
+            return Collections.emptyList();
+        }
+        return notes.stream().map(this::toNoteResponse).collect(Collectors.toList());
+    }
+
+    @Transactional
+    public SupportNoteResponse addNote(Long actorUserId, Long conversationId, SupportNoteRequest request) {
+        requireSupportOrAdmin(actorUserId);
+        requireConversation(conversationId);
+        String content = request == null ? null : trimToNull(request.getContent());
+        if (content == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "内部备注不能为空");
+        }
+        if (content.length() > 500) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "内部备注不能超过500字");
+        }
+        SupportConversationNote note = new SupportConversationNote();
+        note.setConversationId(conversationId);
+        note.setAuthorUserId(actorUserId);
+        note.setContent(content);
+        note.setCreateTime(LocalDateTime.now());
+        noteMapper.insert(note);
+        return toNoteResponse(note);
+    }
+
+    @Transactional
+    public SupportConversationResponse updateTags(Long actorUserId, Long conversationId, SupportTagUpdateRequest request) {
+        requireSupportOrAdmin(actorUserId);
+        SupportConversation conversation = requireConversation(conversationId);
+        List<String> tags = normalizeTags(request == null ? null : request.getTags());
+        tagMapper.delete(new LambdaQueryWrapper<SupportConversationTag>()
+                .eq(SupportConversationTag::getConversationId, conversationId));
+        for (String code : tags) {
+            SupportConversationTag tag = new SupportConversationTag();
+            tag.setConversationId(conversationId);
+            tag.setTagCode(code);
+            tag.setCreateBy(actorUserId);
+            tag.setCreateTime(LocalDateTime.now());
+            tagMapper.insert(tag);
+        }
+        writeAudit(conversationId, actorUserId, "TAG_UPDATED", conversation.getStatus(), conversation.getStatus(),
+                "更新标签：" + tags.stream().map(this::formatTagLabel).collect(Collectors.joining("、")));
+        return toConversationResponse(conversation, tags);
+    }
+
+    public List<SupportQuickReplyResponse> listQuickReplies(Long actorUserId) {
+        requireSupportOrAdmin(actorUserId);
+        List<SupportQuickReply> replies = quickReplyMapper.selectList(new LambdaQueryWrapper<SupportQuickReply>()
+                .eq(SupportQuickReply::getStatus, 1)
+                .orderByAsc(SupportQuickReply::getSortOrder)
+                .orderByAsc(SupportQuickReply::getId));
+        if (replies == null) {
+            return Collections.emptyList();
+        }
+        return replies.stream().map(this::toQuickReplyResponse).collect(Collectors.toList());
+    }
+
     public void markHelpPresence(Long userId) {
         markHelpPresence(userId, LocalDateTime.now());
     }
@@ -284,16 +379,28 @@ public class CustomerSupportService {
 
     @Transactional
     public SupportConversationResponse close(Long agentUserId, Long conversationId) {
+        return close(agentUserId, conversationId, null);
+    }
+
+    @Transactional
+    public SupportConversationResponse close(Long agentUserId, Long conversationId, SupportCloseRequest request) {
         requireSupportOrAdmin(agentUserId);
         SupportConversation conversation = requireConversation(conversationId);
         if (STATUS_CLOSED.equals(conversation.getStatus())) {
             throw new BusinessException(ResultCode.CONFLICT, "会话已结束");
         }
+        String fromStatus = conversation.getStatus();
+        String reason = trimToNull(request == null ? null : request.getReason());
         conversation.setStatus(STATUS_CLOSE_REQUESTED);
-        conversation.setLastMessage("人工客服申请结束会话，请确认是否结束。");
+        conversation.setCloseRequestReason(reason);
+        conversation.setCloseRequestedBy(agentUserId);
+        conversation.setCloseRequestedAt(LocalDateTime.now());
+        String message = buildCloseRequestMessage(reason);
+        conversation.setLastMessage(message);
         touch(conversation);
         conversationMapper.updateById(conversation);
-        insertMessage(conversation.getId(), agentUserId, "SYSTEM", "人工客服申请结束会话，请确认是否结束。");
+        insertMessage(conversation.getId(), agentUserId, "SYSTEM", message);
+        writeAudit(conversationId, agentUserId, "CLOSE_REQUESTED", fromStatus, STATUS_CLOSE_REQUESTED, message);
         return toConversationResponse(conversation);
     }
 
@@ -309,7 +416,89 @@ public class CustomerSupportService {
         touch(conversation);
         conversationMapper.updateById(conversation);
         insertMessage(conversation.getId(), userId, "SYSTEM", "用户已确认结束会话");
+        writeAudit(conversationId, userId, "CLOSED_CONFIRMED", STATUS_CLOSE_REQUESTED, STATUS_CLOSED, "用户已确认结束会话");
         return toConversationResponse(conversation);
+    }
+
+    @Transactional
+    public SupportConversationResponse rejectClose(Long userId, Long conversationId, SupportCloseRejectRequest request) {
+        SupportConversation conversation = requireOwnerConversation(userId, conversationId);
+        if (!STATUS_CLOSE_REQUESTED.equals(conversation.getStatus())) {
+            throw new BusinessException(ResultCode.CONFLICT, "当前会话未申请结束");
+        }
+        String reason = trimToNull(request == null ? null : request.getReason());
+        String message = reason == null ? "用户拒绝结束会话，继续处理。" : "用户拒绝结束会话，原因：" + reason;
+        conversation.setStatus(STATUS_ASSIGNED);
+        conversation.setLastMessage(message);
+        touch(conversation);
+        conversationMapper.updateById(conversation);
+        insertMessage(conversation.getId(), userId, "SYSTEM", message);
+        writeAudit(conversationId, userId, "CLOSE_REJECTED", STATUS_CLOSE_REQUESTED, STATUS_ASSIGNED, message);
+        return toConversationResponse(conversation);
+    }
+
+    @Transactional
+    public SupportConversationResponse transfer(Long agentUserId, Long conversationId, SupportTransferRequest request) {
+        requireSupportOrAdmin(agentUserId);
+        SupportConversation conversation = requireConversation(conversationId);
+        if (STATUS_CLOSED.equals(conversation.getStatus())) {
+            throw new BusinessException(ResultCode.CONFLICT, "会话已结束");
+        }
+        Long targetAgentId = request == null ? null : request.getTargetAgentId();
+        if (targetAgentId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "转接客服不能为空");
+        }
+        if (targetAgentId.equals(agentUserId)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "不能转接给自己");
+        }
+        requireSupportOrAdmin(targetAgentId);
+        String fromStatus = conversation.getStatus();
+        String reason = trimToNull(request.getReason());
+        String detail = reason == null
+                ? "会话已转接给客服 " + targetAgentId
+                : "会话已转接给客服 " + targetAgentId + "，原因：" + reason;
+        conversation.setAssignedAgentId(targetAgentId);
+        conversation.setSourceType(SOURCE_HUMAN);
+        conversation.setStatus(STATUS_ASSIGNED);
+        conversation.setLastMessage("会话已转接给客服 " + targetAgentId);
+        touch(conversation);
+        conversationMapper.updateById(conversation);
+        insertMessage(conversation.getId(), agentUserId, "SYSTEM", detail);
+        writeAudit(conversationId, agentUserId, "TRANSFERRED", fromStatus, STATUS_ASSIGNED, detail);
+        return toConversationResponse(conversation);
+    }
+
+    @Transactional
+    public SupportConversationResponse escalate(Long agentUserId, Long conversationId, SupportCloseRequest request) {
+        requireSupportOrAdmin(agentUserId);
+        SupportConversation conversation = requireConversation(conversationId);
+        if (STATUS_CLOSED.equals(conversation.getStatus())) {
+            throw new BusinessException(ResultCode.CONFLICT, "会话已结束");
+        }
+        String reason = trimToNull(request == null ? null : request.getReason());
+        conversation.setEscalatedToAdmin(true);
+        conversation.setEscalationReason(reason);
+        conversation.setEscalatedAt(LocalDateTime.now());
+        String detail = reason == null ? "已升级给管理员" : "已升级给管理员，原因：" + reason;
+        conversation.setLastMessage(detail);
+        touch(conversation);
+        conversationMapper.updateById(conversation);
+        insertMessage(conversation.getId(), agentUserId, "SYSTEM", detail);
+        writeAudit(conversationId, agentUserId, "ESCALATED", conversation.getStatus(), conversation.getStatus(), detail);
+        return toConversationResponse(conversation);
+    }
+
+    public List<SupportAuditResponse> listAudits(Long actorUserId, Long conversationId) {
+        requireSupportOrAdmin(actorUserId);
+        requireConversation(conversationId);
+        List<SupportConversationAudit> audits = auditMapper.selectList(new LambdaQueryWrapper<SupportConversationAudit>()
+                .eq(SupportConversationAudit::getConversationId, conversationId)
+                .orderByDesc(SupportConversationAudit::getCreateTime)
+                .orderByDesc(SupportConversationAudit::getId));
+        if (audits == null) {
+            return Collections.emptyList();
+        }
+        return audits.stream().map(this::toAuditResponse).collect(Collectors.toList());
     }
 
     @Scheduled(fixedDelay = 60_000L)
@@ -347,6 +536,7 @@ public class CustomerSupportService {
             touch(conversation, effectiveNow);
             conversationMapper.updateById(conversation);
             insertMessage(conversation.getId(), null, "SYSTEM", AUTO_CLOSE_MESSAGE);
+            writeAudit(conversation.getId(), null, "AUTO_CLOSED", STATUS_ASSIGNED, STATUS_CLOSED, AUTO_CLOSE_MESSAGE);
             closedCount++;
         }
         return closedCount;
@@ -478,6 +668,10 @@ public class CustomerSupportService {
     }
 
     private SupportConversationResponse toConversationResponse(SupportConversation conversation) {
+        return toConversationResponse(conversation, loadConversationTags(conversation.getId()));
+    }
+
+    private SupportConversationResponse toConversationResponse(SupportConversation conversation, List<String> tags) {
         SupportConversationResponse response = new SupportConversationResponse();
         response.setId(conversation.getId());
         response.setUserId(conversation.getUserId());
@@ -498,10 +692,129 @@ public class CustomerSupportService {
         response.setFirstAgentRepliedAt(conversation.getFirstAgentRepliedAt());
         response.setLastUserMessageAt(conversation.getLastUserMessageAt());
         response.setLastAgentMessageAt(conversation.getLastAgentMessageAt());
+        response.setCloseRequestReason(conversation.getCloseRequestReason());
+        response.setCloseRequestedBy(conversation.getCloseRequestedBy());
+        response.setCloseRequestedAt(conversation.getCloseRequestedAt());
+        response.setEscalatedToAdmin(Boolean.TRUE.equals(conversation.getEscalatedToAdmin()));
+        response.setEscalationReason(conversation.getEscalationReason());
+        response.setEscalatedAt(conversation.getEscalatedAt());
+        response.setTags(tags == null ? Collections.emptyList() : tags);
         LocalDateTime now = LocalDateTime.now();
         response.setUserWaitingSeconds(computeUserWaitingSeconds(conversation, now));
         response.setSlaOverdue(isSlaOverdue(conversation, now));
         return response;
+    }
+
+    private List<String> loadConversationTags(Long conversationId) {
+        if (conversationId == null) {
+            return Collections.emptyList();
+        }
+        List<SupportConversationTag> rows = tagMapper.selectList(new LambdaQueryWrapper<SupportConversationTag>()
+                .eq(SupportConversationTag::getConversationId, conversationId));
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return rows.stream()
+                .map(SupportConversationTag::getTagCode)
+                .filter(code -> code != null && !code.isBlank())
+                .collect(Collectors.toList());
+    }
+
+    private List<String> normalizeTags(List<String> tags) {
+        if (tags == null) {
+            return Collections.emptyList();
+        }
+        LinkedHashMap<String, Boolean> normalized = new LinkedHashMap<>();
+        for (String value : tags) {
+            String code = trimToNull(value);
+            if (code == null) {
+                continue;
+            }
+            if (!isKnownTag(code)) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "客服会话标签不正确");
+            }
+            normalized.put(code, true);
+        }
+        return normalized.keySet().stream().collect(Collectors.toList());
+    }
+
+    private boolean isKnownTag(String code) {
+        return "REFUND".equals(code)
+                || "TICKET".equals(code)
+                || "ADMISSION".equals(code)
+                || "ACCOUNT".equals(code)
+                || "PAYMENT_EXCEPTION".equals(code);
+    }
+
+    private String formatTagLabel(String code) {
+        if ("REFUND".equals(code)) return "退款";
+        if ("TICKET".equals(code)) return "票务";
+        if ("ADMISSION".equals(code)) return "入场";
+        if ("ACCOUNT".equals(code)) return "账号";
+        if ("PAYMENT_EXCEPTION".equals(code)) return "支付异常";
+        return code;
+    }
+
+    private String buildCloseRequestMessage(String reason) {
+        return reason == null ? "人工客服申请结束会话，请确认是否结束。" : "人工客服申请结束会话，原因：" + reason;
+    }
+
+    private void writeAudit(Long conversationId, Long actorUserId, String action, String fromStatus, String toStatus, String detail) {
+        SupportConversationAudit audit = new SupportConversationAudit();
+        audit.setConversationId(conversationId);
+        audit.setActorUserId(actorUserId);
+        audit.setAction(action);
+        audit.setFromStatus(fromStatus);
+        audit.setToStatus(toStatus);
+        audit.setDetail(detail);
+        audit.setCreateTime(LocalDateTime.now());
+        auditMapper.insert(audit);
+    }
+
+    private SupportNoteResponse toNoteResponse(SupportConversationNote note) {
+        SupportNoteResponse response = new SupportNoteResponse();
+        response.setId(note.getId());
+        response.setConversationId(note.getConversationId());
+        response.setAuthorUserId(note.getAuthorUserId());
+        response.setAuthorDisplayName(buildUserDisplayName(note.getAuthorUserId()));
+        response.setContent(note.getContent());
+        response.setCreateTime(note.getCreateTime());
+        return response;
+    }
+
+    private SupportAuditResponse toAuditResponse(SupportConversationAudit audit) {
+        SupportAuditResponse response = new SupportAuditResponse();
+        response.setId(audit.getId());
+        response.setConversationId(audit.getConversationId());
+        response.setActorUserId(audit.getActorUserId());
+        response.setActorDisplayName(buildUserDisplayName(audit.getActorUserId()));
+        response.setAction(audit.getAction());
+        response.setFromStatus(audit.getFromStatus());
+        response.setToStatus(audit.getToStatus());
+        response.setDetail(audit.getDetail());
+        response.setCreateTime(audit.getCreateTime());
+        return response;
+    }
+
+    private SupportQuickReplyResponse toQuickReplyResponse(SupportQuickReply reply) {
+        SupportQuickReplyResponse response = new SupportQuickReplyResponse();
+        response.setId(reply.getId());
+        response.setCategory(reply.getCategory());
+        response.setTitle(reply.getTitle());
+        response.setContent(reply.getContent());
+        response.setSortOrder(reply.getSortOrder());
+        return response;
+    }
+
+    private String buildUserDisplayName(Long userId) {
+        if (userId == null) return null;
+        User user = userMapper.selectById(userId);
+        if (user == null) return null;
+        String nickname = trimToNull(user.getNickname());
+        if (nickname != null) return nickname;
+        String phoneMask = maskPhone(user.getPhone());
+        if (phoneMask != null) return phoneMask;
+        return "用户 " + user.getId();
     }
 
     private Long computeUserWaitingSeconds(SupportConversation conversation, LocalDateTime now) {

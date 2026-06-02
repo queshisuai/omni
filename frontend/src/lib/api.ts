@@ -357,6 +357,14 @@ export async function confirmCloseSupportConversation(conversationId: number) {
   })
 }
 
+export async function rejectCloseSupportConversation(conversationId: number, reason?: string) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportConversationVO>(`/api/user/support/conversations/${conversationId}/close/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
 export async function listAgentSupportConversations(statusOrOptions?: string | { status?: string; queue?: string }) {
   const params = new URLSearchParams()
   if (typeof statusOrOptions === 'string') {
@@ -376,10 +384,63 @@ export async function claimSupportConversation(conversationId: number) {
   })
 }
 
-export async function closeSupportConversation(conversationId: number) {
+export async function listSupportNotes(conversationId: number) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportNoteVO[]>(`/api/user/support/agent/conversations/${conversationId}/notes`)
+}
+
+export async function addSupportNote(conversationId: number, content: string) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  if (!content.trim()) throw new ApiError(400, '内部备注不能为空')
+  return request<import('@/types/api').SupportNoteVO>(`/api/user/support/agent/conversations/${conversationId}/notes`, {
+    method: 'POST',
+    body: JSON.stringify({ content: content.trim() }),
+  })
+}
+
+export async function updateSupportTags(conversationId: number, tags: string[]) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportConversationVO>(`/api/user/support/agent/conversations/${conversationId}/tags`, {
+    method: 'PUT',
+    body: JSON.stringify({ tags }),
+  })
+}
+
+export async function listSupportQuickReplies() {
+  return request<import('@/types/api').SupportQuickReplyVO[]>('/api/user/support/agent/quick-replies')
+}
+
+export async function listEnabledSupportAgents() {
+  return request<import('@/types/api').SupportAccountVO[]>('/api/user/support/agent/accounts')
+}
+
+export async function transferSupportConversation(conversationId: number, targetAgentId: number, reason?: string) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  assertPositiveInteger(targetAgentId, '转接客服')
+  return request<import('@/types/api').SupportConversationVO>(`/api/user/support/agent/conversations/${conversationId}/transfer`, {
+    method: 'POST',
+    body: JSON.stringify({ targetAgentId, reason }),
+  })
+}
+
+export async function escalateSupportConversation(conversationId: number, reason?: string) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportConversationVO>(`/api/user/support/agent/conversations/${conversationId}/escalate`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
+export async function listSupportAudits(conversationId: number) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportAuditVO[]>(`/api/user/support/agent/conversations/${conversationId}/audits`)
+}
+
+export async function closeSupportConversation(conversationId: number, reason?: string) {
   assertPositiveInteger(conversationId, '客服会话ID')
   return request<import('@/types/api').SupportConversationVO>(`/api/user/support/agent/conversations/${conversationId}/close`, {
     method: 'POST',
+    body: JSON.stringify({ reason }),
   })
 }
 

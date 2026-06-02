@@ -1,22 +1,38 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Headphones, LogOut, Send } from 'lucide-react'
+import { ArrowRightLeft, BookOpen, ClipboardList, FileText, Headphones, LogOut, Send, ShieldAlert, Tags } from 'lucide-react'
 import {
+  addSupportNote,
   claimSupportConversation,
   closeSupportConversation,
+  escalateSupportConversation,
   getUserInfo,
   listAgentSupportConversations,
+  listEnabledSupportAgents,
+  listSupportAudits,
   listSupportMessages,
+  listSupportNotes,
+  listSupportQuickReplies,
   sendSupportMessage,
+  transferSupportConversation,
+  updateSupportTags,
 } from '@/lib/api'
 import { logout } from '@/lib/auth'
-import { formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, getSupportQueueTabs, mergeSupportConversations, shouldPollSupportConversation, sortSupportConversationsForQueue, type SupportQueueFilter } from '@/lib/support-tools'
-import type { SupportConversationVO, SupportMessageVO } from '@/types/api'
+import { appendQuickReply, buildCloseRequestMessage, formatSupportAuditAction, formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getSupportQueueTabs, getSupportTagOptions, mergeSupportConversations, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue, type SupportQueueFilter } from '@/lib/support-tools'
+import type { SupportAccountVO, SupportAuditVO, SupportConversationVO, SupportMessageVO, SupportNoteVO, SupportQuickReplyVO } from '@/types/api'
 
 function getConversationUserDisplay(conversation: SupportConversationVO) {
   return conversation.userNickname || conversation.userPhoneMask || `用户 ${conversation.userId}`
+}
+
+function formatTime(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 export default function SupportWorkbenchPage() {
@@ -25,10 +41,22 @@ export default function SupportWorkbenchPage() {
   const [conversations, setConversations] = useState<SupportConversationVO[]>([])
   const [active, setActive] = useState<SupportConversationVO | null>(null)
   const [messages, setMessages] = useState<SupportMessageVO[]>([])
+  const [notes, setNotes] = useState<SupportNoteVO[]>([])
+  const [audits, setAudits] = useState<SupportAuditVO[]>([])
+  const [quickReplies, setQuickReplies] = useState<SupportQuickReplyVO[]>([])
+  const [supportAgents, setSupportAgents] = useState<SupportAccountVO[]>([])
   const [conversationFilter, setConversationFilter] = useState<SupportQueueFilter>('pending')
   const [text, setText] = useState('')
+  const [noteText, setNoteText] = useState('')
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [transferTarget, setTransferTarget] = useState('')
+  const [transferReason, setTransferReason] = useState('')
+  const [escalationReason, setEscalationReason] = useState('')
+  const [closeReason, setCloseReason] = useState('')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const [detailLoading, setDetailLoading] = useState(false)
+  const activeLoadIdRef = useRef(0)
 
   const loadConversations = async () => {
     const [pending, inProgress, overdue, closeRequested, closed] = await Promise.all([
@@ -46,7 +74,7 @@ export default function SupportWorkbenchPage() {
       ...(closed || []),
     ]))
     setConversations(data)
-    setActive(current => current ? data.find(item => item.id === current.id) || current : data[0] || null)
+    setActive(current => pickLatestSupportConversation(current, data))
   }
 
   const visibleConversations = useMemo(() => {
@@ -61,10 +89,43 @@ export default function SupportWorkbenchPage() {
 
   const filterTabs = getSupportQueueTabs(conversations)
   const canReply = active?.status === 'ASSIGNED' || active?.status === 'CLOSE_REQUESTED'
+  const tagOptions = getSupportTagOptions()
+  const transferTargets = supportAgents.filter(agent => agent.id !== active?.assignedAgentId)
+  const quickReplyGroups = useMemo(() => {
+    const map = new Map<string, SupportQuickReplyVO[]>()
+    for (const item of quickReplies) {
+      map.set(item.category, [...(map.get(item.category) || []), item])
+    }
+    return Array.from(map.entries())
+  }, [quickReplies])
 
-  const loadMessages = async (conversationId: number) => {
+  const loadMessages = async (conversationId: number, loadId: number) => {
     const data = await listSupportMessages(conversationId)
-    setMessages(data)
+    if (activeLoadIdRef.current === loadId) {
+      setMessages(data || [])
+    }
+  }
+
+  const loadOperationData = async (conversationId: number, loadId: number) => {
+    const [noteData, auditData, quickReplyData, agentData] = await Promise.all([
+      listSupportNotes(conversationId),
+      listSupportAudits(conversationId),
+      listSupportQuickReplies(),
+      listEnabledSupportAgents(),
+    ])
+    if (activeLoadIdRef.current === loadId) {
+      setNotes(noteData || [])
+      setAudits(auditData || [])
+      setQuickReplies(quickReplyData || [])
+      setSupportAgents(agentData || [])
+    }
+  }
+
+  const reloadActiveConversation = async (conversationId: number, loadId: number) => {
+    await Promise.all([
+      loadMessages(conversationId, loadId),
+      loadOperationData(conversationId, loadId),
+    ])
   }
 
   useEffect(() => {
@@ -80,12 +141,39 @@ export default function SupportWorkbenchPage() {
       .finally(() => setChecking(false))
   }, [router])
 
-  useEffect(() => {
-    if (active) {
-      loadMessages(active.id).catch(() => setMessages([]))
-    } else {
+  useLayoutEffect(() => {
+    if (!active) {
       setMessages([])
+      setNotes([])
+      setAudits([])
+      setSelectedTags([])
+      setDetailLoading(false)
+      return
     }
+    const loadId = activeLoadIdRef.current + 1
+    activeLoadIdRef.current = loadId
+    setDetailLoading(true)
+    setMessages([])
+    setNotes([])
+    setAudits([])
+    setSelectedTags(active.tags || [])
+    setTransferTarget('')
+    setTransferReason('')
+    setEscalationReason('')
+    setCloseReason(active.closeRequestReason || '')
+    reloadActiveConversation(active.id, loadId)
+      .catch(() => {
+        if (activeLoadIdRef.current === loadId) {
+          setMessages([])
+          setNotes([])
+          setAudits([])
+        }
+      })
+      .finally(() => {
+        if (activeLoadIdRef.current === loadId) {
+          setDetailLoading(false)
+        }
+      })
   }, [active?.id])
 
   useEffect(() => {
@@ -96,7 +184,8 @@ export default function SupportWorkbenchPage() {
       try {
         await loadConversations()
         if (!cancelled && active && shouldPollSupportConversation(active.status)) {
-          await loadMessages(active.id)
+          const loadId = activeLoadIdRef.current
+          await loadMessages(active.id, loadId)
         }
       } catch {
         // 工作台保持在线轮询，短暂失败不打断客服处理。
@@ -118,15 +207,23 @@ export default function SupportWorkbenchPage() {
     setActive(current => current && visibleConversations.some(item => item.id === current.id) ? current : visibleConversations[0])
   }, [conversationFilter, conversations])
 
+  const refreshAfterOperation = async (updated?: SupportConversationVO) => {
+    if (updated) setActive(updated)
+    await loadConversations()
+    const targetId = updated?.id || active?.id
+    if (targetId) {
+      const loadId = activeLoadIdRef.current
+      await reloadActiveConversation(targetId, loadId)
+    }
+  }
+
   const claim = async () => {
     if (!active) return
     setStatus('')
     setError('')
     try {
       const updated = await claimSupportConversation(active.id)
-      setActive(updated)
-      await loadConversations()
-      await loadMessages(updated.id)
+      await refreshAfterOperation(updated)
       setStatus('已接入该会话')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '接入失败')
@@ -140,10 +237,69 @@ export default function SupportWorkbenchPage() {
     try {
       await sendSupportMessage(active.id, text.trim())
       setText('')
-      await loadMessages(active.id)
-      await loadConversations()
+      await refreshAfterOperation()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '发送失败')
+    }
+  }
+
+  const addNote = async () => {
+    if (!active || !noteText.trim()) return
+    setStatus('')
+    setError('')
+    try {
+      await addSupportNote(active.id, noteText)
+      setNoteText('')
+      await refreshAfterOperation()
+      setStatus('已添加内部备注')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '添加备注失败')
+    }
+  }
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags(current => current.includes(tag) ? current.filter(item => item !== tag) : [...current, tag])
+  }
+
+  const saveTags = async () => {
+    if (!active) return
+    setStatus('')
+    setError('')
+    try {
+      const updated = await updateSupportTags(active.id, selectedTags)
+      await refreshAfterOperation(updated)
+      setStatus('已保存用户标签')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '保存标签失败')
+    }
+  }
+
+  const transfer = async () => {
+    if (!active || !transferTarget) return
+    setStatus('')
+    setError('')
+    try {
+      const updated = await transferSupportConversation(active.id, Number(transferTarget), transferReason)
+      setTransferTarget('')
+      setTransferReason('')
+      await refreshAfterOperation(updated)
+      setStatus('已转接会话')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '转接失败')
+    }
+  }
+
+  const escalate = async () => {
+    if (!active) return
+    setStatus('')
+    setError('')
+    try {
+      const updated = await escalateSupportConversation(active.id, escalationReason)
+      setEscalationReason('')
+      await refreshAfterOperation(updated)
+      setStatus('已升级给管理员')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '升级失败')
     }
   }
 
@@ -152,10 +308,8 @@ export default function SupportWorkbenchPage() {
     setStatus('')
     setError('')
     try {
-      const updated = await closeSupportConversation(active.id)
-      setActive(updated)
-      await loadConversations()
-      await loadMessages(updated.id)
+      const updated = await closeSupportConversation(active.id, closeReason)
+      await refreshAfterOperation(updated)
       setStatus('已向用户发送结束确认')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '结束会话失败')
@@ -184,7 +338,7 @@ export default function SupportWorkbenchPage() {
         </button>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-[320px_1fr]">
+      <main className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_340px]">
         <aside className="min-h-0 border-r border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-4 py-3 text-[13px] font-medium text-gray-500">待处理会话</div>
           <div className="flex flex-wrap gap-2 border-b border-gray-100 px-4 py-3">
@@ -217,6 +371,12 @@ export default function SupportWorkbenchPage() {
                   <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">{formatSupportConversationStatus(item.status)}</span>
                 </div>
                 <div className="truncate text-[12px] text-gray-500">{item.subject}</div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(item.tags || []).map(tag => (
+                    <span key={tag} className="rounded-full bg-[#fff0f5] px-2 py-0.5 text-[11px] text-[#ff1268]">{formatSupportTagLabel(tag)}</span>
+                  ))}
+                  {item.escalatedToAdmin && <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] text-orange-600">已升级</span>}
+                </div>
                 <div className="line-clamp-2 text-[12px] leading-5 text-gray-500">{item.lastMessage || '暂无消息'}</div>
                 <div className={`mt-2 text-[12px] ${item.slaOverdue ? 'text-red-500' : 'text-gray-400'}`}>
                   {formatSupportSlaText(item)}
@@ -229,32 +389,39 @@ export default function SupportWorkbenchPage() {
         <section className="flex min-h-0 flex-col">
           {active ? (
             <>
-              <div className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6">
+              <div className="flex min-h-16 items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
                 <div>
                   <div className="text-[16px] font-bold text-[#111]">{active.subject}</div>
                   <div className="mt-1 text-[12px] text-gray-500">用户：{getConversationUserDisplay(active)} · ID：{active.userId} · {formatSupportConversationStatus(active.status)}</div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {(active.tags || []).map(tag => (
+                      <span key={tag} className="rounded-full bg-[#fff0f5] px-2 py-0.5 text-[11px] text-[#ff1268]">{formatSupportTagLabel(tag)}</span>
+                    ))}
+                    {active.escalatedToAdmin && <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] text-orange-600">已升级</span>}
+                  </div>
                   <div className={`mt-1 text-[12px] ${active.slaOverdue ? 'text-red-500' : 'text-gray-500'}`}>{formatSupportSlaText(active)}</div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={claim} disabled={active.status === 'CLOSED' || active.status === 'ASSIGNED' || active.status === 'CLOSE_REQUESTED'} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50">接入</button>
-                  <button onClick={close} disabled={active.status === 'CLOSED' || active.status === 'CLOSE_REQUESTED'} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] text-gray-600 hover:border-red-300 hover:text-red-500 disabled:opacity-50">申请结束</button>
-                </div>
+                <button onClick={claim} disabled={active.status === 'CLOSED' || active.status === 'ASSIGNED' || active.status === 'CLOSE_REQUESTED'} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50">接入</button>
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-                <div className="space-y-4">
-                  {messages.map(item => {
-                    const mine = item.senderType === 'AGENT' || item.senderType === 'SYSTEM'
-                    return (
-                      <div key={item.id || `${item.senderType}-${item.content}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[68%] rounded-2xl px-4 py-3 text-[13px] leading-6 ${mine ? 'bg-[#1a1a2e] text-white' : item.senderType === 'AI' ? 'bg-[#fff0f5] text-gray-700' : 'bg-white text-gray-700 shadow-sm'}`}>
-                          <div className={`mb-1 text-[11px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>{formatSupportMessageSender(item, 'agent')}</div>
-                          {item.content}
+                {detailLoading ? (
+                  <div className="flex h-full min-h-[200px] items-center justify-center text-[13px] text-gray-400">正在加载会话内容...</div>
+                ) : (
+                  <div className="space-y-4">
+                    {messages.map(item => {
+                      const mine = item.senderType === 'AGENT' || item.senderType === 'SYSTEM'
+                      return (
+                        <div key={item.id || `${item.senderType}-${item.content}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[68%] rounded-2xl px-4 py-3 text-[13px] leading-6 ${mine ? 'bg-[#1a1a2e] text-white' : item.senderType === 'AI' ? 'bg-[#fff0f5] text-gray-700' : 'bg-white text-gray-700 shadow-sm'}`}>
+                            <div className={`mb-1 text-[11px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>{formatSupportMessageSender(item, 'agent')}</div>
+                            {item.content}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-gray-200 bg-white p-4">
@@ -278,6 +445,170 @@ export default function SupportWorkbenchPage() {
             <div className="flex flex-1 items-center justify-center text-[14px] text-gray-400">请选择左侧会话</div>
           )}
         </section>
+
+        <aside className="min-h-0 overflow-y-auto border-l border-gray-200 bg-white">
+          {active ? (
+            <div className="divide-y divide-gray-100">
+              <section className="p-4">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[#111]">
+                  <Tags className="h-4 w-4 text-[#ff1268]" />
+                  用户标签
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {tagOptions.map(option => {
+                    const selected = selectedTags.includes(option.value)
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => toggleTag(option.value)}
+                        disabled={active.status === 'CLOSED'}
+                        className={`rounded-full border px-3 py-1.5 text-[12px] ${
+                          selected
+                            ? 'border-[#ff1268] bg-[#fff0f5] text-[#ff1268]'
+                            : 'border-gray-200 bg-white text-gray-500 hover:border-[#ff1268] hover:text-[#ff1268]'
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button type="button" onClick={saveTags} disabled={active.status === 'CLOSED'} className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[#ff1268] px-3 text-[13px] font-medium text-white disabled:opacity-50">
+                  <Tags className="h-4 w-4" />
+                  保存标签
+                </button>
+              </section>
+
+              <section className="p-4">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[#111]">
+                  <FileText className="h-4 w-4 text-[#ff1268]" />
+                  内部备注
+                </div>
+                <textarea value={noteText} onChange={event => setNoteText(event.target.value)} disabled={active.status === 'CLOSED'} placeholder="输入内部备注，用户不可见" className="h-20 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-[13px] leading-5 outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
+                <button type="button" onClick={addNote} disabled={active.status === 'CLOSED' || !noteText.trim()} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50">
+                  <FileText className="h-4 w-4" />
+                  添加备注
+                </button>
+                <div className="mt-3 max-h-40 space-y-2 overflow-y-auto">
+                  {detailLoading ? (
+                    <div className="rounded-lg bg-gray-50 px-3 py-3 text-[12px] text-gray-400">正在加载备注...</div>
+                  ) : notes.length === 0 ? (
+                    <div className="rounded-lg bg-gray-50 px-3 py-3 text-[12px] text-gray-400">暂无内部备注</div>
+                  ) : notes.map(note => (
+                    <div key={note.id} className="rounded-lg bg-gray-50 px-3 py-2">
+                      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-gray-400">
+                        <span className="truncate">{note.authorDisplayName || '客服'}</span>
+                        <span className="shrink-0">{formatTime(note.createTime)}</span>
+                      </div>
+                      <div className="whitespace-pre-line text-[12px] leading-5 text-gray-600">{note.content}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="p-4">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[#111]">
+                  <BookOpen className="h-4 w-4 text-[#ff1268]" />
+                  快捷话术
+                </div>
+                <div className="max-h-48 space-y-3 overflow-y-auto">
+                  {quickReplyGroups.length === 0 ? (
+                    <div className="rounded-lg bg-gray-50 px-3 py-3 text-[12px] text-gray-400">暂无快捷话术</div>
+                  ) : quickReplyGroups.map(([category, items]) => (
+                    <div key={category}>
+                      <div className="mb-2 text-[12px] font-medium text-gray-500">{category}</div>
+                      <div className="space-y-2">
+                        {items.map(item => (
+                          <button key={item.id} type="button" onClick={() => setText(current => appendQuickReply(current, item.content))} disabled={!canReply} className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-left hover:border-[#ff1268] hover:bg-[#fff7fb] disabled:cursor-not-allowed disabled:opacity-50">
+                            <div className="text-[12px] font-medium text-[#111]">{item.title}</div>
+                            <div className="mt-1 line-clamp-2 text-[12px] leading-5 text-gray-500">{item.content}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="p-4">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[#111]">
+                  <ArrowRightLeft className="h-4 w-4 text-[#ff1268]" />
+                  转接与升级
+                </div>
+                <select value={transferTarget} onChange={event => setTransferTarget(event.target.value)} disabled={active.status === 'CLOSED'} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268] disabled:bg-gray-100">
+                  <option value="">选择转接客服</option>
+                  {transferTargets.map(agent => (
+                    <option key={agent.id} value={agent.id}>{agent.nickname || agent.phone}</option>
+                  ))}
+                </select>
+                <input value={transferReason} onChange={event => setTransferReason(event.target.value)} disabled={active.status === 'CLOSED'} placeholder="转接原因（选填）" className="mt-2 h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
+                <button type="button" onClick={transfer} disabled={active.status === 'CLOSED' || !transferTarget} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50">
+                  <ArrowRightLeft className="h-4 w-4" />
+                  转接客服
+                </button>
+
+                <input value={escalationReason} onChange={event => setEscalationReason(event.target.value)} disabled={active.status === 'CLOSED'} placeholder="升级原因（选填）" className="mt-4 h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
+                <button type="button" onClick={escalate} disabled={active.status === 'CLOSED'} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-orange-200 px-3 text-[13px] text-orange-600 hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50">
+                  <ShieldAlert className="h-4 w-4" />
+                  升级管理员
+                </button>
+                {active.escalatedToAdmin && (
+                  <div className="mt-2 rounded-lg bg-orange-50 px-3 py-2 text-[12px] leading-5 text-orange-700">
+                    已升级给管理员{active.escalationReason ? `：${active.escalationReason}` : ''}
+                  </div>
+                )}
+              </section>
+
+              <section className="p-4">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[#111]">
+                  <ClipboardList className="h-4 w-4 text-[#ff1268]" />
+                  结束申请
+                </div>
+                <textarea value={closeReason} onChange={event => setCloseReason(event.target.value)} disabled={active.status === 'CLOSED'} placeholder="结束原因（选填）" className="h-20 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-[13px] leading-5 outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
+                <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-[12px] leading-5 text-gray-500">
+                  {buildCloseRequestMessage(closeReason)}
+                </div>
+                {active.status === 'CLOSE_REQUESTED' && active.closeRequestReason && (
+                  <div className="mt-2 rounded-lg bg-[#fff0f5] px-3 py-2 text-[12px] leading-5 text-[#ff1268]">
+                    当前结束原因：{active.closeRequestReason}
+                  </div>
+                )}
+                <button type="button" onClick={close} disabled={active.status === 'CLOSED' || active.status === 'CLOSE_REQUESTED'} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg bg-[#1a1a2e] px-3 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                  <ClipboardList className="h-4 w-4" />
+                  申请结束
+                </button>
+              </section>
+
+              <section className="p-4">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[#111]">
+                  <ClipboardList className="h-4 w-4 text-[#ff1268]" />
+                  审计记录
+                </div>
+                <div className="max-h-52 space-y-2 overflow-y-auto">
+                  {detailLoading ? (
+                    <div className="rounded-lg bg-gray-50 px-3 py-3 text-[12px] text-gray-400">正在加载审计记录...</div>
+                  ) : audits.length === 0 ? (
+                    <div className="rounded-lg bg-gray-50 px-3 py-3 text-[12px] text-gray-400">暂无审计记录</div>
+                  ) : audits.map(audit => (
+                    <div key={audit.id} className="rounded-lg bg-gray-50 px-3 py-2">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="text-[12px] font-medium text-[#111]">{formatSupportAuditAction(audit.action)}</span>
+                        <span className="text-[11px] text-gray-400">{formatTime(audit.createTime)}</span>
+                      </div>
+                      <div className="text-[11px] text-gray-400">{audit.actorDisplayName || '系统'}</div>
+                      {audit.detail && <div className="mt-1 whitespace-pre-line text-[12px] leading-5 text-gray-600">{audit.detail}</div>}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center px-6 text-center text-[13px] leading-6 text-gray-400">
+              选择会话后可查看备注、标签、话术和审计记录
+            </div>
+          )}
+        </aside>
       </main>
     </div>
   )

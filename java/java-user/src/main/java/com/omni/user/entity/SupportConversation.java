@@ -24,6 +24,12 @@ public class SupportConversation {
     private LocalDateTime firstAgentRepliedAt;
     private LocalDateTime lastUserMessageAt;
     private LocalDateTime lastAgentMessageAt;
+    private String closeRequestReason;
+    private Long closeRequestedBy;
+    private LocalDateTime closeRequestedAt;
+    private Boolean escalatedToAdmin;
+    private String escalationReason;
+    private LocalDateTime escalatedAt;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -66,4 +72,22 @@ public class SupportConversation {
 
     public LocalDateTime getLastAgentMessageAt() { return lastAgentMessageAt; }
     public void setLastAgentMessageAt(LocalDateTime lastAgentMessageAt) { this.lastAgentMessageAt = lastAgentMessageAt; }
+
+    public String getCloseRequestReason() { return closeRequestReason; }
+    public void setCloseRequestReason(String closeRequestReason) { this.closeRequestReason = closeRequestReason; }
+
+    public Long getCloseRequestedBy() { return closeRequestedBy; }
+    public void setCloseRequestedBy(Long closeRequestedBy) { this.closeRequestedBy = closeRequestedBy; }
+
+    public LocalDateTime getCloseRequestedAt() { return closeRequestedAt; }
+    public void setCloseRequestedAt(LocalDateTime closeRequestedAt) { this.closeRequestedAt = closeRequestedAt; }
+
+    public Boolean getEscalatedToAdmin() { return escalatedToAdmin; }
+    public void setEscalatedToAdmin(Boolean escalatedToAdmin) { this.escalatedToAdmin = escalatedToAdmin; }
+
+    public String getEscalationReason() { return escalationReason; }
+    public void setEscalationReason(String escalationReason) { this.escalationReason = escalationReason; }
+
+    public LocalDateTime getEscalatedAt() { return escalatedAt; }
+    public void setEscalatedAt(LocalDateTime escalatedAt) { this.escalatedAt = escalatedAt; }
 }

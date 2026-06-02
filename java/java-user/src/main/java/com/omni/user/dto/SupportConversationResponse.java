@@ -1,6 +1,7 @@
 package com.omni.user.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class SupportConversationResponse {
 
@@ -22,6 +23,13 @@ public class SupportConversationResponse {
     private LocalDateTime lastAgentMessageAt;
     private Long userWaitingSeconds;
     private Boolean slaOverdue;
+    private String closeRequestReason;
+    private Long closeRequestedBy;
+    private LocalDateTime closeRequestedAt;
+    private Boolean escalatedToAdmin;
+    private String escalationReason;
+    private LocalDateTime escalatedAt;
+    private List<String> tags;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -76,4 +84,25 @@ public class SupportConversationResponse {
 
     public Boolean getSlaOverdue() { return slaOverdue; }
     public void setSlaOverdue(Boolean slaOverdue) { this.slaOverdue = slaOverdue; }
+
+    public String getCloseRequestReason() { return closeRequestReason; }
+    public void setCloseRequestReason(String closeRequestReason) { this.closeRequestReason = closeRequestReason; }
+
+    public Long getCloseRequestedBy() { return closeRequestedBy; }
+    public void setCloseRequestedBy(Long closeRequestedBy) { this.closeRequestedBy = closeRequestedBy; }
+
+    public LocalDateTime getCloseRequestedAt() { return closeRequestedAt; }
+    public void setCloseRequestedAt(LocalDateTime closeRequestedAt) { this.closeRequestedAt = closeRequestedAt; }
+
+    public Boolean getEscalatedToAdmin() { return escalatedToAdmin; }
+    public void setEscalatedToAdmin(Boolean escalatedToAdmin) { this.escalatedToAdmin = escalatedToAdmin; }
+
+    public String getEscalationReason() { return escalationReason; }
+    public void setEscalationReason(String escalationReason) { this.escalationReason = escalationReason; }
+
+    public LocalDateTime getEscalatedAt() { return escalatedAt; }
+    public void setEscalatedAt(LocalDateTime escalatedAt) { this.escalatedAt = escalatedAt; }
+
+    public List<String> getTags() { return tags; }
+    public void setTags(List<String> tags) { this.tags = tags; }
 }

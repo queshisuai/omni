@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, listActivities, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, removeTeamGrabMember, updateActivityMarketing, updateRbacRolePermissions } from './api.ts'
+import { ApiError, addSupportNote, closeSupportConversation, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, listActivities, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, rejectCloseSupportConversation, removeTeamGrabMember, transferSupportConversation, updateActivityMarketing, updateRbacRolePermissions, updateSupportTags } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -317,6 +317,51 @@ test('loads operation audit logs through user console endpoint', async () => {
 
     assert.equal(requestedUrl, '/api/user/console/audit-logs?operatorId=7&action=rbac.role_permission.update&targetType=rbac_role&success=true&traceId=trace-abc&limit=50')
     assert.equal(result[0].operatorRole, 'platform_super_admin')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('uses support conversation operation endpoints', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    const url = String(input)
+    const data = url.endsWith('/notes')
+      ? init?.method === 'POST'
+        ? { id: 9, conversationId: 88, content: '内部备注' }
+        : []
+      : url.endsWith('/audits') || url.endsWith('/quick-replies') || url.endsWith('/accounts')
+        ? []
+        : { id: 88, status: 'ASSIGNED' }
+    return new Response(JSON.stringify({ code: 200, message: '成功', data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    await listSupportNotes(88)
+    await addSupportNote(88, '内部备注')
+    await updateSupportTags(88, ['REFUND'])
+    await listSupportQuickReplies()
+    await listEnabledSupportAgents()
+    await transferSupportConversation(88, 31, '需要专员处理')
+    await escalateSupportConversation(88, '疑似异常退款')
+    await listSupportAudits(88)
+    await closeSupportConversation(88, '已解决')
+    await rejectCloseSupportConversation(88, '继续处理')
+
+    assert.deepEqual(requested.map(item => [item.url, item.method, item.body]), [
+      ['/api/user/support/agent/conversations/88/notes', 'GET', ''],
+      ['/api/user/support/agent/conversations/88/notes', 'POST', JSON.stringify({ content: '内部备注' })],
+      ['/api/user/support/agent/conversations/88/tags', 'PUT', JSON.stringify({ tags: ['REFUND'] })],
+      ['/api/user/support/agent/quick-replies', 'GET', ''],
+      ['/api/user/support/agent/accounts', 'GET', ''],
+      ['/api/user/support/agent/conversations/88/transfer', 'POST', JSON.stringify({ targetAgentId: 31, reason: '需要专员处理' })],
+      ['/api/user/support/agent/conversations/88/escalate', 'POST', JSON.stringify({ reason: '疑似异常退款' })],
+      ['/api/user/support/agent/conversations/88/audits', 'GET', ''],
+      ['/api/user/support/agent/conversations/88/close', 'POST', JSON.stringify({ reason: '已解决' })],
+      ['/api/user/support/conversations/88/close/reject', 'POST', JSON.stringify({ reason: '继续处理' })],
+    ])
   } finally {
     globalThis.fetch = originalFetch
   }

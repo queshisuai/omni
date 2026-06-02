@@ -6,10 +6,18 @@ import com.omni.common.util.JwtUtil;
 import com.omni.user.dto.HelpFaqResponse;
 import com.omni.user.dto.SupportAccountRequest;
 import com.omni.user.dto.SupportAccountResponse;
+import com.omni.user.dto.SupportAuditResponse;
+import com.omni.user.dto.SupportCloseRejectRequest;
+import com.omni.user.dto.SupportCloseRequest;
 import com.omni.user.dto.SupportConversationRequest;
 import com.omni.user.dto.SupportConversationResponse;
 import com.omni.user.dto.SupportMessageRequest;
 import com.omni.user.dto.SupportMessageResponse;
+import com.omni.user.dto.SupportNoteRequest;
+import com.omni.user.dto.SupportNoteResponse;
+import com.omni.user.dto.SupportQuickReplyResponse;
+import com.omni.user.dto.SupportTagUpdateRequest;
+import com.omni.user.dto.SupportTransferRequest;
 import com.omni.user.service.CustomerSupportService;
 import com.omni.user.service.HelpCenterService;
 import com.omni.user.service.SupportAccountService;
@@ -114,6 +122,16 @@ public class SupportController {
         return Result.success(customerSupportService.confirmClose(userId, id));
     }
 
+    @PostMapping("/support/conversations/{id}/close/reject")
+    public Result<SupportConversationResponse> rejectClose(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) SupportCloseRejectRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.rejectClose(userId, id, request));
+    }
+
     @GetMapping("/support/agent/conversations")
     public Result<List<SupportConversationResponse>> listAgentConversations(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -122,6 +140,51 @@ public class SupportController {
         Long userId = parseUserId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(customerSupportService.listAgentConversations(userId, status, queue));
+    }
+
+    @GetMapping("/support/agent/conversations/{id}/notes")
+    public Result<List<SupportNoteResponse>> listNotes(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.listNotes(userId, id));
+    }
+
+    @PostMapping("/support/agent/conversations/{id}/notes")
+    public Result<SupportNoteResponse> addNote(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) SupportNoteRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.addNote(userId, id, request));
+    }
+
+    @PutMapping("/support/agent/conversations/{id}/tags")
+    public Result<SupportConversationResponse> updateTags(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) SupportTagUpdateRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.updateTags(userId, id, request));
+    }
+
+    @GetMapping("/support/agent/quick-replies")
+    public Result<List<SupportQuickReplyResponse>> listQuickReplies(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.listQuickReplies(userId));
+    }
+
+    @GetMapping("/support/agent/accounts")
+    public Result<List<SupportAccountResponse>> listEnabledSupportAgents(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(supportAccountService.listEnabledAgents(userId));
     }
 
     @PostMapping("/support/agent/conversations/{id}/claim")
@@ -136,10 +199,40 @@ public class SupportController {
     @PostMapping("/support/agent/conversations/{id}/close")
     public Result<SupportConversationResponse> close(
             @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) SupportCloseRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.close(userId, id, request));
+    }
+
+    @PostMapping("/support/agent/conversations/{id}/transfer")
+    public Result<SupportConversationResponse> transfer(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) SupportTransferRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.transfer(userId, id, request));
+    }
+
+    @PostMapping("/support/agent/conversations/{id}/escalate")
+    public Result<SupportConversationResponse> escalate(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) SupportCloseRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(customerSupportService.escalate(userId, id, request));
+    }
+
+    @GetMapping("/support/agent/conversations/{id}/audits")
+    public Result<List<SupportAuditResponse>> listAudits(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable Long id) {
         Long userId = parseUserId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
-        return Result.success(customerSupportService.close(userId, id));
+        return Result.success(customerSupportService.listAudits(userId, id));
     }
 
     @GetMapping("/support/admin/accounts")

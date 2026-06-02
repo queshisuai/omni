@@ -1,8 +1,26 @@
-import type { SupportConversationVO, SupportMessageVO, UserRole } from '@/types/api'
+import type { SupportConversationVO, SupportMessageVO, SupportTagCode, UserRole } from '@/types/api'
 
-export type SupportConversationStatus = 'OPEN' | 'WAITING_AGENT' | 'ASSIGNED' | 'CLOSED' | string
+export type SupportConversationStatus = 'OPEN' | 'WAITING_AGENT' | 'ASSIGNED' | 'CLOSE_REQUESTED' | 'CLOSED' | string
 export type SupportConversationFilter = 'active' | 'closed' | 'all'
 export type SupportQueueFilter = 'pending' | 'in_progress' | 'overdue' | 'close_requested' | 'closed'
+
+const SUPPORT_TAG_OPTIONS: Array<{ value: SupportTagCode; label: string }> = [
+  { value: 'REFUND', label: '退款' },
+  { value: 'TICKET', label: '票务' },
+  { value: 'ADMISSION', label: '入场' },
+  { value: 'ACCOUNT', label: '账号' },
+  { value: 'PAYMENT_EXCEPTION', label: '支付异常' },
+]
+
+const SUPPORT_AUDIT_ACTION_LABELS: Record<string, string> = {
+  TAG_UPDATED: '更新标签',
+  TRANSFERRED: '转接客服',
+  ESCALATED: '升级管理员',
+  CLOSE_REQUESTED: '申请结束',
+  CLOSE_REJECTED: '拒绝结束',
+  CLOSED_CONFIRMED: '确认结束',
+  AUTO_CLOSED: '自动结束',
+}
 
 export function getLoginRedirectForRole(role: UserRole | string | null | undefined) {
   if (role === 'support') return '/support'
@@ -17,6 +35,32 @@ export function formatSupportConversationStatus(status: SupportConversationStatu
   if (status === 'CLOSE_REQUESTED') return '等待用户确认结束'
   if (status === 'CLOSED') return '已结束'
   return '处理中'
+}
+
+export function formatSupportTagLabel(code: string | null | undefined) {
+  if (!code) return ''
+  return SUPPORT_TAG_OPTIONS.find(item => item.value === code)?.label ?? code
+}
+
+export function getSupportTagOptions() {
+  return [...SUPPORT_TAG_OPTIONS]
+}
+
+export function formatSupportAuditAction(action: string | null | undefined) {
+  if (!action) return ''
+  return SUPPORT_AUDIT_ACTION_LABELS[action] ?? action
+}
+
+export function buildCloseRequestMessage(reason?: string | null) {
+  const trimmed = reason?.trim()
+  return trimmed ? `人工客服申请结束会话，原因：${trimmed}` : '人工客服申请结束会话，请确认是否结束。'
+}
+
+export function appendQuickReply(current: string | null | undefined, content: string | null | undefined) {
+  const next = content?.trim()
+  if (!next) return current || ''
+  const existing = current?.trim()
+  return existing ? `${existing}\n${next}` : next
 }
 
 export function buildSupportSubject(message: string | null | undefined) {
@@ -112,6 +156,18 @@ export function mergeSupportConversations<T extends Pick<SupportConversationVO, 
     const right = new Date(b.updateTime || b.createTime || 0).getTime()
     return right - left
   })
+}
+
+export function pickLatestSupportConversation<T extends Pick<SupportConversationVO, 'id' | 'createTime' | 'updateTime'>>(
+  current: T | null,
+  conversations: T[],
+): T | null {
+  if (conversations.length === 0) return null
+  if (current) {
+    const latest = conversations.find(item => item.id === current.id)
+    if (latest) return latest
+  }
+  return mergeSupportConversations(conversations)[0] || null
 }
 
 export function shouldPollSupportConversation(status: SupportConversationStatus | null | undefined) {

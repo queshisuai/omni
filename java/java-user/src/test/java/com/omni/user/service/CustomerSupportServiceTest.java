@@ -3,15 +3,29 @@ package com.omni.user.service;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.omni.exception.BusinessException;
 import com.omni.user.mq.NotificationMqProducer;
+import com.omni.user.dto.SupportAuditResponse;
+import com.omni.user.dto.SupportCloseRejectRequest;
+import com.omni.user.dto.SupportCloseRequest;
 import com.omni.user.dto.SupportConversationRequest;
 import com.omni.user.dto.SupportConversationResponse;
 import com.omni.user.dto.SupportMessageRequest;
 import com.omni.user.dto.SupportMessageResponse;
+import com.omni.user.dto.SupportNoteRequest;
+import com.omni.user.dto.SupportNoteResponse;
+import com.omni.user.dto.SupportTagUpdateRequest;
+import com.omni.user.dto.SupportTransferRequest;
 import com.omni.user.entity.SupportConversation;
+import com.omni.user.entity.SupportConversationAudit;
+import com.omni.user.entity.SupportConversationNote;
+import com.omni.user.entity.SupportConversationTag;
 import com.omni.user.entity.SupportMessage;
 import com.omni.user.entity.User;
+import com.omni.user.mapper.SupportConversationAuditMapper;
 import com.omni.user.mapper.SupportConversationMapper;
+import com.omni.user.mapper.SupportConversationNoteMapper;
+import com.omni.user.mapper.SupportConversationTagMapper;
 import com.omni.user.mapper.SupportMessageMapper;
+import com.omni.user.mapper.SupportQuickReplyMapper;
 import com.omni.user.mapper.UserMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
@@ -38,15 +52,26 @@ class CustomerSupportServiceTest {
     static void initMybatisPlusMetadata() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), SupportConversation.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), SupportMessage.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), SupportConversationNote.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), SupportConversationTag.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), SupportConversationAudit.class);
     }
 
     private final SupportConversationMapper conversationMapper = mock(SupportConversationMapper.class);
     private final SupportMessageMapper messageMapper = mock(SupportMessageMapper.class);
+    private final SupportConversationNoteMapper noteMapper = mock(SupportConversationNoteMapper.class);
+    private final SupportConversationTagMapper tagMapper = mock(SupportConversationTagMapper.class);
+    private final SupportConversationAuditMapper auditMapper = mock(SupportConversationAuditMapper.class);
+    private final SupportQuickReplyMapper quickReplyMapper = mock(SupportQuickReplyMapper.class);
     private final UserMapper userMapper = mock(UserMapper.class);
     private final NotificationMqProducer notificationProducer = mock(NotificationMqProducer.class);
     private final CustomerSupportService service = new CustomerSupportService(
             conversationMapper,
             messageMapper,
+            noteMapper,
+            tagMapper,
+            auditMapper,
+            quickReplyMapper,
             userMapper,
             new SupportAiService((question, projectKnowledge) -> java.util.Optional.empty()),
             notificationProducer,
@@ -406,6 +431,115 @@ class CustomerSupportServiceTest {
                 Long.valueOf(10L).equals(messageReq.getUserId())
                         && "SUPPORT_REPLY".equals(messageReq.getType())
         ));
+    }
+
+    @Test
+    void supportAgentAddsInternalNoteVisibleOnlyInAgentWorkbench() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        User agent = user(30L, "support");
+        agent.setNickname("客服一号");
+        when(userMapper.selectById(30L)).thenReturn(agent);
+        SupportConversation conversation = supportConversation(99L, 10L, "ASSIGNED", 30L);
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        when(noteMapper.insert(any())).thenAnswer(invocation -> {
+            SupportConversationNote note = invocation.getArgument(0);
+            note.setId(7L);
+            return 1;
+        });
+        SupportNoteRequest request = new SupportNoteRequest();
+        request.setContent("用户反馈支付成功但票夹为空");
+
+        SupportNoteResponse response = service.addNote(30L, 99L, request);
+
+        assertEquals(7L, response.getId());
+        assertEquals("用户反馈支付成功但票夹为空", response.getContent());
+        assertEquals("客服一号", response.getAuthorDisplayName());
+        verify(noteMapper).insert(any(SupportConversationNote.class));
+    }
+
+    @Test
+    void supportAgentUpdatesTagsAndConversationResponseIncludesTags() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        SupportConversation conversation = supportConversation(99L, 10L, "ASSIGNED", 30L);
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        SupportTagUpdateRequest request = new SupportTagUpdateRequest();
+        request.setTags(List.of("REFUND", "TICKET", "REFUND"));
+
+        SupportConversationResponse response = service.updateTags(30L, 99L, request);
+
+        assertEquals(List.of("REFUND", "TICKET"), response.getTags());
+        verify(tagMapper).delete(any());
+        verify(tagMapper, org.mockito.Mockito.times(2)).insert(any(SupportConversationTag.class));
+        verify(auditMapper).insert(org.mockito.ArgumentMatchers.argThat(audit ->
+                "TAG_UPDATED".equals(audit.getAction())
+        ));
+    }
+
+    @Test
+    void supportAgentTransfersConversationToAnotherAgentAndWritesAudit() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        when(userMapper.selectById(31L)).thenReturn(user(31L, "support"));
+        SupportConversation conversation = supportConversation(99L, 10L, "ASSIGNED", 30L);
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        SupportTransferRequest request = new SupportTransferRequest();
+        request.setTargetAgentId(31L);
+        request.setReason("需要专员处理退款");
+
+        SupportConversationResponse response = service.transfer(30L, 99L, request);
+
+        assertEquals(31L, response.getAssignedAgentId());
+        assertEquals("ASSIGNED", response.getStatus());
+        assertEquals("会话已转接给客服 31", conversation.getLastMessage());
+        verify(auditMapper).insert(org.mockito.ArgumentMatchers.argThat(audit ->
+                "TRANSFERRED".equals(audit.getAction()) && audit.getDetail().contains("需要专员处理退款")
+        ));
+    }
+
+    @Test
+    void supportAgentEscalatesConversationForManagerFollowUp() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        SupportConversation conversation = supportConversation(99L, 10L, "ASSIGNED", 30L);
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        SupportCloseRequest request = new SupportCloseRequest();
+        request.setReason("疑似异常退款");
+
+        SupportConversationResponse response = service.escalate(30L, 99L, request);
+
+        assertEquals(Boolean.TRUE, response.getEscalatedToAdmin());
+        assertEquals("疑似异常退款", response.getEscalationReason());
+        verify(auditMapper).insert(org.mockito.ArgumentMatchers.argThat(audit ->
+                "ESCALATED".equals(audit.getAction())
+        ));
+    }
+
+    @Test
+    void ownerRejectsCloseRequestAndAuditCanBeListed() {
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "user"));
+        SupportConversation conversation = supportConversation(99L, 10L, "CLOSE_REQUESTED", 30L);
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        SupportCloseRejectRequest request = new SupportCloseRejectRequest();
+        request.setReason("问题还没有解决");
+
+        SupportConversationResponse response = service.rejectClose(10L, 99L, request);
+
+        assertEquals("ASSIGNED", response.getStatus());
+        verify(auditMapper).insert(org.mockito.ArgumentMatchers.argThat(audit ->
+                "CLOSE_REJECTED".equals(audit.getAction()) && audit.getDetail().contains("问题还没有解决")
+        ));
+
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        SupportConversationAudit audit = new SupportConversationAudit();
+        audit.setId(8L);
+        audit.setConversationId(99L);
+        audit.setActorUserId(10L);
+        audit.setAction("CLOSE_REJECTED");
+        audit.setDetail("问题还没有解决");
+        when(auditMapper.selectList(any())).thenReturn(List.of(audit));
+
+        List<SupportAuditResponse> audits = service.listAudits(30L, 99L);
+
+        assertEquals(1, audits.size());
+        assertEquals("CLOSE_REJECTED", audits.get(0).getAction());
     }
 
     @Test

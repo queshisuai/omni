@@ -687,8 +687,9 @@ export interface HelpFaqVO {
   answer: string
 }
 
-export type SupportConversationStatus = 'OPEN' | 'WAITING_AGENT' | 'ASSIGNED' | 'CLOSED' | string
+export type SupportConversationStatus = 'OPEN' | 'WAITING_AGENT' | 'ASSIGNED' | 'CLOSE_REQUESTED' | 'CLOSED' | string
 export type SupportMessageSenderType = 'USER' | 'AI' | 'AGENT' | 'SYSTEM' | string
+export type SupportTagCode = 'REFUND' | 'TICKET' | 'ADMISSION' | 'ACCOUNT' | 'PAYMENT_EXCEPTION'
 
 export interface SupportConversationVO {
   id: number
@@ -709,6 +710,13 @@ export interface SupportConversationVO {
   lastAgentMessageAt?: string | null
   userWaitingSeconds?: number | null
   slaOverdue?: boolean | null
+  tags?: string[] | null
+  closeRequestReason?: string | null
+  closeRequestedBy?: number | null
+  closeRequestedAt?: string | null
+  escalatedToAdmin?: boolean | null
+  escalationReason?: string | null
+  escalatedAt?: string | null
 }
 
 export interface SupportMessageVO {
@@ -730,6 +738,35 @@ export interface SupportAccountVO {
   status: number
   createTime?: string | null
   updateTime?: string | null
+}
+
+export interface SupportNoteVO {
+  id: number
+  conversationId: number
+  authorUserId?: number | null
+  authorDisplayName?: string | null
+  content: string
+  createTime?: string | null
+}
+
+export interface SupportQuickReplyVO {
+  id: number
+  category: string
+  title: string
+  content: string
+  sortOrder?: number | null
+}
+
+export interface SupportAuditVO {
+  id: number
+  conversationId: number
+  actorUserId?: number | null
+  actorDisplayName?: string | null
+  action: string
+  fromStatus?: string | null
+  toStatus?: string | null
+  detail?: string | null
+  createTime?: string | null
 }
 
 export interface RbacRoleVO {
