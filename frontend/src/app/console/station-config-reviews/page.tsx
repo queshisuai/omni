@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { approveStationConfigVersion, listStationConfigReviews, rejectStationConfigVersion } from '@/lib/api'
+import { globalPrompt } from '@/components/GlobalDialog'
 import type { StationConfigVersionVO } from '@/types/api'
 
 function formatChangeType(type: string) {
@@ -46,7 +47,11 @@ export default function StationConfigReviewsPage() {
   }, [])
 
   const handleReview = async (item: StationConfigVersionVO, action: 'approve' | 'reject') => {
-    const reviewNote = window.prompt(action === 'approve' ? '请输入通过备注（可留空）' : '请输入驳回原因（可留空）')
+    const reviewNote = await globalPrompt({
+      title: action === 'approve' ? '通过备注' : '驳回原因',
+      content: action === 'approve' ? '请输入通过备注（可留空）' : '请输入驳回原因（可留空）',
+      type: 'reason',
+    })
     if (reviewNote === null) return
     setProcessingId(item.id)
     setError('')

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { deleteSeatCraftVersion, getSeatCraftDraft, listSeatCraftVersions, publishSeatCraftDraft, rollbackSeatCraftVersion, saveSeatCraftDraft } from '@/lib/api'
+import { globalConfirm } from '@/components/GlobalDialog'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
 import { mergePersistedSeatCraftLayout, toSeatCraftVersionedLayoutPayload } from '@/components/seatcraft/block-layout'
 import { toSeatCraftVersionedLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
@@ -143,7 +144,13 @@ export default function StationSeatCraftPage() {
 
   const handleDeleteVersion = async (version: SeatCraftVersionSummaryVO) => {
     if (!version.id || version.versionStatus === 'published' || saving || publishing || creating) return
-    if (!window.confirm(`确认删除 v${version.versionNo ?? '-'}？删除后不可恢复。`)) return
+    const ok = await globalConfirm({
+      title: '确认删除',
+      content: `确认删除 v${version.versionNo ?? '-'}？删除后不可恢复。`,
+      type: 'danger',
+      confirmText: '确认删除',
+    })
+    if (!ok) return
     setError('')
     setMessage('')
     try {

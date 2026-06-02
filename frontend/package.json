@@ -33,7 +33,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run build",
+    "check:console-dialogs": "node scripts/check-console-native-dialogs.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
