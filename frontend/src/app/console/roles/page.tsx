@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { KeyRound, RefreshCw, Save, ShieldCheck } from 'lucide-react'
+import { globalConfirm } from '@/components/GlobalDialog'
 import { getUserInfo, listRbacPermissions, listRbacRoles, updateRbacRolePermissions } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import type { RbacPermissionVO, RbacRoleVO } from '@/types/api'
@@ -24,6 +25,25 @@ function groupPermission(code: string) {
     ticket: '票务',
   }
   return labels[prefix] || '其他'
+}
+
+function diffPermissionCodes(before: string[], after: string[]) {
+  const beforeSet = new Set(before)
+  const afterSet = new Set(after)
+  return {
+    added: after.filter(code => !beforeSet.has(code)),
+    removed: before.filter(code => !afterSet.has(code)),
+  }
+}
+
+function formatPermissionList(codes: string[], permissionNameByCode: Map<string, string>) {
+  if (codes.length === 0) return '无'
+  const visibleCodes = codes.slice(0, 8)
+  const items = visibleCodes.map(code => `${permissionNameByCode.get(code) || code}（${code}）`)
+  if (codes.length > visibleCodes.length) {
+    items.push(`另有 ${codes.length - visibleCodes.length} 项`)
+  }
+  return items.join('\n')
 }
 
 export default function ConsoleRolesPage() {
@@ -67,6 +87,10 @@ export default function ConsoleRolesPage() {
 
   const selectedRole = roles.find(role => role.code === selectedRoleCode)
   const selectedPermissionCodes = selectedByRole[selectedRoleCode] || []
+  const originalPermissionCodes = selectedRole?.permissionCodes || []
+  const permissionNameByCode = useMemo(() => {
+    return new Map(permissions.map(permission => [permission.code, permission.name]))
+  }, [permissions])
   const groupedPermissions = useMemo(() => {
     const groups = new Map<string, RbacPermissionVO[]>()
     for (const permission of permissions) {
@@ -91,6 +115,28 @@ export default function ConsoleRolesPage() {
     if (!selectedRoleCode) return
     setMessage('')
     setError('')
+    const { added, removed } = diffPermissionCodes(originalPermissionCodes, selectedPermissionCodes)
+    if (added.length === 0 && removed.length === 0) {
+      setMessage('角色授权没有变化')
+      return
+    }
+    const isDangerous = selectedRoleCode === 'platform_super_admin' || removed.includes('rbac.manage')
+    const confirmed = await globalConfirm({
+      type: isDangerous ? 'danger' : 'confirm',
+      title: isDangerous ? '确认保存高危授权变更' : '确认保存角色授权',
+      content: [
+        `角色：${selectedRole?.name || selectedRoleCode}`,
+        '',
+        `新增权限：\n${formatPermissionList(added, permissionNameByCode)}`,
+        '',
+        `移除权限：\n${formatPermissionList(removed, permissionNameByCode)}`,
+        '',
+        isDangerous ? '该操作可能影响平台后台管理能力，请确认后继续。' : '保存后将立即影响该角色的后台访问能力。',
+      ].join('\n'),
+      confirmText: '保存',
+      cancelText: '取消',
+    })
+    if (!confirmed) return
     setSavingRoleCode(selectedRoleCode)
     try {
       await updateRbacRolePermissions(selectedRoleCode, selectedPermissionCodes)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, listActivities, listExceptionTasks, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, removeTeamGrabMember, updateActivityMarketing, updateRbacRolePermissions } from './api.ts'
+import { ApiError, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, listActivities, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, removeTeamGrabMember, updateActivityMarketing, updateRbacRolePermissions } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -288,6 +288,35 @@ test('manages organizer admin accounts through user console endpoint', async () 
     assert.equal(requested[2].method, 'DELETE')
     assert.equal(accounts[0].role, 'organizer_admin')
     assert.equal(created.id, 12)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads operation audit logs through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: [{ id: 1, operatorId: 7, operatorRole: 'platform_super_admin', action: 'rbac.role_permission.update', targetType: 'rbac_role', success: true }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await listOperationAuditLogs({
+      operatorId: 7,
+      action: 'rbac.role_permission.update',
+      targetType: 'rbac_role',
+      success: true,
+      traceId: 'trace-abc',
+      limit: 50,
+    })
+
+    assert.equal(requestedUrl, '/api/user/console/audit-logs?operatorId=7&action=rbac.role_permission.update&targetType=rbac_role&success=true&traceId=trace-abc&limit=50')
+    assert.equal(result[0].operatorRole, 'platform_super_admin')
   } finally {
     globalThis.fetch = originalFetch
   }

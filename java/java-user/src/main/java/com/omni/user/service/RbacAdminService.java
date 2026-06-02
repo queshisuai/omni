@@ -26,6 +26,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class RbacAdminService {
+    private static final String PERMISSION_RBAC_MANAGE = "rbac.manage";
+
     private final RbacRoleMapper roleMapper;
     private final RbacPermissionMapper permissionMapper;
     private final RbacRolePermissionMapper rolePermissionMapper;
@@ -71,6 +73,7 @@ public class RbacAdminService {
                 throw new BusinessException(ResultCode.BAD_REQUEST, "权限不存在：" + String.join("、", missingCodes));
             }
         }
+        protectLastRbacManager(normalizedRoleCode, normalizedPermissionCodes);
         rolePermissionMapper.delete(new QueryWrapper<RbacRolePermission>().eq("role_code", normalizedRoleCode));
         LocalDateTime now = LocalDateTime.now();
         for (String permissionCode : normalizedPermissionCodes) {
@@ -122,5 +125,22 @@ public class RbacAdminService {
             throw new BusinessException(ResultCode.BAD_REQUEST, message);
         }
         return value.trim();
+    }
+
+    private void protectLastRbacManager(String roleCode, List<String> nextPermissionCodes) {
+        if (nextPermissionCodes.contains(PERMISSION_RBAC_MANAGE)) {
+            return;
+        }
+        Long currentRoleHasManage = rolePermissionMapper.selectCount(new QueryWrapper<RbacRolePermission>()
+                .eq("role_code", roleCode)
+                .eq("permission_code", PERMISSION_RBAC_MANAGE));
+        if (currentRoleHasManage == null || currentRoleHasManage == 0) {
+            return;
+        }
+        Long managerRoleCount = rolePermissionMapper.selectCount(new QueryWrapper<RbacRolePermission>()
+                .eq("permission_code", PERMISSION_RBAC_MANAGE));
+        if (managerRoleCount == null || managerRoleCount <= 1) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "至少保留一个拥有角色权限管理的角色");
+        }
     }
 }

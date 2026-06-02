@@ -15,7 +15,7 @@ const PATH_PERMISSION_MAP: Record<string, string[]> = {
   '/console/venue': ['venue.manage'],
   '/console/artists': ['artist.manage'],
   '/console/orders': ['order.view'],
-  '/console/audits': ['audit.view'],
+  '/console/audit-logs': ['audit.view'],
   '/console/exception-tasks': ['compensation.execute'],
   '/console/reconciliation': ['reconcile.view'],
 }

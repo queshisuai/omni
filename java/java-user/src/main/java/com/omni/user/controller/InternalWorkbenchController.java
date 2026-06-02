@@ -12,6 +12,7 @@ import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.OrganizerAdminAccountRequest;
 import com.omni.user.dto.OrganizerAdminAccountResponse;
+import com.omni.user.dto.OperationAuditLogResponse;
 import com.omni.user.dto.RbacPermissionResponse;
 import com.omni.user.dto.RbacRolePermissionUpdateRequest;
 import com.omni.user.dto.RbacRoleResponse;
@@ -142,6 +143,21 @@ public class InternalWorkbenchController {
         auditSuccess(userId, "organizer_admin.deactivate", "user", response.getId(), response.getPhone(),
                 "停用主办方管理员", "停用成功");
         return Result.success(response);
+    }
+
+    @GetMapping("/audit-logs")
+    public Result<java.util.List<OperationAuditLogResponse>> listAuditLogs(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Long operatorId,
+            @RequestParam(required = false) String action,
+            @RequestParam(required = false) String targetType,
+            @RequestParam(required = false) Boolean success,
+            @RequestParam(required = false) String traceId,
+            @RequestParam(required = false) Integer limit) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        requirePermission(userId, "audit.view");
+        return Result.success(operationAuditService.list(operatorId, action, targetType, success, traceId, limit));
     }
 
     @GetMapping("/exception-tasks")

@@ -76,4 +76,20 @@ class RbacAdminServiceTest {
 
         assertEquals("权限不存在：missing.permission", error.getMessage());
     }
+
+    @Test
+    void rejectsRemovingLastRbacManagePermission() {
+        RbacRole role = new RbacRole();
+        role.setCode("platform_super_admin");
+        when(roleMapper.selectOne(any())).thenReturn(role);
+        when(permissionMapper.selectList(any())).thenReturn(List.of());
+        when(rolePermissionMapper.selectCount(any()))
+                .thenReturn(1L)
+                .thenReturn(1L);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.updateRolePermissions("platform_super_admin", List.of()));
+
+        assertEquals("至少保留一个拥有角色权限管理的角色", error.getMessage());
+    }
 }

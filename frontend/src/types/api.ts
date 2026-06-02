@@ -755,6 +755,22 @@ export interface OrganizerAdminAccountVO {
   updateTime?: string | null
 }
 
+export interface OperationAuditLogVO {
+  id: number
+  operatorId: number
+  operatorRole: string
+  action: string
+  targetType: string
+  targetId?: number | null
+  targetRef?: string | null
+  reason?: string | null
+  result?: string | null
+  success: boolean
+  errorMessage?: string | null
+  traceId?: string | null
+  createTime?: string | null
+}
+
 export interface ExceptionTaskVO {
   id: number
   taskType: string

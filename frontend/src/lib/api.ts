@@ -458,6 +458,25 @@ export async function deactivateOrganizerAdminAccount(id: number) {
   })
 }
 
+export async function listOperationAuditLogs(params: {
+  operatorId?: number | null
+  action?: string
+  targetType?: string
+  success?: boolean | null
+  traceId?: string
+  limit?: number
+} = {}) {
+  const search = new URLSearchParams()
+  if (params.operatorId) search.set('operatorId', String(params.operatorId))
+  if (params.action?.trim()) search.set('action', params.action.trim())
+  if (params.targetType?.trim()) search.set('targetType', params.targetType.trim())
+  if (params.success !== undefined && params.success !== null) search.set('success', String(params.success))
+  if (params.traceId?.trim()) search.set('traceId', params.traceId.trim())
+  if (params.limit) search.set('limit', String(params.limit))
+  const qs = search.toString()
+  return request<import('@/types/api').OperationAuditLogVO[]>(`/api/user/console/audit-logs${qs ? `?${qs}` : ''}`)
+}
+
 export { ApiError }
 
 // ========== 票务服务 ==========

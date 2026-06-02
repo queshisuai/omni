@@ -28,6 +28,7 @@ const menuItems = [
   { href: '/console/support-conversations', label: '客服会话记录', icon: Headphones, roles: ['admin'] },
   { href: '/console/roles', label: '角色权限', icon: ShieldCheck, roles: ['admin'] },
   { href: '/console/organizer-admins', label: '主办方管理员', icon: Users, roles: ['admin'] },
+  { href: '/console/audit-logs', label: '操作审计', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/exception-tasks', label: '异常任务', icon: ShieldAlert, roles: ['admin'] },
   { href: '/console/reconciliation', label: '日结对账', icon: FileSearch, roles: ['admin'] },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },

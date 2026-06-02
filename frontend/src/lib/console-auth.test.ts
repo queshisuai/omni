@@ -5,7 +5,7 @@ import { canAccessConsolePath, canUseConsoleAction, canEnterConsole } from './co
 test('support manager can access support pages but not audit pages', () => {
   const permissions = ['support.conversation.view', 'support.account.manage']
   assert.equal(canAccessConsolePath('/console/support-accounts', permissions), true)
-  assert.equal(canAccessConsolePath('/console/audits', permissions), false)
+  assert.equal(canAccessConsolePath('/console/audit-logs', permissions), false)
 })
 
 test('organizer admin can only access own scope pages', () => {
