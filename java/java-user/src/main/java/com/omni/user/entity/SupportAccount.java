@@ -14,6 +14,7 @@ public class SupportAccount {
     private String phone;
     private String nickname;
     private Integer status;
+    private String supportRole;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -28,6 +29,9 @@ public class SupportAccount {
 
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
+
+    public String getSupportRole() { return supportRole; }
+    public void setSupportRole(String supportRole) { this.supportRole = supportRole; }
 
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }

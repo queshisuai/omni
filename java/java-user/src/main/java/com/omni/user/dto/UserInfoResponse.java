@@ -1,6 +1,7 @@
 package com.omni.user.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class UserInfoResponse {
 
@@ -13,6 +14,7 @@ public class UserInfoResponse {
     private String role;
     private Integer organizerStatus;
     private String organizerName;
+    private List<String> permissionCodes;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -42,6 +44,9 @@ public class UserInfoResponse {
 
     public String getOrganizerName() { return organizerName; }
     public void setOrganizerName(String organizerName) { this.organizerName = organizerName; }
+
+    public List<String> getPermissionCodes() { return permissionCodes; }
+    public void setPermissionCodes(List<String> permissionCodes) { this.permissionCodes = permissionCodes; }
 
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }

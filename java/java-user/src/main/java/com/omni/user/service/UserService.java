@@ -2,6 +2,7 @@ package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
@@ -20,6 +21,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 /**
  * 用户服务
  */
@@ -31,10 +34,12 @@ public class UserService {
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final RbacService rbacService;
 
-    public UserService(UserMapper userMapper, PasswordEncoder passwordEncoder) {
+    public UserService(UserMapper userMapper, PasswordEncoder passwordEncoder, RbacService rbacService) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.rbacService = rbacService;
     }
 
     /**
@@ -104,6 +109,7 @@ public class UserService {
         response.setAvatar(user.getAvatar());
         response.setToken(token);
         response.setRole(role);
+        response.setPermissionCodes(loadPermissionCodes(user.getId()));
 
         log.info("用户登录成功: userId={}, phone={}", user.getId(), user.getPhone());
         return response;
@@ -139,7 +145,9 @@ public class UserService {
         if (user == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
-        return toUserInfoResponse(user);
+        UserInfoResponse response = toUserInfoResponse(user);
+        response.setPermissionCodes(loadPermissionCodes(userId));
+        return response;
     }
 
     /**
@@ -303,6 +311,15 @@ public class UserService {
 
         user.setPassword(passwordEncoder.encode(newPassword));
         userMapper.updateById(user);
+    }
+
+    private List<String> loadPermissionCodes(Long userId) {
+        try {
+            InternalAuthContextResponse auth = rbacService.getInternalAuthContext(userId);
+            return auth.getPermissionCodes();
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     private InternalUserRefResponse toInternalUserRefResponse(User user) {

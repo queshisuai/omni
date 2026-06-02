@@ -1,5 +1,6 @@
 package com.omni.user.service;
 
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.InternalUserRefResponse;
@@ -10,6 +11,8 @@ import com.omni.user.entity.User;
 import com.omni.user.mapper.UserMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -25,7 +28,8 @@ class UserServiceTest {
 
     private final UserMapper userMapper = mock(UserMapper.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
-    private final UserService userService = new UserService(userMapper, passwordEncoder);
+    private final RbacService rbacService = mock(RbacService.class);
+    private final UserService userService = new UserService(userMapper, passwordEncoder, rbacService);
 
     @Test
     void smsLoginRejectsWrongCode() {
@@ -40,6 +44,7 @@ class UserServiceTest {
     @Test
     void smsLoginAcceptsMockCode666666() {
         when(userMapper.selectOne(any())).thenReturn(existingUser());
+        when(rbacService.getInternalAuthContext(2004L)).thenReturn(authContextWithNoPermissions());
 
         LoginResponse response = userService.login(smsLoginRequest("666666"));
 
@@ -333,6 +338,12 @@ class UserServiceTest {
         request.setNewPassword(newPassword);
         request.setConfirmPassword(confirmPassword);
         return request;
+    }
+
+    private InternalAuthContextResponse authContextWithNoPermissions() {
+        InternalAuthContextResponse auth = new InternalAuthContextResponse();
+        auth.setPermissionCodes(List.of());
+        return auth;
     }
 
     private User existingUser() {

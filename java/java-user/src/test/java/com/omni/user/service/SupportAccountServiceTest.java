@@ -1,5 +1,6 @@
 package com.omni.user.service;
 
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.SupportAccountRequest;
 import com.omni.user.dto.SupportAccountResponse;
@@ -25,11 +26,13 @@ class SupportAccountServiceTest {
     private final UserMapper userMapper = mock(UserMapper.class);
     private final SupportAccountMapper supportAccountMapper = mock(SupportAccountMapper.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
-    private final SupportAccountService service = new SupportAccountService(userMapper, supportAccountMapper, passwordEncoder);
+    private final RbacService rbacService = mock(RbacService.class);
+    private final SupportAccountService service = new SupportAccountService(userMapper, supportAccountMapper, passwordEncoder, rbacService);
 
     @Test
     void adminCreatesSupportAccountWithSupportRoleAndSupportAccountRow() {
         when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
+        when(rbacService.getInternalAuthContext(1L)).thenReturn(authContextWithPermission("support.account.manage"));
         when(userMapper.selectOne(any())).thenReturn(null);
         when(passwordEncoder.encode("support123")).thenReturn("encoded-support123");
         when(userMapper.insert(any(User.class))).thenAnswer(invocation -> {
@@ -57,13 +60,14 @@ class SupportAccountServiceTest {
     @Test
     void nonAdminCannotCreateSupportAccount() {
         when(userMapper.selectById(2L)).thenReturn(user(2L, "organizer", 1));
+        when(rbacService.getInternalAuthContext(2L)).thenReturn(authContextWithoutPermission("support.account.manage"));
 
         BusinessException error = assertThrows(
                 BusinessException.class,
                 () -> service.create(2L, request("13900000002", "客服一号", "support123"))
         );
 
-        assertEquals("仅平台管理员可以管理客服账号", error.getMessage());
+        assertEquals("无权限", error.getMessage());
         verify(userMapper, never()).insert(any());
         verify(supportAccountMapper, never()).insert(any());
     }
@@ -73,6 +77,7 @@ class SupportAccountServiceTest {
         User support = user(3L, "support", 1);
         SupportAccount account = supportAccount(3L, "13900000003", "客服三号", 1);
         when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
+        when(rbacService.getInternalAuthContext(1L)).thenReturn(authContextWithPermission("support.account.manage"));
         when(userMapper.selectById(3L)).thenReturn(support);
         when(supportAccountMapper.selectById(3L)).thenReturn(account);
 
@@ -87,6 +92,7 @@ class SupportAccountServiceTest {
     @Test
     void listOnlyReturnsRowsFromSupportAccountTableForAdmin() {
         when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
+        when(rbacService.getInternalAuthContext(1L)).thenReturn(authContextWithPermission("support.account.manage"));
         when(supportAccountMapper.selectList(any())).thenReturn(List.of(supportAccount(3L, "13900000003", "客服三号", 1)));
 
         List<SupportAccountResponse> accounts = service.list(1L);
@@ -104,6 +110,7 @@ class SupportAccountServiceTest {
         support.setNickname("客服三号");
         SupportAccount account = supportAccount(3L, "13900000003", "客服三号", 1);
         when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
+        when(rbacService.getInternalAuthContext(1L)).thenReturn(authContextWithPermission("support.account.manage"));
         when(userMapper.selectById(3L)).thenReturn(support);
         when(supportAccountMapper.selectById(3L)).thenReturn(account);
         when(userMapper.selectOne(any())).thenReturn(null);
@@ -123,6 +130,31 @@ class SupportAccountServiceTest {
         assertEquals("客服四号", account.getNickname());
         verify(userMapper).updateById(support);
         verify(supportAccountMapper).updateById(account);
+    }
+
+    @Test
+    void supportAgentCannotManageSupportAccounts() {
+        when(userMapper.selectById(2L)).thenReturn(user(2L, "support_agent", 1));
+        when(rbacService.getInternalAuthContext(2L)).thenReturn(authContextWithoutPermission("support.account.manage"));
+
+        BusinessException error = assertThrows(
+                BusinessException.class,
+                () -> service.create(2L, request("13900000002", "客服一号", "support123"))
+        );
+
+        assertEquals("无权限", error.getMessage());
+    }
+
+    private InternalAuthContextResponse authContextWithPermission(String permissionCode) {
+        InternalAuthContextResponse auth = new InternalAuthContextResponse();
+        auth.setPermissionCodes(List.of(permissionCode));
+        return auth;
+    }
+
+    private InternalAuthContextResponse authContextWithoutPermission(String permissionCode) {
+        InternalAuthContextResponse auth = new InternalAuthContextResponse();
+        auth.setPermissionCodes(List.of());
+        return auth;
     }
 
     private SupportAccountRequest request(String phone, String nickname, String password) {

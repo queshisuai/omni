@@ -1,5 +1,6 @@
 package com.omni.user.controller;
 
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
@@ -26,6 +27,7 @@ import com.omni.user.dto.UserInfoResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.omni.user.service.OrganizerApplicationService;
+import com.omni.user.service.RbacService;
 import com.omni.user.service.UserAttendeeService;
 import com.omni.user.service.UserAssetService;
 import com.omni.user.service.UserBrowseHistoryService;
@@ -52,30 +54,33 @@ public class UserController {
 
     private final UserService userService;
     private final OrganizerApplicationService organizerApplicationService;
+    private final RbacService rbacService;
     private final UserAssetService userAssetService;
     private final UserAttendeeService userAttendeeService;
     private final UserBrowseHistoryService userBrowseHistoryService;
     private final String internalApiToken;
 
     public UserController(UserService userService, OrganizerApplicationService organizerApplicationService) {
-        this(userService, organizerApplicationService, null, null, null, "");
+        this(userService, organizerApplicationService, null, null, null, null, "");
     }
 
     public UserController(UserService userService,
                           OrganizerApplicationService organizerApplicationService,
                           String internalApiToken) {
-        this(userService, organizerApplicationService, null, null, null, internalApiToken);
+        this(userService, organizerApplicationService, null, null, null, null, internalApiToken);
     }
 
     @Autowired
     public UserController(UserService userService,
                           OrganizerApplicationService organizerApplicationService,
+                          RbacService rbacService,
                           UserAssetService userAssetService,
                           UserAttendeeService userAttendeeService,
                           UserBrowseHistoryService userBrowseHistoryService,
                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.userService = userService;
         this.organizerApplicationService = organizerApplicationService;
+        this.rbacService = rbacService;
         this.userAssetService = userAssetService;
         this.userAttendeeService = userAttendeeService;
         this.userBrowseHistoryService = userBrowseHistoryService;
@@ -86,7 +91,7 @@ public class UserController {
                           OrganizerApplicationService organizerApplicationService,
                           UserAssetService userAssetService,
                           String internalApiToken) {
-        this(userService, organizerApplicationService, userAssetService, null, null, internalApiToken);
+        this(userService, organizerApplicationService, null, userAssetService, null, null, internalApiToken);
     }
 
     public UserController(UserService userService,
@@ -94,7 +99,7 @@ public class UserController {
                           UserAssetService userAssetService,
                           UserAttendeeService userAttendeeService,
                           String internalApiToken) {
-        this(userService, organizerApplicationService, userAssetService, userAttendeeService, null, internalApiToken);
+        this(userService, organizerApplicationService, null, userAssetService, userAttendeeService, null, internalApiToken);
     }
 
     /**
@@ -299,6 +304,16 @@ public class UserController {
             return Result.fail(403, "无权限");
         }
         return Result.success(userService.getInternalUserRef(id));
+    }
+
+    @GetMapping("/internal/auth/context/{id}")
+    public Result<InternalAuthContextResponse> getInternalAuthContext(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(rbacService.getInternalAuthContext(id));
     }
 
     @PostMapping("/internal/attendees/resolve")

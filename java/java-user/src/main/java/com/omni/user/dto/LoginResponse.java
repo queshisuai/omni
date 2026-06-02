@@ -1,5 +1,7 @@
 package com.omni.user.dto;
 
+import java.util.List;
+
 /**
  * 登录响应
  */
@@ -11,6 +13,7 @@ public class LoginResponse {
     private String avatar;
     private String token;
     private String role;
+    private List<String> permissionCodes;
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
@@ -29,4 +32,7 @@ public class LoginResponse {
 
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
+
+    public List<String> getPermissionCodes() { return permissionCodes; }
+    public void setPermissionCodes(List<String> permissionCodes) { this.permissionCodes = permissionCodes; }
 }
