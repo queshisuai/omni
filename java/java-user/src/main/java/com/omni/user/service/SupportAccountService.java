@@ -86,10 +86,15 @@ public class SupportAccountService {
         user.setRole(ROLE_SUPPORT);
         user.setStatus(1);
         userMapper.insert(user);
+        String supportRole = request.getSupportRole();
+        if (supportRole == null) {
+            supportRole = "support_agent";
+        }
         SupportAccount account = new SupportAccount();
         account.setUserId(user.getId());
         account.setPhone(phone);
         account.setNickname(nickname);
+        account.setSupportRole(supportRole);
         account.setStatus(1);
         supportAccountMapper.insert(account);
         auditWrite(operatorId, "support.account.create", Long.toString(user.getId()), phone, "创建成功", true);
@@ -202,6 +207,7 @@ public class SupportAccountService {
         response.setPhone(account.getPhone());
         response.setNickname(account.getNickname());
         response.setRole(ROLE_SUPPORT);
+        response.setSupportRole(account.getSupportRole());
         response.setStatus(account.getStatus());
         response.setCreateTime(account.getCreateTime());
         response.setUpdateTime(account.getUpdateTime());

@@ -8,6 +8,7 @@ public class SupportAccountResponse {
     private String phone;
     private String nickname;
     private String role;
+    private String supportRole;
     private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
@@ -23,6 +24,9 @@ public class SupportAccountResponse {
 
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
+
+    public String getSupportRole() { return supportRole; }
+    public void setSupportRole(String supportRole) { this.supportRole = supportRole; }
 
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }

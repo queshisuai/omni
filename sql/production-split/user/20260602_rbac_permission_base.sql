@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS rbac_role_permission (
 ALTER TABLE support_account
     ADD COLUMN IF NOT EXISTS support_role VARCHAR(32) NOT NULL DEFAULT 'support_agent';
 
+UPDATE support_account SET support_role = 'support_agent' WHERE support_role IS NULL;
+
 INSERT INTO rbac_role (code, name) VALUES
     ('platform_super_admin', '平台超管'),
     ('support_manager', '客服主管'),

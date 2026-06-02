@@ -6,6 +6,7 @@ public class SupportAccountRequest {
     private String nickname;
     private String password;
     private Integer status;
+    private String supportRole;
 
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
@@ -18,4 +19,7 @@ public class SupportAccountRequest {
 
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
+
+    public String getSupportRole() { return supportRole; }
+    public void setSupportRole(String supportRole) { this.supportRole = supportRole; }
 }
