@@ -26,6 +26,12 @@ spring:
       transport:
         dashboard: ${SENTINEL_DASHBOARD:localhost:8858}
         port: ${SENTINEL_TICKET_TRANSPORT_PORT:8721}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASSWORD:123456}
+    virtual-host: /
 
 internal:
   api:
@@ -37,3 +43,7 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: auto
+
+omni:
+  mq:
+    enabled: true

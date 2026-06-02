@@ -14,3 +14,7 @@ CREATE INDEX IF NOT EXISTS idx_notification_user_read_visible
 
 CREATE INDEX IF NOT EXISTS idx_notification_user_aggregate_visible
     ON notification(user_id, aggregate_key, deleted_time);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_notification_user_aggregate_visible
+    ON notification(user_id, aggregate_key)
+    WHERE aggregate_key IS NOT NULL AND deleted_time IS NULL;

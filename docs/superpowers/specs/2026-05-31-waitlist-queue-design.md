@@ -191,7 +191,7 @@ SeatLockScheduler.releaseExpiredSeatLocks()
 SeatLockScheduler.releaseExpiredSeatLocks()
   -> OrderService.releaseExpiredSeatLocks()
   -> 返回 TicketReleasedEvent 列表
-  -> WaitlistInternalClient.allocate(event)
+  -> 发布 waitlist.released MQ 事件
 ```
 
 事件字段：
@@ -314,15 +314,16 @@ DELETE /api/waitlist/entries/{id}
 - `ALLOCATING` 不可取消，避免与自动分配并发冲突。
 - `OFFERED` 不通过候补取消释放库存；用户应取消订单，走 order-service 释放链路。
 
-### 内部接口
+### 内部入口
 
 ```text
-POST /api/waitlist/internal/released
+RabbitMQ exchange: omni.waitlist
+Routing key: waitlist.released
+Routing key: waitlist.order-paid
 POST /api/waitlist/internal/offers/expire-scan
-POST /api/waitlist/internal/orders/{orderId}/paid
 ```
 
-内部接口只接受 `X-Internal-Token`。
+释放和支付事件通过 RabbitMQ 投递；过期扫描仍是内部 HTTP 接口，只接受 `X-Internal-Token`。
 
 ## 前端行为
 

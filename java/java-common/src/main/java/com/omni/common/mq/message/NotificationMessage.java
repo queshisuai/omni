@@ -1,6 +1,13 @@
-package com.omni.user.dto;
+package com.omni.common.mq.message;
 
-public class NotificationMessageRequest {
+import java.io.Serializable;
+
+/**
+ * 通知消息 MQ 载体 — 替代各模块的 NotificationMessageRequest + Feign 调用
+ */
+public class NotificationMessage implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private Long userId;
     private Long orderId;
     private String type;
@@ -9,9 +16,9 @@ public class NotificationMessageRequest {
     private String actionLabel;
     private String aggregateKey;
 
-    public NotificationMessageRequest() {}
+    public NotificationMessage() {}
 
-    public NotificationMessageRequest(Long userId, Long orderId, String type, String content) {
+    public NotificationMessage(Long userId, Long orderId, String type, String content) {
         this.userId = userId;
         this.orderId = orderId;
         this.type = type;

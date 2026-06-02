@@ -33,7 +33,7 @@ class ActivityArtistServiceTest {
             context.registerBean(ArtistMapper.class, () -> mock(ArtistMapper.class));
             context.registerBean(SessionMapper.class, () -> mock(SessionMapper.class));
             context.registerBean(com.omni.ticket.client.OrderInternalClient.class, () -> mock(com.omni.ticket.client.OrderInternalClient.class));
-            context.registerBean(com.omni.ticket.client.NotificationInternalClient.class, () -> mock(com.omni.ticket.client.NotificationInternalClient.class));
+            context.registerBean(com.omni.ticket.mq.NotificationMqProducer.class, () -> mock(com.omni.ticket.mq.NotificationMqProducer.class));
             context.registerBean(ActivityArtistService.class);
 
             context.refresh();

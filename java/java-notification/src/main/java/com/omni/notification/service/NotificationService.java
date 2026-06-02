@@ -77,18 +77,36 @@ public class NotificationService {
         if (!StringUtils.hasText(request.getContent())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "通知内容不能为空");
         }
+        String actionHref = trimToNull(request.getActionHref());
+        String actionLabel = trimToNull(request.getActionLabel());
+        String aggregateKey = trimToNull(request.getAggregateKey());
+        if (actionHref == null && actionLabel == null && request.getOrderId() != null) {
+            actionHref = "/orders/" + request.getOrderId();
+            actionLabel = "查看相关订单";
+            if (aggregateKey == null) {
+                aggregateKey = "ORDER:" + request.getOrderId();
+            }
+        }
+        if (aggregateKey != null) {
+            Notification existing = notificationMapper.selectOne(new LambdaQueryWrapper<Notification>()
+                    .eq(Notification::getUserId, request.getUserId())
+                    .eq(Notification::getAggregateKey, aggregateKey)
+                    .isNull(Notification::getDeletedTime)
+                    .orderByDesc(Notification::getCreateTime)
+                    .last("LIMIT 1"));
+            if (existing != null) {
+                return existing;
+            }
+        }
         Notification notification = new Notification();
         notification.setUserId(request.getUserId());
         notification.setOrderId(request.getOrderId());
         notification.setType(StringUtils.hasText(request.getType()) ? request.getType().trim() : "IN_APP");
         notification.setContent(request.getContent().trim());
         notification.setStatus(1);
-        notification.setActionHref(trimToNull(request.getActionHref()));
-        notification.setActionLabel(trimToNull(request.getActionLabel()));
-        notification.setAggregateKey(trimToNull(request.getAggregateKey()));
-        if (notification.getActionHref() == null && notification.getActionLabel() == null) {
-            applyOrderAction(notification);
-        }
+        notification.setActionHref(actionHref);
+        notification.setActionLabel(actionLabel);
+        notification.setAggregateKey(aggregateKey);
         notificationMapper.insert(notification);
         return notification;
     }

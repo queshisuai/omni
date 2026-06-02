@@ -61,7 +61,7 @@ export default function HelpPage() {
     setMessages(data)
   }
 
-  const loadMyConversation = async (preferredId?: number | null, ownerUserId = currentUserId) => {
+  async function loadMyConversation(preferredId?: number | null, ownerUserId = currentUserId) {
     const conversations = await listMySupportConversations()
     const next = pickDefaultUserSupportConversation(conversations, ownerUserId, preferredId)
     setConversation(next)

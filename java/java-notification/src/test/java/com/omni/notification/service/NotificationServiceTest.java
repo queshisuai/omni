@@ -14,8 +14,10 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -62,6 +64,41 @@ class NotificationServiceTest {
         assertEquals("/orders/9001", saved.getActionHref());
         assertEquals("查看相关订单", saved.getActionLabel());
         assertEquals("ORDER:9001", saved.getAggregateKey());
+    }
+
+    @Test
+    void createInternalMessageReturnsExistingVisibleAggregateMessageWithoutInsert() {
+        InternalNotificationRequest request = new InternalNotificationRequest();
+        request.setUserId(10L);
+        request.setType("SUPPORT_REPLY");
+        request.setContent("人工客服回复了你的咨询，请查看客服会话。");
+        request.setAggregateKey("SUPPORT_REPLY:99");
+        Notification existing = notification(99L, 10L, null, null);
+        existing.setAggregateKey("SUPPORT_REPLY:99");
+        when(notificationMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existing);
+
+        Notification result = service.createInternalMessage(request);
+
+        assertSame(existing, result);
+        verify(notificationMapper, never()).insert(any());
+    }
+
+    @Test
+    void createInternalMessageReturnsExistingOrderAggregateMessageWithoutInsert() {
+        InternalNotificationRequest request = new InternalNotificationRequest();
+        request.setUserId(10L);
+        request.setOrderId(9001L);
+        request.setType("WAITLIST_OFFERED");
+        request.setContent("候补订单待支付");
+        Notification existing = notification(100L, 10L, null, null);
+        existing.setOrderId(9001L);
+        existing.setAggregateKey("ORDER:9001");
+        when(notificationMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existing);
+
+        Notification result = service.createInternalMessage(request);
+
+        assertSame(existing, result);
+        verify(notificationMapper, never()).insert(any());
     }
 
     @Test

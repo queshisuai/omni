@@ -890,6 +890,9 @@ CREATE TABLE notification (
 CREATE INDEX IF NOT EXISTS idx_notification_user_visible_time ON notification(user_id, deleted_time, create_time DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_user_read_visible ON notification(user_id, read_time, deleted_time);
 CREATE INDEX IF NOT EXISTS idx_notification_user_aggregate_visible ON notification(user_id, aggregate_key, deleted_time);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_notification_user_aggregate_visible
+    ON notification(user_id, aggregate_key)
+    WHERE aggregate_key IS NOT NULL AND deleted_time IS NULL;
 
 -- 库存流水表
 CREATE TABLE stock_log (

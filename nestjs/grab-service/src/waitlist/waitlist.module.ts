@@ -4,6 +4,7 @@ import { DatabaseModule } from '../database/database.module';
 import { OrderClientService } from '../grab/order-client.service';
 import { WaitlistController } from './waitlist.controller';
 import { WaitlistAllocatorService } from './waitlist-allocator.service';
+import { WaitlistMqConsumer } from './waitlist-mq.consumer';
 import { WaitlistNotificationService } from './waitlist-notification.service';
 import { WaitlistRepository } from './waitlist.repository';
 import { WaitlistService } from './waitlist.service';
@@ -17,6 +18,7 @@ import { WaitlistService } from './waitlist.service';
     WaitlistAllocatorService,
     WaitlistNotificationService,
     OrderClientService,
+    WaitlistMqConsumer,
   ],
 })
 export class WaitlistModule {}

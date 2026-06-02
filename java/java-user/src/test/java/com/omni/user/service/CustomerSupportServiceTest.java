@@ -2,7 +2,7 @@ package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.omni.exception.BusinessException;
-import com.omni.user.client.NotificationInternalClient;
+import com.omni.user.mq.NotificationMqProducer;
 import com.omni.user.dto.SupportConversationRequest;
 import com.omni.user.dto.SupportConversationResponse;
 import com.omni.user.dto.SupportMessageRequest;
@@ -43,13 +43,13 @@ class CustomerSupportServiceTest {
     private final SupportConversationMapper conversationMapper = mock(SupportConversationMapper.class);
     private final SupportMessageMapper messageMapper = mock(SupportMessageMapper.class);
     private final UserMapper userMapper = mock(UserMapper.class);
-    private final NotificationInternalClient notificationClient = mock(NotificationInternalClient.class);
+    private final NotificationMqProducer notificationProducer = mock(NotificationMqProducer.class);
     private final CustomerSupportService service = new CustomerSupportService(
             conversationMapper,
             messageMapper,
             userMapper,
             new SupportAiService((question, projectKnowledge) -> java.util.Optional.empty()),
-            notificationClient,
+            notificationProducer,
             "internal-token"
         );
 
@@ -333,15 +333,15 @@ class CustomerSupportServiceTest {
 
         service.sendMessage(30L, 99L, message);
 
-        verify(notificationClient).createMessage(org.mockito.ArgumentMatchers.argThat(request ->
-                Long.valueOf(10L).equals(request.getUserId())
-                        && request.getOrderId() == null
-                        && "SUPPORT_REPLY".equals(request.getType())
-                        && request.getContent().contains("客服回复")
-                        && "/help".equals(request.getActionHref())
-                        && "查看客服会话".equals(request.getActionLabel())
-                        && "SUPPORT_REPLY:99".equals(request.getAggregateKey())
-        ), eq("internal-token"));
+        verify(notificationProducer).sendNotification(org.mockito.ArgumentMatchers.argThat(messageReq ->
+                Long.valueOf(10L).equals(messageReq.getUserId())
+                        && messageReq.getOrderId() == null
+                        && "SUPPORT_REPLY".equals(messageReq.getType())
+                        && messageReq.getContent().contains("客服回复")
+                        && "/help".equals(messageReq.getActionHref())
+                        && "查看客服会话".equals(messageReq.getActionLabel())
+                        && "SUPPORT_REPLY:99".equals(messageReq.getAggregateKey())
+        ));
     }
 
     @Test
@@ -360,7 +360,7 @@ class CustomerSupportServiceTest {
 
         service.sendMessage(30L, 99L, message);
 
-        verify(notificationClient, org.mockito.Mockito.never()).createMessage(any(), any());
+        verify(notificationProducer, org.mockito.Mockito.never()).sendNotification(any());
     }
 
     @Test
@@ -379,10 +379,10 @@ class CustomerSupportServiceTest {
 
         service.sendMessage(30L, 99L, message);
 
-        verify(notificationClient).createMessage(org.mockito.ArgumentMatchers.argThat(request ->
-                Long.valueOf(10L).equals(request.getUserId())
-                        && "SUPPORT_REPLY".equals(request.getType())
-        ), eq("internal-token"));
+        verify(notificationProducer).sendNotification(org.mockito.ArgumentMatchers.argThat(messageReq ->
+                Long.valueOf(10L).equals(messageReq.getUserId())
+                        && "SUPPORT_REPLY".equals(messageReq.getType())
+        ));
     }
 
     @Test
@@ -402,10 +402,10 @@ class CustomerSupportServiceTest {
 
         service.sendMessage(30L, 99L, message);
 
-        verify(notificationClient).createMessage(org.mockito.ArgumentMatchers.argThat(request ->
-                Long.valueOf(10L).equals(request.getUserId())
-                        && "SUPPORT_REPLY".equals(request.getType())
-        ), eq("internal-token"));
+        verify(notificationProducer).sendNotification(org.mockito.ArgumentMatchers.argThat(messageReq ->
+                Long.valueOf(10L).equals(messageReq.getUserId())
+                        && "SUPPORT_REPLY".equals(messageReq.getType())
+        ));
     }
 
     @Test

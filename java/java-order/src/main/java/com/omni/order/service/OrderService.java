@@ -7,11 +7,12 @@ import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
+import com.omni.common.mq.MqPublishSupport;
 import com.omni.exception.BusinessException;
 import com.omni.order.client.PaymentInternalClient;
 import com.omni.order.client.TicketSalesInternalClient;
 import com.omni.order.client.UserInternalClient;
-import com.omni.order.client.WaitlistInternalClient;
+import com.omni.order.mq.WaitlistMqProducer;
 import com.omni.order.config.OrderSentinelConfig;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.CreateTeamOrderRequest;
@@ -35,7 +36,7 @@ import com.omni.order.dto.InternalUserRefResponse;
 import com.omni.order.dto.TicketReleasedEvent;
 import com.omni.order.dto.TicketSalesReleaseResponse;
 import com.omni.order.dto.TicketSalesSeatLockResponse;
-import com.omni.order.dto.WaitlistReleaseRequest;
+import com.omni.common.mq.message.WaitlistReleasedMessage;
 import com.omni.order.entity.Order;
 import com.omni.order.entity.OrderAttendee;
 import com.omni.order.entity.OrderSeat;
@@ -96,7 +97,7 @@ public class OrderService {
     private final PaymentInternalClient paymentInternalClient;
     private final TicketSalesInternalClient ticketSalesInternalClient;
     private final UserInternalClient userInternalClient;
-    private final WaitlistInternalClient waitlistInternalClient;
+    private final WaitlistMqProducer waitlistProducer;
     private final String internalApiToken;
     private OrderAttendeeMapper orderAttendeeMapper;
     private TicketWalletService ticketWalletService;
@@ -116,7 +117,7 @@ public class OrderService {
                         PaymentInternalClient paymentInternalClient,
                         TicketSalesInternalClient ticketSalesInternalClient,
                         UserInternalClient userInternalClient,
-                        WaitlistInternalClient waitlistInternalClient,
+                        WaitlistMqProducer waitlistProducer,
                         @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.orderMapper = orderMapper;
         this.orderSeatMapper = orderSeatMapper;
@@ -124,7 +125,7 @@ public class OrderService {
         this.paymentInternalClient = paymentInternalClient;
         this.ticketSalesInternalClient = ticketSalesInternalClient;
         this.userInternalClient = userInternalClient;
-        this.waitlistInternalClient = waitlistInternalClient;
+        this.waitlistProducer = waitlistProducer;
         this.internalApiToken = internalApiToken;
     }
 
@@ -143,8 +144,8 @@ public class OrderService {
                         PaymentInternalClient paymentInternalClient,
                         TicketSalesInternalClient ticketSalesInternalClient,
                         UserInternalClient userInternalClient,
-                        WaitlistInternalClient waitlistInternalClient) {
-        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, waitlistInternalClient, "test-internal-token");
+                        WaitlistMqProducer waitlistProducer) {
+        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, waitlistProducer, "test-internal-token");
     }
 
     public OrderService(OrderMapper orderMapper,
@@ -153,9 +154,9 @@ public class OrderService {
                         PaymentInternalClient paymentInternalClient,
                         TicketSalesInternalClient ticketSalesInternalClient,
                         UserInternalClient userInternalClient,
-                        WaitlistInternalClient waitlistInternalClient,
+                        WaitlistMqProducer waitlistProducer,
                         OrderAttendeeMapper orderAttendeeMapper) {
-        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, waitlistInternalClient, "test-internal-token");
+        this(orderMapper, orderSeatMapper, orderSnapshotMapper, paymentInternalClient, ticketSalesInternalClient, userInternalClient, waitlistProducer, "test-internal-token");
         this.orderAttendeeMapper = orderAttendeeMapper;
     }
 
@@ -1723,27 +1724,37 @@ public class OrderService {
     }
 
     private void publishWaitlistReleaseEvent(TicketReleasedEvent event) {
-        if (event == null || waitlistInternalClient == null || event.getQuantity() == null || event.getQuantity() <= 0) {
+        if (event == null || waitlistProducer == null || event.getQuantity() == null || event.getQuantity() <= 0) {
             return;
         }
-        try {
-            String token = requireInternalApiToken("候补服务接口令牌未配置");
-            waitlistInternalClient.released(new WaitlistReleaseRequest(event), token);
-        } catch (RuntimeException e) {
-            log.warn("候补释放事件发布失败: eventKey={}, message={}", event.getEventKey(), e.getMessage());
-        }
+        WaitlistReleasedMessage message = new WaitlistReleasedMessage();
+        message.setEventKey(event.getEventKey());
+        message.setSource(event.getSource());
+        message.setSourceOrderId(event.getSourceOrderId());
+        message.setSessionId(event.getSessionId());
+        message.setTicketTypeId(event.getTicketTypeId());
+        message.setQuantity(event.getQuantity());
+        message.setSeatIds(event.getSeatIds());
+        MqPublishSupport.afterCommitOrNow(() -> {
+            try {
+                waitlistProducer.sendReleasedEvent(message);
+            } catch (RuntimeException e) {
+                log.warn("候补释放事件发布失败: eventKey={}, message={}", event.getEventKey(), e.getMessage());
+            }
+        });
     }
 
     private void notifyWaitlistPaid(Long orderId) {
-        if (orderId == null || waitlistInternalClient == null) {
+        if (orderId == null || waitlistProducer == null) {
             return;
         }
-        try {
-            String token = requireInternalApiToken("候补服务接口令牌未配置");
-            waitlistInternalClient.orderPaid(orderId, token);
-        } catch (RuntimeException e) {
-            log.warn("候补支付事件发布失败: orderId={}, message={}", orderId, e.getMessage());
-        }
+        MqPublishSupport.afterCommitOrNow(() -> {
+            try {
+                waitlistProducer.sendOrderPaidEvent(orderId);
+            } catch (RuntimeException e) {
+                log.warn("候补支付事件发布失败: orderId={}, message={}", orderId, e.getMessage());
+            }
+        });
     }
 
     private TicketReleasedEvent toRefundReleasedEvent(Order order, TicketSalesReleaseResponse response) {

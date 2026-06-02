@@ -1,28 +1,23 @@
-package com.omni.order.dto;
+package com.omni.common.mq.message;
 
-import java.util.ArrayList;
+import java.io.Serializable;
 import java.util.List;
 
-public class WaitlistReleaseRequest {
+/**
+ * 候补释放消息 — 替代 WaitlistInternalClient.released() Feign 调用
+ */
+public class WaitlistReleasedMessage implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private String eventKey;
     private String source;
     private Long sourceOrderId;
     private Long sessionId;
     private Long ticketTypeId;
     private Integer quantity;
-    private List<Long> seatIds = new ArrayList<>();
+    private List<Long> seatIds;
 
-    public WaitlistReleaseRequest() {}
-
-    public WaitlistReleaseRequest(TicketReleasedEvent event) {
-        this.eventKey = event.getEventKey();
-        this.source = event.getSource();
-        this.sourceOrderId = event.getSourceOrderId();
-        this.sessionId = event.getSessionId();
-        this.ticketTypeId = event.getTicketTypeId();
-        this.quantity = event.getQuantity();
-        this.seatIds = event.getSeatIds();
-    }
+    public WaitlistReleasedMessage() {}
 
     public String getEventKey() { return eventKey; }
     public void setEventKey(String eventKey) { this.eventKey = eventKey; }

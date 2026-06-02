@@ -3,7 +3,7 @@ import { AuthenticatedRequest } from '../auth/authenticated-request';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { WaitlistService } from './waitlist.service';
 import { WaitlistAllocatorService } from './waitlist-allocator.service';
-import { CreateWaitlistEntryDto, TicketReleasedEventDto, WaitlistEntryResponse } from './waitlist.types';
+import { CreateWaitlistEntryDto, WaitlistEntryResponse } from './waitlist.types';
 
 interface ApiResult<T> {
   code: number;
@@ -42,22 +42,10 @@ export class WaitlistController {
     return success(await this.waitlistService.cancelEntry(request.user.userId, Number(id)));
   }
 
-  @Post('internal/released')
-  async released(@Headers('x-internal-token') token: string | undefined, @Body() body: TicketReleasedEventDto): Promise<ApiResult<unknown>> {
-    this.requireInternalToken(token);
-    return success(await this.allocator.allocate(body));
-  }
-
   @Post('internal/offers/expire-scan')
   async expireScan(@Headers('x-internal-token') token: string | undefined): Promise<ApiResult<unknown>> {
     this.requireInternalToken(token);
     return success(await this.allocator.scanExpiredOffers());
-  }
-
-  @Post('internal/orders/:orderId/paid')
-  async orderPaid(@Headers('x-internal-token') token: string | undefined, @Param('orderId') orderId: string): Promise<ApiResult<unknown>> {
-    this.requireInternalToken(token);
-    return success(await this.allocator.markPaidByOrder(Number(orderId)));
   }
 
   private requireInternalToken(token: string | undefined): void {

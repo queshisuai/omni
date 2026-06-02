@@ -5,14 +5,18 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 
 import java.util.Arrays;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OrderFeignClientConfigurationTest {
 
     @Test
-    void enablesWaitlistInternalClient() {
+    void enablesOnlyOrderOwnedFeignClients() {
         EnableFeignClients annotation = OrderFeignClientConfiguration.class.getAnnotation(EnableFeignClients.class);
 
-        assertTrue(Arrays.asList(annotation.clients()).contains(WaitlistInternalClient.class));
+        assertEquals(3, annotation.clients().length);
+        assertTrue(Arrays.asList(annotation.clients()).contains(PaymentInternalClient.class));
+        assertTrue(Arrays.asList(annotation.clients()).contains(TicketSalesInternalClient.class));
+        assertTrue(Arrays.asList(annotation.clients()).contains(UserInternalClient.class));
     }
 }

@@ -3,8 +3,8 @@ package com.omni.user.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
-import com.omni.user.client.NotificationInternalClient;
-import com.omni.user.dto.NotificationMessageRequest;
+import com.omni.common.mq.message.NotificationMessage;
+import com.omni.user.mq.NotificationMqProducer;
 import com.omni.user.dto.SupportConversationRequest;
 import com.omni.user.dto.SupportConversationResponse;
 import com.omni.user.dto.SupportMessageRequest;
@@ -51,7 +51,7 @@ public class CustomerSupportService {
     private final SupportMessageMapper messageMapper;
     private final UserMapper userMapper;
     private final SupportAiService supportAiService;
-    private final NotificationInternalClient notificationClient;
+    private final NotificationMqProducer notificationProducer;
     private final String internalApiToken;
     private final ConcurrentMap<Long, LocalDateTime> helpPresence = new ConcurrentHashMap<>();
 
@@ -59,13 +59,13 @@ public class CustomerSupportService {
                                   SupportMessageMapper messageMapper,
                                   UserMapper userMapper,
                                   SupportAiService supportAiService,
-                                  NotificationInternalClient notificationClient,
+                                  NotificationMqProducer notificationProducer,
                                   @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
         this.userMapper = userMapper;
         this.supportAiService = supportAiService;
-        this.notificationClient = notificationClient;
+        this.notificationProducer = notificationProducer;
         this.internalApiToken = internalApiToken;
     }
 
@@ -422,22 +422,22 @@ public class CustomerSupportService {
     }
 
     private void notifySupportReply(SupportConversation conversation) {
-        if (conversation == null || conversation.getUserId() == null || notificationClient == null || !StringUtils.hasText(internalApiToken)) {
+        if (conversation == null || conversation.getUserId() == null || notificationProducer == null) {
             return;
         }
         if (isUserViewingHelp(conversation.getUserId(), LocalDateTime.now())) {
             return;
         }
         try {
-            NotificationMessageRequest request = new NotificationMessageRequest(
+            NotificationMessage message = new NotificationMessage(
                     conversation.getUserId(),
                     null,
                     "SUPPORT_REPLY",
                     "人工客服回复了你的咨询，请查看客服会话。");
-            request.setActionHref("/help");
-            request.setActionLabel("查看客服会话");
-            request.setAggregateKey("SUPPORT_REPLY:" + conversation.getId());
-            notificationClient.createMessage(request, internalApiToken);
+            message.setActionHref("/help");
+            message.setActionLabel("查看客服会话");
+            message.setAggregateKey("SUPPORT_REPLY:" + conversation.getId());
+            notificationProducer.sendNotification(message);
         } catch (RuntimeException e) {
             log.warn("客服回复通知发送失败: conversationId={}, userId={}, message={}",
                     conversation.getId(), conversation.getUserId(), e.getMessage());

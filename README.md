@@ -434,7 +434,7 @@ X-Internal-Token: omni-local-internal-token
 
 **原因**：候补队列只代表排队资格。只有未付款订单超时释放、退款释放等事件恢复库存后，候补分配器才会按顺序尝试生成待支付订单。
 
-**解决**：确认 `grab-service` 正常运行并连接 `omni_grab`，同时检查订单服务是否已把释放事件发送到 `/api/waitlist/internal/released`。
+**解决**：确认 `grab-service` 正常运行并连接 `omni_grab` 和 RabbitMQ，同时检查订单服务是否已向 `omni.waitlist` exchange 发送 `waitlist.released` 释放事件。
 </details>
 
 <details>

@@ -3,12 +3,11 @@ package com.omni.ticket.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
-import com.omni.ticket.client.NotificationInternalClient;
 import com.omni.ticket.dto.ActivityRiskCaseResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
 import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
-import com.omni.ticket.dto.NotificationMessageRequest;
+import com.omni.ticket.mq.NotificationMqProducer;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.ActivityArtist;
@@ -37,7 +36,7 @@ public class ActivityRiskResponseService {
     private final TicketTypeMapper ticketTypeMapper;
     private final ActivityRiskResolutionMapper resolutionMapper;
     private final UserAccessService userAccessService;
-    private final NotificationInternalClient notificationClient;
+    private final NotificationMqProducer notificationProducer;
     private final ActivityAdminService activityAdminService;
     private final String internalToken;
 
@@ -47,7 +46,7 @@ public class ActivityRiskResponseService {
                                        TicketTypeMapper ticketTypeMapper,
                                        ActivityRiskResolutionMapper resolutionMapper,
                                        UserAccessService userAccessService,
-                                       NotificationInternalClient notificationClient,
+                                       NotificationMqProducer notificationProducer,
                                        ActivityAdminService activityAdminService,
                                        @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalToken) {
         this.activityMapper = activityMapper;
@@ -56,7 +55,7 @@ public class ActivityRiskResponseService {
         this.ticketTypeMapper = ticketTypeMapper;
         this.resolutionMapper = resolutionMapper;
         this.userAccessService = userAccessService;
-        this.notificationClient = notificationClient;
+        this.notificationProducer = notificationProducer;
         this.activityAdminService = activityAdminService;
         this.internalToken = internalToken;
     }
@@ -259,8 +258,8 @@ public class ActivityRiskResponseService {
     }
 
     private void notifyUser(Long userId, String type, String content) {
-        if (notificationClient == null || !StringUtils.hasText(internalToken) || userId == null) return;
-        notificationClient.createMessage(new NotificationMessageRequest(userId, null, type, content), internalToken);
+        if (notificationProducer == null || userId == null) return;
+        notificationProducer.sendNotification(userId, null, type, content);
     }
 
     private String trimToNull(String value) {

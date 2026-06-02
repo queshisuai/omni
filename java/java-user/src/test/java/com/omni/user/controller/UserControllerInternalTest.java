@@ -2,6 +2,7 @@ package com.omni.user.controller;
 
 import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.service.OrganizerApplicationService;
+import com.omni.user.service.RbacService;
 import com.omni.user.service.UserAssetService;
 import com.omni.user.service.UserAttendeeService;
 import com.omni.user.service.UserBrowseHistoryService;
@@ -71,6 +72,7 @@ class UserControllerInternalTest {
         Constructor<?> constructor = Assertions.assertDoesNotThrow(() -> UserController.class.getConstructor(
                 UserService.class,
                 OrganizerApplicationService.class,
+                RbacService.class,
                 UserAssetService.class,
                 UserAttendeeService.class,
                 UserBrowseHistoryService.class,
@@ -78,6 +80,6 @@ class UserControllerInternalTest {
         ));
 
         Assertions.assertNotNull(constructor.getAnnotation(Autowired.class));
-        Assertions.assertNotNull(constructor.getParameters()[5].getAnnotation(Value.class));
+        Assertions.assertNotNull(constructor.getParameters()[6].getAnnotation(Value.class));
     }
 }

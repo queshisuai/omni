@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import type { SupportConversationVO } from '@/types/api'
 import { buildSupportSubject, canRequestSupportHandoff, filterSupportConversations, formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, getLoginRedirectForRole, getSupportConversationRecordsHref, getSupportQueueTabs, isSupportHelpConversationPath, mergeSupportConversations, pickDefaultUserSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue } from './support-tools.ts'
 
 test('routes support role to support workbench after login', () => {
@@ -33,7 +34,7 @@ test('filters support conversations by workbench tab', () => {
     { id: 1, status: 'WAITING_AGENT' },
     { id: 2, status: 'ASSIGNED' },
     { id: 3, status: 'CLOSED' },
-  ] as any[]
+  ] as SupportConversationVO[]
 
   assert.deepEqual(filterSupportConversations(conversations, 'active').map(item => item.id), [1, 2])
   assert.deepEqual(filterSupportConversations(conversations, 'closed').map(item => item.id), [3])
@@ -47,7 +48,7 @@ test('groups support conversations into queue tabs', () => {
     { id: 3, status: 'ASSIGNED', slaOverdue: true },
     { id: 4, status: 'CLOSE_REQUESTED', slaOverdue: false },
     { id: 5, status: 'CLOSED', slaOverdue: false },
-  ] as any[]
+  ] as SupportConversationVO[]
 
   const tabs = getSupportQueueTabs(conversations)
 
@@ -64,14 +65,14 @@ test('sorts urgent support conversations first', () => {
   const sorted = sortSupportConversationsForQueue([
     { id: 1, status: 'WAITING_AGENT', slaOverdue: false, updateTime: '2026-06-02T10:00:00' },
     { id: 2, status: 'ASSIGNED', slaOverdue: true, updateTime: '2026-06-02T09:00:00' },
-  ] as any[])
+  ] as SupportConversationVO[])
 
   assert.deepEqual(sorted.map(item => item.id), [2, 1])
 })
 
 test('formats SLA text in Chinese', () => {
-  assert.equal(formatSupportSlaText({ status: 'WAITING_AGENT', firstResponseDueAt: '2026-06-02T10:05:00', slaOverdue: false } as any, new Date('2026-06-02T10:03:00')), '首次响应剩余 2 分钟')
-  assert.equal(formatSupportSlaText({ status: 'ASSIGNED', userWaitingSeconds: 660, slaOverdue: true } as any, new Date('2026-06-02T10:03:00')), '用户已等待 11 分钟')
+  assert.equal(formatSupportSlaText({ status: 'WAITING_AGENT', firstResponseDueAt: '2026-06-02T10:05:00', slaOverdue: false } as SupportConversationVO, new Date('2026-06-02T10:03:00')), '首次响应剩余 2 分钟')
+  assert.equal(formatSupportSlaText({ status: 'ASSIGNED', userWaitingSeconds: 660, slaOverdue: true } as SupportConversationVO, new Date('2026-06-02T10:03:00')), '用户已等待 11 分钟')
 })
 
 test('merges active and closed support conversations for workbench tabs', () => {
@@ -79,7 +80,7 @@ test('merges active and closed support conversations for workbench tabs', () => 
     { id: 1, status: 'ASSIGNED', updateTime: '2026-06-01T10:00:00' },
     { id: 2, status: 'CLOSED', updateTime: '2026-06-01T11:00:00' },
     { id: 1, status: 'ASSIGNED', updateTime: '2026-06-01T10:00:00' },
-  ] as any[])
+  ] as SupportConversationVO[])
 
   assert.deepEqual(merged.map(item => item.id), [2, 1])
   assert.equal(filterSupportConversations(merged, 'closed').length, 1)
@@ -122,7 +123,7 @@ test('picks a real agent conversation before self-assigned admin artifacts in us
     { id: 5, userId: 2002, status: 'ASSIGNED', sourceType: 'HUMAN', assignedAgentId: 2002 },
     { id: 4, userId: 2002, status: 'ASSIGNED', sourceType: 'HUMAN', assignedAgentId: 2013 },
     { id: 3, userId: 2002, status: 'OPEN', sourceType: 'AI', assignedAgentId: null },
-  ] as any[]
+  ] as SupportConversationVO[]
 
   assert.equal(pickDefaultUserSupportConversation(conversations, 2002)?.id, 4)
 })
@@ -131,7 +132,7 @@ test('switches away from a preferred self-assigned artifact when a real agent co
   const conversations = [
     { id: 5, userId: 2002, status: 'ASSIGNED', sourceType: 'HUMAN', assignedAgentId: 2002 },
     { id: 6, userId: 2002, status: 'ASSIGNED', sourceType: 'HUMAN', assignedAgentId: 2013 },
-  ] as any[]
+  ] as SupportConversationVO[]
 
   assert.equal(pickDefaultUserSupportConversation(conversations, 2002, 5)?.id, 6)
 })
@@ -139,7 +140,7 @@ test('switches away from a preferred self-assigned artifact when a real agent co
 test('does not reopen a closed conversation as the default user help session', () => {
   const conversations = [
     { id: 7, userId: 2002, status: 'CLOSED', sourceType: 'HUMAN', assignedAgentId: 2013 },
-  ] as any[]
+  ] as SupportConversationVO[]
 
   assert.equal(pickDefaultUserSupportConversation(conversations, 2002), null)
 })

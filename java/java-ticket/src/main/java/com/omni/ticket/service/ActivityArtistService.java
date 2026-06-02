@@ -2,10 +2,9 @@ package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.result.Result;
-import com.omni.ticket.client.NotificationInternalClient;
 import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.dto.ActivityArtistDto;
-import com.omni.ticket.dto.NotificationMessageRequest;
+import com.omni.ticket.mq.NotificationMqProducer;
 import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.dto.PaidOrdersBySessionsRequest;
 import com.omni.ticket.entity.ActivityArtist;
@@ -39,7 +38,7 @@ public class ActivityArtistService {
     private final ArtistMapper artistMapper;
     private final SessionMapper sessionMapper;
     private final OrderInternalClient orderInternalClient;
-    private final NotificationInternalClient notificationInternalClient;
+    private final NotificationMqProducer notificationProducer;
     private final String internalToken;
 
     public ActivityArtistService(ActivityArtistMapper activityArtistMapper, ArtistMapper artistMapper) {
@@ -51,13 +50,13 @@ public class ActivityArtistService {
                                  ArtistMapper artistMapper,
                                  SessionMapper sessionMapper,
                                  OrderInternalClient orderInternalClient,
-                                 NotificationInternalClient notificationInternalClient,
+                                 NotificationMqProducer notificationProducer,
                                  @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalToken) {
         this.activityArtistMapper = activityArtistMapper;
         this.artistMapper = artistMapper;
         this.sessionMapper = sessionMapper;
         this.orderInternalClient = orderInternalClient;
-        this.notificationInternalClient = notificationInternalClient;
+        this.notificationProducer = notificationProducer;
         this.internalToken = internalToken;
     }
 
@@ -184,7 +183,7 @@ public class ActivityArtistService {
     }
 
     private void notifyCastChange(Long activityId, List<ActivityArtistDto> before, List<ActivityArtistDto> after) {
-        if (sessionMapper == null || orderInternalClient == null || notificationInternalClient == null || !StringUtils.hasText(internalToken)) return;
+        if (sessionMapper == null || orderInternalClient == null || notificationProducer == null || !StringUtils.hasText(internalToken)) return;
         String beforeKey = before.stream().map(ActivityArtistDto::getArtistId).map(String::valueOf).collect(Collectors.joining(","));
         String afterKey = after.stream().map(ActivityArtistDto::getArtistId).map(String::valueOf).collect(Collectors.joining(","));
         if (beforeKey.equals(afterKey)) return;
@@ -196,7 +195,7 @@ public class ActivityArtistService {
         Set<Long> notifiedUsers = new HashSet<>();
         for (OrderInfoResponse order : result.getData()) {
             if (order == null || order.getUserId() == null || !notifiedUsers.add(order.getUserId())) continue;
-            notificationInternalClient.createMessage(new NotificationMessageRequest(order.getUserId(), order.getId(), "IN_APP", "你购买的活动阵容发生变更，可在订单页申请阵容变更退款。"), internalToken);
+            notificationProducer.sendNotification(order.getUserId(), order.getId(), "IN_APP", "你购买的活动阵容发生变更，可在订单页申请阵容变更退款。");
         }
     }
 }
