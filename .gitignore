@@ -1,329 +1,122 @@
 # ============================================================
-# 通用 .gitignore 模板
-# 适用场景：多技术栈混合项目、文档项目、通用代码仓库
-# 使用方法：根据项目实际技术栈，取消或删除不需要的规则
+# Omni 万象抢票平台 .gitignore
 # ============================================================
 
-
 # ===================================================
-# 1. IDE 和编辑器配置文件
-#    适用场景：团队使用不同 IDE 时，避免个人配置污染仓库
-# ====================================================
+# 1. IDE 和编辑器配置
+# ===================================================
 
-# --- Visual Studio Code ---
+# Visual Studio Code
 .vscode/
-!.vscode/extensions.json       # 如需共享推荐扩展，取消此行注释
-!.vscode/settings.json         # 如需共享工作区设置，取消此行注释
-!.vscode/tasks.json            # 如需共享构建任务，取消此行注释
-!.vscode/launch.json           # 如需共享调试配置，取消此行注释
 
-# --- IntelliJ IDEA / WebStorm / PyCharm / GoLand 等 JetBrains 系列 ---
+# JetBrains (IntelliJ IDEA / WebStorm / PyCharm)
 .idea/
-!.idea/codeStyles/             # 如需共享代码风格配置，取消此行注释
-!.idea/runConfigurations/      # 如需共享运行配置，取消此行注释
+*.iml
 
-# --- Visual Studio ---
+# Visual Studio
 .vs/
 *.suo
 *.user
-*.userosscache
-*.sln.docstates
 
-# --- Eclipse / Spring Tool Suite ---
+# Eclipse / STS
 .classpath
 .project
 .settings/
-*.springBeans
 
-# --- Vim / Neovim ---
+# Trae
+.trae/
+
+# Vim / Neovim
 *.swp
 *.swo
 *~
-.*.sw[a-p]
 
-# --- Emacs ---
+# Emacs
 \#*\#
-*~
 .\#*
 
-# --- Sublime Text ---
+# Sublime Text
 *.sublime-project
 *.sublime-workspace
-
-# --- Atom ---
-.atom/
-
-# --- NetBeans ---
-nbproject/
-nbdist/
-.nb-gradle/
 
 
 # ===================================================
 # 2. 操作系统自动生成文件
-#    适用场景：跨平台协作开发，避免不同 OS 的垃圾文件混入
-# ====================================================
+# ===================================================
 
-# --- macOS ---
+# macOS
 .DS_Store
-.DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
-ehthumbs.db
-Thumbs.db
-.AppleDouble
-.LSOverride
-Icon
-.AppleDB
 
-# --- Windows ---
+# Windows
 Thumbs.db
-Thumbs.db:encryptable
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
-*.cab
-*.msi
-*.msix
-*.msm
-*.msp
 *.lnk
 
-# --- Linux ---
+# Linux
 .directory
-*~
 .fuse_hidden*
 .Trash-*
 
 
 # ===================================================
-# 3. 依赖包目录
-#    适用场景：各语言/框架的第三方依赖不应提交到仓库
-# ====================================================
+# 3. 依赖包
+# ===================================================
 
-# --- Node.js / 前端通用 ---
+# Node.js (frontend / nestjs)
 node_modules/
 .npm/
-.yarn/*
-!.yarn/cache
-!.yarn/releases
-!.yarn/plugins
-!.yarn/sdks
-!.yarn/versions
-package-lock.json          # 库项目建议忽略；应用项目建议保留，视情况取舍
-yarn.lock                  # 同上
-pnpm-lock.yaml             # 同上
 
-# --- Python ---
-__pycache__/
-*.py[cod]
-*.pyo
-*.egg-info/
-*.egg
-.eggs/
-dist/
-*.whl
-Pipfile.lock               # 建议仅在应用项目中保留
-.venv/
-venv/
-env/
-ENV/
-.venv
+# Maven (Java 后端)
+target/
 
-# --- Java / Kotlin / Gradle ---
+# Gradle (备用)
 .gradle/
 build/
-!gradle/wrapper/gradle-wrapper.jar
+
+
+# ===================================================
+# 4. 构建产物
+# ===================================================
+
+# Next.js
+.next/
+out/
+
+# NestJS / TypeScript
+dist/
+*.tsbuildinfo
+
+# Java 编译产物（不在 target/ 中的残留）
 *.class
 *.jar
 *.war
-*.ear
 
-# --- Maven ---
-target/
-pom.xml.tag
-pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-
-# --- .NET / C# ---
-packages/
-*.nupkg
-
-# --- Ruby ---
-*.gem
-.bundle/
-vendor/bundle/
-Gemfile.lock               # 库项目忽略，应用项目保留
-
-# --- PHP ---
-vendor/
-composer.lock              # 库项目忽略，应用项目保留
-
-# --- Go ---
-vendor/                    # Go 1.6+ 使用 go mod vendor 时按需保留
-
-# --- Rust ---
-target/
-
-# --- Swift / iOS ---
-Carthage/Build/
-Pods/
-
-# --- C / C++ ---
-*.o
-*.obj
-*.a
-*.lib
-*.so
-*.dll
-*.dylib
-
-# --- Dart / Flutter ---
-.packages
-.pub/
-build/
-.dart_tool/
-.flutter-plugins-dependencies
-
-# --- Elixir ---
-deps/
-_build/
-.hex/
-
-# --- Haskell ---
-dist/
-.stack-work/
-.cabal-sandbox/
-
-# --- Scala / SBT ---
-target/
-project/target/
-.ivy2/
-
-
-# ===================================================
-# 4. 构建和编译产物
-#    适用场景：各语言的编译输出、打包文件、日志、缓存
-# ====================================================
-
-# --- 通用构建输出 ---
-dist/
-build/
-out/
-output/
-*.tsbuildinfo
-
-# --- JavaScript / TypeScript ---
-dist/
-build/
-*.js.map
-*.css.map
-*.tsbuildinfo
-.next/
-.nuxt/
-.svelte-kit/
-.cache/
-
-# --- Java ---
-*.class
-*.war
-*.ear
-hs_err_pid*
-*.log
-
-# --- Python ---
-*.pyc
-*.pyo
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-*.egg-info/
-dist/
-build/
-
-# --- Go ---
-*.exe
-*.test
-*.out
-
-# --- Rust ---
-target/
-debug/
-release/
-
-# --- C / C++ ---
-*.exe
-*.out
-*.app
-*.o
-*.obj
-*.lo
-*.la
-*.so
-*.dylib
-*.dll
-
-# --- .NET / C# ---
-[Bb]in/
-[Oo]bj/
-*.exe
-*.dll
-*.pdb
-
-# --- Android ---
-*.apk
-*.aab
-*.dex
-*.ap_
-.idea/
-.gradle/
-local.properties
-
-# --- iOS ---
-*.ipa
-*.dSYM.zip
-*.dSYM
-DerivedData/
-
-# --- Docker ---
-*.dockerignore            # 通常这个文件本身需要保留，仅忽略构建缓存
-docker-compose.override.yml  # 本地覆盖配置，按需忽略
-
-# --- 日志文件 ---
+# 日志
 *.log
 logs/
 *.pid
-*.seed
-*.pid.lock
-
-# --- 缓存目录 ---
-.cache/
-.temp/
-.tmp/
-tmp/
-temp/
 
 
 # ===================================================
-# 5. 环境变量和敏感信息文件
-#    适用场景：防止 API 密钥、数据库密码、Token 等泄漏
-# ====================================================
+# 5. 环境变量和敏感信息
+# ===================================================
 
-# --- 环境变量文件 ---
+# 环境变量文件
 .env
 .env.*
-!.env.example              # 保留示例文件作为文档
-!.env.sample               # 保留示例文件作为文档
+!.env.example
+!.env.sample
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-env.local
 
-# --- 密钥和证书 ---
+# 密钥和证书
 *.pem
 *.key
 *.crt
@@ -333,82 +126,48 @@ env.local
 *.jks
 *.keystore
 *.truststore
-*.p8
 
-# --- 云服务凭证 ---
+# 云服务凭证
 credentials.json
 service-account.json
 *.service-account.json
-application_default_credentials.json
-.gcloudignore
 
-# --- AWS ---
-.aws/credentials
-.aws/config
 
-# --- Kubernetes / Helm ---
-secrets.yaml
-secrets.yml
-*-secrets.yaml
-*-secrets.yml
-kubeconfig
-!*secrets*.example.*
+# ===================================================
+# 6. 本地运行时文件
+# ===================================================
 
-# --- Terraform ---
-*.tfstate
-*.tfstate.*
-.terraform/
-override.tf
-override.tf.json
-*.auto.tfvars
-*.auto.tfvars.json
-terraform.rc
+# 上传文件（本地测试产生，不应提交）
+runtime/uploads/
+runtime/private-uploads/
+java/runtime/
 
-# --- SSH ---
-id_rsa
-id_rsa.pub
-id_dsa
-id_ecdsa
-id_ed25519
-known_hosts
+# Docker 本地覆盖
+docker-compose.override.yml
 
-# --- 数据库文件 ---
-*.sqlite
-*.sqlite3
-*.db
-*.mdf
-*.ldf
 
-# --- 备份文件 ---
+# ===================================================
+# 7. 临时文件和缓存
+# ===================================================
+
+# 备份文件
 *.backup
 *.bak
 *.old
 *.orig
-*.swo
-*.swp
-*~
 
+# 缓存
+.cache/
+.temp/
+.tmp/
+temp/
+tmp/
 
-# ===================================================
-# 项目自定义规则（请根据项目类型取消注释）
-# ====================================================
+# 生成的分析报告
+graphify-out/
 
-# --- React / Next.js ---
-# .next/
-# .react-email/
+# Superpowers 工作目录
+.superpowers/
 
-# --- Vue / Nuxt ---
-# .nuxt/
-# .output/
-
-# --- Angular ---
-# .angular/
-
-# --- Prisma ---
-# prisma/migrations/*/migration_lock.toml
-
-# --- Storybook ---
-# storybook-static/
-
-# --- Vite ---
-# vite.config.ts.timestamp-*.mjs
+# Claude Code 本地设置（项目级配置除外）
+.claude/settings.local.json
