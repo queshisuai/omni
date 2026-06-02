@@ -198,6 +198,43 @@ test('loads exception tasks through user console endpoint', async () => {
   }
 })
 
+test('creates exception task through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: { id: 9, taskType: 'refund_failed', businessNo: 'BIZ-1', orderNo: 'ORD-1', severity: 'high', status: 'pending', reason: '退款失败' },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const { createExceptionTask } = await import('./api.ts')
+    const created = await createExceptionTask({
+      taskType: 'refund_failed',
+      businessNo: 'BIZ-1',
+      orderNo: 'ORD-1',
+      severity: 'high',
+      reason: '退款失败',
+    })
+
+    assert.equal(requested[0].url, '/api/user/console/exception-tasks')
+    assert.equal(requested[0].method, 'POST')
+    assert.equal(requested[0].body, JSON.stringify({
+      taskType: 'refund_failed',
+      businessNo: 'BIZ-1',
+      orderNo: 'ORD-1',
+      severity: 'high',
+      reason: '退款失败',
+    }))
+    assert.equal(created.id, 9)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('loads and creates reconciliation batches through user console endpoint', async () => {
   const originalFetch = globalThis.fetch
   const requested: Array<{ url: string; method: string; body: string }> = []

@@ -826,6 +826,18 @@ export interface ExceptionTaskVO {
   createTime?: string | null
 }
 
+export interface ExceptionTaskCreatePayload {
+  taskType: string
+  businessNo?: string | null
+  orderNo?: string | null
+  paymentNo?: string | null
+  refundNo?: string | null
+  ticketNo?: string | null
+  severity: string
+  reason?: string | null
+  evidenceUrls?: string[]
+}
+
 export interface ReconciliationBatchVO {
   id: number
   batchNo: string

@@ -49,9 +49,14 @@ export function getConsoleQuickActions(role: UserRole | string | null | undefine
       { label: '新建活动', href: '/console/activities/new' },
       { label: '管理活动', href: '/console/activities' },
       { label: '巡演草稿', href: '/console/tours' },
-      { label: '场馆资料审核', href: '/console/venue/applications' },
+      { label: '主办方管理', href: '/console/organizer-applications' },
+      { label: '角色权限', href: '/console/roles' },
+      { label: '主办方管理员', href: '/console/organizer-admins' },
       { label: '客服账号管理', href: '/console/support-accounts' },
       { label: '客服会话记录', href: '/console/support-conversations' },
+      { label: '操作审计', href: '/console/audit-logs' },
+      { label: '异常任务', href: '/console/exception-tasks' },
+      { label: '日结对账', href: '/console/reconciliation' },
       { label: '查看订单', href: '/console/orders' },
     ]
   }

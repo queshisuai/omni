@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { getUser } from '@/lib/auth'
-import { getAdminSummary, getGrabOpsSummary, listAdminRefunds } from '@/lib/api'
+import { getAdminSummary, getGrabOpsSummary, listAdminRefunds, listExceptionTasks, listOperationAuditLogs, listReconciliationBatches } from '@/lib/api'
 import { getConsoleQuickActions } from '@/lib/console-paths'
 import { buildDashboardBars, summarizeOpsMetric } from '@/lib/marketing-tools'
 import { ConsoleDashboardSkeleton } from '@/components/Skeleton'
-import { Activity, AlertTriangle, CalendarDays, Gauge, RotateCcw, ShoppingCart, Ticket, TrendingUp, Users } from 'lucide-react'
-import type { AdminSummaryVO, GrabOpsSummaryVO } from '@/types/api'
+import { Activity, AlertTriangle, CalendarDays, ClipboardList, FileSearch, Gauge, RotateCcw, ShieldAlert, ShoppingCart, Ticket, TrendingUp, Users } from 'lucide-react'
+import type { AdminSummaryVO, ExceptionTaskVO, GrabOpsSummaryVO, OperationAuditLogVO, ReconciliationBatchVO } from '@/types/api'
 
 function DashboardBarList({ items, emptyText = '暂无数据' }: { items: Array<{ label: string; value: number }>; emptyText?: string }) {
   const bars = buildDashboardBars(items)
@@ -32,11 +32,29 @@ function DashboardBarList({ items, emptyText = '暂无数据' }: { items: Array<
   )
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return '-'
+  return value.replace('T', ' ').slice(0, 19)
+}
+
+function formatBatchStatus(status?: string | null) {
+  if (status === 'generated') return '已生成'
+  if (status === 'processing') return '处理中'
+  if (status === 'completed') return '已完成'
+  if (status === 'failed') return '失败'
+  return status || '-'
+}
+
 export default function ConsoleHome() {
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null)
   const [stats, setStats] = useState<AdminSummaryVO | null>(null)
   const [grabOps, setGrabOps] = useState<GrabOpsSummaryVO | null>(null)
   const [refundOps, setRefundOps] = useState<{ totalCount: number; abnormalCount: number } | null>(null)
+  const [platformOps, setPlatformOps] = useState<{
+    pendingExceptions: ExceptionTaskVO[]
+    latestBatch: ReconciliationBatchVO | null
+    latestAudit: OperationAuditLogVO | null
+  } | null>(null)
   const [statsError, setStatsError] = useState('')
   const loadSummaryRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
@@ -48,6 +66,7 @@ export default function ConsoleHome() {
       setStats(null)
       setGrabOps(null)
       setRefundOps(null)
+      setPlatformOps(null)
       setStatsError('')
       getAdminSummary()
         .then(res => {
@@ -64,6 +83,19 @@ export default function ConsoleHome() {
                 })
               })
               .catch(() => setRefundOps(null))
+            Promise.all([
+              listExceptionTasks(),
+              listReconciliationBatches(),
+              listOperationAuditLogs({ limit: 5 }),
+            ])
+              .then(([tasks, batches, audits]) => {
+                setPlatformOps({
+                  pendingExceptions: tasks.filter(task => task.status !== 'resolved'),
+                  latestBatch: batches[0] || null,
+                  latestAudit: audits[0] || null,
+                })
+              })
+              .catch(() => setPlatformOps(null))
           }
         })
         .catch(() => {
@@ -162,6 +194,29 @@ export default function ConsoleHome() {
         {user?.role === 'admin' && (
           <div className="mb-8">
             <h2 className="text-[16px] font-semibold text-gray-900 mb-4">运营驾驶舱</h2>
+            <div className="mb-4 grid gap-4 md:grid-cols-3">
+              <a href="/console/exception-tasks" className="rounded-xl border border-gray-200 bg-white p-5 hover:border-[#ff1268] hover:shadow-sm">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
+                  <ShieldAlert className="h-4 w-4 text-[#dc2626]" /> 待处理异常
+                </div>
+                <div className="text-[28px] font-bold leading-none text-gray-900">{platformOps?.pendingExceptions.length ?? '-'}</div>
+                <div className="mt-2 text-[12px] text-gray-500">支付、退款、出票、库存等异常任务</div>
+              </a>
+              <a href="/console/reconciliation" className="rounded-xl border border-gray-200 bg-white p-5 hover:border-[#ff1268] hover:shadow-sm">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
+                  <FileSearch className="h-4 w-4 text-[#2563eb]" /> 最近对账批次
+                </div>
+                <div className="text-[20px] font-bold leading-tight text-gray-900">{platformOps?.latestBatch?.bizDate || '暂无批次'}</div>
+                <div className="mt-2 text-[12px] text-gray-500">{formatBatchStatus(platformOps?.latestBatch?.status)}</div>
+              </a>
+              <a href="/console/audit-logs" className="rounded-xl border border-gray-200 bg-white p-5 hover:border-[#ff1268] hover:shadow-sm">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
+                  <ClipboardList className="h-4 w-4 text-[#16a34a]" /> 最新人工操作
+                </div>
+                <div className="truncate text-[16px] font-bold leading-tight text-gray-900">{platformOps?.latestAudit?.action || '暂无记录'}</div>
+                <div className="mt-2 text-[12px] text-gray-500">{formatDateTime(platformOps?.latestAudit?.createTime)}</div>
+              </a>
+            </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-xl border border-gray-200 bg-white p-5">
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">

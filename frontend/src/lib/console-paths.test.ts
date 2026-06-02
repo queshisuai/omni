@@ -36,9 +36,14 @@ test('builds role-specific console quick actions', () => {
     '/console/activities/new',
     '/console/activities',
     '/console/tours',
-    '/console/venue/applications',
+    '/console/organizer-applications',
+    '/console/roles',
+    '/console/organizer-admins',
     '/console/support-accounts',
     '/console/support-conversations',
+    '/console/audit-logs',
+    '/console/exception-tasks',
+    '/console/reconciliation',
     '/console/orders',
   ])
 })

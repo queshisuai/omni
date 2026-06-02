@@ -475,6 +475,13 @@ export async function listExceptionTasks(status?: string) {
   return request<import('@/types/api').ExceptionTaskVO[]>(`/api/user/console/exception-tasks${qs}`)
 }
 
+export async function createExceptionTask(params: import('@/types/api').ExceptionTaskCreatePayload) {
+  return request<import('@/types/api').ExceptionTaskVO>('/api/user/console/exception-tasks', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
 export async function listReconciliationBatches() {
   return request<import('@/types/api').ReconciliationBatchVO[]>('/api/user/console/reconciliation/batches')
 }
