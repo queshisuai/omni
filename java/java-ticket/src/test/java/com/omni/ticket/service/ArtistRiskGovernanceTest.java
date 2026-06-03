@@ -44,7 +44,7 @@ class ArtistRiskGovernanceTest {
     @Mock SessionMapper sessionMapper;
     @Mock TicketTypeMapper ticketTypeMapper;
     @Mock ActivityRiskResolutionMapper resolutionMapper;
-    @Mock com.omni.ticket.client.NotificationInternalClient notificationClient;
+    @Mock com.omni.ticket.mq.NotificationMqProducer notificationClient;
     @Mock ActivityAdminService activityAdminService;
 
     // === controller mocks (for adminSuspend + risk update endpoints) ===
