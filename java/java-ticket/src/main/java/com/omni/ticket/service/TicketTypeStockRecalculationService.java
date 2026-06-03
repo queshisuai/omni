@@ -3,12 +3,15 @@ package com.omni.ticket.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.entity.SeatBlock;
+import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.mapper.SeatBlockMapper;
+import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketGroupMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -23,20 +26,33 @@ public class TicketTypeStockRecalculationService {
     private final TicketTypeMapper ticketTypeMapper;
     private final SessionSeatMapper sessionSeatMapper;
     private final SeatBlockMapper seatBlockMapper;
+    private final SessionMapper sessionMapper;
+    private final SearchIndexMqProducer searchIndexMqProducer;
 
     public TicketTypeStockRecalculationService(TicketTypeMapper ticketTypeMapper,
                                                 SessionSeatMapper sessionSeatMapper) {
-        this(ticketTypeMapper, sessionSeatMapper, null, null);
+        this(ticketTypeMapper, sessionSeatMapper, null, null, null, null);
+    }
+
+    public TicketTypeStockRecalculationService(TicketTypeMapper ticketTypeMapper,
+                                               SessionSeatMapper sessionSeatMapper,
+                                               SeatBlockMapper seatBlockMapper,
+                                               TicketGroupMapper ticketGroupMapper) {
+        this(ticketTypeMapper, sessionSeatMapper, seatBlockMapper, ticketGroupMapper, null, null);
     }
 
     @Autowired
     public TicketTypeStockRecalculationService(TicketTypeMapper ticketTypeMapper,
                                                SessionSeatMapper sessionSeatMapper,
                                                SeatBlockMapper seatBlockMapper,
-                                               TicketGroupMapper ticketGroupMapper) {
+                                               TicketGroupMapper ticketGroupMapper,
+                                               SessionMapper sessionMapper,
+                                               SearchIndexMqProducer searchIndexMqProducer) {
         this.ticketTypeMapper = ticketTypeMapper;
         this.sessionSeatMapper = sessionSeatMapper;
         this.seatBlockMapper = seatBlockMapper;
+        this.sessionMapper = sessionMapper;
+        this.searchIndexMqProducer = searchIndexMqProducer;
     }
 
     public void recalculateForSession(Long sessionId) {
@@ -68,6 +84,7 @@ public class TicketTypeStockRecalculationService {
             ticketType.setRemainStock((int) ownedSeats.stream().filter(this::countsTowardRemainStock).count() + standingCapacity);
             ticketTypeMapper.updateById(ticketType);
         }
+        refreshActivitySearchIndex(sessionId);
     }
 
     private Map<Long, Integer> standingCapacityByTicketTypeId(Long sessionId, List<TicketType> ticketTypes) {
@@ -116,5 +133,15 @@ public class TicketTypeStockRecalculationService {
         return Integer.valueOf(1).equals(seat.getStatus())
                 && seat.getOrderId() == null
                 && seat.getLockExpireTime() == null;
+    }
+
+    private void refreshActivitySearchIndex(Long sessionId) {
+        if (searchIndexMqProducer == null || sessionMapper == null || sessionId == null) {
+            return;
+        }
+        Session session = sessionMapper.selectById(sessionId);
+        if (session != null && session.getActivityId() != null) {
+            searchIndexMqProducer.refreshActivity(session.getActivityId());
+        }
     }
 }

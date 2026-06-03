@@ -27,6 +27,7 @@ import com.omni.ticket.mapper.ActivityArtistMapper;
 import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
 import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -61,6 +62,7 @@ public class ActivityAdminService {
     private final PaymentInternalClient paymentInternalClient;
     private final ActivityArtistMapper activityArtistMapper;
     private final ArtistMapper artistMapper;
+    private final SearchIndexMqProducer searchIndexMqProducer;
     private final String internalApiToken;
 
     public ActivityAdminService(ActivityMapper activityMapper,
@@ -74,7 +76,6 @@ public class ActivityAdminService {
                 null, null, internalApiToken);
     }
 
-    @Autowired
     public ActivityAdminService(ActivityMapper activityMapper,
                                 SessionMapper sessionMapper,
                                 TicketTypeMapper ticketTypeMapper,
@@ -84,6 +85,21 @@ public class ActivityAdminService {
                                 ActivityArtistMapper activityArtistMapper,
                                 ArtistMapper artistMapper,
                                 @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
+        this(activityMapper, sessionMapper, ticketTypeMapper, userAccessService, orderInternalClient, paymentInternalClient,
+                activityArtistMapper, artistMapper, null, internalApiToken);
+    }
+
+    @Autowired
+    public ActivityAdminService(ActivityMapper activityMapper,
+                                SessionMapper sessionMapper,
+                                TicketTypeMapper ticketTypeMapper,
+                                UserAccessService userAccessService,
+                                OrderInternalClient orderInternalClient,
+                                PaymentInternalClient paymentInternalClient,
+                                ActivityArtistMapper activityArtistMapper,
+                                ArtistMapper artistMapper,
+                                SearchIndexMqProducer searchIndexMqProducer,
+                                @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.ticketTypeMapper = ticketTypeMapper;
@@ -92,6 +108,7 @@ public class ActivityAdminService {
         this.paymentInternalClient = paymentInternalClient;
         this.activityArtistMapper = activityArtistMapper;
         this.artistMapper = artistMapper;
+        this.searchIndexMqProducer = searchIndexMqProducer;
         this.internalApiToken = internalApiToken;
     }
 
@@ -135,6 +152,7 @@ public class ActivityAdminService {
         }
         activity.setStatus(request.getStatus());
         activityMapper.updateById(activity);
+        refreshActivitySearchIndex(activityId);
     }
 
     public DeleteActivityResponse deleteActivity(Long activityId, DeleteActivityRequest request) {
@@ -173,6 +191,7 @@ public class ActivityAdminService {
         activity.setDeletedBy(request.getUserId());
         activity.setDeletedAt(LocalDateTime.now());
         activityMapper.updateById(activity);
+        deleteActivitySearchIndex(activityId);
 
         DeleteActivityResponse response = new DeleteActivityResponse();
         response.setActivityId(activityId);
@@ -225,6 +244,7 @@ public class ActivityAdminService {
             activity.setStatus(0);
             activity.setPublishStatus(PUBLISH_STATUS_DEACTIVATED);
             activityMapper.updateById(activity);
+            refreshActivitySearchIndex(activity.getId());
         }
         for (Session session : sessions) {
             session.setStatus(0);
@@ -402,5 +422,17 @@ public class ActivityAdminService {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "内部接口令牌未配置");
         }
         return internalApiToken;
+    }
+
+    private void refreshActivitySearchIndex(Long activityId) {
+        if (searchIndexMqProducer != null && activityId != null) {
+            searchIndexMqProducer.refreshActivity(activityId);
+        }
+    }
+
+    private void deleteActivitySearchIndex(Long activityId) {
+        if (searchIndexMqProducer != null && activityId != null) {
+            searchIndexMqProducer.deleteActivity(activityId);
+        }
     }
 }

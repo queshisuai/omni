@@ -47,3 +47,10 @@ mybatis-plus:
 omni:
   mq:
     enabled: true
+  search:
+    es:
+      enabled: ${OMNI_SEARCH_ES_ENABLED:false}
+      uris: ${OMNI_SEARCH_ES_URIS:http://localhost:9200}
+      index-alias: ${OMNI_SEARCH_ES_INDEX_ALIAS:omni_activity_search_current}
+      connect-timeout-ms: ${OMNI_SEARCH_ES_CONNECT_TIMEOUT_MS:1000}
+      read-timeout-ms: ${OMNI_SEARCH_ES_READ_TIMEOUT_MS:1500}

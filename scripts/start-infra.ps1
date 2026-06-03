@@ -75,11 +75,13 @@ Write-Step "Checking Middleware Ports..."
 Assert-PortAvailableOrOwned -Name "PostgreSQL" -Port 5432 -ContainerName "omni-postgres"
 Assert-PortAvailableOrOwned -Name "Redis" -Port 6379 -ContainerName "omni-redis"
 Assert-PortAvailableOrOwned -Name "Nacos" -Port 8848 -ContainerName "omni-nacos"
+Assert-PortAvailableOrOwned -Name "RabbitMQ" -Port 5672 -ContainerName "omni-rabbitmq"
+Assert-PortAvailableOrOwned -Name "Elasticsearch" -Port 9200 -ContainerName "omni-elasticsearch"
 
 Write-Step "Starting Docker Middleware..."
 Push-Location $projectRoot
 try {
-    docker compose up -d postgres redis nacos
+    docker compose up -d postgres redis nacos rabbitmq elasticsearch
 } finally {
     Pop-Location
 }
@@ -88,5 +90,7 @@ Write-Step "Waiting for Middleware Ports..."
 Wait-Port -Name "PostgreSQL" -HostName "localhost" -Port 5432 -TimeoutSeconds $TimeoutSeconds
 Wait-Port -Name "Redis" -HostName "localhost" -Port 6379 -TimeoutSeconds $TimeoutSeconds
 Wait-Port -Name "Nacos" -HostName "localhost" -Port 8848 -TimeoutSeconds $TimeoutSeconds
+Wait-Port -Name "RabbitMQ" -HostName "localhost" -Port 5672 -TimeoutSeconds $TimeoutSeconds
+Wait-Port -Name "Elasticsearch" -HostName "localhost" -Port 9200 -TimeoutSeconds $TimeoutSeconds
 
-Write-Host "`n[Docker Infra] Ready: PostgreSQL 5432, Redis 6379, Nacos 8848" -ForegroundColor Green
+Write-Host "`n[Docker Infra] Ready: PostgreSQL 5432, Redis 6379, Nacos 8848, RabbitMQ 5672, Elasticsearch 9200" -ForegroundColor Green

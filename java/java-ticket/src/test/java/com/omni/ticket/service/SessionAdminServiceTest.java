@@ -11,6 +11,7 @@ import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,12 +57,14 @@ class SessionAdminServiceTest {
     private SessionSeatService sessionSeatService;
     @Mock
     private SessionSeatLayoutService sessionSeatLayoutService;
+    @Mock
+    private SearchIndexMqProducer searchIndexMqProducer;
 
     private SessionAdminService service;
 
     @BeforeEach
     void setUp() {
-        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, sessionSeatService, sessionSeatLayoutService, sessionSeatMapper);
+        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, sessionSeatService, sessionSeatLayoutService, sessionSeatMapper, searchIndexMqProducer);
     }
 
     @Test
@@ -80,6 +83,31 @@ class SessionAdminServiceTest {
 
         verify(sessionMapper).insert(session);
         verify(sessionSeatService).generateForSession(501L);
+        verify(searchIndexMqProducer).refreshActivity(10L);
+    }
+
+    @Test
+    void updateSessionPublishesSearchRefreshAfterUpdate() {
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        Session session = new Session();
+        session.setId(50L);
+        session.setActivityId(10L);
+        session.setVenueId(101L);
+        session.setStartTime(LocalDateTime.of(2026, 6, 1, 20, 0));
+        session.setEndTime(LocalDateTime.of(2026, 6, 1, 22, 0));
+        when(sessionMapper.selectById(50L)).thenReturn(session);
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(venueMapper.selectById(101L)).thenReturn(venue(101L));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", 2003L);
+        body.put("status", 0);
+
+        service.updateSession(50L, body);
+
+        verify(sessionMapper).updateById(session);
+        verify(searchIndexMqProducer).refreshActivity(10L);
     }
 
     @Test
@@ -163,6 +191,7 @@ class SessionAdminServiceTest {
         verify(sessionSeatService).deleteBySessionId(50L);
         verify(sessionSeatLayoutService).deleteBySessionId(50L);
         verify(sessionMapper).deleteById(50L);
+        verify(searchIndexMqProducer).refreshActivity(10L);
     }
 
     @Test

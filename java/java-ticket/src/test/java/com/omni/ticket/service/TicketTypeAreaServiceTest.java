@@ -1,12 +1,15 @@
 package com.omni.ticket.service;
 
 import com.omni.exception.BusinessException;
+import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.TicketTypeArea;
+import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeAreaMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,12 +37,16 @@ class TicketTypeAreaServiceTest {
     private TicketTypeAreaMapper ticketTypeAreaMapper;
     @Mock
     private SessionSeatMapper sessionSeatMapper;
+    @Mock
+    private SessionMapper sessionMapper;
+    @Mock
+    private SearchIndexMqProducer searchIndexMqProducer;
 
     private TicketTypeAreaService service;
 
     @BeforeEach
     void setUp() {
-        service = new TicketTypeAreaService(ticketTypeMapper, ticketTypeAreaMapper, sessionSeatMapper);
+        service = new TicketTypeAreaService(ticketTypeMapper, ticketTypeAreaMapper, sessionSeatMapper, sessionMapper, searchIndexMqProducer);
     }
 
     @Test
@@ -59,6 +66,7 @@ class TicketTypeAreaServiceTest {
     void createTicketTypeCalculatesStockFromAvailableSessionSeats() {
         when(ticketTypeAreaMapper.selectList(any())).thenReturn(Collections.emptyList());
         when(sessionSeatMapper.selectList(any())).thenReturn(Arrays.asList(seat(1L), seat(2L), seat(3L)));
+        when(sessionMapper.selectById(101L)).thenReturn(session(101L, 10L));
 
         TicketType result = service.createTicketType(ticketType(101L), Arrays.asList(11L));
 
@@ -69,6 +77,7 @@ class TicketTypeAreaServiceTest {
         verify(ticketTypeAreaMapper).insert(captor.capture());
         assertEquals(101L, captor.getValue().getSessionId());
         assertEquals(11L, captor.getValue().getAreaId());
+        verify(searchIndexMqProducer).refreshActivity(10L);
     }
 
     private TicketType ticketType(Long sessionId) {
@@ -85,5 +94,12 @@ class TicketTypeAreaServiceTest {
         seat.setId(id);
         seat.setStatus(1);
         return seat;
+    }
+
+    private Session session(Long id, Long activityId) {
+        Session session = new Session();
+        session.setId(id);
+        session.setActivityId(activityId);
+        return session;
     }
 }

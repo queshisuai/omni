@@ -109,6 +109,23 @@ services:
       timeout: 5s
       retries: 20
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.15
+    container_name: omni-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - omni-es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
   grab-service:
     image: node:20-alpine
     container_name: omni-grab-service
@@ -165,6 +182,7 @@ volumes:
   omni-rabbitmq-data:
   omni-nacos-data:
   omni-nacos-logs:
+  omni-es-data:
   frontend-node-modules:
   frontend-next-cache:
   grab-node-modules:

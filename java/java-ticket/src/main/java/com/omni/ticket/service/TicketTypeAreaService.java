@@ -2,12 +2,16 @@ package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.TicketTypeArea;
+import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeAreaMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -20,13 +24,26 @@ public class TicketTypeAreaService {
     private final TicketTypeMapper ticketTypeMapper;
     private final TicketTypeAreaMapper ticketTypeAreaMapper;
     private final SessionSeatMapper sessionSeatMapper;
+    private final SessionMapper sessionMapper;
+    private final SearchIndexMqProducer searchIndexMqProducer;
 
     public TicketTypeAreaService(TicketTypeMapper ticketTypeMapper,
                                  TicketTypeAreaMapper ticketTypeAreaMapper,
                                  SessionSeatMapper sessionSeatMapper) {
+        this(ticketTypeMapper, ticketTypeAreaMapper, sessionSeatMapper, null, null);
+    }
+
+    @Autowired
+    public TicketTypeAreaService(TicketTypeMapper ticketTypeMapper,
+                                 TicketTypeAreaMapper ticketTypeAreaMapper,
+                                 SessionSeatMapper sessionSeatMapper,
+                                 SessionMapper sessionMapper,
+                                 SearchIndexMqProducer searchIndexMqProducer) {
         this.ticketTypeMapper = ticketTypeMapper;
         this.ticketTypeAreaMapper = ticketTypeAreaMapper;
         this.sessionSeatMapper = sessionSeatMapper;
+        this.sessionMapper = sessionMapper;
+        this.searchIndexMqProducer = searchIndexMqProducer;
     }
 
     public TicketType createTicketType(TicketType ticketType, List<Long> areaIds) {
@@ -59,6 +76,17 @@ public class TicketTypeAreaService {
             relation.setCreateTime(LocalDateTime.now());
             ticketTypeAreaMapper.insert(relation);
         }
+        refreshActivitySearchIndex(ticketType.getSessionId());
         return ticketType;
+    }
+
+    private void refreshActivitySearchIndex(Long sessionId) {
+        if (searchIndexMqProducer == null || sessionMapper == null || sessionId == null) {
+            return;
+        }
+        Session session = sessionMapper.selectById(sessionId);
+        if (session != null && session.getActivityId() != null) {
+            searchIndexMqProducer.refreshActivity(session.getActivityId());
+        }
     }
 }

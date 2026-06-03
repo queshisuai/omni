@@ -19,6 +19,7 @@ import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.StationMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.TourMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.mapper.VenueApplicationMapper;
@@ -74,6 +75,8 @@ class TourStationServiceTest {
     private SessionSeatLayoutService sessionSeatLayoutService;
     @Mock
     private ActivityAdminService activityAdminService;
+    @Mock
+    private SearchIndexMqProducer searchIndexMqProducer;
 
     private TourStationService service;
 
@@ -81,7 +84,7 @@ class TourStationServiceTest {
     void setUp() {
         service = new TourStationService(tourMapper, stationMapper, userAccessService, venueApplicationMapper,
                 activityMapper, sessionMapper, ticketTypeMapper, venueMapper,
-                activitySeatLayoutService, sessionSeatLayoutService, activityAdminService);
+                activitySeatLayoutService, sessionSeatLayoutService, activityAdminService, searchIndexMqProducer);
     }
 
     @Test
@@ -265,6 +268,7 @@ class TourStationServiceTest {
         verify(sessionSeatLayoutService).copyFromActivity(2003L, 501L, 30L);
         verify(sessionSeatLayoutService).generateSessionSeats(501L);
         verify(stationMapper).updateById(argThat(updated -> "published".equals(updated.getPublishStatus())));
+        verify(searchIndexMqProducer).refreshActivity(30L);
     }
 
     @Test
@@ -375,6 +379,7 @@ class TourStationServiceTest {
                 && "announced".equals(updated.getReviewStatus())
                 && Integer.valueOf(1).equals(updated.getStatus())
                 && updated.getUpdateTime() != null));
+        verify(searchIndexMqProducer).refreshTour(10L);
     }
 
     @Test
@@ -410,6 +415,7 @@ class TourStationServiceTest {
         verify(tourMapper).updateById(argThat(updated -> Long.valueOf(10L).equals(updated.getId())
                 && Integer.valueOf(0).equals(updated.getStatus())
                 && "deleted".equals(updated.getReviewStatus())));
+        verify(searchIndexMqProducer).deleteTour(10L);
     }
 
     @Test
@@ -467,6 +473,7 @@ class TourStationServiceTest {
                 && "deactivated".equals(updated.getReviewStatus())
                 && Integer.valueOf(1).equals(updated.getStatus())
                 && updated.getUpdateTime() != null));
+        verify(searchIndexMqProducer).refreshTour(10L);
     }
 
     @Test
@@ -788,6 +795,8 @@ class TourStationServiceTest {
         verify(sessionSeatLayoutService).generateSessionSeats(401L);
         verify(activityMapper).updateById(activity);
         verify(stationMapper).updateById(station);
+        verify(searchIndexMqProducer).refreshActivity(301L);
+        verify(searchIndexMqProducer).refreshTour(10L);
     }
 
     @Test

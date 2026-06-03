@@ -14,6 +14,7 @@ import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
 import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -38,12 +39,13 @@ public class SessionAdminService {
     private final SessionSeatService sessionSeatService;
     private final SessionSeatLayoutService sessionSeatLayoutService;
     private final SessionSeatMapper sessionSeatMapper;
+    private final SearchIndexMqProducer searchIndexMqProducer;
 
     public SessionAdminService(ActivityMapper activityMapper,
                                  SessionMapper sessionMapper,
                                  VenueMapper venueMapper,
                                  UserAccessService userAccessService) {
-        this(activityMapper, sessionMapper, venueMapper, userAccessService, null, null, null, null);
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, null, null, null, null, null);
     }
 
     public SessionAdminService(ActivityMapper activityMapper,
@@ -51,7 +53,7 @@ public class SessionAdminService {
                                VenueMapper venueMapper,
                                UserAccessService userAccessService,
                                TicketTypeMapper ticketTypeMapper) {
-        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, null, null, null);
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, null, null, null, null);
     }
 
     public SessionAdminService(ActivityMapper activityMapper,
@@ -62,7 +64,19 @@ public class SessionAdminService {
                                SessionSeatService sessionSeatService,
                                SessionSeatLayoutService sessionSeatLayoutService) {
         this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper,
-                sessionSeatService, sessionSeatLayoutService, null);
+                sessionSeatService, sessionSeatLayoutService, null, null);
+    }
+
+    public SessionAdminService(ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               VenueMapper venueMapper,
+                               UserAccessService userAccessService,
+                               TicketTypeMapper ticketTypeMapper,
+                               SessionSeatService sessionSeatService,
+                               SessionSeatLayoutService sessionSeatLayoutService,
+                               SessionSeatMapper sessionSeatMapper) {
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper,
+                sessionSeatService, sessionSeatLayoutService, sessionSeatMapper, null);
     }
 
     @Autowired
@@ -73,7 +87,8 @@ public class SessionAdminService {
                                TicketTypeMapper ticketTypeMapper,
                                SessionSeatService sessionSeatService,
                                SessionSeatLayoutService sessionSeatLayoutService,
-                               SessionSeatMapper sessionSeatMapper) {
+                               SessionSeatMapper sessionSeatMapper,
+                               SearchIndexMqProducer searchIndexMqProducer) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.venueMapper = venueMapper;
@@ -82,6 +97,7 @@ public class SessionAdminService {
         this.sessionSeatService = sessionSeatService;
         this.sessionSeatLayoutService = sessionSeatLayoutService;
         this.sessionSeatMapper = sessionSeatMapper;
+        this.searchIndexMqProducer = searchIndexMqProducer;
     }
 
     @Transactional
@@ -121,6 +137,7 @@ public class SessionAdminService {
         } else if (sessionSeatService != null) {
             sessionSeatService.generateForSession(session.getId());
         }
+        refreshActivitySearchIndex(session.getActivityId());
         return session;
     }
 
@@ -153,6 +170,7 @@ public class SessionAdminService {
             session.setStatus(Integer.valueOf(body.get("status").toString()));
         }
         sessionMapper.updateById(session);
+        refreshActivitySearchIndex(session.getActivityId());
         return session;
     }
 
@@ -179,6 +197,7 @@ public class SessionAdminService {
                     .eq(TicketType::getSessionId, id));
         }
         sessionMapper.deleteById(id);
+        refreshActivitySearchIndex(session.getActivityId());
     }
 
     public Page<SessionAdminResponse> listSessions(Long userId, Integer page, Integer size, Long activityId, Long venueId, Integer status) {
@@ -373,5 +392,11 @@ public class SessionAdminService {
 
     private LocalDateTime parseOptionalTime(Object value) {
         return parseTime(value);
+    }
+
+    private void refreshActivitySearchIndex(Long activityId) {
+        if (searchIndexMqProducer != null && activityId != null) {
+            searchIndexMqProducer.refreshActivity(activityId);
+        }
     }
 }

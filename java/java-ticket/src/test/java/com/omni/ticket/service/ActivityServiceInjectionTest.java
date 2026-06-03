@@ -8,6 +8,8 @@ import com.omni.ticket.mapper.StationMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.mapper.VenueMapper;
+import com.omni.ticket.search.ActivitySearchFacade;
+import com.omni.ticket.search.DatabaseActivitySearchRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor;
 import org.springframework.beans.factory.config.ConstructorArgumentValues;
@@ -31,6 +33,8 @@ class ActivityServiceInjectionTest {
             context.registerBean(ActivityArtistService.class, () -> mock(ActivityArtistService.class));
             context.registerBean(TourMapper.class, () -> mock(TourMapper.class));
             context.registerBean(StationMapper.class, () -> mock(StationMapper.class));
+            context.registerBean(DatabaseActivitySearchRepository.class, () -> mock(DatabaseActivitySearchRepository.class));
+            context.registerBean(ActivitySearchFacade.class, () -> mock(ActivitySearchFacade.class));
             context.registerBeanDefinition(ActivityService.class.getName(), new RootBeanDefinition(ActivityService.class));
 
             context.refresh();

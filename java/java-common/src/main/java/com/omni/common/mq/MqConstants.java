@@ -12,6 +12,9 @@ public final class MqConstants {
     public static final String WAITLIST_EXCHANGE = "omni.waitlist";
     public static final String WAITLIST_RETRY_EXCHANGE = "omni.waitlist.retry";
     public static final String WAITLIST_DLX = "omni.waitlist.dlx";
+    public static final String SEARCH_INDEX_EXCHANGE = "omni.search";
+    public static final String SEARCH_INDEX_RETRY_EXCHANGE = "omni.search.retry";
+    public static final String SEARCH_INDEX_DLX = "omni.search.dlx";
 
     // ── Routing Keys ──
     public static final String RK_NOTIFICATION_SEND = "notification.send";
@@ -23,6 +26,9 @@ public final class MqConstants {
     public static final String RK_WAITLIST_ORDER_PAID = "waitlist.order-paid";
     public static final String RK_WAITLIST_ORDER_PAID_RETRY = "waitlist.order-paid.retry";
     public static final String RK_WAITLIST_ORDER_PAID_DLQ = "waitlist.order-paid.dlq";
+    public static final String RK_SEARCH_INDEX_REFRESH = "search.index.refresh";
+    public static final String RK_SEARCH_INDEX_REFRESH_RETRY = "search.index.refresh.retry";
+    public static final String RK_SEARCH_INDEX_REFRESH_DLQ = "search.index.refresh.dlq";
 
     // ── Queues ──
     public static final String Q_NOTIFICATION_SEND = "notification.send.queue";
@@ -34,6 +40,9 @@ public final class MqConstants {
     public static final String Q_WAITLIST_ORDER_PAID = "waitlist.order-paid.queue";
     public static final String Q_WAITLIST_ORDER_PAID_RETRY = "waitlist.order-paid.retry.queue";
     public static final String Q_WAITLIST_ORDER_PAID_DLQ = "waitlist.order-paid.dlq";
+    public static final String Q_SEARCH_INDEX = "search.index.queue";
+    public static final String Q_SEARCH_INDEX_RETRY = "search.index.retry.queue";
+    public static final String Q_SEARCH_INDEX_DLQ = "search.index.dlq";
 
     private MqConstants() {}
 }

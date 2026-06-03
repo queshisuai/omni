@@ -33,4 +33,14 @@ class MqConfigTest {
         assertEquals(MqConstants.Q_WAITLIST_ORDER_PAID_DLQ, queue.getName());
         assertEquals(true, queue.isDurable());
     }
+
+    @Test
+    void searchIndexRetryQueueReturnsToMainExchangeAfterDelay() {
+        Queue queue = config.searchIndexRetryQueue();
+
+        assertEquals(10000, queue.getArguments().get("x-message-ttl"));
+        assertEquals(MqConstants.Q_SEARCH_INDEX_RETRY, queue.getName());
+        assertEquals(MqConstants.SEARCH_INDEX_EXCHANGE, queue.getArguments().get("x-dead-letter-exchange"));
+        assertEquals(MqConstants.RK_SEARCH_INDEX_REFRESH, queue.getArguments().get("x-dead-letter-routing-key"));
+    }
 }

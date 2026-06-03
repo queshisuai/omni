@@ -1,12 +1,15 @@
 package com.omni.ticket.service;
 
 import com.omni.ticket.entity.SeatBlock;
+import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.mapper.SeatBlockMapper;
+import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketGroupMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +39,10 @@ class TicketTypeStockRecalculationServiceTest {
     private SeatBlockMapper seatBlockMapper;
     @Mock
     private TicketGroupMapper ticketGroupMapper;
+    @Mock
+    private SessionMapper sessionMapper;
+    @Mock
+    private SearchIndexMqProducer searchIndexMqProducer;
 
     private TicketTypeStockRecalculationService service;
 
@@ -69,6 +76,25 @@ class TicketTypeStockRecalculationServiceTest {
         assertEquals(1, vip.getRemainStock());
         assertEquals(1, normal.getTotalStock());
         assertEquals(1, normal.getRemainStock());
+    }
+
+    @Test
+    void recalculateForSessionPublishesSearchRefreshAfterStockUpdates() {
+        service = new TicketTypeStockRecalculationService(
+                ticketTypeMapper,
+                sessionSeatMapper,
+                seatBlockMapper,
+                ticketGroupMapper,
+                sessionMapper,
+                searchIndexMqProducer);
+        TicketType vip = ticketType(1001L, 99L);
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(vip));
+        when(sessionSeatMapper.selectList(any())).thenReturn(List.of(seat(1L, 1001L, 1, null, null)));
+        when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L));
+
+        service.recalculateForSession(99L);
+
+        verify(searchIndexMqProducer).refreshActivity(10L);
     }
 
     @Test
@@ -146,6 +172,13 @@ class TicketTypeStockRecalculationServiceTest {
         ticketType.setId(id);
         ticketType.setSessionId(sessionId);
         return ticketType;
+    }
+
+    private Session session(Long id, Long activityId) {
+        Session session = new Session();
+        session.setId(id);
+        session.setActivityId(activityId);
+        return session;
     }
 
     private SessionSeat seat(Long id, Long ticketTypeId, Integer status, Long orderId, LocalDateTime lockExpireTime) {

@@ -23,6 +23,7 @@ import com.omni.ticket.mapper.ActivityArtistMapper;
 import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
 import com.omni.ticket.service.UserAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -64,6 +65,8 @@ class ActivityAdminServiceTest {
     private ActivityArtistMapper activityArtistMapper;
     @Mock
     private ArtistMapper artistMapper;
+    @Mock
+    private SearchIndexMqProducer searchIndexMqProducer;
 
     private ActivityAdminService service;
 
@@ -79,6 +82,7 @@ class ActivityAdminServiceTest {
             context.registerBean(PaymentInternalClient.class, () -> mock(PaymentInternalClient.class));
             context.registerBean(ActivityArtistMapper.class, () -> mock(ActivityArtistMapper.class));
             context.registerBean(ArtistMapper.class, () -> mock(ArtistMapper.class));
+            context.registerBean(SearchIndexMqProducer.class, () -> mock(SearchIndexMqProducer.class));
             context.registerBean(ActivityAdminService.class);
 
             context.refresh();
@@ -98,6 +102,7 @@ class ActivityAdminServiceTest {
                 paymentInternalClient,
                 activityArtistMapper,
                 artistMapper,
+                searchIndexMqProducer,
                 "test-token");
     }
 
@@ -266,6 +271,23 @@ class ActivityAdminServiceTest {
         assertEquals("演出计划取消", activity.getDeleteReason());
         verify(activityMapper).updateById(activity);
         verify(activityMapper, never()).deleteById(10L);
+        verify(searchIndexMqProducer).deleteActivity(10L);
+    }
+
+    @Test
+    void updateActivityStatusPublishesSearchRefreshAfterStatusChange() {
+        Activity activity = activity(10L, 2003L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(0);
+
+        service.updateActivityStatus(10L, request);
+
+        verify(activityMapper).updateById(activity);
+        verify(searchIndexMqProducer).refreshActivity(10L);
     }
 
     @Test

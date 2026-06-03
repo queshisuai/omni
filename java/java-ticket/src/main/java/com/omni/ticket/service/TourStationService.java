@@ -20,6 +20,7 @@ import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.mapper.VenueApplicationMapper;
+import com.omni.ticket.search.SearchIndexMqProducer;
 import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -76,11 +77,12 @@ public class TourStationService {
     private final ActivitySeatLayoutService activitySeatLayoutService;
     private final SessionSeatLayoutService sessionSeatLayoutService;
     private final ActivityAdminService activityAdminService;
+    private final SearchIndexMqProducer searchIndexMqProducer;
 
     public TourStationService(TourMapper tourMapper,
                                StationMapper stationMapper,
                                UserAccessService userAccessService) {
-        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null, null, null, null);
+        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null, null, null, null, null);
     }
 
     public TourStationService(TourMapper tourMapper,
@@ -92,7 +94,7 @@ public class TourStationService {
                               ActivitySeatLayoutService activitySeatLayoutService,
                               SessionSeatLayoutService sessionSeatLayoutService) {
         this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
-                null, null, activitySeatLayoutService, sessionSeatLayoutService, null);
+                null, null, activitySeatLayoutService, sessionSeatLayoutService, null, null);
     }
 
     public TourStationService(TourMapper tourMapper,
@@ -106,7 +108,22 @@ public class TourStationService {
                                ActivitySeatLayoutService activitySeatLayoutService,
                                SessionSeatLayoutService sessionSeatLayoutService) {
         this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
-                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, null);
+                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, null, null);
+    }
+
+    public TourStationService(TourMapper tourMapper,
+                               StationMapper stationMapper,
+                               UserAccessService userAccessService,
+                               VenueApplicationMapper venueApplicationMapper,
+                               ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               TicketTypeMapper ticketTypeMapper,
+                               VenueMapper venueMapper,
+                               ActivitySeatLayoutService activitySeatLayoutService,
+                               SessionSeatLayoutService sessionSeatLayoutService,
+                               ActivityAdminService activityAdminService) {
+        this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
+                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, activityAdminService, null);
     }
 
     @Autowired
@@ -120,7 +137,8 @@ public class TourStationService {
                                VenueMapper venueMapper,
                                ActivitySeatLayoutService activitySeatLayoutService,
                                SessionSeatLayoutService sessionSeatLayoutService,
-                               ActivityAdminService activityAdminService) {
+                               ActivityAdminService activityAdminService,
+                               SearchIndexMqProducer searchIndexMqProducer) {
         this.tourMapper = tourMapper;
         this.stationMapper = stationMapper;
         this.userAccessService = userAccessService;
@@ -132,6 +150,7 @@ public class TourStationService {
         this.activitySeatLayoutService = activitySeatLayoutService;
         this.sessionSeatLayoutService = sessionSeatLayoutService;
         this.activityAdminService = activityAdminService;
+        this.searchIndexMqProducer = searchIndexMqProducer;
     }
 
     @Transactional
@@ -236,6 +255,7 @@ public class TourStationService {
         tour.setReviewStatus("announced");
         tour.setUpdateTime(now);
         tourMapper.updateById(tour);
+        refreshTourSearchIndex(tourId);
         return tour;
     }
 
@@ -266,6 +286,7 @@ public class TourStationService {
         tour.setReviewStatus("deleted");
         tour.setUpdateTime(now);
         tourMapper.updateById(tour);
+        deleteTourSearchIndex(tourId);
     }
 
     @Transactional
@@ -310,6 +331,7 @@ public class TourStationService {
         tour.setReviewStatus(REVIEW_STATUS_DEACTIVATED);
         tour.setUpdateTime(now);
         tourMapper.updateById(tour);
+        refreshTourSearchIndex(tourId);
         response.setActivityId(tour.getId());
         response.setActivityName(tour.getTitle());
         return response;
@@ -562,6 +584,8 @@ public class TourStationService {
         station.setPublishStatus(PUBLISH_STATUS_PUBLISHED);
         station.setUpdateTime(now);
         stationMapper.updateById(station);
+        refreshActivitySearchIndex(activity.getId());
+        refreshTourSearchIndex(tour.getId());
 
         Map<String, Object> result = new HashMap<>();
         result.put("tour", tour);
@@ -623,6 +647,7 @@ public class TourStationService {
         station.setPublishStatus(PUBLISH_STATUS_PUBLISHED);
         station.setUpdateTime(now);
         stationMapper.updateById(station);
+        refreshActivitySearchIndex(activity.getId());
 
         Map<String, Object> result = new HashMap<>();
         result.put("station", station);
@@ -773,5 +798,23 @@ public class TourStationService {
 
     private String defaultText(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    private void refreshActivitySearchIndex(Long activityId) {
+        if (searchIndexMqProducer != null && activityId != null) {
+            searchIndexMqProducer.refreshActivity(activityId);
+        }
+    }
+
+    private void refreshTourSearchIndex(Long tourId) {
+        if (searchIndexMqProducer != null && tourId != null) {
+            searchIndexMqProducer.refreshTour(tourId);
+        }
+    }
+
+    private void deleteTourSearchIndex(Long tourId) {
+        if (searchIndexMqProducer != null && tourId != null) {
+            searchIndexMqProducer.deleteTour(tourId);
+        }
     }
 }

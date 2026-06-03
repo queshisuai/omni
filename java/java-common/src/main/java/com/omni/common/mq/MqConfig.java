@@ -189,4 +189,62 @@ public class MqConfig {
                 .to(waitlistDeadLetterExchange())
                 .with(MqConstants.RK_WAITLIST_ORDER_PAID_DLQ);
     }
+
+    @Bean
+    public TopicExchange searchIndexExchange() {
+        return new TopicExchange(MqConstants.SEARCH_INDEX_EXCHANGE);
+    }
+
+    @Bean
+    public TopicExchange searchIndexRetryExchange() {
+        return new TopicExchange(MqConstants.SEARCH_INDEX_RETRY_EXCHANGE);
+    }
+
+    @Bean
+    public TopicExchange searchIndexDeadLetterExchange() {
+        return new TopicExchange(MqConstants.SEARCH_INDEX_DLX);
+    }
+
+    @Bean
+    public Queue searchIndexQueue() {
+        return QueueBuilder.durable(MqConstants.Q_SEARCH_INDEX)
+                .withArgument("x-dead-letter-exchange", MqConstants.SEARCH_INDEX_RETRY_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", MqConstants.RK_SEARCH_INDEX_REFRESH_RETRY)
+                .build();
+    }
+
+    @Bean
+    public Binding searchIndexBinding() {
+        return BindingBuilder.bind(searchIndexQueue())
+                .to(searchIndexExchange())
+                .with(MqConstants.RK_SEARCH_INDEX_REFRESH);
+    }
+
+    @Bean
+    public Queue searchIndexRetryQueue() {
+        return QueueBuilder.durable(MqConstants.Q_SEARCH_INDEX_RETRY)
+                .withArgument("x-message-ttl", RETRY_TTL_MILLIS)
+                .withArgument("x-dead-letter-exchange", MqConstants.SEARCH_INDEX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", MqConstants.RK_SEARCH_INDEX_REFRESH)
+                .build();
+    }
+
+    @Bean
+    public Binding searchIndexRetryBinding() {
+        return BindingBuilder.bind(searchIndexRetryQueue())
+                .to(searchIndexRetryExchange())
+                .with(MqConstants.RK_SEARCH_INDEX_REFRESH_RETRY);
+    }
+
+    @Bean
+    public Queue searchIndexDeadLetterQueue() {
+        return QueueBuilder.durable(MqConstants.Q_SEARCH_INDEX_DLQ).build();
+    }
+
+    @Bean
+    public Binding searchIndexDeadLetterBinding() {
+        return BindingBuilder.bind(searchIndexDeadLetterQueue())
+                .to(searchIndexDeadLetterExchange())
+                .with(MqConstants.RK_SEARCH_INDEX_REFRESH_DLQ);
+    }
 }
