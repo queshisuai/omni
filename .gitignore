@@ -137,9 +137,6 @@ service-account.json
 # 6. 本地运行时文件
 # ===================================================
 
-# 上传文件（本地测试产生，不应提交）
-runtime/private-uploads/
-java/runtime/
 
 # Docker 本地覆盖
 docker-compose.override.yml
