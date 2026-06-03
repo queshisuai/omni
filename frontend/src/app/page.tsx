@@ -7,6 +7,7 @@ import { Banner } from '@/components/Banner'
 import { SectionRow } from '@/components/SectionRow'
 import { Footer } from '@/components/Footer'
 import { listActivities, listCategories } from '@/lib/api'
+import { CITY_KEY, resolveStoredCity } from '@/lib/city-selection'
 import { createHomeResumeRefreshHandlers, createLatestRequestGate } from '@/lib/home-resume-refresh'
 import { ACTIVITY_VIEW_SIGNAL_KEY, buildPersonalizedActivities, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
 import { categories as mockCategories, sections as mockSections, banners } from '@/lib/mock-data'
@@ -49,10 +50,8 @@ export default function HomePage() {
   const [sections, setSections] = useState<SectionData[]>([])
   const [loading, setLoading] = useState(true)
   const [viewSignals, setViewSignals] = useState<ActivityViewSignal[]>([])
-  const [currentCity, setCurrentCity] = useState(() => {
-    if (typeof window !== 'undefined') return localStorage.getItem('omni_current_city') || ''
-    return ''
-  })
+  const [currentCity, setCurrentCity] = useState('')
+  const [cityHydrated, setCityHydrated] = useState(false)
   const [requestGate] = useState(() => createLatestRequestGate())
   const fetchDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
@@ -95,13 +94,19 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
+    if (!cityHydrated) return
     fetchData()
-  }, [fetchData])
+  }, [cityHydrated, fetchData])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setViewSignals(parseActivityViewSignals(localStorage.getItem(ACTIVITY_VIEW_SIGNAL_KEY)))
     }
+  }, [])
+
+  useEffect(() => {
+    setCurrentCity(resolveStoredCity(localStorage.getItem(CITY_KEY)))
+    setCityHydrated(true)
   }, [])
 
   useEffect(() => {

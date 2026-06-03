@@ -7,6 +7,7 @@ import { Footer } from '@/components/Footer'
 import { TicketCard } from '@/components/TicketCard'
 import { SearchResultsSkeleton } from '@/components/Skeleton'
 import { listActivities, listCategories } from '@/lib/api'
+import { resolveInitialCity } from '@/lib/city-selection'
 import { DEFAULT_POPULAR_SEARCHES, SEARCH_HISTORY_KEY, addSearchHistoryTerm, buildEmptySearchRecommendations, buildSearchSuggestions, parseSearchHistory } from '@/lib/search-experience'
 import { categories as mockCategories, sections as mockSections } from '@/lib/mock-data'
 import type { CategoryVO, ActivityVO } from '@/types/api'
@@ -177,11 +178,7 @@ function SearchContent() {
   const [activeCategory, setActiveCategory] = useState(initialCategory)
   const [activeTime, setActiveTime] = useState<TimeFilter>('all')
   const [sort, setSort] = useState<SortType>('recommend')
-  const [activeCity, setActiveCity] = useState(() => {
-    if (initialCity) return initialCity
-    if (typeof window !== 'undefined') return localStorage.getItem('omni_current_city') || '全部'
-    return '全部'
-  })
+  const [activeCity, setActiveCity] = useState(() => resolveInitialCity(initialCity))
   const [searchHistory, setSearchHistory] = useState<string[]>([])
   const [showAllCities, setShowAllCities] = useState(false)
   const [citySearchKeyword, setCitySearchKeyword] = useState('')
@@ -340,10 +337,12 @@ function SearchContent() {
   }, [])
 
   useEffect(() => {
-    if (initialCity) {
-      setActiveCity(initialCity)
-    }
+    setActiveCity(resolveInitialCity(initialCity))
   }, [initialCity])
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('omni-city-updated', { detail: activeCity }))
+  }, [activeCity])
 
   useEffect(() => {
     if (initialKeyword && typeof window !== 'undefined') {
