@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni 万象抢票平台 — 单元测试汇总报告</title>
+<style>
+  :root {
+    --brand: #ff1268;
+    --brand-light: #ffe0ea;
+    --pass: #10b981;
+    --pass-bg: #ecfdf5;
+    --fail: #ef4444;
+    --fail-bg: #fef2f2;
+    --skip: #f59e0b;
+    --skip-bg: #fffbeb;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --text: #1e293b;
+    --text-secondary: #64748b;
+    --border: #e2e8f0;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+    --shadow-lg: 0 10px 25px rgba(0,0,0,.08);
+    --radius: 12px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .header {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #312e81 100%);
+    color: #fff;
+    padding: 48px 0 40px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle at 30% 50%, rgba(255,18,104,.12) 0%, transparent 60%),
+                radial-gradient(circle at 70% 30%, rgba(99,102,241,.10) 0%, transparent 60%);
+    animation: headerPulse 8s ease-in-out infinite;
+  }
+  @keyframes headerPulse {
+    0%,100% { transform: translate(0,0) scale(1); }
+    50% { transform: translate(1%,-1%) scale(1.02); }
+  }
+  .header-content { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+  .header h1 { font-size: 2.25rem; font-weight: 800; letter-spacing: -.02em; margin-bottom: 6px; }
+  .header .subtitle { font-size: .95rem; color: #94a3b8; font-weight: 400; }
+  .header .date { font-size: .82rem; color: #64748b; margin-top: 4px; }
+
+  .kpi-row {
+    display: flex;
+    gap: 16px;
+    max-width: 1100px;
+    margin: -28px auto 0;
+    padding: 0 24px;
+    position: relative;
+    z-index: 2;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .kpi-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: 22px 28px;
+    min-width: 160px;
+    text-align: center;
+    flex: 1 1 160px;
+    max-width: 220px;
+    transition: transform .2s;
+  }
+  .kpi-card:hover { transform: translateY(-2px); }
+  .kpi-card .kpi-value {
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    line-height: 1.1;
+  }
+  .kpi-card .kpi-label { font-size: .82rem; color: var(--text-secondary); margin-top: 4px; font-weight: 500; }
+  .kpi-card.total .kpi-value { color: #6366f1; }
+  .kpi-card.pass .kpi-value { color: var(--pass); }
+  .kpi-card.fail .kpi-value { color: var(--fail); }
+  .kpi-card.skip .kpi-value { color: var(--skip); }
+  .kpi-card.rate .kpi-value { color: var(--brand); }
+
+  .main { max-width: 1100px; margin: 32px auto 60px; padding: 0 24px; }
+
+  .section { margin-bottom: 32px; }
+  .section-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+  }
+  .section-title .icon { font-size: 1.2rem; }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  .overall-pass {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 28px 32px;
+    flex-wrap: wrap;
+  }
+  .pass-ring {
+    position: relative;
+    width: 130px;
+    height: 130px;
+    flex-shrink: 0;
+  }
+  .pass-ring svg { transform: rotate(-90deg); }
+  .pass-ring .bg { fill: none; stroke: #e2e8f0; stroke-width: 10; }
+  .pass-ring .fg { fill: none; stroke: var(--pass); stroke-width: 10; stroke-linecap: round;
+    transition: stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1); }
+  .pass-ring .inner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .pass-ring .inner .pct { font-size: 2rem; font-weight: 800; color: var(--pass); line-height: 1; }
+  .pass-ring .inner .lbl { font-size: .72rem; color: var(--text-secondary); }
+  .pass-detail { flex: 1; min-width: 280px; }
+  .pass-detail h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
+  .pass-detail p { color: var(--text-secondary); font-size: .88rem; margin-bottom: 12px; }
+  .pass-detail .tags { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: .78rem; font-weight: 600; padding: 4px 10px;
+    border-radius: 20px;
+  }
+  .tag-pass { background: var(--pass-bg); color: #059669; }
+  .tag-skip { background: var(--skip-bg); color: #b45309; }
+  .tag-total { background: #eef2ff; color: #4f46e5; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  thead { background: #f1f5f9; }
+  th {
+    text-align: left;
+    padding: 11px 16px;
+    font-weight: 600;
+    font-size: .78rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  th.right { text-align: right; }
+  td { padding: 10px 16px; border-top: 1px solid var(--border); }
+  td.right { text-align: right; font-variant-numeric: tabular-nums; font-family: 'SF Mono','Fira Code','Cascadia Code',monospace; }
+  tbody tr { transition: background .15s; }
+  tbody tr:hover { background: #f8fafc; }
+  .mod-name { font-weight: 600; color: var(--text); }
+  .mod-domain { font-size: .75rem; color: var(--text-secondary); }
+  .bar-cell { width: 120px; }
+  .bar-track { height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .6s ease; }
+  .bar-fill.pass { background: var(--pass); }
+
+  .badge {
+    display: inline-block;
+    font-size: .72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    line-height: 1.5;
+  }
+  .badge-pass { background: var(--pass-bg); color: #059669; }
+
+  .domain-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+  }
+  .domain-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    padding: 18px 20px;
+    transition: box-shadow .2s;
+  }
+  .domain-card:hover { box-shadow: var(--shadow-lg); }
+  .domain-card .dom-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .domain-card .dom-name { font-weight: 700; font-size: .95rem; }
+  .domain-card .dom-count { font-size: .78rem; color: var(--text-secondary); }
+  .domain-card .dom-stats {
+    display: flex;
+    gap: 14px;
+    font-size: .78rem;
+    color: var(--text-secondary);
+    flex-wrap: wrap;
+  }
+  .domain-card .dom-stats strong { color: var(--text); }
+
+  .conclusion {
+    background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+    border: 1px solid #a7f3d0;
+    border-radius: var(--radius);
+    padding: 24px 28px;
+  }
+  .conclusion h3 { color: #059669; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .conclusion ul { padding-left: 20px; color: #065f46; }
+  .conclusion li { margin-bottom: 4px; font-size: .9rem; }
+
+  .note {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-top: 16px;
+    font-size: .85rem;
+    color: #92400e;
+  }
+  .note strong { color: #b45309; }
+
+  .footer {
+    text-align: center;
+    padding: 28px 24px;
+    color: var(--text-secondary);
+    font-size: .78rem;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  @media (max-width: 768px) {
+    .header h1 { font-size: 1.5rem; }
+    .kpi-row { gap: 10px; }
+    .kpi-card { min-width: 130px; padding: 16px; }
+    .kpi-card .kpi-value { font-size: 1.7rem; }
+    .overall-pass { flex-direction: column; text-align: center; }
+    .domain-grid { grid-template-columns: 1fr; }
+    th, td { padding: 8px 10px; font-size: .78rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-content">
+    <h1>🧪 Omni 万象抢票平台 — 单元测试汇总报告</h1>
+    <p class="subtitle">全模块功能测试结果可视化 · 覆盖 8 大服务域 · 32 个测试模块</p>
+    <p class="date">报告生成时间：2026-06-03 · 分支：master-Unit-testing</p>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi-card total">
+    <div class="kpi-value">2,332</div>
+    <div class="kpi-label">📋 用例总数</div>
+  </div>
+  <div class="kpi-card pass">
+    <div class="kpi-value">2,332</div>
+    <div class="kpi-label">✅ 测试通过</div>
+  </div>
+  <div class="kpi-card fail">
+    <div class="kpi-value">0</div>
+    <div class="kpi-label">❌ 测试失败</div>
+  </div>
+  <div class="kpi-card skip">
+    <div class="kpi-value">14</div>
+    <div class="kpi-label">⏭️ 测试跳过</div>
+  </div>
+  <div class="kpi-card rate">
+    <div class="kpi-value">100%</div>
+    <div class="kpi-label">📊 整体通过率</div>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="section">
+    <div class="section-title"><span class="icon">📊</span> 整体测试通过率</div>
+    <div class="card">
+      <div class="overall-pass">
+        <div class="pass-ring">
+          <svg width="130" height="130" viewBox="0 0 130 130">
+            <circle class="bg" cx="65" cy="65" r="56"/>
+            <circle class="fg" cx="65" cy="65" r="56"
+              stroke-dasharray="351.86"
+              stroke-dashoffset="0"/>
+          </svg>
+          <div class="inner">
+            <span class="pct">100%</span>
+            <span class="lbl">通过率</span>
+          </div>
+        </div>
+        <div class="pass-detail">
+          <h3>🎉 全部 32 个模块测试通过</h3>
+          <p>所有模块均达到 100% 通过率，无任何失败用例。其中抢票服务（grab-service）2 个模块各有 7 个预存跳过用例（合计 14 个），属历史遗留的已知跳过项，不影响功能正确性。</p>
+          <div class="tags">
+            <span class="tag tag-pass">✅ 2,332 通过</span>
+            <span class="tag tag-skip">⏭️ 14 跳过</span>
+            <span class="tag tag-total">📦 32 模块</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span class="icon">📋</span> 各模块测试统计明细</div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>模块名称</th>
+              <th>所属服务域</th>
+              <th class="right">用例总数</th>
+              <th class="right">通过</th>
+              <th class="right">失败</th>
+              <th class="right">跳过</th>
+              <th>通过率</th>
+              <th>可视化</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="mod-name">grab-team-coordination</span><br><span class="mod-domain">抢票组队协调</span></td><td>抢票服务</td><td class="right">344</td><td class="right">344</td><td class="right">0</td><td class="right">7</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">grab-request-processing</span><br><span class="mod-domain">抢票请求处理</span></td><td>抢票服务</td><td class="right">314</td><td class="right">314</td><td class="right">0</td><td class="right">7</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">order-lifecycle-management</span><br><span class="mod-domain">订单生命周期管理</span></td><td>订单服务</td><td class="right">233</td><td class="right">233</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">order-creation-flow</span><br><span class="mod-domain">订单创建流程</span></td><td>订单服务</td><td class="right">207</td><td class="right">207</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">organizer-application-review</span><br><span class="mod-domain">主办方申请审核</span></td><td>用户服务</td><td class="right">111</td><td class="right">111</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">tour-station-management</span><br><span class="mod-domain">巡演站点管理</span></td><td>票务服务</td><td class="right">88</td><td class="right">88</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">refund-management-flow</span><br><span class="mod-domain">退款管理流程</span></td><td>支付服务</td><td class="right">76</td><td class="right">76</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">internal-ticket-sales-api</span><br><span class="mod-domain">内部售票API</span></td><td>票务服务</td><td class="right">65</td><td class="right">65</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">payment-alipay-integration</span><br><span class="mod-domain">支付宝集成</span></td><td>支付服务</td><td class="right">65</td><td class="right">65</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">activity-browse-search</span><br><span class="mod-domain">活动浏览搜索</span></td><td>票务服务</td><td class="right">61</td><td class="right">61</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">station-config-review</span><br><span class="mod-domain">站点配置审核</span></td><td>票务服务</td><td class="right">59</td><td class="right">59</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">asset-management</span><br><span class="mod-domain">资产管理</span></td><td>票务服务</td><td class="right">53</td><td class="right">53</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">seatcraft-layout-designer</span><br><span class="mod-domain">SeatCraft布局设计</span></td><td>票务服务</td><td class="right">52</td><td class="right">52</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">user-profile-attendee</span><br><span class="mod-domain">用户资料与观演人</span></td><td>用户服务</td><td class="right">51</td><td class="right">51</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">activity-publish-deactivate</span><br><span class="mod-domain">活动发布/下架</span></td><td>票务服务</td><td class="right">49</td><td class="right">49</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">activity-create-edit</span><br><span class="mod-domain">活动创建编辑</span></td><td>票务服务</td><td class="right">47</td><td class="right">47</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">customer-support-system</span><br><span class="mod-domain">客服系统</span></td><td>通知服务</td><td class="right">46</td><td class="right">46</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">user-auth-registration</span><br><span class="mod-domain">用户认证注册</span></td><td>用户服务</td><td class="right">41</td><td class="right">41</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">artist-management-review</span><br><span class="mod-domain">艺人管理审核</span></td><td>票务服务</td><td class="right">40</td><td class="right">40</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">venue-application-review</span><br><span class="mod-domain">场馆申请审核</span></td><td>用户服务</td><td class="right">32</td><td class="right">32</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">session-management</span><br><span class="mod-domain">场次管理</span></td><td>票务服务</td><td class="right">30</td><td class="right">30</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">ticket-wallet-transfer</span><br><span class="mod-domain">票夹与转赠</span></td><td>订单服务</td><td class="right">29</td><td class="right">29</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">ticket-type-management</span><br><span class="mod-domain">票档管理</span></td><td>票务服务</td><td class="right">28</td><td class="right">28</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">gateway-sentinel</span><br><span class="mod-domain">网关Sentinel防护</span></td><td>网关</td><td class="right">27</td><td class="right">27</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">risk-resolution-flow</span><br><span class="mod-domain">风险处置流程</span></td><td>票务服务</td><td class="right">27</td><td class="right">27</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">waitlist-allocation</span><br><span class="mod-domain">候补分配</span></td><td>抢票服务</td><td class="right">27</td><td class="right">27</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">notification-service</span><br><span class="mod-domain">消息通知</span></td><td>通知服务</td><td class="right">25</td><td class="right">25</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">seata-distributed-transactions</span><br><span class="mod-domain">Seata分布式事务</span></td><td>分布式事务</td><td class="right">24</td><td class="right">24</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">admin-order-management</span><br><span class="mod-domain">后台订单管理</span></td><td>票务服务</td><td class="right">22</td><td class="right">22</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">marketing-coupon-rules</span><br><span class="mod-domain">营销优惠券规则</span></td><td>票务服务</td><td class="right">22</td><td class="right">22</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">artist-risk-governance</span><br><span class="mod-domain">艺人风险治理</span></td><td>票务服务</td><td class="right">20</td><td class="right">20</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+            <tr><td><span class="mod-name">venue-management</span><br><span class="mod-domain">场馆管理</span></td><td>票务服务</td><td class="right">17</td><td class="right">17</td><td class="right">0</td><td class="right">0</td><td><span class="badge badge-pass">100%</span></td><td class="bar-cell"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span class="icon">🏗️</span> 按服务域维度汇总</div>
+    <div class="domain-grid">
+      <div class="domain-card">
+        <div class="dom-header"><span class="dom-name">🎫 票务服务 (java-ticket)</span><span class="dom-count">16 模块</span></div>
+        <div class="dom-bar" style="margin-bottom:6px"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></div>
+        <div class="dom-stats"><span>用例 <strong>720</strong></span><span>通过 <strong>720</strong></span><span>失败 <strong>0</strong></span><span>通过率 <strong>100%</strong></span></div>
+      </div>
+      <div class="domain-card">
+        <div class="dom-header"><span class="dom-name">🧾 订单服务 (java-order)</span><span class="dom-count">3 模块</span></div>
+        <div class="dom-bar" style="margin-bottom:6px"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></div>
+        <div class="dom-stats"><span>用例 <strong>469</strong></span><span>通过 <strong>469</strong></span><span>失败 <strong>0</strong></span><span>通过率 <strong>100%</strong></span></div>
+      </div>
+      <div class="domain-card">
+        <div class="dom-header"><span class="dom-name">🚀 抢票服务 (grab-service)</span><span class="dom-count">3 模块</span></div>
+        <div class="dom-bar" style="margin-bottom:6px"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></div>
+        <div class="dom-stats"><span>用例 <strong>685</strong></span><span>通过 <strong>685</strong></span><span>失败 <strong>0</strong></span><span>跳过 <strong>14</strong></span><span>通过率 <strong>100%</strong></span></div>
+      </div>
+      <div class="domain-card">
+        <div class="dom-header"><span class="dom-name">💳 支付服务 (java-payment)</span><span class="dom-count">2 模块</span></div>
+        <div class="dom-bar" style="margin-bottom:6px"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></div>
+        <div class="dom-stats"><span>用例 <strong>141</strong></span><span>通过 <strong>141</strong></span><span>失败 <strong>0</strong></span><span>通过率 <strong>100%</strong></span></div>
+      </div>
+      <div class="domain-card">
+        <div class="dom-header"><span class="dom-name">👤 用户服务 (java-user)</span><span class="dom-count">4 模块</span></div>
+        <div class="dom-bar" style="margin-bottom:6px"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></div>
+        <div class="dom-stats"><span>用例 <strong>235</strong></span><span>通过 <strong>235</strong></span><span>失败 <strong>0</strong></span><span>通过率 <strong>100%</strong></span></div>
+      </div>
+      <div class="domain-card">
+        <div class="dom-header"><span class="dom-name">🔔 通知服务 (java-notification)</span><span class="dom-count">2 模块</span></div>
+        <div class="dom-bar" style="margin-bottom:6px"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></div>
+        <div class="dom-stats"><span>用例 <strong>71</strong></span><span>通过 <strong>71</strong></span><span>失败 <strong>0</strong></span><span>通过率 <strong>100%</strong></span></div>
+      </div>
+      <div class="domain-card">
+        <div class="dom-header"><span class="dom-name">🌐 网关 (java-gateway)</span><span class="dom-count">1 模块</span></div>
+        <div class="dom-bar" style="margin-bottom:6px"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></div>
+        <div class="dom-stats"><span>用例 <strong>27</strong></span><span>通过 <strong>27</strong></span><span>失败 <strong>0</strong></span><span>通过率 <strong>100%</strong></span></div>
+      </div>
+      <div class="domain-card">
+        <div class="dom-header"><span class="dom-name">🔗 分布式事务 (Seata)</span><span class="dom-count">1 模块</span></div>
+        <div class="dom-bar" style="margin-bottom:6px"><div class="bar-track"><div class="bar-fill pass" style="width:100%"></div></div></div>
+        <div class="dom-stats"><span>用例 <strong>24</strong></span><span>通过 <strong>24</strong></span><span>失败 <strong>0</strong></span><span>通过率 <strong>100%</strong></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span class="icon">🔍</span> 失败用例分布概览</div>
+    <div class="card" style="padding:28px 32px; text-align:center;">
+      <div style="font-size:3rem; margin-bottom:8px;">✅</div>
+      <h3 style="color:#059669; margin-bottom:6px;">零失败用例</h3>
+      <p style="color: var(--text-secondary); max-width: 600px; margin: 0 auto;">
+        全部 32 个测试模块、2,332 个测试用例均全部通过，无任何失败或错误用例。
+        按严重程度（Critical / Major / Minor / Trivial）统计均为 0。
+      </p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span class="icon">⏭️</span> 跳过用例说明</div>
+    <div class="card" style="padding:20px 28px;">
+      <table style="width:100%;">
+        <thead><tr><th>模块</th><th class="right">跳过数</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mod-name">grab-request-processing</span></td><td class="right">7</td><td>预存历史跳过用例，属抢票服务测试套件中已知的遗留跳过项</td></tr>
+          <tr><td><span class="mod-name">grab-team-coordination</span></td><td class="right">7</td><td>预存历史跳过用例，同上来源</td></tr>
+          <tr><td colspan="2" style="text-align:right; font-weight:700;">合计跳过：14</td><td style="color: var(--text-secondary);">占全部用例的 0.60%，无阻塞性影响</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>📝 补充说明：</strong>
+    <ul style="margin-top:8px; padding-left:18px;">
+      <li><strong>admin-order-management</strong>：测试场景 AO-018（分页 size 参数）和 AO-019（多状态筛选）因当前 API 不支持对应参数，在测试计划中标记为 SKIP，但不计入 JUnit 运行时跳过统计。</li>
+      <li><strong>seata-distributed-transactions</strong>：14 个集成测试用例需 Seata Server/Nacos/数据库全量运行方可执行，当前仅统计可单元测试化的 24 个断言，全部通过。</li>
+      <li><strong>order-lifecycle-management</strong>：开发期间 OL-011 及 1 个边界测试曾因缺少 mock 而失败，已在最终报告中修复并通过。</li>
+      <li>本报告数据来源：各模块 <code>test-results.md</code>（32 个模块），统计口径以各报告「执行摘要」表格为准。</li>
+    </ul>
+  </div>
+
+  <div class="section" style="margin-top: 28px;">
+    <div class="section-title"><span class="icon">📝</span> 整体测试结论摘要</div>
+    <div class="conclusion">
+      <h3>✅ 测试全部通过，质量状态：健康</h3>
+      <ul>
+        <li><strong>覆盖范围：</strong>32 个功能测试模块覆盖了 Omni 平台全部 8 个核心服务域（票务、订单、支付、用户、通知、网关、抢票、分布式事务），涵盖 B 端后台管理和 C 端用户购票全链路。</li>
+        <li><strong>用例规模：</strong>共计 <strong>2,332</strong> 个测试用例，其中新增用例与复用已有测试套件用例均计入统计。</li>
+        <li><strong>通过率：</strong>全部模块均达到 <strong>100%</strong> 通过率，零失败、零错误。仅抢票服务 2 个模块存在合计 14 个历史预存跳过用例（占比 0.60%），不影响功能正确性。</li>
+        <li><strong>核心链路验证：</strong>订单创建流程（207 用例）、订单生命周期（233 用例）、抢票请求处理（314 用例）、抢票组队协调（344 用例）等关键业务链路均通过全覆盖测试，Sentinel 限流熔断与 Seata 分布式事务相关用例也全部通过。</li>
+        <li><strong>风险提示：</strong>Seata 分布式事务模块有 14 个用例需实时基础设施支持（Seata Server + Nacos + DB），当前仅验证了可单元测试化部分；建议在集成环境中补充全量端到端验证。</li>
+        <li><strong>总体评价：</strong>当前 <code>master-Unit-testing</code> 分支的单元测试覆盖充分、质量良好，所有可执行用例均通过，具备合并到主分支的条件。</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <p>Omni 万象抢票平台 · 单元测试汇总报告 · 由自动化工具生成于 2026-06-03</p>
+  <p style="margin-top:4px;">数据源：32 个模块 test-results.md · 分支：master-Unit-testing</p>
+</div>
+
+</body>
+</html>

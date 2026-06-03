@@ -25,4 +25,40 @@ foreach ($profile in $expectedProfiles) {
     Write-Host "PASS $($profile.Service) local schema profile -> $($profile.Schema)"
 }
 
+# Seata defaults: local-schema disables Seata, prod-split enables it (order/payment/ticket only)
+$seataServices = @("java-order", "java-payment", "java-ticket")
+foreach ($svc in $seataServices) {
+    $localFile = Join-Path -Path $repoRoot -ChildPath "java/$svc/src/main/resources/application-local-schema.yml"
+    $prodFile = Join-Path -Path $repoRoot -ChildPath "java/$svc/src/main/resources/application-prod-split.yml"
+
+    if (Test-Path -LiteralPath $localFile) {
+        $content = Get-Content -Raw -LiteralPath $localFile
+        if ($content -notmatch [regex]::Escape("enabled: ${SEATA_ENABLED:false}")) {
+            Write-Host "FAIL $svc local-schema: expected seata enabled default=false"
+            exit 1
+        }
+        Write-Host "PASS $svc local-schema seata enabled default=false"
+    }
+
+    if (Test-Path -LiteralPath $prodFile) {
+        $content = Get-Content -Raw -LiteralPath $prodFile
+        if ($content -notmatch [regex]::Escape("enabled: ${SEATA_ENABLED:true}")) {
+            Write-Host "FAIL $svc prod-split: expected seata enabled default=true"
+            exit 1
+        }
+        Write-Host "PASS $svc prod-split seata enabled default=true"
+    }
+}
+
+# User service: local-schema must have development-only id-no-key fallback
+$userLocalFile = Join-Path -Path $repoRoot -ChildPath "java/java-user/src/main/resources/application-local-schema.yml"
+if (Test-Path -LiteralPath $userLocalFile) {
+    $content = Get-Content -Raw -LiteralPath $userLocalFile
+    if ($content -notmatch [regex]::Escape("id-no-key: ${OMNI_ID_NO_KEY:omni-local-dev-id-no-key-change-me}")) {
+        Write-Host "FAIL java-user local-schema: expected id-no-key development fallback"
+        exit 1
+    }
+    Write-Host "PASS java-user local-schema id-no-key development fallback"
+}
+
 Write-Host "All local schema profile checks passed."
