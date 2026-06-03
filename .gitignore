@@ -169,5 +169,16 @@ graphify-out/
 # Superpowers 工作目录
 .superpowers/
 
+# 本地代理/工作区工具产物
+.claude/
+.worktrees/
+artifacts/
+
+# 前端包管理缓存
+frontend/.pnpm-store/
+
+# 临时依赖分析输出
+seata-dependency-baseline.txt
+
 # Claude Code 本地设置（项目级配置除外）
 .claude/settings.local.json
