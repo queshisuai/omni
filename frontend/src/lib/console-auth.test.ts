@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canAccessConsolePath, canUseConsoleAction, canEnterConsole } from './console-auth.ts'
+import { canAccessConsolePath, canUseConsoleAction, canEnterConsole, getConsoleBrandLabel, getConsoleRoleLabel, getDefaultConsolePath, shouldDefaultToConsoleAfterLogin } from './console-auth.ts'
 
 test('support manager can access support pages but not audit pages', () => {
   const permissions = ['support.conversation.view', 'support.account.manage']
@@ -21,6 +21,13 @@ test('support role can enter console when RBAC permissions allow it', () => {
   assert.equal(canEnterConsole('user', ['support.conversation.view']), false)
 })
 
+test('support manager defaults to management console while plain support stays in workbench', () => {
+  assert.equal(shouldDefaultToConsoleAfterLogin('support', ['support.conversation.view']), false)
+  assert.equal(shouldDefaultToConsoleAfterLogin('support', ['support.account.manage']), true)
+  assert.equal(getDefaultConsolePath('support', ['support.account.manage', 'support.conversation.view']), '/console/support-accounts')
+  assert.equal(getDefaultConsolePath('support', ['audit.view']), '/console/audit-logs')
+})
+
 test('platform super admin role code can enter console without extra permissions', () => {
   assert.equal(canEnterConsole('platform_super_admin', []), true)
 })
@@ -28,6 +35,16 @@ test('platform super admin role code can enter console without extra permissions
 test('organizer admin manages organizer accounts but not organizer business pages', () => {
   const permissions = ['organizer.account.manage']
   assert.equal(canEnterConsole('organizer_admin', permissions), true)
+  assert.equal(getDefaultConsolePath('organizer_admin', permissions), '/console/organizer-admins')
   assert.equal(canAccessConsolePath('/console/organizer-admins', permissions), true)
   assert.equal(canAccessConsolePath('/console/activities', permissions), false)
+})
+
+test('formats console role and brand labels without mixing platform and scoped admins', () => {
+  assert.equal(getConsoleRoleLabel('admin'), '平台管理员')
+  assert.equal(getConsoleRoleLabel('platform_super_admin'), '平台超管')
+  assert.equal(getConsoleRoleLabel('support', ['support.account.manage']), '客服主管')
+  assert.equal(getConsoleRoleLabel('organizer_admin'), '主办方管理员')
+  assert.equal(getConsoleBrandLabel('support', ['support.account.manage']), '客服管理后台')
+  assert.equal(getConsoleBrandLabel('organizer_admin'), '主办方管理后台')
 })

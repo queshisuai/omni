@@ -101,6 +101,7 @@ public class UserService {
         // 生成 JWT Token
         String role = user.getRole() != null ? user.getRole() : "user";
         String token = JwtUtil.generateToken(user.getId(), user.getPhone(), role);
+        InternalAuthContextResponse authContext = loadAuthContext(user.getId());
 
         LoginResponse response = new LoginResponse();
         response.setUserId(user.getId());
@@ -108,8 +109,8 @@ public class UserService {
         response.setNickname(user.getNickname());
         response.setAvatar(user.getAvatar());
         response.setToken(token);
-        response.setRole(role);
-        response.setPermissionCodes(loadPermissionCodes(user.getId()));
+        response.setRole(resolveFrontendRole(role, authContext));
+        response.setPermissionCodes(resolvePermissionCodes(authContext));
 
         log.info("用户登录成功: userId={}, phone={}", user.getId(), user.getPhone());
         return response;
@@ -146,7 +147,9 @@ public class UserService {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
         UserInfoResponse response = toUserInfoResponse(user);
-        response.setPermissionCodes(loadPermissionCodes(userId));
+        InternalAuthContextResponse authContext = loadAuthContext(userId);
+        response.setRole(resolveFrontendRole(response.getRole(), authContext));
+        response.setPermissionCodes(resolvePermissionCodes(authContext));
         return response;
     }
 
@@ -313,13 +316,30 @@ public class UserService {
         userMapper.updateById(user);
     }
 
-    private List<String> loadPermissionCodes(Long userId) {
+    private InternalAuthContextResponse loadAuthContext(Long userId) {
         try {
-            InternalAuthContextResponse auth = rbacService.getInternalAuthContext(userId);
-            return auth.getPermissionCodes();
+            return rbacService.getInternalAuthContext(userId);
         } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private List<String> resolvePermissionCodes(InternalAuthContextResponse authContext) {
+        if (authContext == null || authContext.getPermissionCodes() == null) {
             return List.of();
         }
+        return authContext.getPermissionCodes();
+    }
+
+    private String resolveFrontendRole(String rawRole, InternalAuthContextResponse authContext) {
+        if (authContext == null || authContext.getEffectiveRole() == null) {
+            return rawRole != null ? rawRole : "user";
+        }
+        String effectiveRole = authContext.getEffectiveRole();
+        if ("platform_super_admin".equals(effectiveRole) || "organizer_admin".equals(effectiveRole)) {
+            return effectiveRole;
+        }
+        return rawRole != null ? rawRole : "user";
     }
 
     private InternalUserRefResponse toInternalUserRefResponse(User user) {

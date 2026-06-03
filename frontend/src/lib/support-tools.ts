@@ -1,4 +1,5 @@
 import type { SupportConversationVO, SupportMessageVO, SupportTagCode, UserRole } from '@/types/api'
+import { getDefaultConsolePath, shouldDefaultToConsoleAfterLogin } from './console-auth.ts'
 
 export type SupportConversationStatus = 'OPEN' | 'WAITING_AGENT' | 'ASSIGNED' | 'CLOSE_REQUESTED' | 'CLOSED' | string
 export type SupportConversationFilter = 'active' | 'closed' | 'all'
@@ -22,9 +23,9 @@ const SUPPORT_AUDIT_ACTION_LABELS: Record<string, string> = {
   AUTO_CLOSED: '自动结束',
 }
 
-export function getLoginRedirectForRole(role: UserRole | string | null | undefined) {
+export function getLoginRedirectForRole(role: UserRole | string | null | undefined, permissionCodes: string[] = []) {
+  if (shouldDefaultToConsoleAfterLogin(role, permissionCodes)) return getDefaultConsolePath(role, permissionCodes)
   if (role === 'support') return '/support'
-  if (role === 'admin' || role === 'platform_super_admin' || role === 'organizer') return '/console'
   return '/'
 }
 

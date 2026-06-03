@@ -45,7 +45,9 @@ function currentQualificationMeta(isCancelled: boolean, application?: OrganizerA
 
 function roleLabel(role?: UserRole | null) {
   if (role === 'admin') return '平台管理员'
+  if (role === 'platform_super_admin') return '平台超管'
   if (role === 'organizer') return '商户账号'
+  if (role === 'organizer_admin') return '主办方管理员'
   return '普通用户'
 }
 
@@ -83,7 +85,7 @@ export default function MerchantPage() {
         setUserInfo(info)
         setRole(info.role)
 
-        if (info.role === 'admin' || info.role === 'organizer') {
+        if (info.role === 'admin' || info.role === 'platform_super_admin' || info.role === 'organizer') {
           setLoading(false)
           return
         }
@@ -189,7 +191,7 @@ export default function MerchantPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              {role === 'admin' || role === 'organizer' || isApproved ? (
+              {role === 'admin' || role === 'platform_super_admin' || role === 'organizer' || isApproved ? (
                 <button
                   onClick={() => router.push('/console')}
                   className="inline-flex items-center gap-2 rounded-full bg-[#ff1268] px-4 py-2 text-sm font-medium text-white shadow-sm shadow-[#ff1268]/20 transition-colors hover:bg-[#e60f5f]"
@@ -233,7 +235,7 @@ export default function MerchantPage() {
                 重新加载
               </button>
             </div>
-          ) : role === 'admin' || role === 'organizer' || isApproved ? (
+          ) : role === 'admin' || role === 'platform_super_admin' || role === 'organizer' || isApproved ? (
             <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
               <section className="rounded-3xl border border-[#ececec] bg-white p-6 shadow-sm sm:p-8">
                 <div className="flex items-start gap-4">

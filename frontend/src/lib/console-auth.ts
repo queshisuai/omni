@@ -23,7 +23,17 @@ const PATH_PERMISSION_MAP: Record<string, string[]> = {
 const SUPPORT_CONSOLE_PERMISSIONS = [
   'support.account.manage',
   'support.conversation.view',
+  'audit.view',
 ]
+
+const SUPPORT_MANAGER_PERMISSIONS = [
+  'support.account.manage',
+  'audit.view',
+]
+
+export function isPlatformAdminRole(role: string | null | undefined): boolean {
+  return role === 'admin' || role === 'platform_super_admin'
+}
 
 function getPathPermission(pathname: string): string[] {
   if (pathname === '/console' || pathname === '/console/profile') return ['*']
@@ -47,7 +57,44 @@ export function canUseConsoleAction(action: string, permissionCodes: string[]): 
 }
 
 export function canEnterConsole(role: string | null | undefined, permissionCodes: string[] = []): boolean {
-  if (role === 'admin' || role === 'platform_super_admin' || role === 'organizer' || role === 'organizer_admin') return true
+  if (isPlatformAdminRole(role) || role === 'organizer' || role === 'organizer_admin') return true
   if (role !== 'support') return false
   return SUPPORT_CONSOLE_PERMISSIONS.some(permission => permissionCodes.includes(permission))
+}
+
+export function shouldDefaultToConsoleAfterLogin(role: string | null | undefined, permissionCodes: string[] = []): boolean {
+  if (isPlatformAdminRole(role) || role === 'organizer' || role === 'organizer_admin') return true
+  if (role !== 'support') return false
+  return SUPPORT_MANAGER_PERMISSIONS.some(permission => permissionCodes.includes(permission))
+}
+
+export function getDefaultConsolePath(role: string | null | undefined, permissionCodes: string[] = []): string {
+  if (role === 'organizer_admin') return '/console/organizer-admins'
+  if (role === 'support') {
+    if (permissionCodes.includes('support.account.manage')) return '/console/support-accounts'
+    if (permissionCodes.includes('audit.view')) return '/console/audit-logs'
+    if (permissionCodes.includes('support.conversation.view')) return '/console/support-conversations'
+  }
+  return '/console'
+}
+
+export function getConsoleRoleLabel(role: string | null | undefined, permissionCodes: string[] = []): string {
+  if (role === 'platform_super_admin') return '平台超管'
+  if (role === 'admin') return '平台管理员'
+  if (role === 'organizer') return '活动主办方'
+  if (role === 'organizer_admin') return '主办方管理员'
+  if (role === 'support') {
+    return SUPPORT_MANAGER_PERMISSIONS.some(permission => permissionCodes.includes(permission)) ? '客服主管' : '普通客服'
+  }
+  return '普通用户'
+}
+
+export function getConsoleBrandLabel(role: string | null | undefined, permissionCodes: string[] = []): string {
+  if (isPlatformAdminRole(role)) return '平台后台'
+  if (role === 'organizer') return '主办方后台'
+  if (role === 'organizer_admin') return '主办方管理后台'
+  if (role === 'support') {
+    return SUPPORT_MANAGER_PERMISSIONS.some(permission => permissionCodes.includes(permission)) ? '客服管理后台' : '客服后台'
+  }
+  return '后台'
 }

@@ -56,6 +56,19 @@ class UserServiceTest {
     }
 
     @Test
+    void loginExposesPlatformSuperAdminEffectiveRoleForFrontend() {
+        User user = existingUser();
+        user.setRole("admin");
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(rbacService.getInternalAuthContext(2004L)).thenReturn(authContext("platform_super_admin", List.of("rbac.manage")));
+
+        LoginResponse response = userService.login(smsLoginRequest("666666"));
+
+        assertEquals("platform_super_admin", response.getRole());
+        assertEquals(List.of("rbac.manage"), response.getPermissionCodes());
+    }
+
+    @Test
     void loginRejectsDeactivatedUserBeforeCheckingCredential() {
         User user = existingUser();
         user.setStatus(0);
@@ -341,8 +354,13 @@ class UserServiceTest {
     }
 
     private InternalAuthContextResponse authContextWithNoPermissions() {
+        return authContext(null, List.of());
+    }
+
+    private InternalAuthContextResponse authContext(String effectiveRole, List<String> permissionCodes) {
         InternalAuthContextResponse auth = new InternalAuthContextResponse();
-        auth.setPermissionCodes(List.of());
+        auth.setEffectiveRole(effectiveRole);
+        auth.setPermissionCodes(permissionCodes);
         return auth;
     }
 

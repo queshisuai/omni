@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
-import { canAccessConsolePath, canEnterConsole } from '@/lib/console-auth'
+import { canAccessConsolePath, canEnterConsole, getConsoleBrandLabel, getConsoleRoleLabel, isPlatformAdminRole } from '@/lib/console-auth'
 import { isConsolePathAllowedForRole } from '@/lib/console-paths'
 import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones, ShieldAlert, FileSearch, ShieldCheck } from 'lucide-react'
 
@@ -60,7 +60,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const [redirecting, setRedirecting] = useState(false)
   const visibleMenuItems = useMemo(() => {
     if (checking || !role) return []
-    if (role === 'admin' || role === 'platform_super_admin') {
+    if (isPlatformAdminRole(role)) {
       return menuItems
     }
     if (permissionCodes.length > 0) {
@@ -107,7 +107,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setAvatar(latest.avatar || '')
         setRole(latest.role)
         setPermissionCodes(latestPermissions)
-        if (latest.role !== 'admin' && latest.role !== 'platform_super_admin') {
+        if (!isPlatformAdminRole(latest.role)) {
           if (latestPermissions.length > 0) {
             if (!canAccessConsolePath(pathname, latestPermissions)) {
               setRedirecting(true)
@@ -130,7 +130,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setNickname(cached.nickname || cached.phone || '')
         setRole(cached.role || '')
         setPermissionCodes(cachedPermissions)
-        if (cached.role !== 'admin' && cached.role !== 'platform_super_admin') {
+        if (!isPlatformAdminRole(cached.role)) {
           if (cachedPermissions.length > 0) {
             if (!canAccessConsolePath(pathname, cachedPermissions)) {
               setRedirecting(true)
@@ -154,8 +154,8 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 
   const handleLogout = () => logout()
   const roleReady = !checking && Boolean(role)
-  const brandLabel = roleReady ? role === 'admin' ? '平台后台' : role === 'support' ? '客服后台' : role === 'organizer_admin' ? '主办方管理后台' : '主办方后台' : '后台'
-  const roleLabel = roleReady ? role === 'admin' ? '平台管理员' : role === 'support' ? '客服人员' : role === 'organizer_admin' ? '主办方管理员' : '主办方' : '校验中'
+  const brandLabel = roleReady ? getConsoleBrandLabel(role, permissionCodes) : '后台'
+  const roleLabel = roleReady ? getConsoleRoleLabel(role, permissionCodes) : '校验中'
 
   return (
     <div className="min-h-screen bg-gray-50 flex font-sans">

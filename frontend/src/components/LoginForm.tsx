@@ -39,8 +39,9 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
     try {
       const data = await login({ loginType: 'password', account: account.trim(), password })
       setToken(data.token)
-      setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, avatar: data.avatar || null, role: data.role })
-      router.push(getLoginRedirectForRole(data.role))
+      const permissionCodes = data.permissionCodes || []
+      setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, avatar: data.avatar || null, role: data.role, permissionCodes })
+      router.push(getLoginRedirectForRole(data.role, permissionCodes))
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : '登录失败')
     } finally {
@@ -58,8 +59,9 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
     try {
       const data = await login({ loginType: 'sms', account: smsMobile.trim(), smsCode: smsCode.trim() })
       setToken(data.token)
-      setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, avatar: data.avatar || null, role: data.role })
-      router.push(getLoginRedirectForRole(data.role))
+      const permissionCodes = data.permissionCodes || []
+      setUser({ userId: data.userId, phone: data.phone, nickname: data.nickname, avatar: data.avatar || null, role: data.role, permissionCodes })
+      router.push(getLoginRedirectForRole(data.role, permissionCodes))
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : '登录失败')
     } finally {

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Search, MapPin, ChevronDown, User, Menu } from "lucide-react";
 import { getUser, isAuthenticated, logout } from "@/lib/auth";
+import { canEnterConsole, getDefaultConsolePath } from "@/lib/console-auth";
 import { NotificationBell } from "@/components/NotificationBell";
 import type { UserRole } from "@/types/api";
 
@@ -24,6 +25,7 @@ export function Header() {
   const [nickname, setNickname] = useState("");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
   const [currentCity, setCurrentCity] = useState("北京");
   const [citySearch, setCitySearch] = useState("");
@@ -61,10 +63,12 @@ export function Header() {
         setNickname(user?.nickname || user?.phone || "")
         setAvatar(user?.avatar || null)
         setRole(user?.role || null)
+        setPermissionCodes(user?.permissionCodes || [])
       } else {
         setNickname("")
         setAvatar(null)
         setRole(null)
+        setPermissionCodes([])
       }
     }
     const storedCity = localStorage.getItem(CITY_KEY)
@@ -319,9 +323,9 @@ export function Header() {
                   >
                     我的候补
                   </button>
-                  {(role === 'admin' || role === 'organizer') && (
+                  {canEnterConsole(role, permissionCodes) && (
                     <button
-                      onClick={() => { setShowUserDropdown(false); router.push("/console") }}
+                      onClick={() => { setShowUserDropdown(false); router.push(getDefaultConsolePath(role, permissionCodes)) }}
                       className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                     >
                       进入后台

@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Building2, Loader2, ShieldCheck, UserRound, Mail, Phone, CalendarDays, ClipboardList } from 'lucide-react'
 import { getMyOrganizerApplication, getUserInfo } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import type { OrganizerApplicationVO, OrganizerStatus, UserInfo } from '@/types/api'
+import { canEnterConsole, getConsoleRoleLabel, isPlatformAdminRole } from '@/lib/console-auth'
+import type { OrganizerApplicationVO, UserInfo } from '@/types/api'
 
 function formatTime(value: string | null | undefined) {
   if (!value) return '未设置'
@@ -45,7 +46,7 @@ export default function ConsoleProfilePage() {
       try {
         const info = await getUserInfo()
         if (!active) return
-        if (info.role !== 'admin' && info.role !== 'organizer') {
+        if (!canEnterConsole(info.role, info.permissionCodes || [])) {
           router.replace('/console')
           return
         }
@@ -105,7 +106,7 @@ export default function ConsoleProfilePage() {
               <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[#fff0f5] text-[#ff1268]">
                 {user.avatar ? (
                   <img src={user.avatar} alt="Avatar" className="h-full w-full object-cover" />
-                ) : role === 'admin' ? (
+                ) : isPlatformAdminRole(role) ? (
                   <ShieldCheck className="h-6 w-6" />
                 ) : (
                   <Building2 className="h-6 w-6" />
@@ -113,12 +114,14 @@ export default function ConsoleProfilePage() {
               </div>
               <div>
                 <h2 className="text-[20px] font-semibold text-[#111]">
-                  {role === 'admin' ? '平台管理员' : '商户主体信息'}
+                  {isPlatformAdminRole(role) ? '平台管理员' : role === 'organizer' ? '商户主体信息' : getConsoleRoleLabel(role, user.permissionCodes || [])}
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-[#666]">
-                  {role === 'admin'
+                  {isPlatformAdminRole(role)
                     ? '展示管理员账号资料、安全状态与后台管理快捷入口。'
-                    : '展示商户主体资料、主办方状态和经营信息。'}
+                    : role === 'organizer'
+                      ? '展示商户主体资料、主办方状态和经营信息。'
+                      : '展示当前后台账号资料和可访问的管理入口。'}
                 </p>
               </div>
             </div>
@@ -129,7 +132,7 @@ export default function ConsoleProfilePage() {
               <InfoCard icon={<Mail className="h-4 w-4" />} title="邮箱" value={user.email || '未设置'} />
               <InfoCard icon={<CalendarDays className="h-4 w-4" />} title="注册时间" value={formatTime(user.createTime)} />
               <InfoCard icon={<ShieldCheck className="h-4 w-4" />} title="账号状态" value={statusText(user.status).text} />
-              <InfoCard icon={<ClipboardList className="h-4 w-4" />} title="当前角色" value={role === 'admin' ? '平台管理员' : '主办方'} />
+              <InfoCard icon={<ClipboardList className="h-4 w-4" />} title="当前角色" value={getConsoleRoleLabel(role, user.permissionCodes || [])} />
             </div>
 
             {role === 'organizer' && application ? (
@@ -168,10 +171,18 @@ export default function ConsoleProfilePage() {
             <section className="rounded-xl border border-[#e5e5e5] bg-white p-6 shadow-sm">
               <h3 className="text-[18px] font-semibold text-[#111]">快捷入口</h3>
               <div className="mt-5 grid gap-3">
-                {role === 'admin' ? (
+                {isPlatformAdminRole(role) ? (
                   <>
                     <ActionLink href="/console/organizer-applications" title="主办方管理" desc="管理主办方入驻申请" />
                     <ActionLink href="/console/venue" title="场馆记录" desc="创建和维护场馆记录" />
+                  </>
+                ) : role === 'organizer_admin' ? (
+                  <ActionLink href="/console/organizer-admins" title="主办方管理员" desc="分配和解除主办方管理员账号" />
+                ) : role === 'support' ? (
+                  <>
+                    {user.permissionCodes?.includes('support.account.manage') ? <ActionLink href="/console/support-accounts" title="客服账号管理" desc="创建、编辑和停用客服账号" /> : null}
+                    {user.permissionCodes?.includes('support.conversation.view') ? <ActionLink href="/console/support-conversations" title="客服会话查询" desc="查看人工客服会话记录" /> : null}
+                    {user.permissionCodes?.includes('audit.view') ? <ActionLink href="/console/audit-logs" title="操作审计" desc="查看后台人工操作日志" /> : null}
                   </>
                 ) : (
                   <>
@@ -186,9 +197,13 @@ export default function ConsoleProfilePage() {
             <section className="rounded-xl border border-[#ffe3ee] bg-gradient-to-br from-white to-[#fff7fa] p-6 shadow-sm">
               <h3 className="text-[18px] font-semibold text-[#111]">角色说明</h3>
               <p className="mt-3 text-sm leading-6 text-[#666]">
-                {role === 'admin'
+                {isPlatformAdminRole(role)
                   ? '管理员可访问所有后台功能，并可进入主办方管理页面处理主办方申请。'
-                  : '主办方可查看自己的商户主体信息和入驻状态，并进入商户后台进行业务管理。'}
+                  : role === 'organizer'
+                    ? '主办方可查看自己的商户主体信息和入驻状态，并进入商户后台进行业务管理。'
+                    : role === 'organizer_admin'
+                      ? '主办方管理员负责主办方管理员账号的分配、解除和状态维护，不等同于主办方商户账号。'
+                      : '客服主管负责客服账号、客服会话和审计查看等后台管理工作；普通客服仍以客服工作台处理在线咨询。'}
               </p>
             </section>
           </aside>

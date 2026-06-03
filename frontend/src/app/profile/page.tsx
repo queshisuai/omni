@@ -3,11 +3,12 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, Mail, Phone, CalendarDays, ShieldCheck, Ticket, Settings2, Image as ImageIcon, Loader2, Users, Clock3 } from 'lucide-react'
+import { User, Mail, CalendarDays, ShieldCheck, Ticket, Settings2, Loader2, Users, Clock3 } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { getUserInfo } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
+import { getConsoleRoleLabel, canEnterConsole } from '@/lib/console-auth'
 import type { UserInfo } from '@/types/api'
 
 function formatTime(value: string | null | undefined) {
@@ -139,7 +140,7 @@ export default function ProfilePage() {
 
                 <div className="mt-10 grid gap-5 sm:grid-cols-3">
                   <InfoItem icon={<Mail className="h-5 w-5" />} label="电子邮箱" value={user.email || '未设置'} />
-                  <InfoItem icon={<ShieldCheck className="h-5 w-5" />} label="角色身份" value={user.role === 'admin' ? '平台管理员' : user.role === 'organizer' ? '活动主办方' : '普通用户'} />
+                  <InfoItem icon={<ShieldCheck className="h-5 w-5" />} label="角色身份" value={getConsoleRoleLabel(user.role, user.permissionCodes || [])} />
                   <InfoItem icon={<CalendarDays className="h-5 w-5" />} label="注册时间" value={formatTime(user.createTime)} />
                 </div>
               </section>
@@ -151,7 +152,7 @@ export default function ProfilePage() {
                 <div>
                   <h3 className="text-[16px] font-bold text-[#111]">账户提示</h3>
                   <p className="mt-2 text-[14px] leading-relaxed text-[#666]">
-                    为了您的账户安全，请不要随意将账号密码透露给他人。后台管理入口仅对“平台管理员”与“活动主办方”开放。如需申请成为主办方，请联系客服获取权限。
+                    为了您的账户安全，请不要随意将账号密码透露给他人。{canEnterConsole(user.role, user.permissionCodes || []) ? '当前账号具备后台权限，可从顶部菜单进入对应管理后台。' : '如需申请成为主办方，请联系客服获取权限。'}
                   </p>
                 </div>
               </section>

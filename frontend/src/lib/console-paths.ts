@@ -43,7 +43,7 @@ export function isConsolePathAllowedForRole(role: UserRole | string | null | und
   return ORGANIZER_ALLOWED_PREFIXES.some(prefix => matchesPath(pathname, prefix))
 }
 
-export function getConsoleQuickActions(role: UserRole | string | null | undefined): ConsoleQuickAction[] {
+export function getConsoleQuickActions(role: UserRole | string | null | undefined, permissionCodes: string[] = []): ConsoleQuickAction[] {
   if (role === 'admin' || role === 'platform_super_admin') {
     return [
       { label: '新建活动', href: '/console/activities/new' },
@@ -70,6 +70,28 @@ export function getConsoleQuickActions(role: UserRole | string | null | undefine
       { label: '退款处理', href: '/console/refunds' },
       { label: '查看订单', href: '/console/orders' },
     ]
+  }
+
+  if (role === 'organizer_admin') {
+    return [
+      { label: '主办方管理员', href: '/console/organizer-admins' },
+      { label: '个人中心', href: '/console/profile' },
+    ]
+  }
+
+  if (role === 'support') {
+    const actions: ConsoleQuickAction[] = []
+    if (permissionCodes.includes('support.account.manage')) {
+      actions.push({ label: '客服账号管理', href: '/console/support-accounts' })
+    }
+    if (permissionCodes.includes('support.conversation.view')) {
+      actions.push({ label: '客服会话查询', href: '/console/support-conversations' })
+    }
+    if (permissionCodes.includes('audit.view')) {
+      actions.push({ label: '操作审计', href: '/console/audit-logs' })
+    }
+    actions.push({ label: '个人中心', href: '/console/profile' })
+    return actions
   }
 
   return []

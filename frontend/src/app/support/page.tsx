@@ -329,7 +329,7 @@ export default function SupportWorkbenchPage() {
           </div>
           <div>
             <div className="text-[18px] font-bold text-[#111]">客服工作台</div>
-            <div className="text-[12px] text-gray-500">人工客服只处理在线咨询，不进入平台后台或主办方后台</div>
+            <div className="text-[12px] text-gray-500">普通客服处理在线咨询；具备后台权限的账号可进入对应管理后台</div>
           </div>
         </div>
         <button onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">

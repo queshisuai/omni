@@ -5,6 +5,7 @@ import { getUser } from '@/lib/auth'
 import { getAdminSummary, getGrabOpsSummary, listAdminRefunds, listExceptionTasks, listOperationAuditLogs, listReconciliationBatches } from '@/lib/api'
 import { canLoadPlatformOpsSummary } from '@/lib/console-ops'
 import { getConsoleQuickActions } from '@/lib/console-paths'
+import { getConsoleBrandLabel, isPlatformAdminRole } from '@/lib/console-auth'
 import { buildDashboardBars, summarizeOpsMetric } from '@/lib/marketing-tools'
 import { ConsoleDashboardSkeleton } from '@/components/Skeleton'
 import { Activity, AlertTriangle, CalendarDays, ClipboardList, FileSearch, Gauge, RotateCcw, ShieldAlert, ShoppingCart, Ticket, TrendingUp, Users } from 'lucide-react'
@@ -57,6 +58,7 @@ export default function ConsoleHome() {
     latestAudit: OperationAuditLogVO | null
   } | null>(null)
   const [statsError, setStatsError] = useState('')
+  const [summaryReady, setSummaryReady] = useState(false)
   const loadSummaryRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
 
@@ -69,9 +71,16 @@ export default function ConsoleHome() {
       setRefundOps(null)
       setPlatformOps(null)
       setStatsError('')
+      setSummaryReady(false)
+      const canLoadBusinessSummary = isPlatformAdminRole(u.role) || u.role === 'organizer'
+      if (!canLoadBusinessSummary) {
+        setSummaryReady(true)
+        return
+      }
       getAdminSummary()
         .then(res => {
           setStats(res)
+          setSummaryReady(true)
           if (canLoadPlatformOpsSummary(u.role)) {
             getGrabOpsSummary()
               .then(setGrabOps)
@@ -101,6 +110,7 @@ export default function ConsoleHome() {
         })
         .catch(() => {
           setStatsError('统计加载失败')
+          setSummaryReady(true)
         })
     }
   }
@@ -135,22 +145,23 @@ export default function ConsoleHome() {
     }
   }, [])
 
-  if (!stats && !statsError) {
+  if (!summaryReady) {
     return <ConsoleDashboardSkeleton />
   }
 
-  const quickActions = getConsoleQuickActions(user?.role)
+  const quickActions = getConsoleQuickActions(user?.role, user?.permissionCodes || [])
+  const canShowBusinessStats = isPlatformAdminRole(user?.role) || user?.role === 'organizer'
 
   return (
     <div>
       <div className="mb-8">
         <h1 className="text-[24px] font-semibold text-gray-900 mb-1">
-          {canLoadPlatformOpsSummary(user?.role) ? '平台管理后台' : '主办方后台'}
+          {getConsoleBrandLabel(user?.role, user?.permissionCodes || [])}
         </h1>
-        <p className="text-[14px] text-gray-500">欢迎回来，这是您的业务数据概览。</p>
+        <p className="text-[14px] text-gray-500">{canShowBusinessStats ? '欢迎回来，这是您的业务数据概览。' : '欢迎回来，请从下方入口进入可管理的功能。'}</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+      {canShowBusinessStats && <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
         <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm flex flex-col">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-[#fff0f5] text-[#ff1268]">
@@ -189,7 +200,7 @@ export default function ConsoleHome() {
             {statsError ? <div className="mt-2 text-[12px] font-medium text-red-500">{statsError}</div> : null}
           </div>
         </div>
-      </div>
+      </div>}
 
       <div className="mb-6">
         {canLoadPlatformOpsSummary(user?.role) && (

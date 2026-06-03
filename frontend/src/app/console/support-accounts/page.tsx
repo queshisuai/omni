@@ -143,7 +143,7 @@ export default function SupportAccountsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-[24px] font-bold text-[#111]">客服账号管理</h1>
-          <p className="mt-2 text-[14px] text-gray-500">平台管理员创建、编辑和停用人工客服账号；客服登录后进入客服工作台，不进入平台后台或主办方后台。</p>
+          <p className="mt-2 text-[14px] text-gray-500">具备客服账号管理权限的后台账号可创建、编辑和停用人工客服；普通客服仍通过客服工作台处理在线咨询。</p>
         </div>
         <Link href={getSupportConversationRecordsHref()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
           <MessageSquareText className="h-4 w-4" />
