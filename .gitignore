@@ -138,7 +138,6 @@ service-account.json
 # ===================================================
 
 # 上传文件（本地测试产生，不应提交）
-runtime/uploads/
 runtime/private-uploads/
 java/runtime/
 
