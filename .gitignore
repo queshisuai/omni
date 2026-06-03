@@ -1,29 +1,173 @@
-.claude/
-.worktrees/
-**/node_modules/
-# build artifacts
+# ============================================================
+# Omni 万象抢票平台 .gitignore
+# ============================================================
+
+# ===================================================
+# 1. IDE 和编辑器配置
+# ===================================================
+
+# Visual Studio Code
+.vscode/
+
+# JetBrains (IntelliJ IDEA / WebStorm / PyCharm)
+.idea/
+*.iml
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+
+# Eclipse / STS
+.classpath
+.project
+.settings/
+
+# Trae
+.trae/
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+
+# Emacs
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+
+# ===================================================
+# 2. 操作系统自动生成文件
+# ===================================================
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+.directory
+.fuse_hidden*
+.Trash-*
+
+
+# ===================================================
+# 3. 依赖包
+# ===================================================
+
+# Node.js (frontend / nestjs)
+node_modules/
+.npm/
+
+# Maven (Java 后端)
 target/
-**/dist/
+
+# Gradle (备用)
+.gradle/
+build/
+
+
+# ===================================================
+# 4. 构建产物
+# ===================================================
+
+# Next.js
+.next/
+out/
+
+# NestJS / TypeScript
+dist/
+*.tsbuildinfo
+
+# Java 编译产物（不在 target/ 中的残留）
+*.class
+*.jar
+*.war
+
+# 日志
 *.log
 logs/
-artifacts/
-derby.log
-.idea/
-.vscode/
-# pnpm local cache
-frontend/.pnpm-store/
+*.pid
 
-# runtime private uploads
+
+# ===================================================
+# 5. 环境变量和敏感信息
+# ===================================================
+
+# 环境变量文件
+.env
+.env.*
+!.env.example
+!.env.sample
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 密钥和证书
+*.pem
+*.key
+*.crt
+*.cer
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.truststore
+
+# 云服务凭证
+credentials.json
+service-account.json
+*.service-account.json
+
+
+# ===================================================
+# 6. 本地运行时文件
+# ===================================================
+
+# 上传文件（本地测试产生，不应提交）
+runtime/uploads/
 runtime/private-uploads/
+java/runtime/
 
-# local dependency analysis output
-seata-dependency-baseline.txt
+# Docker 本地覆盖
+docker-compose.override.yml
 
-# generated project knowledge graph
-graphify-out/*
-!graphify-out/
-!graphify-out/README.md
-!graphify-out/GRAPH_REPORT.md
-!graphify-out/cost.json
-!graphify-out/graph.html
-!graphify-out/graph.json
+
+# ===================================================
+# 7. 临时文件和缓存
+# ===================================================
+
+# 备份文件
+*.backup
+*.bak
+*.old
+*.orig
+
+# 缓存
+.cache/
+.temp/
+.tmp/
+temp/
+tmp/
+
+# 生成的分析报告
+graphify-out/
+
+# Superpowers 工作目录
+.superpowers/
+
+# Claude Code 本地设置（项目级配置除外）
+.claude/settings.local.json
