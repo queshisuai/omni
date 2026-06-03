@@ -47,7 +47,7 @@ export function canUseConsoleAction(action: string, permissionCodes: string[]): 
 }
 
 export function canEnterConsole(role: string | null | undefined, permissionCodes: string[] = []): boolean {
-  if (role === 'admin' || role === 'organizer' || role === 'organizer_admin') return true
+  if (role === 'admin' || role === 'platform_super_admin' || role === 'organizer' || role === 'organizer_admin') return true
   if (role !== 'support') return false
   return SUPPORT_CONSOLE_PERMISSIONS.some(permission => permissionCodes.includes(permission))
 }

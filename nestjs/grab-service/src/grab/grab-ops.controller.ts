@@ -13,6 +13,10 @@ function success<T>(data: T): ApiResult<T> {
   return { code: 200, message: '成功', data };
 }
 
+function canViewGrabOps(role?: string): boolean {
+  return role === 'admin' || role === 'platform_super_admin';
+}
+
 @Controller('api/grab/admin')
 @UseGuards(JwtAuthGuard)
 export class GrabOpsController {
@@ -20,7 +24,7 @@ export class GrabOpsController {
 
   @Get('ops-summary')
   async summary(@Req() request: AuthenticatedRequest): Promise<ApiResult<GrabOpsSummary>> {
-    if (request.user.role !== 'admin') {
+    if (!canViewGrabOps(request.user.role)) {
       throw new ForbiddenException('仅平台管理员可查看运营驾驶舱');
     }
     return success(await this.grabOpsService.getSummary());

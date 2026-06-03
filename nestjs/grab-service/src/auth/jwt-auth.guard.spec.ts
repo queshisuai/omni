@@ -12,8 +12,18 @@ function contextWithAuthorization(authorization?: string) {
 }
 
 describe('JwtAuthGuard', () => {
+  const originalJwtSecret = process.env.JWT_SECRET;
+
   beforeEach(() => {
     process.env.JWT_SECRET = '12345678901234567890123456789012';
+  });
+
+  afterAll(() => {
+    if (originalJwtSecret == null) {
+      delete process.env.JWT_SECRET;
+    } else {
+      process.env.JWT_SECRET = originalJwtSecret;
+    }
   });
 
   it('extracts userId from a valid bearer token', () => {
@@ -30,5 +40,19 @@ describe('JwtAuthGuard', () => {
     const guard = new JwtAuthGuard();
 
     expect(() => guard.canActivate(context as any)).toThrow(UnauthorizedException);
+  });
+
+  it('accepts the shared local default secret when JWT_SECRET is not set', () => {
+    delete process.env.JWT_SECRET;
+    const token = jwt.sign(
+      { userId: 2002, phone: '13800000000', role: 'platform_super_admin' },
+      'omni-jwt-secretomni-jwt-secretomni-jwt-secret',
+      { subject: '2002' },
+    );
+    const context = contextWithAuthorization(`Bearer ${token}`);
+    const guard = new JwtAuthGuard();
+
+    expect(guard.canActivate(context as any)).toBe(true);
+    expect(context.request.user.role).toBe('platform_super_admin');
   });
 });

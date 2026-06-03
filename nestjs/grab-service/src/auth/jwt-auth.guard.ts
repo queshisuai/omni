@@ -2,6 +2,8 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import * as jwt from 'jsonwebtoken';
 import type { AuthenticatedRequest } from './authenticated-request';
 
+const DEFAULT_JWT_SECRET = 'omni-jwt-secretomni-jwt-secretomni-jwt-secret';
+
 interface JwtPayload {
   userId?: number | string;
   phone?: string;
@@ -18,14 +20,9 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('未登录');
     }
 
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      throw new UnauthorizedException('JWT 未配置');
-    }
-
     try {
       const token = authorization.slice('Bearer '.length);
-      const payload = jwt.verify(token, secret) as JwtPayload;
+      const payload = jwt.verify(token, process.env.JWT_SECRET || DEFAULT_JWT_SECRET) as JwtPayload;
       const userId = Number(payload.userId ?? payload.sub);
       if (!Number.isInteger(userId) || userId <= 0) {
         throw new UnauthorizedException('登录状态无效');

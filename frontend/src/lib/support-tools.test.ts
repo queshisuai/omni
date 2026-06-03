@@ -6,6 +6,7 @@ import { appendQuickReply, buildCloseRequestMessage, buildSupportSubject, canReq
 test('routes support role to support workbench after login', () => {
   assert.equal(getLoginRedirectForRole('support'), '/support')
   assert.equal(getLoginRedirectForRole('admin'), '/console')
+  assert.equal(getLoginRedirectForRole('platform_super_admin'), '/console')
   assert.equal(getLoginRedirectForRole('organizer'), '/console')
   assert.equal(getLoginRedirectForRole('user'), '/')
 })

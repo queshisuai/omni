@@ -24,7 +24,7 @@ const SUPPORT_AUDIT_ACTION_LABELS: Record<string, string> = {
 
 export function getLoginRedirectForRole(role: UserRole | string | null | undefined) {
   if (role === 'support') return '/support'
-  if (role === 'admin' || role === 'organizer') return '/console'
+  if (role === 'admin' || role === 'platform_super_admin' || role === 'organizer') return '/console'
   return '/'
 }
 

@@ -87,7 +87,7 @@ export interface PrivateAssetVO {
   createTime?: string | null
 }
 
-export type UserRole = 'user' | 'organizer' | 'admin' | 'support' | 'organizer_admin'
+export type UserRole = 'user' | 'organizer' | 'admin' | 'platform_super_admin' | 'support' | 'organizer_admin'
 export type OrganizerApplicationStatus = 0 | 1 | 2
 export type OrganizerStatus = 0 | 1 | 2 | 3
 export type SubjectType = 'personal' | 'enterprise'

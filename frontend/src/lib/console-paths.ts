@@ -35,7 +35,7 @@ function matchesPath(pathname: string, prefix: string) {
 
 export function isConsolePathAllowedForRole(role: UserRole | string | null | undefined, pathname: string) {
   if (!pathname.startsWith('/console')) return false
-  if (role === 'admin') return true
+  if (role === 'admin' || role === 'platform_super_admin') return true
   if (role !== 'organizer') return false
   if (pathname === '/console') return true
   if (ORGANIZER_BLOCKED_PREFIXES.some(prefix => matchesPath(pathname, prefix))) return false
@@ -44,7 +44,7 @@ export function isConsolePathAllowedForRole(role: UserRole | string | null | und
 }
 
 export function getConsoleQuickActions(role: UserRole | string | null | undefined): ConsoleQuickAction[] {
-  if (role === 'admin') {
+  if (role === 'admin' || role === 'platform_super_admin') {
     return [
       { label: '新建活动', href: '/console/activities/new' },
       { label: '管理活动', href: '/console/activities' },

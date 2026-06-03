@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { getAdminSummary, getGrabOpsSummary, listAdminRefunds, listExceptionTasks, listOperationAuditLogs, listReconciliationBatches } from '@/lib/api'
+import { canLoadPlatformOpsSummary } from '@/lib/console-ops'
 import { getConsoleQuickActions } from '@/lib/console-paths'
 import { buildDashboardBars, summarizeOpsMetric } from '@/lib/marketing-tools'
 import { ConsoleDashboardSkeleton } from '@/components/Skeleton'
@@ -71,7 +72,7 @@ export default function ConsoleHome() {
       getAdminSummary()
         .then(res => {
           setStats(res)
-          if (u.role === 'admin') {
+          if (canLoadPlatformOpsSummary(u.role)) {
             getGrabOpsSummary()
               .then(setGrabOps)
               .catch(() => setGrabOps(null))
@@ -144,7 +145,7 @@ export default function ConsoleHome() {
     <div>
       <div className="mb-8">
         <h1 className="text-[24px] font-semibold text-gray-900 mb-1">
-          {user?.role === 'admin' ? '平台管理后台' : '主办方后台'}
+          {canLoadPlatformOpsSummary(user?.role) ? '平台管理后台' : '主办方后台'}
         </h1>
         <p className="text-[14px] text-gray-500">欢迎回来，这是您的业务数据概览。</p>
       </div>
@@ -191,7 +192,7 @@ export default function ConsoleHome() {
       </div>
 
       <div className="mb-6">
-        {user?.role === 'admin' && (
+        {canLoadPlatformOpsSummary(user?.role) && (
           <div className="mb-8">
             <h2 className="text-[16px] font-semibold text-gray-900 mb-4">运营驾驶舱</h2>
             <div className="mb-4 grid gap-4 md:grid-cols-3">

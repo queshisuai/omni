@@ -25,6 +25,17 @@ describe('GrabOpsService', () => {
     ]);
     expect(summary.waitlist).toEqual({ totalCount: 10, paidCount: 4, conversionRate: 0.4 });
   });
+  it('uses Chinese fallback text for empty failure reasons', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ reason: null, count: '3' }] })
+      .mockResolvedValueOnce({ rows: [{ total_count: '0', paid_count: '0' }] });
+    const service = new GrabOpsService({ query } as any);
+
+    const summary = await service.getSummary();
+
+    expect(summary.failureReasons).toEqual([{ reason: '未知原因', count: 3 }]);
+  });
 });
 
 describe('GrabOpsController', () => {
@@ -40,6 +51,20 @@ describe('GrabOpsController', () => {
 
     expect(service.getSummary).toHaveBeenCalled();
     expect(result).toEqual({ code: 200, message: '成功', data: summary });
+  });
+
+  it('allows platform super admin role code to load operation summary', async () => {
+    const summary = {
+      failureReasons: [{ reason: '票档售罄', count: 7 }],
+      waitlist: { totalCount: 10, paidCount: 4, conversionRate: 0.4 },
+    };
+    const service = { getSummary: jest.fn().mockResolvedValue(summary) };
+    const controller = new GrabOpsController(service as any);
+
+    const result = await controller.summary({ user: { userId: 2002, role: 'platform_super_admin' } } as any);
+
+    expect(service.getSummary).toHaveBeenCalled();
+    expect(result.data).toEqual(summary);
   });
 
   it('rejects organizer from platform operation summary', async () => {

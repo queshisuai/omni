@@ -19,6 +19,7 @@ test('allows organizer business paths but blocks admin-only console paths', () =
 test('keeps admin console paths unrestricted and rejects non-console roles', () => {
   assert.equal(isConsolePathAllowedForRole('admin', '/console/support-accounts'), true)
   assert.equal(isConsolePathAllowedForRole('admin', '/console/venue/1/seats'), true)
+  assert.equal(isConsolePathAllowedForRole('platform_super_admin', '/console/support-accounts'), true)
   assert.equal(isConsolePathAllowedForRole('support', '/console'), false)
   assert.equal(isConsolePathAllowedForRole('user', '/console/orders'), false)
 })

@@ -60,7 +60,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const [redirecting, setRedirecting] = useState(false)
   const visibleMenuItems = useMemo(() => {
     if (checking || !role) return []
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'platform_super_admin') {
       return menuItems
     }
     if (permissionCodes.length > 0) {
@@ -107,7 +107,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setAvatar(latest.avatar || '')
         setRole(latest.role)
         setPermissionCodes(latestPermissions)
-        if (latest.role !== 'admin') {
+        if (latest.role !== 'admin' && latest.role !== 'platform_super_admin') {
           if (latestPermissions.length > 0) {
             if (!canAccessConsolePath(pathname, latestPermissions)) {
               setRedirecting(true)
@@ -130,7 +130,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setNickname(cached.nickname || cached.phone || '')
         setRole(cached.role || '')
         setPermissionCodes(cachedPermissions)
-        if (cached.role !== 'admin') {
+        if (cached.role !== 'admin' && cached.role !== 'platform_super_admin') {
           if (cachedPermissions.length > 0) {
             if (!canAccessConsolePath(pathname, cachedPermissions)) {
               setRedirecting(true)

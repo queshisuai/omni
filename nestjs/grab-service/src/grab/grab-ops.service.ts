@@ -10,6 +10,8 @@ export interface GrabOpsSummary {
   };
 }
 
+const UNKNOWN_FAILURE_REASON = '未知原因';
+
 @Injectable()
 export class GrabOpsService {
   constructor(private readonly database: DatabaseService) {}
@@ -22,17 +24,18 @@ export class GrabOpsService {
 
   private async loadFailureReasons(): Promise<Array<{ reason: string; count: number }>> {
     const result = await this.database.query<{ reason: string | null; count: string | number }>(
-      `select coalesce(nullif(trim(fail_reason), ''), progress_status, status, '未知原因') as reason,
+      `select coalesce(nullif(trim(fail_reason), ''), progress_status, status, $1) as reason,
               count(*) as count
          from grab_request
         where status in ('SOLD_OUT', 'LIMITED', 'FAILED', 'EXPIRED', 'PENDING_RECOVERY')
            or progress_status in ('SOLD_OUT', 'LIMITED', 'FAILED', 'EXPIRED', 'PENDING_RECOVERY')
-        group by coalesce(nullif(trim(fail_reason), ''), progress_status, status, '未知原因')
+        group by coalesce(nullif(trim(fail_reason), ''), progress_status, status, $1)
         order by count(*) desc
         limit 8`,
+      [UNKNOWN_FAILURE_REASON],
     );
     return result.rows.map((row) => ({
-      reason: row.reason || '未知原因',
+      reason: row.reason || UNKNOWN_FAILURE_REASON,
       count: Number(row.count ?? 0),
     }));
   }

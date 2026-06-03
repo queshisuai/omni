@@ -21,6 +21,10 @@ test('support role can enter console when RBAC permissions allow it', () => {
   assert.equal(canEnterConsole('user', ['support.conversation.view']), false)
 })
 
+test('platform super admin role code can enter console without extra permissions', () => {
+  assert.equal(canEnterConsole('platform_super_admin', []), true)
+})
+
 test('organizer admin manages organizer accounts but not organizer business pages', () => {
   const permissions = ['organizer.account.manage']
   assert.equal(canEnterConsole('organizer_admin', permissions), true)
