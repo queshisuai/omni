@@ -1,0 +1,79 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "万象 万象" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - img "万象" [ref=e7]
+          - generic [ref=e8]: 万象
+        - button "全国" [ref=e10]:
+          - img [ref=e11]
+          - generic [ref=e14]: 全国
+          - img [ref=e15]
+        - navigation [ref=e17]:
+          - link "首页" [ref=e18] [cursor=pointer]:
+            - /url: /
+          - link "分类" [ref=e19] [cursor=pointer]:
+            - /url: /search
+        - generic [ref=e20]:
+          - img [ref=e21] [cursor=pointer]
+          - textbox "搜索明星、演出、体育赛事" [ref=e24]
+        - button "登录" [ref=e26] [cursor=pointer]:
+          - img [ref=e27]
+          - generic [ref=e30]: 登录
+          - img [ref=e31]
+    - generic [ref=e33]:
+      - navigation [ref=e34]
+      - generic [ref=e36]:
+        - link "2026微博大眼音乐节" [ref=e37] [cursor=pointer]:
+          - /url: /activity/c1
+          - img "2026微博大眼音乐节" [ref=e38]
+        - link "开心麻花爆笑大戏" [ref=e39] [cursor=pointer]:
+          - /url: /activity/d1
+          - img "开心麻花爆笑大戏" [ref=e40]
+        - link "2026中超联赛" [ref=e41] [cursor=pointer]:
+          - /url: /activity/s1
+          - img "2026中超联赛" [ref=e42]
+        - button "上一张" [ref=e43]:
+          - img [ref=e44]
+        - button "下一张" [ref=e46]:
+          - img [ref=e47]
+        - generic [ref=e49]:
+          - button "第 1 张" [ref=e50] [cursor=pointer]
+          - button "第 2 张" [ref=e51] [cursor=pointer]
+          - button "第 3 张" [ref=e52] [cursor=pointer]
+    - main [ref=e53]:
+      - generic [ref=e58]: 正在加载精彩演出...
+    - contentinfo [ref=e59]:
+      - generic [ref=e60]:
+        - generic [ref=e61]:
+          - link "关于万象" [ref=e62] [cursor=pointer]:
+            - /url: "#"
+          - link "协议及隐私权政策" [ref=e63] [cursor=pointer]:
+            - /url: "#"
+          - link "廉正举报" [ref=e64] [cursor=pointer]:
+            - /url: "#"
+          - link "联系合作" [ref=e65] [cursor=pointer]:
+            - /url: "#"
+          - link "招聘信息" [ref=e66] [cursor=pointer]:
+            - /url: "#"
+          - link "防骗秘籍" [ref=e67] [cursor=pointer]:
+            - /url: "#"
+          - link "商户入驻" [ref=e68] [cursor=pointer]:
+            - /url: /merchant
+        - generic [ref=e69]:
+          - generic [ref=e70]:
+            - link "京ICP证031057号" [ref=e71] [cursor=pointer]:
+              - /url: "#"
+            - generic [ref=e72]: "|"
+            - link "京ICP备11043884号" [ref=e73] [cursor=pointer]:
+              - /url: "#"
+            - generic [ref=e74]: "|"
+            - link "京公网安备11010502037341号" [ref=e75] [cursor=pointer]:
+              - /url: "#"
+          - paragraph [ref=e76] [cursor=pointer]: 万象文化传媒发展有限公司 版权所有
+          - paragraph [ref=e77]: 2003-2020 版权所有，保留所有权利
+          - paragraph [ref=e78]: 热线电话：10103721
+  - button "在线客服" [ref=e79]:
+    - img [ref=e80]
+    - generic [ref=e82]: 在线客服
