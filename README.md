@@ -430,6 +430,14 @@ X-Internal-Token: omni-local-internal-token
 </details>
 
 <details>
+<summary><strong>Q: AI 客服回答慢，一直显示“客服正在思考”怎么办？</strong></summary>
+
+**原因**：前端已使用 SSE 流式接口；后端会先命中本地 FAQ/关键词索引，未命中时再调用本机 Ollama。当前默认模型为 `Qwen2.5:7b`，接口为 `http://localhost:11434/api/chat`。如果 Ollama 未启动或模型未准备好，未命中索引的问题会等到模型调用失败后再兜底。
+
+**解决**：确认本机 Ollama 已启动且存在 `Qwen2.5:7b`。需要临时只走本地 FAQ/规则时，可将 `OMNI_SUPPORT_AI_LOCAL_ENABLED=false` 后重启 `java-user`；常见问题会直接从本地索引返回，不依赖模型首包。
+</details>
+
+<details>
 <summary><strong>Q: 候补加入成功后为什么没有立即生成订单？</strong></summary>
 
 **原因**：候补队列只代表排队资格。只有未付款订单超时释放、退款释放等事件恢复库存后，候补分配器才会按顺序尝试生成待支付订单。

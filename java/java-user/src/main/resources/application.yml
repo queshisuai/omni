@@ -46,15 +46,15 @@ omni:
   support:
     ai:
       enabled: ${OMNI_SUPPORT_AI_ENABLED:${OMNI_SUPPORT_AI_LOCAL_ENABLED:true}}
-      endpoint: ${OMNI_SUPPORT_AI_ENDPOINT:${OMNI_SUPPORT_AI_LOCAL_ENDPOINT:https://2urf9ek6z0igrxhosnow.deepln.com/v1/chat/completions}}
-      model: ${OMNI_SUPPORT_AI_MODEL:${OMNI_SUPPORT_AI_LOCAL_MODEL:Qwen3-4B-AWQ}}
-      timeout-ms: ${OMNI_SUPPORT_AI_TIMEOUT_MS:${OMNI_SUPPORT_AI_LOCAL_TIMEOUT_MS:60000}}
+      endpoint: ${OMNI_SUPPORT_AI_ENDPOINT:${OMNI_SUPPORT_AI_LOCAL_ENDPOINT:http://localhost:11434/api/chat}}
+      model: ${OMNI_SUPPORT_AI_MODEL:${OMNI_SUPPORT_AI_LOCAL_MODEL:Qwen2.5:7b}}
+      timeout-ms: ${OMNI_SUPPORT_AI_TIMEOUT_MS:${OMNI_SUPPORT_AI_LOCAL_TIMEOUT_MS:30000}}
       api-key: ${OMNI_SUPPORT_AI_API_KEY:}
       local:
         enabled: ${OMNI_SUPPORT_AI_LOCAL_ENABLED:${OMNI_SUPPORT_AI_ENABLED:true}}
-        endpoint: ${OMNI_SUPPORT_AI_LOCAL_ENDPOINT:${OMNI_SUPPORT_AI_ENDPOINT:https://2urf9ek6z0igrxhosnow.deepln.com/v1/chat/completions}}
-        model: ${OMNI_SUPPORT_AI_LOCAL_MODEL:${OMNI_SUPPORT_AI_MODEL:Qwen3-4B-AWQ}}
-        timeout-ms: ${OMNI_SUPPORT_AI_LOCAL_TIMEOUT_MS:${OMNI_SUPPORT_AI_TIMEOUT_MS:60000}}
+        endpoint: ${OMNI_SUPPORT_AI_LOCAL_ENDPOINT:${OMNI_SUPPORT_AI_ENDPOINT:http://localhost:11434/api/chat}}
+        model: ${OMNI_SUPPORT_AI_LOCAL_MODEL:${OMNI_SUPPORT_AI_MODEL:Qwen2.5:7b}}
+        timeout-ms: ${OMNI_SUPPORT_AI_LOCAL_TIMEOUT_MS:${OMNI_SUPPORT_AI_TIMEOUT_MS:30000}}
 
 internal:
   api:

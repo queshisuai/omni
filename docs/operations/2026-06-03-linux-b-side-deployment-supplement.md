@@ -9,7 +9,7 @@
 - 抢票相关能力需要 `grab-service`，它依赖 PostgreSQL、Redis、RabbitMQ，并需要与 Java 服务共享 `INTERNAL_API_TOKEN` 和 `JWT_SECRET`。
 - 文件上传使用本地磁盘路径，不需要 MinIO、OSS、S3 或 COS。
 - Sentinel Dashboard 可选，不是服务启动硬依赖。
-- Ollama 本地客服 AI 可选，默认关闭，不部署也能运行关键词兜底逻辑。
+- Ollama 本地客服 AI 可选，当前默认指向本机 `http://localhost:11434/api/chat` 的 `Qwen2.5:7b`；不部署时可设置 `OMNI_SUPPORT_AI_LOCAL_ENABLED=false`，系统仍会使用 FAQ/关键词兜底逻辑。
 
 ## 必须部署的基础设施
 
@@ -278,7 +278,7 @@ server {
 |:---|:---|:---|
 | Elasticsearch / OpenSearch | 必须 | B 端 Docker 已有 `elasticsearch` 容器；Ticket 服务搜索能力依赖 ES |
 | Sentinel Dashboard | 可选 | 不部署也不影响服务启动；只影响可视化观测 |
-| Ollama | 可选 | `OMNI_SUPPORT_AI_LOCAL_ENABLED=false` 时不需要 |
+| Ollama | 可选 | 默认使用本机 `Qwen2.5:7b`；`OMNI_SUPPORT_AI_LOCAL_ENABLED=false` 时不需要 |
 | MinIO / OSS / S3 / COS | 不需要 | 当前文件上传落本地磁盘 |
 | SMTP 邮件服务 | 不需要 | 当前通知服务记录通知/MQ 消息，没有真实 SMTP 发送配置 |
 | 短信服务商 | 不需要 | 当前登录验证码仍是本地/模拟逻辑 |

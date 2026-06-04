@@ -6,6 +6,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
+import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
@@ -196,5 +197,27 @@ class OllamaSupportLocalModelClientTest {
 
             assertNotNull(context.getBean(SupportLocalModelClient.class));
         }
+    }
+
+    @Test
+    void springDefaultTargetsLocalOllamaQwen25() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(ObjectMapper.class);
+            context.register(OllamaSupportLocalModelClient.class);
+            context.refresh();
+
+            OllamaSupportLocalModelClient client = context.getBean(OllamaSupportLocalModelClient.class);
+
+            assertEquals("http://localhost:11434/api/chat", readField(client, "endpoint"));
+            assertEquals("Qwen2.5:7b", readField(client, "model"));
+            assertEquals(30000, readField(client, "timeoutMillis"));
+            assertEquals(true, readField(client, "enabled"));
+        }
+    }
+
+    private Object readField(Object target, String fieldName) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.get(target);
     }
 }

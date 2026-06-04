@@ -38,9 +38,9 @@ public class OllamaSupportLocalModelClient implements SupportLocalModelClient {
     @Autowired
     public OllamaSupportLocalModelClient(
             @Value("${omni.support.ai.enabled:${omni.support.ai.local.enabled:${OMNI_SUPPORT_AI_ENABLED:${OMNI_SUPPORT_AI_LOCAL_ENABLED:true}}}}") boolean enabled,
-            @Value("${omni.support.ai.endpoint:${omni.support.ai.local.endpoint:${OMNI_SUPPORT_AI_ENDPOINT:${OMNI_SUPPORT_AI_LOCAL_ENDPOINT:https://2urf9ek6z0igrxhosnow.deepln.com/v1/chat/completions}}}}") String endpoint,
-            @Value("${omni.support.ai.model:${omni.support.ai.local.model:${OMNI_SUPPORT_AI_MODEL:${OMNI_SUPPORT_AI_LOCAL_MODEL:Qwen3-4B-AWQ}}}}") String model,
-            @Value("${omni.support.ai.timeout-ms:${omni.support.ai.local.timeout-ms:${OMNI_SUPPORT_AI_TIMEOUT_MS:${OMNI_SUPPORT_AI_LOCAL_TIMEOUT_MS:60000}}}}") int timeoutMillis,
+            @Value("${omni.support.ai.endpoint:${omni.support.ai.local.endpoint:${OMNI_SUPPORT_AI_ENDPOINT:${OMNI_SUPPORT_AI_LOCAL_ENDPOINT:http://localhost:11434/api/chat}}}}") String endpoint,
+            @Value("${omni.support.ai.model:${omni.support.ai.local.model:${OMNI_SUPPORT_AI_MODEL:${OMNI_SUPPORT_AI_LOCAL_MODEL:Qwen2.5:7b}}}}") String model,
+            @Value("${omni.support.ai.timeout-ms:${omni.support.ai.local.timeout-ms:${OMNI_SUPPORT_AI_TIMEOUT_MS:${OMNI_SUPPORT_AI_LOCAL_TIMEOUT_MS:30000}}}}") int timeoutMillis,
             @Value("${omni.support.ai.api-key:${OMNI_SUPPORT_AI_API_KEY:}}") String apiKey,
             ObjectMapper objectMapper) {
         this(

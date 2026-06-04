@@ -31,8 +31,14 @@
 | 分类 | 文件 | 路径 |
 |:---|:---|:---|
 | **控制器** | `UserController` | `java-user/.../controller/UserController.java` |
+| | `SupportController` | `java-user/.../controller/SupportController.java` |
 | **服务** | `UserService` | `java-user/.../service/UserService.java` |
 | | `OrganizerApplicationService` | `java-user/.../service/OrganizerApplicationService.java` |
+| | `CustomerSupportService` | `java-user/.../service/CustomerSupportService.java` |
+| | `HelpCenterService` | `java-user/.../service/HelpCenterService.java` |
+| | `SupportAiService` | `java-user/.../service/SupportAiService.java` |
+| | `SupportKnowledgeBase` | `java-user/.../service/SupportKnowledgeBase.java` |
+| | `OllamaSupportLocalModelClient` | `java-user/.../service/OllamaSupportLocalModelClient.java` |
 | **实体** | `User` | `java-user/.../entity/User.java` |
 | | `OrganizerApplication` | `java-user/.../entity/OrganizerApplication.java` |
 | **Mapper** | `UserMapper` | `java-user/.../mapper/UserMapper.java` |
@@ -51,6 +57,14 @@
 - `POST /api/user/organizer/apply` — 申请成为主办方
 - `GET /api/user/organizer/my-application` — 查看申请状态
 - `POST /api/user/organizer/review` — 审批申请(admin)
+- `GET /api/user/help/faqs` — 帮助中心 FAQ，数据来自 `SupportKnowledgeBase`
+- `POST /api/user/support/conversations` — 创建客服会话
+- `POST /api/user/support/conversations/{id}/messages/stream` — 客服消息 SSE 流式回复
+
+**客服 AI：**
+- 前端 `/help` 通过 `frontend/src/lib/api.ts` 的 `sendSupportMessageStream()` 调用 SSE。
+- 后端先查 `SupportKnowledgeBase` FAQ/关键词索引，命中后立即分段返回；未命中才调用 `SupportLocalModelClient`。
+- 本地模型默认配置在 `java-user/src/main/resources/application.yml`：`OMNI_SUPPORT_AI_LOCAL_ENDPOINT=http://localhost:11434/api/chat`，`OMNI_SUPPORT_AI_LOCAL_MODEL=Qwen2.5:7b`。
 
 ### 1.4 java-ticket — 票务服务 (:8082)
 
@@ -207,6 +221,7 @@
 | `/orders` | `orders/page.tsx` | 我的订单 |
 | `/profile` | `profile/page.tsx` | 个人中心 |
 | `/profile/account` | `profile/account/page.tsx` | 账号设置 |
+| `/help` | `help/page.tsx` | 帮助中心、AI 客服、转人工客服 |
 | `/merchant` | `merchant/page.tsx` | 我是商家 |
 | `/payment/result` | `payment/result/page.tsx` | 支付结果 |
 
@@ -234,7 +249,7 @@
 
 | 文件 | 说明 |
 |:---|:---|
-| `api.ts` | API 请求封装 `request<T>()`，超时 800ms，code≠200 抛错 |
+| `api.ts` | API 请求封装 `request<T>()`，超时 800ms，含客服 SSE `sendSupportMessageStream()` |
 | `auth.ts` | 认证管理 (localStorage token + user, 含 `getUser()`/`login()`/`logout()`) |
 | `utils.ts` | 工具函数 |
 | `mock-data.ts` | Mock 数据 (极少使用) |

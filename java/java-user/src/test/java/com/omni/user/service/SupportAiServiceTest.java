@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -66,10 +67,27 @@ class SupportAiServiceTest {
     }
 
     @Test
+    void answersIndexedFaqWithoutWaitingForLocalModel() {
+        AtomicInteger modelCalls = new AtomicInteger();
+        SupportAiService fastService = new SupportAiService((question, projectKnowledge) -> {
+            modelCalls.incrementAndGet();
+            return Optional.of("这是慢模型回答。");
+        });
+        StringBuilder streamed = new StringBuilder();
+
+        String answer = fastService.answerStreaming("哪些票可以转赠？", streamed::append);
+
+        assertEquals(0, modelCalls.get());
+        assertTrue(answer.contains("活动规则"));
+        assertTrue(answer.contains("我的票夹"));
+        assertEquals(answer, streamed.toString());
+    }
+
+    @Test
     void prefersLocalModelAnswerWhenAvailable() {
         SupportAiService modelBackedService = new SupportAiService((question, projectKnowledge) -> Optional.of("这是本地大模型根据项目规则给出的回答。"));
 
-        String answer = modelBackedService.answer("电子票二维码在哪里看？");
+        String answer = modelBackedService.answer("我想咨询一个暂未覆盖在常见问题里的特殊场景。");
 
         assertEquals("这是本地大模型根据项目规则给出的回答。", answer);
     }
@@ -82,7 +100,7 @@ class SupportAiServiceTest {
             return Optional.empty();
         });
 
-        modelBackedService.answer("我想问票夹和转赠规则");
+        modelBackedService.answer("我想咨询一个暂未覆盖在常见问题里的特殊场景。");
 
         assertTrue(promptRef.get().contains("票夹"));
         assertTrue(promptRef.get().contains("人工客服"));
