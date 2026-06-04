@@ -12,6 +12,7 @@ import com.omni.ticket.dto.TicketSalesQuoteRequest;
 import com.omni.ticket.dto.TicketSalesQuoteResponse;
 import com.omni.ticket.dto.TicketSalesReleaseResponse;
 import com.omni.ticket.dto.TicketSalesSeatLockResponse;
+import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.SeatBlock;
 import com.omni.ticket.entity.TicketGroup;
@@ -161,6 +162,28 @@ class TicketSalesInternalServiceTest {
 
         assertEquals(300, result.get(0).getTotalStock());
         assertEquals(300, result.get(0).getRemainStock());
+    }
+
+    @Test
+    void listVisibleTicketTypesUsesSessionSeatStockForSeatedTicketTypes() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        TicketType ticketType = ticketType(4001L, "普通票", new BigDecimal("380.00"));
+        ticketType.setTotalStock(200);
+        ticketType.setRemainStock(200);
+        when(ticketTypeMapper.selectBatchIds(List.of(4001L))).thenReturn(List.of(ticketType));
+        when(sessionSeatMapper.selectSeatStockSnapshotsBySessionId(3001L))
+                .thenReturn(List.of(stockSnapshot(4001L, 200, 199)));
+
+        com.omni.ticket.dto.TicketTypesVisibleRequest request = new com.omni.ticket.dto.TicketTypesVisibleRequest();
+        request.setSessionId(3001L);
+        request.setTicketTypeIds(List.of(4001L));
+
+        List<com.omni.ticket.dto.TicketTypeVisibleResponse> result = service.listVisibleTicketTypes(request);
+
+        assertEquals(200, result.get(0).getTotalStock());
+        assertEquals(199, result.get(0).getRemainStock());
     }
 
     @Test
@@ -1186,6 +1209,14 @@ class TicketSalesInternalServiceTest {
         seat.setStatus(2);
         seat.setLockRequestId("team-lock-1");
         return seat;
+    }
+
+    private TicketTypeSeatStockSnapshot stockSnapshot(Long ticketTypeId, Integer totalStock, Integer remainStock) {
+        TicketTypeSeatStockSnapshot snapshot = new TicketTypeSeatStockSnapshot();
+        snapshot.setTicketTypeId(ticketTypeId);
+        snapshot.setTotalStock(totalStock);
+        snapshot.setRemainStock(remainStock);
+        return snapshot;
     }
 
     private List<SessionSeat> sparseTeamSeats(int count) {

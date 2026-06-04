@@ -1,6 +1,7 @@
 package com.omni.ticket.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.entity.SessionSeat;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
@@ -15,6 +16,14 @@ public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
     @Select("SELECT COUNT(*) FROM session_seat ss WHERE ss.session_id = #{sessionId} " +
             "AND (ss.status IN (2, 3) OR ss.order_id IS NOT NULL)")
     Long countTradingSeats(@Param("sessionId") Long sessionId);
+
+    @Select("SELECT ticket_type_id, " +
+            "COUNT(*)::int AS total_stock, " +
+            "COUNT(*) FILTER (WHERE status = 1 AND order_id IS NULL AND lock_expire_time IS NULL AND lock_request_id IS NULL)::int AS remain_stock " +
+            "FROM session_seat " +
+            "WHERE session_id = #{sessionId} AND ticket_type_id IS NOT NULL AND status IN (1, 2, 3) " +
+            "GROUP BY ticket_type_id")
+    List<TicketTypeSeatStockSnapshot> selectSeatStockSnapshotsBySessionId(@Param("sessionId") Long sessionId);
 
     @Delete("DELETE FROM session_seat ss WHERE ss.session_id = #{sessionId} " +
             "AND NOT EXISTS (SELECT 1 FROM session_seat guard WHERE guard.session_id = #{sessionId} " +

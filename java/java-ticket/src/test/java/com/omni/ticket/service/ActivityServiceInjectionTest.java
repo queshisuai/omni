@@ -4,6 +4,7 @@ import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.CategoryMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.StationMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.TourMapper;
@@ -28,6 +29,7 @@ class ActivityServiceInjectionTest {
             context.registerBean(SessionMapper.class, () -> mock(SessionMapper.class));
             context.registerBean(VenueMapper.class, () -> mock(VenueMapper.class));
             context.registerBean(TicketTypeMapper.class, () -> mock(TicketTypeMapper.class));
+            context.registerBean(SessionSeatMapper.class, () -> mock(SessionSeatMapper.class));
             context.registerBean(ActivityArtistService.class, () -> mock(ActivityArtistService.class));
             context.registerBean(TourMapper.class, () -> mock(TourMapper.class));
             context.registerBean(StationMapper.class, () -> mock(StationMapper.class));

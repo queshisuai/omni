@@ -7,6 +7,7 @@ import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.ActivityDetailVO;
 import com.omni.ticket.dto.ActivityArtistDto;
 import com.omni.ticket.dto.ActivityVO;
+import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,11 +38,12 @@ public class ActivityService {
     private final ActivityArtistService activityArtistService;
     private final TourMapper tourMapper;
     private final StationMapper stationMapper;
+    private final SessionSeatMapper sessionSeatMapper;
 
     public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
                              ArtistMapper artistMapper, SessionMapper sessionMapper,
                              VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper) {
-        this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper, null, null, null);
+        this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper, null, null, null, null);
     }
 
     public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
@@ -49,7 +51,17 @@ public class ActivityService {
                            VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
                            ActivityArtistService activityArtistService) {
         this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper,
-                activityArtistService, null, null);
+                activityArtistService, null, null, null);
+    }
+
+    public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
+                            ArtistMapper artistMapper, SessionMapper sessionMapper,
+                            VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
+                            ActivityArtistService activityArtistService,
+                            TourMapper tourMapper,
+                            StationMapper stationMapper) {
+        this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper,
+                activityArtistService, tourMapper, stationMapper, null);
     }
 
     @Autowired
@@ -58,7 +70,8 @@ public class ActivityService {
                             VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
                             ActivityArtistService activityArtistService,
                             TourMapper tourMapper,
-                            StationMapper stationMapper) {
+                            StationMapper stationMapper,
+                            SessionSeatMapper sessionSeatMapper) {
         this.activityMapper = activityMapper;
         this.categoryMapper = categoryMapper;
         this.artistMapper = artistMapper;
@@ -68,6 +81,7 @@ public class ActivityService {
         this.activityArtistService = activityArtistService;
         this.tourMapper = tourMapper;
         this.stationMapper = stationMapper;
+        this.sessionSeatMapper = sessionSeatMapper;
     }
 
     /**
@@ -422,7 +436,9 @@ public class ActivityService {
             ttWrapper.eq(TicketType::getSessionId, session.getId())
                      .eq(TicketType::getStatus, 1)
                      .orderByAsc(TicketType::getPrice);
-            sd.setTicketTypes(ticketTypeMapper.selectList(ttWrapper));
+            List<TicketType> sessionTicketTypes = ticketTypeMapper.selectList(ttWrapper);
+            applySeatStockSnapshots(session.getId(), sessionTicketTypes);
+            sd.setTicketTypes(sessionTicketTypes);
 
             sessionDetails.add(sd);
         }
@@ -435,6 +451,54 @@ public class ActivityService {
         return activity != null
                 && Integer.valueOf(1).equals(activity.getStatus())
                 && PUBLISH_STATUS_PUBLISHED.equals(activity.getPublishStatus());
+    }
+
+    private void applySeatStockSnapshots(Long sessionId, List<TicketType> ticketTypes) {
+        if (sessionSeatMapper == null || sessionId == null || ticketTypes == null || ticketTypes.isEmpty()) {
+            return;
+        }
+        List<TicketTypeSeatStockSnapshot> snapshots = sessionSeatMapper.selectSeatStockSnapshotsBySessionId(sessionId);
+        if (snapshots == null || snapshots.isEmpty()) {
+            ticketTypes.forEach(ticketType -> ticketType.setRemainStock(visibleRemainStock(ticketType)));
+            return;
+        }
+        Map<Long, TicketTypeSeatStockSnapshot> stockByTicketTypeId = snapshots.stream()
+                .filter(snapshot -> snapshot != null && snapshot.getTicketTypeId() != null)
+                .collect(Collectors.toMap(TicketTypeSeatStockSnapshot::getTicketTypeId, Function.identity(), (first, second) -> first));
+        for (TicketType ticketType : ticketTypes) {
+            if (ticketType == null || ticketType.getId() == null) {
+                continue;
+            }
+            TicketTypeSeatStockSnapshot snapshot = stockByTicketTypeId.get(ticketType.getId());
+            if (snapshot == null) {
+                ticketType.setRemainStock(visibleRemainStock(ticketType));
+                continue;
+            }
+            ticketType.setTotalStock(nonNegative(snapshot.getTotalStock()));
+            ticketType.setRemainStock(cappedRemainStock(snapshot.getRemainStock(), snapshot.getTotalStock()));
+        }
+    }
+
+    private Integer visibleRemainStock(TicketType ticketType) {
+        if (ticketType == null || ticketType.getRemainStock() == null) {
+            return null;
+        }
+        return cappedRemainStock(ticketType.getRemainStock(), ticketType.getTotalStock());
+    }
+
+    private Integer cappedRemainStock(Integer remainStock, Integer totalStock) {
+        if (remainStock == null) {
+            return null;
+        }
+        int visible = Math.max(0, remainStock);
+        if (totalStock != null) {
+            visible = Math.min(visible, Math.max(0, totalStock));
+        }
+        return visible;
+    }
+
+    private Integer nonNegative(Integer value) {
+        return value == null ? null : Math.max(0, value);
     }
 
     /**

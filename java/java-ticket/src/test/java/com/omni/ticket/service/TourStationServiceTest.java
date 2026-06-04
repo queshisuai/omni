@@ -12,9 +12,11 @@ import com.omni.ticket.entity.Tour;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
+import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueApplication;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.StationMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
@@ -74,6 +76,8 @@ class TourStationServiceTest {
     private SessionSeatLayoutService sessionSeatLayoutService;
     @Mock
     private ActivityAdminService activityAdminService;
+    @Mock
+    private SessionSeatMapper sessionSeatMapper;
 
     private TourStationService service;
 
@@ -81,7 +85,7 @@ class TourStationServiceTest {
     void setUp() {
         service = new TourStationService(tourMapper, stationMapper, userAccessService, venueApplicationMapper,
                 activityMapper, sessionMapper, ticketTypeMapper, venueMapper,
-                activitySeatLayoutService, sessionSeatLayoutService, activityAdminService);
+                activitySeatLayoutService, sessionSeatLayoutService, activityAdminService, sessionSeatMapper);
     }
 
     @Test
@@ -588,6 +592,30 @@ class TourStationServiceTest {
     }
 
     @Test
+    void getTourDetailUsesSessionSeatStockForPublishedStationRemainStock() {
+        Tour tour = tour(10L, 2003L);
+        Station station = station(20L, 10L, 88L);
+        station.setPublishStatus("published");
+        Activity activity = activity(301L, 10L, 20L, "published");
+        Session session = session(401L, 301L, 501L);
+        TicketType normal = ticketType(601L, 401L, "鏅€氱エ", "280.00", 200);
+        when(tourMapper.selectById(10L)).thenReturn(tour);
+        when(stationMapper.selectList(any())).thenReturn(List.of(station));
+        when(activityMapper.selectList(any())).thenReturn(List.of(activity));
+        when(sessionMapper.selectList(any())).thenReturn(List.of(session));
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(normal));
+        when(venueMapper.selectBatchIds(any())).thenReturn(List.of());
+        when(sessionSeatMapper.selectSeatStockSnapshotsBySessionId(401L))
+                .thenReturn(List.of(stockSnapshot(601L, 200, 199)));
+
+        Map<String, Object> detail = service.getTourDetail(10L);
+
+        Map<String, Object> item = firstStationDetail(detail);
+        assertEquals(199, item.get("remainStock"));
+        assertEquals("on_sale", item.get("saleStatus"));
+    }
+
+    @Test
     void getTourDetailMarksRiskSuspendedStationWithoutActivityAsSuspended() {
         Tour tour = tour(10L, 2003L);
         Station station = station(20L, 10L, null);
@@ -964,6 +992,14 @@ class TourStationServiceTest {
         ticketType.setRemainStock(remainStock);
         ticketType.setStatus(1);
         return ticketType;
+    }
+
+    private TicketTypeSeatStockSnapshot stockSnapshot(Long ticketTypeId, Integer totalStock, Integer remainStock) {
+        TicketTypeSeatStockSnapshot snapshot = new TicketTypeSeatStockSnapshot();
+        snapshot.setTicketTypeId(ticketTypeId);
+        snapshot.setTotalStock(totalStock);
+        snapshot.setRemainStock(remainStock);
+        return snapshot;
     }
 
     private Venue venue(Long id, String name, String address) {

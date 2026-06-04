@@ -7,6 +7,7 @@ import com.omni.ticket.dto.TeamSeatLockRequest;
 import com.omni.ticket.dto.TeamSeatLockResponse;
 import com.omni.ticket.dto.TeamSeatLockValidationRequest;
 import com.omni.ticket.dto.TeamSeatLockValidationResponse;
+import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.dto.TicketTypeVisibleResponse;
 import com.omni.ticket.dto.TicketTypesVisibleRequest;
 import com.omni.ticket.dto.TicketSalesLockRequest;
@@ -131,6 +132,7 @@ public class TicketSalesInternalService {
             return Collections.emptyList();
         }
         List<TicketType> ticketTypes = ticketTypeMapper.selectBatchIds(request.getTicketTypeIds());
+        Map<Long, TicketTypeSeatStockSnapshot> seatStockByTicketTypeId = seatStockSnapshotsByTicketTypeId(request.getSessionId());
         return ticketTypes.stream()
                 .filter(ticketType -> request.getSessionId().equals(ticketType.getSessionId()))
                 .filter(ticketType -> Integer.valueOf(1).equals(ticketType.getStatus()))
@@ -139,11 +141,27 @@ public class TicketSalesInternalService {
                     response.setTicketTypeId(ticketType.getId());
                     response.setName(ticketType.getName());
                     response.setPrice(ticketType.getPrice());
-                    response.setTotalStock(ticketType.getTotalStock());
-                    response.setRemainStock(visibleRemainStock(ticketType));
+                    TicketTypeSeatStockSnapshot seatStock = seatStockByTicketTypeId.get(ticketType.getId());
+                    if (seatStock != null) {
+                        response.setTotalStock(nonNegative(seatStock.getTotalStock()));
+                        response.setRemainStock(cappedRemainStock(seatStock.getRemainStock(), seatStock.getTotalStock()));
+                    } else {
+                        response.setTotalStock(ticketType.getTotalStock());
+                        response.setRemainStock(visibleRemainStock(ticketType));
+                    }
                     return response;
                 })
                 .collect(Collectors.toList());
+    }
+
+    private Map<Long, TicketTypeSeatStockSnapshot> seatStockSnapshotsByTicketTypeId(Long sessionId) {
+        List<TicketTypeSeatStockSnapshot> snapshots = sessionSeatMapper.selectSeatStockSnapshotsBySessionId(sessionId);
+        if (snapshots == null || snapshots.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return snapshots.stream()
+                .filter(snapshot -> snapshot != null && snapshot.getTicketTypeId() != null)
+                .collect(Collectors.toMap(TicketTypeSeatStockSnapshot::getTicketTypeId, snapshot -> snapshot, (first, second) -> first));
     }
 
     private Integer visibleRemainStock(TicketType ticketType) {
@@ -151,12 +169,22 @@ public class TicketSalesInternalService {
         if (remainStock == null) {
             return null;
         }
+        return cappedRemainStock(remainStock, ticketType.getTotalStock());
+    }
+
+    private Integer cappedRemainStock(Integer remainStock, Integer totalStock) {
+        if (remainStock == null) {
+            return null;
+        }
         int visibleRemainStock = Math.max(0, remainStock);
-        Integer totalStock = ticketType.getTotalStock();
         if (totalStock != null) {
             visibleRemainStock = Math.min(visibleRemainStock, Math.max(0, totalStock));
         }
         return visibleRemainStock;
+    }
+
+    private Integer nonNegative(Integer value) {
+        return value == null ? null : Math.max(0, value);
     }
 
     @Transactional(rollbackFor = Exception.class)

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.ActivityDetailVO;
 import com.omni.ticket.dto.ActivityVO;
+import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
 import org.junit.jupiter.api.BeforeAll;
@@ -38,6 +39,7 @@ class ActivityServiceSearchTest {
     @Mock SessionMapper sessionMapper;
     @Mock VenueMapper venueMapper;
     @Mock TicketTypeMapper ticketTypeMapper;
+    @Mock SessionSeatMapper sessionSeatMapper;
     @Mock TourMapper tourMapper;
     @Mock StationMapper stationMapper;
 
@@ -290,6 +292,26 @@ class ActivityServiceSearchTest {
         }
 
         @Test
+        void getActivityDetailUsesSessionSeatStockForSeatedTicketTypes() {
+            Activity activity = activity(10L, "测试活动", 1001L, "published");
+            Session session = session(1L, 10L, 101L);
+            TicketType ticketType = ticketType(10L, 1L, new BigDecimal("380.00"), 1);
+            ticketType.setTotalStock(200);
+            ticketType.setRemainStock(200);
+            when(activityMapper.selectById(10L)).thenReturn(activity);
+            when(sessionMapper.selectList(any())).thenReturn(List.of(session));
+            when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
+            when(sessionSeatMapper.selectSeatStockSnapshotsBySessionId(1L))
+                    .thenReturn(List.of(stockSnapshot(10L, 200, 199)));
+
+            ActivityDetailVO detail = service().getActivityDetail(10L);
+
+            TicketType visibleTicket = detail.getSessions().get(0).getTicketTypes().get(0);
+            assertEquals(200, visibleTicket.getTotalStock());
+            assertEquals(199, visibleTicket.getRemainStock());
+        }
+
+        @Test
         @DisplayName("AB-018: 草稿活动抛出异常")
         void getActivityDetailDraftException() {
             Activity activity = activity(10L, "草稿活动", 1001L, "draft");
@@ -423,7 +445,7 @@ class ActivityServiceSearchTest {
 
     private ActivityService service() {
         return new ActivityService(activityMapper, categoryMapper, artistMapper,
-                sessionMapper, venueMapper, ticketTypeMapper, null, tourMapper, stationMapper);
+                sessionMapper, venueMapper, ticketTypeMapper, null, tourMapper, stationMapper, sessionSeatMapper);
     }
 
     private static Page<Activity> pageOf(Activity activity) {
@@ -474,5 +496,13 @@ class ActivityServiceSearchTest {
         c.setId(id);
         c.setName(name);
         return c;
+    }
+
+    private TicketTypeSeatStockSnapshot stockSnapshot(Long ticketTypeId, Integer totalStock, Integer remainStock) {
+        TicketTypeSeatStockSnapshot snapshot = new TicketTypeSeatStockSnapshot();
+        snapshot.setTicketTypeId(ticketTypeId);
+        snapshot.setTotalStock(totalStock);
+        snapshot.setRemainStock(remainStock);
+        return snapshot;
     }
 }

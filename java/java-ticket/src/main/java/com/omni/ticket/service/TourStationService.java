@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.DeactivateActivityRequest;
+import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.entity.Session;
@@ -14,6 +15,7 @@ import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueApplication;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.StationMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
@@ -76,11 +78,12 @@ public class TourStationService {
     private final ActivitySeatLayoutService activitySeatLayoutService;
     private final SessionSeatLayoutService sessionSeatLayoutService;
     private final ActivityAdminService activityAdminService;
+    private final SessionSeatMapper sessionSeatMapper;
 
     public TourStationService(TourMapper tourMapper,
                                StationMapper stationMapper,
                                UserAccessService userAccessService) {
-        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null, null, null, null);
+        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null, null, null, null, null);
     }
 
     public TourStationService(TourMapper tourMapper,
@@ -92,7 +95,7 @@ public class TourStationService {
                               ActivitySeatLayoutService activitySeatLayoutService,
                               SessionSeatLayoutService sessionSeatLayoutService) {
         this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
-                null, null, activitySeatLayoutService, sessionSeatLayoutService, null);
+                null, null, activitySeatLayoutService, sessionSeatLayoutService, null, null);
     }
 
     public TourStationService(TourMapper tourMapper,
@@ -106,7 +109,22 @@ public class TourStationService {
                                ActivitySeatLayoutService activitySeatLayoutService,
                                SessionSeatLayoutService sessionSeatLayoutService) {
         this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
-                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, null);
+                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, null, null);
+    }
+
+    public TourStationService(TourMapper tourMapper,
+                               StationMapper stationMapper,
+                               UserAccessService userAccessService,
+                               VenueApplicationMapper venueApplicationMapper,
+                               ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               TicketTypeMapper ticketTypeMapper,
+                               VenueMapper venueMapper,
+                               ActivitySeatLayoutService activitySeatLayoutService,
+                               SessionSeatLayoutService sessionSeatLayoutService,
+                               ActivityAdminService activityAdminService) {
+        this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
+                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, activityAdminService, null);
     }
 
     @Autowired
@@ -120,7 +138,8 @@ public class TourStationService {
                                VenueMapper venueMapper,
                                ActivitySeatLayoutService activitySeatLayoutService,
                                SessionSeatLayoutService sessionSeatLayoutService,
-                               ActivityAdminService activityAdminService) {
+                               ActivityAdminService activityAdminService,
+                               SessionSeatMapper sessionSeatMapper) {
         this.tourMapper = tourMapper;
         this.stationMapper = stationMapper;
         this.userAccessService = userAccessService;
@@ -132,6 +151,7 @@ public class TourStationService {
         this.activitySeatLayoutService = activitySeatLayoutService;
         this.sessionSeatLayoutService = sessionSeatLayoutService;
         this.activityAdminService = activityAdminService;
+        this.sessionSeatMapper = sessionSeatMapper;
     }
 
     @Transactional
@@ -378,6 +398,7 @@ public class TourStationService {
         }
         Map<Long, List<TicketType>> ticketTypesBySession = selectedTicketTypes.stream()
                 .collect(Collectors.groupingBy(TicketType::getSessionId));
+        Map<Long, Map<Long, TicketTypeSeatStockSnapshot>> seatStockBySessionId = seatStockSnapshotsBySessionId(selectedSessions);
         Set<Long> venueIds = sessionsByActivity.values().stream()
                 .flatMap(List::stream)
                 .map(Session::getVenueId)
@@ -397,9 +418,32 @@ public class TourStationService {
             item.put("station", station);
             item.put("activity", activity);
             item.put("sessions", sessions);
-            applyStationSaleSummary(item, station, activity, sessions, ticketTypesBySession, venueById);
+            applyStationSaleSummary(item, station, activity, sessions, ticketTypesBySession, seatStockBySessionId, venueById);
             return item;
         }).collect(Collectors.toList());
+    }
+
+    private Map<Long, Map<Long, TicketTypeSeatStockSnapshot>> seatStockSnapshotsBySessionId(List<Session> sessions) {
+        if (sessionSeatMapper == null || sessions == null || sessions.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Map<Long, TicketTypeSeatStockSnapshot>> result = new HashMap<>();
+        for (Session session : sessions) {
+            if (session == null || session.getId() == null) {
+                continue;
+            }
+            List<TicketTypeSeatStockSnapshot> snapshots = sessionSeatMapper.selectSeatStockSnapshotsBySessionId(session.getId());
+            if (snapshots == null || snapshots.isEmpty()) {
+                continue;
+            }
+            Map<Long, TicketTypeSeatStockSnapshot> stockByTicketTypeId = snapshots.stream()
+                    .filter(snapshot -> snapshot != null && snapshot.getTicketTypeId() != null)
+                    .collect(Collectors.toMap(TicketTypeSeatStockSnapshot::getTicketTypeId, snapshot -> snapshot, (first, second) -> first));
+            if (!stockByTicketTypeId.isEmpty()) {
+                result.put(session.getId(), stockByTicketTypeId);
+            }
+        }
+        return result;
     }
 
     private void applyStationSaleSummary(Map<String, Object> item,
@@ -407,6 +451,7 @@ public class TourStationService {
                                          Activity activity,
                                          List<Session> sessions,
                                          Map<Long, List<TicketType>> ticketTypesBySession,
+                                         Map<Long, Map<Long, TicketTypeSeatStockSnapshot>> seatStockBySessionId,
                                          Map<Long, Venue> venueById) {
         item.put("venueName", null);
         item.put("venueAddress", null);
@@ -460,9 +505,7 @@ public class TourStationService {
             item.put("priceMax", prices.stream().max(BigDecimal::compareTo).orElse(null));
         }
         int remainStock = ticketTypes.stream()
-                .map(TicketType::getRemainStock)
-                .filter(Objects::nonNull)
-                .mapToInt(Integer::intValue)
+                .mapToInt(ticketType -> visibleRemainStock(ticketType, seatStockBySessionId))
                 .sum();
         item.put("remainStock", remainStock);
         if (remainStock > 0) {
@@ -470,6 +513,39 @@ public class TourStationService {
             return;
         }
         putSaleState(item, SALE_STATUS_SOLD_OUT, SALE_STATUS_TEXT_SOLD_OUT, PRIMARY_ACTION_NONE);
+    }
+
+    private int visibleRemainStock(TicketType ticketType,
+                                   Map<Long, Map<Long, TicketTypeSeatStockSnapshot>> seatStockBySessionId) {
+        if (ticketType == null) {
+            return 0;
+        }
+        TicketTypeSeatStockSnapshot snapshot = null;
+        if (ticketType.getSessionId() != null && ticketType.getId() != null && seatStockBySessionId != null) {
+            Map<Long, TicketTypeSeatStockSnapshot> stockByTicketTypeId = seatStockBySessionId.get(ticketType.getSessionId());
+            if (stockByTicketTypeId != null) {
+                snapshot = stockByTicketTypeId.get(ticketType.getId());
+            }
+        }
+        if (snapshot != null) {
+            return nonNegative(cappedRemainStock(snapshot.getRemainStock(), snapshot.getTotalStock()));
+        }
+        return nonNegative(cappedRemainStock(ticketType.getRemainStock(), ticketType.getTotalStock()));
+    }
+
+    private Integer cappedRemainStock(Integer remainStock, Integer totalStock) {
+        if (remainStock == null) {
+            return null;
+        }
+        int visible = Math.max(0, remainStock);
+        if (totalStock != null) {
+            visible = Math.min(visible, Math.max(0, totalStock));
+        }
+        return visible;
+    }
+
+    private int nonNegative(Integer value) {
+        return value == null ? 0 : Math.max(0, value);
     }
 
     private void putSaleState(Map<String, Object> item, String saleStatus, String saleStatusText, String primaryAction) {
