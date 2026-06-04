@@ -13,6 +13,7 @@ import org.springframework.util.StringUtils;
 @Service
 public class UserAccessService {
     private static final String ROLE_ADMIN = "admin";
+    private static final String ROLE_PLATFORM_SUPER_ADMIN = "platform_super_admin";
     private static final String ROLE_ORGANIZER = "organizer";
 
     private final UserInternalClient userInternalClient;
@@ -65,10 +66,45 @@ public class UserAccessService {
 
     public InternalAuthContextResponse requirePermission(Long userId, String permissionCode) {
         InternalAuthContextResponse auth = getAuthContext(userId);
-        if (!auth.getPermissionCodes().contains(permissionCode)) {
+        if (!hasAnyPermission(auth, permissionCode)) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
         }
         return auth;
+    }
+
+    public InternalAuthContextResponse requirePlatformPermission(Long userId, String permissionCode) {
+        InternalAuthContextResponse auth = getAuthContext(userId);
+        if (!"platform".equals(auth.getScopeType()) || !hasAnyPermission(auth, permissionCode)) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
+        }
+        return auth;
+    }
+
+    public InternalUserRefResponse requireAdminOrAnyPermission(Long userId, String... permissionCodes) {
+        InternalUserRefResponse user = requireUser(userId);
+        if (isAdmin(user)) {
+            return user;
+        }
+        if (hasAnyPermission(getAuthContext(userId), permissionCodes)) {
+            return user;
+        }
+        throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
+    }
+
+    public InternalUserRefResponse requireAdminOrOrganizerOrAnyPermission(Long userId, String... permissionCodes) {
+        InternalUserRefResponse user = requireUser(userId);
+        if (isAdmin(user) || isOrganizer(user)) {
+            return user;
+        }
+        InternalAuthContextResponse auth = getAuthContext(userId);
+        if (permissionCodes != null) {
+            for (String permissionCode : permissionCodes) {
+                if (hasAnyPermission(auth, permissionCode)) {
+                    return user;
+                }
+            }
+        }
+        throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
     }
 
     public InternalAuthContextResponse getAuthContext(Long userId) {
@@ -95,11 +131,49 @@ public class UserAccessService {
         return requireAdminOrOrganizer(userId).getRole();
     }
 
+    public String requireAdminOrAnyPermissionRole(Long userId, String... permissionCodes) {
+        return requireAdminOrAnyPermission(userId, permissionCodes).getRole();
+    }
+
+    public String requireAdminOrOrganizerOrAnyPermissionRole(Long userId, String... permissionCodes) {
+        return requireAdminOrOrganizerOrAnyPermission(userId, permissionCodes).getRole();
+    }
+
     public boolean isAdmin(InternalUserRefResponse user) {
-        return user != null && ROLE_ADMIN.equals(user.getRole());
+        return user != null && isAdminRole(user.getRole());
     }
 
     public boolean isOrganizer(InternalUserRefResponse user) {
-        return user != null && ROLE_ORGANIZER.equals(user.getRole());
+        return user != null && isOrganizerRole(user.getRole());
+    }
+
+    public boolean isAdminRole(String role) {
+        return ROLE_ADMIN.equals(role) || ROLE_PLATFORM_SUPER_ADMIN.equals(role);
+    }
+
+    public boolean isOrganizerRole(String role) {
+        return ROLE_ORGANIZER.equals(role);
+    }
+
+    private boolean hasAnyPermission(InternalAuthContextResponse auth, String... permissionCodes) {
+        if (auth == null || auth.getPermissionCodes() == null || permissionCodes == null) {
+            return false;
+        }
+        for (String permissionCode : permissionCodes) {
+            if (StringUtils.hasText(permissionCode) && auth.getPermissionCodes().contains(permissionCode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean hasAnyPermission(Long userId, String... permissionCodes) {
+        return hasAnyPermission(getAuthContext(userId), permissionCodes);
+    }
+
+    private boolean hasPermission(InternalAuthContextResponse auth, String permissionCode) {
+        return auth != null
+                && auth.getPermissionCodes() != null
+                && auth.getPermissionCodes().contains(permissionCode);
     }
 }

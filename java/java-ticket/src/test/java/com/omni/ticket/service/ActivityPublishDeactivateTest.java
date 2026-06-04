@@ -65,7 +65,7 @@ class ActivityPublishDeactivateTest {
             Artist artist = artist(3001L, "approved", "normal");
 
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
             when(activityArtistMapper.selectList(any())).thenReturn(List.of(lineup));
@@ -86,7 +86,7 @@ class ActivityPublishDeactivateTest {
             Artist artist = artist(3001L, "approved", "normal");
 
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2002L, "activity.manage")).thenReturn(user(2002L, "admin"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
             when(activityArtistMapper.selectList(any())).thenReturn(List.of(lineup));
@@ -107,7 +107,7 @@ class ActivityPublishDeactivateTest {
             Artist artist = artist(3001L, "approved", "normal");
 
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
             when(activityArtistMapper.selectList(any())).thenReturn(List.of(lineup));
@@ -130,7 +130,7 @@ class ActivityPublishDeactivateTest {
         void publishWithNoSessionsFails() {
             Activity activity = activity(10L, 2003L, "draft", 1);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             BusinessException ex = assertThrows(BusinessException.class,
@@ -145,7 +145,7 @@ class ActivityPublishDeactivateTest {
             Activity activity = activity(10L, 2003L, "draft", 1);
             Session session = session(101L, 10L, 1);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(Collections.emptyList());
 
@@ -164,7 +164,7 @@ class ActivityPublishDeactivateTest {
             Artist artist = artist(3001L, "pending", "normal");
 
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
             when(activityArtistMapper.selectList(any())).thenReturn(List.of(lineup));
@@ -181,7 +181,7 @@ class ActivityPublishDeactivateTest {
             Activity activity = activity(10L, 2003L, "draft", 1);
             Session session = session(101L, 10L, 1);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(Collections.emptyList());
 
@@ -202,7 +202,7 @@ class ActivityPublishDeactivateTest {
         void deactivateActivityNoPaidOrders() {
             Activity activity = activity(10L, 2003L, "published", 1);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             DeactivateActivityRequest request = new DeactivateActivityRequest();
@@ -234,7 +234,7 @@ class ActivityPublishDeactivateTest {
             refundResp.setSuccess(true);
 
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
             when(orderInternalClient.listPaidBySessions(any(), eq("test-token")))
@@ -259,7 +259,7 @@ class ActivityPublishDeactivateTest {
         void deactivateActivityRefundNotConfirmed() {
             Activity activity = activity(10L, 2003L, "published", 1);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
 
             DeactivateActivityRequest request = new DeactivateActivityRequest();
             request.setUserId(2003L);
@@ -274,7 +274,7 @@ class ActivityPublishDeactivateTest {
         void deactivateAlreadyDeactivatedActivity() {
             Activity activity = activity(10L, 2003L, "deactivated", 0);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             DeactivateActivityRequest request = new DeactivateActivityRequest();
@@ -297,7 +297,7 @@ class ActivityPublishDeactivateTest {
         void deleteDraftActivity() {
             Activity activity = activity(10L, 2003L, "draft", 1);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             DeleteActivityRequest request = new DeleteActivityRequest();
@@ -318,7 +318,7 @@ class ActivityPublishDeactivateTest {
         void deleteDeactivatedActivity() {
             Activity activity = activity(10L, 2003L, "deactivated", 0);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             DeleteActivityRequest request = new DeleteActivityRequest();
@@ -339,7 +339,7 @@ class ActivityPublishDeactivateTest {
             OrderInfoResponse paidOrder = order(5001L, 101L);
 
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(orderInternalClient.listPaidBySessions(any(), eq("test-token")))
                     .thenReturn(Result.success(List.of(paidOrder)));
@@ -362,7 +362,7 @@ class ActivityPublishDeactivateTest {
             OrderInfoResponse paidOrder = order(5001L, 101L);
 
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(orderInternalClient.listPaidBySessions(any(), eq("test-token")))
                     .thenReturn(Result.success(List.of(paidOrder)));
@@ -400,7 +400,7 @@ class ActivityPublishDeactivateTest {
         void organizerPublishOtherActivity() {
             Activity activity = activity(10L, 9999L, "draft", 1);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
 
             BusinessException ex = assertThrows(BusinessException.class,
                     () -> service.updateActivityStatus(10L, req(2003L, 1)));
@@ -413,7 +413,7 @@ class ActivityPublishDeactivateTest {
         void userRolePublishActivity() {
             Activity activity = activity(10L, 2004L, "draft", 1);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2004L))
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2004L, "activity.manage"))
                     .thenThrow(new BusinessException(403, "无权限"));
 
             assertThrows(BusinessException.class, () -> service.updateActivityStatus(10L, req(2004L, 1)));
@@ -425,7 +425,7 @@ class ActivityPublishDeactivateTest {
         void organizerDeactivateOtherActivity() {
             Activity activity = activity(10L, 9999L, "deactivated", 0);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
 
             DeactivateActivityRequest request = new DeactivateActivityRequest();
             request.setUserId(2003L);
@@ -512,7 +512,7 @@ class ActivityPublishDeactivateTest {
         void updateActivityWithNonOneStatus() {
             Activity activity = activity(10L, 2003L, "draft", 1);
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
 
             assertDoesNotThrow(() -> service.updateActivityStatus(10L, req(2003L, 99)));
             verify(activityMapper).updateById(activity);
@@ -528,7 +528,7 @@ class ActivityPublishDeactivateTest {
             Artist artist = artist(3001L, "approved", "normal");
 
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
             when(activityArtistMapper.selectList(any())).thenReturn(List.of(lineup));
@@ -548,7 +548,7 @@ class ActivityPublishDeactivateTest {
             Artist artist = artist(3001L, "approved", "normal");
 
             when(activityMapper.selectById(10L)).thenReturn(activity);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
             when(activityArtistMapper.selectList(any())).thenReturn(List.of(lineup));

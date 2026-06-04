@@ -4,15 +4,22 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.omni.common.result.Result;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
-import com.omni.user.client.NotificationInternalClient;
 import com.omni.user.controller.SupportController;
 import com.omni.user.dto.*;
 import com.omni.user.entity.SupportConversation;
+import com.omni.user.entity.SupportConversationAudit;
+import com.omni.user.entity.SupportConversationNote;
+import com.omni.user.entity.SupportConversationTag;
 import com.omni.user.entity.SupportMessage;
 import com.omni.user.entity.User;
+import com.omni.user.mapper.SupportConversationAuditMapper;
 import com.omni.user.mapper.SupportConversationMapper;
+import com.omni.user.mapper.SupportConversationNoteMapper;
+import com.omni.user.mapper.SupportConversationTagMapper;
 import com.omni.user.mapper.SupportMessageMapper;
+import com.omni.user.mapper.SupportQuickReplyMapper;
 import com.omni.user.mapper.UserMapper;
+import com.omni.user.mq.NotificationMqProducer;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.*;
@@ -34,8 +41,12 @@ class CustomerSupportFullTest {
 
     @Mock SupportConversationMapper conversationMapper;
     @Mock SupportMessageMapper messageMapper;
+    @Mock SupportConversationNoteMapper noteMapper;
+    @Mock SupportConversationTagMapper tagMapper;
+    @Mock SupportConversationAuditMapper auditMapper;
+    @Mock SupportQuickReplyMapper quickReplyMapper;
     @Mock UserMapper userMapper;
-    @Mock NotificationInternalClient notificationClient;
+    @Mock NotificationMqProducer notificationProducer;
     @Mock CustomerSupportService customerSupportService;
     @Mock HelpCenterService helpCenterService;
     @Mock SupportAccountService supportAccountService;
@@ -46,6 +57,9 @@ class CustomerSupportFullTest {
     @BeforeAll static void initMybatisMeta() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(),""), SupportConversation.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(),""), SupportMessage.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(),""), SupportConversationNote.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(),""), SupportConversationTag.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(),""), SupportConversationAudit.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(),""), User.class);
     }
     @BeforeAll static void ensureJwt() {
@@ -53,8 +67,9 @@ class CustomerSupportFullTest {
             System.setProperty("JWT_SECRET","test-jwt-secret-must-be-at-least-32-bytes");
     }
     @BeforeEach void setUp() {
-        service = new CustomerSupportService(conversationMapper, messageMapper, userMapper,
-                new SupportAiService((q,k)->Optional.empty()), notificationClient, "test-token");
+        service = new CustomerSupportService(conversationMapper, messageMapper, noteMapper, tagMapper, auditMapper,
+                quickReplyMapper, userMapper, new SupportAiService((q,k)->Optional.empty()),
+                notificationProducer, "test-token", Runnable::run);
         controller = new SupportController(helpCenterService, customerSupportService, supportAccountService);
     }
 
@@ -220,7 +235,7 @@ class CustomerSupportFullTest {
             when(conversationMapper.selectById(602L)).thenReturn(c);
             when(messageMapper.insert(any())).thenReturn(1);
             SupportConversationResponse r = service.close(8001L,602L);
-            assertEquals("CLOSED", r.getStatus());
+            assertEquals("CLOSE_REQUESTED", r.getStatus());
         }
         @Test @DisplayName("CS-020: User cannot claim → 403")
         void userClaimRejected() {
@@ -235,7 +250,7 @@ class CustomerSupportFullTest {
             when(messageMapper.insert(any())).thenReturn(1);
             SupportMessageRequest r = new SupportMessageRequest(); r.setContent("Refund processed");
             service.sendMessage(8001L,700L, r);
-            verify(notificationClient).createMessage(any(), eq("test-token"));
+            verify(notificationProducer).sendNotification(any());
         }
     }
 

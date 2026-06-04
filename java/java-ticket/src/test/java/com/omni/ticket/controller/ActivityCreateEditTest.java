@@ -150,7 +150,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-001: admin创建完整活动")
         void adminCreateFullActivity() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(500L);
@@ -181,7 +181,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-002: admin创建最简活动")
         void adminCreateMinimalActivity() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(501L);
@@ -203,7 +203,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-003: admin更新活动基本信息")
         void adminUpdateActivity() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
             Activity activity = new Activity();
             activity.setId(10L);
             activity.setOrganizerId(2003L);
@@ -223,7 +223,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-004: organizer创建自己的活动")
         void organizerCreateOwnActivity() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(502L);
@@ -242,7 +242,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-005: organizer更新自己的活动")
         void organizerUpdateOwnActivity() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             Activity activity = new Activity();
             activity.setId(10L);
             activity.setOrganizerId(2003L);
@@ -279,7 +279,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-007: admin查看活动详情（含艺人阵容）")
         void adminGetActivityDetail() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
             Activity activity = new Activity();
             activity.setId(100L);
             activity.setName("查看详情测试");
@@ -298,7 +298,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-008: admin查看活动列表分页")
         void adminListActivities() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
             Activity a1 = new Activity();
             a1.setId(1L);
             a1.setName("活动1");
@@ -330,7 +330,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-009: 标题最小1字符")
         void titleMinLength() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(510L);
@@ -349,7 +349,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-010: 标题200字符(最大)")
         void titleMaxLength() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(511L);
@@ -369,7 +369,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-011: 标题超长(500字符)")
         void titleOverlyLong() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
 
             String longTitle = "A".repeat(500);
             Map<String, Object> body = validCreateBody();
@@ -380,14 +380,14 @@ class ActivityCreateEditTest {
 
             // 可能成功（controller不校验长度）或由DB约束拒绝
             // 验证至少调用了权限检查
-            verify(userAccessService).requireAdminOrOrganizerRole(2003L);
+            verify(userAccessService).requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage");
         }
 
         @Test
         @DisplayName("AC-012: 描述为空")
         void descriptionEmpty() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(512L);
@@ -406,7 +406,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-013: 分类ID不存在 — 控制器通过, 具体校验在服务层")
         void categoryIdNotExist() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(513L);
@@ -429,7 +429,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-014: 场馆ID不存在 — 控制器不校验")
         void venueIdNotExist() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(514L);
@@ -449,7 +449,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-015: 艺人列表为空但artistId存在 → code=200")
         void artistsEmptyWithArtistId() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(515L);
@@ -469,7 +469,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-015: 艺人列表为空且无artistId → code=400")
         void artistsEmptyWithoutArtistId() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
 
             Map<String, Object> body = validCreateBody();
             body.remove("artistId");
@@ -486,7 +486,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-016: 大量艺人(50个) — 控制器应能处理")
         void manyArtists() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(516L);
@@ -515,7 +515,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-017: 分页page=0")
         void listActivitiesPageZero() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
             Activity a1 = new Activity();
             a1.setId(1L);
             a1.setPublishStatus("draft");
@@ -537,7 +537,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-018: 分页page超大")
         void listActivitiesPageLarge() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
             Page<Activity> page = new Page<>(99999, 10, 100);
             page.setRecords(Collections.emptyList());
             when(activityMapper.selectPage(any(), any())).thenReturn(page);
@@ -559,7 +559,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-019: title为空")
         void titleEmpty() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
 
             Map<String, Object> body = validCreateBody();
             body.put("name", "");
@@ -575,7 +575,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-020: categoryId为null")
         void categoryIdNull() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
 
             Map<String, Object> body = validCreateBody();
             body.remove("categoryId");
@@ -591,7 +591,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-021: JSON body为空Map")
         void emptyBody() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
 
             Result<Activity> result = controller.createActivity(organizerToken(), Collections.emptyMap());
 
@@ -603,7 +603,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-022: 非JSON — 模拟通过控制器但未传name和artist")
         void bodyMissingRequiredFields() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
 
             Result<Activity> result = controller.createActivity(organizerToken(), Map.of("unused", "value"));
 
@@ -615,7 +615,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-023: SQL注入尝试")
         void sqlInjectionAttempt() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(520L);
@@ -638,7 +638,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-024: XSS尝试")
         void xssAttempt() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(521L);
@@ -660,7 +660,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-025: 超大请求体 — 控制器不校验负载大小")
         void largeRequestBody() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
                 Activity a = inv.getArgument(0);
                 a.setId(522L);
@@ -713,14 +713,14 @@ class ActivityCreateEditTest {
             Result<Activity> result = controller.createActivity(null, validCreateBody());
 
             assertEquals(401, result.getCode());
-            verify(userAccessService, never()).requireAdminOrOrganizerRole(anyLong());
+            verify(userAccessService, never()).requireAdminOrOrganizerOrAnyPermissionRole(anyLong(), eq("activity.manage"));
         }
 
         @Test
         @DisplayName("AC-028: user角色创建活动 → 403")
         void userCreateActivity() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2004L)).thenReturn(null);
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2004L, "activity.manage")).thenReturn(null);
 
             Result<Activity> result = controller.createActivity(userToken(), validCreateBody());
 
@@ -732,7 +732,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-029: organizer更新他人活动 → 403")
         void organizerUpdateOtherActivity() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             Activity activity = new Activity();
             activity.setId(10L);
             activity.setOrganizerId(9999L); // 不同organizer
@@ -749,7 +749,7 @@ class ActivityCreateEditTest {
         @DisplayName("AC-030: admin更新任意活动 → 200")
         void adminUpdateAnyActivity() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
             Activity activity = new Activity();
             activity.setId(10L);
             activity.setOrganizerId(9999L); // 他人活动
@@ -769,7 +769,7 @@ class ActivityCreateEditTest {
             Result<Activity> result = controller.createActivity("Bearer invalid.fake.token", validCreateBody());
 
             assertEquals(401, result.getCode());
-            verify(userAccessService, never()).requireAdminOrOrganizerRole(anyLong());
+            verify(userAccessService, never()).requireAdminOrOrganizerOrAnyPermissionRole(anyLong(), eq("activity.manage"));
         }
 
         @Test
@@ -786,7 +786,7 @@ class ActivityCreateEditTest {
         @DisplayName("organizer查看他人活动详情 → 403")
         void organizerViewOtherActivity() {
             AdminController controller = controller();
-            when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
             Activity activity = new Activity();
             activity.setId(100L);
             activity.setOrganizerId(9999L);

@@ -41,8 +41,8 @@ class TicketTypeManagementTest {
     String adminT() { return "Bearer "+JwtUtil.generateToken(2002L,"admin","admin"); }
     String orgT() { return "Bearer "+JwtUtil.generateToken(2003L,"org","organizer"); }
 
-    void givenAdmin() { when(uas.requireAdminOrOrganizerRole(2002L)).thenReturn("admin"); }
-    void givenOrganizer() { when(uas.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer"); }
+    void givenAdmin() { when(uas.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "session.manage", "activity.manage", "tour.manage")).thenReturn("admin"); }
+    void givenOrganizer() { when(uas.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "session.manage", "activity.manage", "tour.manage")).thenReturn("organizer"); }
     void givenSession(Long sid, Long aid) { Session s = new Session(); s.setId(sid); s.setActivityId(aid); when(sm.selectById(sid)).thenReturn(s); }
     void givenOwnActivity(Long aid, Long orgId) { Activity a = new Activity(); a.setId(aid); a.setOrganizerId(orgId); when(am.selectById(aid)).thenReturn(a); }
 
@@ -141,7 +141,7 @@ class TicketTypeManagementTest {
     @Nested @DisplayName("2.4 Permission & Errors")
     class Permission {
         @Test @DisplayName("TT-016: user role → 403") void tt016() {
-            when(uas.requireAdminOrOrganizerRole(2004L)).thenReturn(null);
+            when(uas.requireAdminOrOrganizerOrAnyPermissionRole(2004L, "session.manage", "activity.manage", "tour.manage")).thenReturn(null);
             Result<TicketType> r = ctl.createTicketType("Bearer "+JwtUtil.generateToken(2004L,"user","user"), Map.of("userId",2004L,"sessionId",100L,"name","VIP","price","880","areaIds",List.of()));
             assertEquals(403, r.getCode());
         }

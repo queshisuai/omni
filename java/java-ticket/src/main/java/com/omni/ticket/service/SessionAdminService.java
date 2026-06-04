@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.SessionAdminResponse;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
@@ -92,8 +93,8 @@ public class SessionAdminService {
         LocalDateTime startTime = parseTime(body.get("startTime"));
         LocalDateTime endTime = parseOptionalTime(body.get("endTime"));
 
-        String role = requireRole(userId);
-        Activity activity = requireManageableActivity(activityId, userId, role);
+        InternalUserRefResponse user = requireSessionManager(userId);
+        Activity activity = requireManageableActivity(activityId, userId, user);
         Venue venue = venueMapper.selectById(venueId);
         if (venue == null || !Integer.valueOf(1).equals(venue.getStatus())) {
             throw new BusinessException(400, "场馆不存在或已停用");
@@ -129,12 +130,12 @@ public class SessionAdminService {
             throw new BusinessException(400, "场次ID不正确");
         }
         Long userId = toPositiveLong(body.get("userId"), "用户ID不正确");
-        String role = requireRole(userId);
+        InternalUserRefResponse user = requireSessionManager(userId);
         Session session = sessionMapper.selectById(id);
         if (session == null) {
             throw new BusinessException(404, "场次不存在");
         }
-        requireManageableActivity(session.getActivityId(), userId, role);
+        requireManageableActivity(session.getActivityId(), userId, user);
 
         Long venueId = body.containsKey("venueId") ? toPositiveLong(body.get("venueId"), "场馆ID不正确") : session.getVenueId();
         LocalDateTime startTime = body.containsKey("startTime") ? parseTime(body.get("startTime")) : session.getStartTime();
@@ -164,12 +165,12 @@ public class SessionAdminService {
         if (id == null || id <= 0) {
             throw new BusinessException(400, "场次ID不正确");
         }
-        String role = requireRole(userId);
+        InternalUserRefResponse user = requireSessionManager(userId);
         Session session = sessionMapper.selectById(id);
         if (session == null) {
             throw new BusinessException(404, "场次不存在");
         }
-        requireManageableActivity(session.getActivityId(), userId, role);
+        requireManageableActivity(session.getActivityId(), userId, user);
         sessionSeatService.deleteBySessionId(id);
         if (sessionSeatLayoutService != null) {
             sessionSeatLayoutService.deleteBySessionId(id);
@@ -191,7 +192,7 @@ public class SessionAdminService {
         if (venueId != null && venueId <= 0) {
             throw new BusinessException(400, "场馆ID不正确");
         }
-        String role = requireRole(userId);
+        InternalUserRefResponse user = requireSessionManager(userId);
         LambdaQueryWrapper<Session> wrapper = new LambdaQueryWrapper<>();
         if (activityId != null) {
             wrapper.eq(Session::getActivityId, activityId);
@@ -202,7 +203,7 @@ public class SessionAdminService {
         if (status != null) {
             wrapper.eq(Session::getStatus, status);
         }
-        if ("organizer".equals(role)) {
+        if (userAccessService.isOrganizer(user)) {
             List<Activity> activities = activityMapper.selectList(new LambdaQueryWrapper<Activity>().eq(Activity::getOrganizerId, userId));
             List<Long> activityIds = activities.stream().map(Activity::getId).collect(Collectors.toList());
             if (activityIds.isEmpty()) {
@@ -334,19 +335,19 @@ public class SessionAdminService {
         }
     }
 
-    private Activity requireManageableActivity(Long activityId, Long userId, String role) {
+    private Activity requireManageableActivity(Long activityId, Long userId, InternalUserRefResponse user) {
         Activity activity = activityMapper.selectById(activityId);
         if (activity == null) {
             throw new BusinessException(404, "活动不存在");
         }
-        if ("organizer".equals(role) && !userId.equals(activity.getOrganizerId())) {
+        if (userAccessService.isOrganizer(user) && !userId.equals(activity.getOrganizerId())) {
             throw new BusinessException(403, "只能管理自己主办的场次");
         }
         return activity;
     }
 
-    private String requireRole(Long userId) {
-        return userAccessService.requireAdminOrOrganizerRole(userId);
+    private InternalUserRefResponse requireSessionManager(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "session.manage");
     }
 
     private Long toPositiveLong(Object value, String message) {

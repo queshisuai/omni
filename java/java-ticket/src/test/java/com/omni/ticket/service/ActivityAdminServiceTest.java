@@ -105,7 +105,7 @@ class ActivityAdminServiceTest {
     void deactivateActivityRejectsWhenRefundNotConfirmed() {
         Activity activity = activity(10L, 2003L);
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
 
         DeactivateActivityRequest request = new DeactivateActivityRequest();
         request.setUserId(2003L);
@@ -120,7 +120,7 @@ class ActivityAdminServiceTest {
     void deactivateActivityRejectsOrganizerForOtherActivity() {
         Activity activity = activity(10L, 9999L);
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
 
         DeactivateActivityRequest request = new DeactivateActivityRequest();
         request.setUserId(2003L);
@@ -147,7 +147,7 @@ class ActivityAdminServiceTest {
         refundResponse.setMessage("退款成功");
 
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Arrays.asList(firstSession, secondSession));
         when(ticketTypeMapper.selectList(any())).thenReturn(Arrays.asList(firstTicketType, secondTicketType));
         when(orderInternalClient.listPaidBySessions(any(), eq("test-token"))).thenReturn(Result.success(Collections.singletonList(paidOrder)));
@@ -191,7 +191,7 @@ class ActivityAdminServiceTest {
         DirectRefundResponse compensation = refund(5003L, "DM5003", "COMPENSATION_REQUIRED", false, "支付宝已成功退款，但订单状态更新失败，需人工处理");
 
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType));
         when(orderInternalClient.listPaidBySessions(any(), eq("test-token")))
@@ -225,7 +225,7 @@ class ActivityAdminServiceTest {
         OrderInfoResponse duplicateOrder = order(5001L, "DM5001", 101L);
 
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType));
         when(orderInternalClient.listPaidBySessions(any(), eq("test-token")))
@@ -250,7 +250,7 @@ class ActivityAdminServiceTest {
         activity.setPublishStatus("deactivated");
         Session session = session(101L, 10L);
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session));
         when(orderInternalClient.listPaidBySessions(any(), eq("test-token"))).thenReturn(Result.success(Collections.emptyList()));
 
@@ -344,7 +344,7 @@ class ActivityAdminServiceTest {
     @Test
     void publishActivityRejectsWhenNoActiveSession() {
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
         UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
@@ -361,7 +361,7 @@ class ActivityAdminServiceTest {
     @Test
     void publishActivityRejectsWhenNoActiveTicketType() {
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.emptyList());
 
@@ -379,7 +379,7 @@ class ActivityAdminServiceTest {
     @Test
     void publishActivityRejectsWhenNoLineupArtist() {
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
         when(activityArtistMapper.selectList(any())).thenReturn(Collections.emptyList());
@@ -398,7 +398,7 @@ class ActivityAdminServiceTest {
     @Test
     void publishActivityRejectsPendingLineupArtist() {
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
         when(activityArtistMapper.selectList(any())).thenReturn(Collections.singletonList(activityArtist(501L)));
@@ -418,7 +418,7 @@ class ActivityAdminServiceTest {
     @Test
     void publishActivityRejectsRiskyLineupArtist() {
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
         when(activityArtistMapper.selectList(any())).thenReturn(Collections.singletonList(activityArtist(501L)));
@@ -439,7 +439,7 @@ class ActivityAdminServiceTest {
     void publishActivityAllowsApprovedNormalLineupArtist() {
         Activity activity = activity(10L, 2003L);
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
         when(activityArtistMapper.selectList(any())).thenReturn(Collections.singletonList(activityArtist(501L)));
@@ -461,7 +461,7 @@ class ActivityAdminServiceTest {
         activity.setStatus(0);
         activity.setPublishStatus("deactivated");
         when(activityMapper.selectById(10L)).thenReturn(activity);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(101L, 10L)));
         when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType(1001L, 101L)));
         when(activityArtistMapper.selectList(any())).thenReturn(Collections.singletonList(activityArtist(501L)));

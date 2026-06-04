@@ -63,7 +63,7 @@ class AdminSummaryServiceTest {
 
     @Test
     void adminSummaryCountsAllActivitiesAndUsesPaidOrderCountFromOrderService() {
-        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        allowSummaryAccess(2002L, "admin");
         when(activityMapper.selectList(any())).thenReturn(activities(30, 2003L));
         when(tourMapper.selectCount(any())).thenReturn(1L);
         when(sessionMapper.selectList(any())).thenReturn(Arrays.asList(session(10L), session(11L)));
@@ -83,7 +83,7 @@ class AdminSummaryServiceTest {
 
     @Test
     void organizerSummaryCountsOnlyOwnActivitiesAndUsesPaidOrderCountFromOrderService() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSummaryAccess(2003L, "organizer");
         when(activityMapper.selectList(any())).thenReturn(Arrays.asList(activity(101L, 2003L), activity(102L, 2003L)));
         when(tourMapper.selectCount(any())).thenReturn(1L);
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(20L)));
@@ -102,7 +102,7 @@ class AdminSummaryServiceTest {
 
     @Test
     void adminSummaryIncludesOperationalDashboardMetrics() {
-        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        allowSummaryAccess(2002L, "admin");
         Activity first = activity(101L, 2003L);
         first.setName("热门活动A");
         Activity second = activity(102L, 2003L);
@@ -134,7 +134,7 @@ class AdminSummaryServiceTest {
 
     @Test
     void returnsZeroPaidOrderCountAndSkipsOrderServiceWhenNoSessions() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSummaryAccess(2003L, "organizer");
         when(activityMapper.selectList(any())).thenReturn(Collections.singletonList(activity(101L, 2003L)));
         when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
@@ -148,7 +148,8 @@ class AdminSummaryServiceTest {
 
     @Test
     void rejectsNonAdminOrOrganizer() {
-        when(userAccessService.requireAdminOrOrganizer(2004L)).thenThrow(new BusinessException(403, "无权限"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2004L, "activity.manage", "tour.manage", "session.manage", "order.view"))
+                .thenThrow(new BusinessException(403, "无权限"));
 
         BusinessException error = assertThrows(BusinessException.class, () -> service.getSummary(2004L));
 
@@ -157,7 +158,7 @@ class AdminSummaryServiceTest {
 
     @Test
     void throwsInternalErrorWhenOrderServiceReturnsNonSuccessCode() {
-        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        allowSummaryAccess(2002L, "admin");
         when(activityMapper.selectList(any())).thenReturn(Collections.singletonList(activity(101L, 2002L)));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(10L)));
         when(ticketTypeMapper.selectCount(any())).thenReturn(1L);
@@ -174,7 +175,7 @@ class AdminSummaryServiceTest {
     void throwsInternalErrorAndSkipsOrderServiceWhenInternalTokenMissing() {
         service = new AdminSummaryService(activityMapper, sessionMapper, ticketTypeMapper,
                 userAccessService, orderInternalClient, tourMapper, "");
-        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        allowSummaryAccess(2002L, "admin");
         when(activityMapper.selectList(any())).thenReturn(Collections.singletonList(activity(101L, 2002L)));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(10L)));
         when(ticketTypeMapper.selectCount(any())).thenReturn(1L);
@@ -191,6 +192,12 @@ class AdminSummaryServiceTest {
         user.setId(id);
         user.setRole(role);
         return user;
+    }
+
+    private void allowSummaryAccess(Long userId, String role) {
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(
+                userId, "activity.manage", "tour.manage", "session.manage", "order.view"))
+                .thenReturn(user(userId, role));
     }
 
     private List<Activity> activities(int count, Long organizerId) {

@@ -126,7 +126,7 @@ class SessionSeatLayoutServiceTest {
     @Test
     void copyFromActivityLayoutCopiesBlockLayoutToSession() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = new SeatCraftBlockDtos.LayoutRequest();
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         com.omni.ticket.entity.ActivitySeatLayout activityLayout = new com.omni.ticket.entity.ActivitySeatLayout();
@@ -161,7 +161,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void createBlankLayoutDoesNotPersistInvalidEmptyBlockLayout() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionSeatMapper.selectCount(any())).thenReturn(0L);
@@ -186,7 +186,7 @@ class SessionSeatLayoutServiceTest {
         SessionSeat soldSeat = sessionSeat(701L, 501L, 7L, 1, 1);
         soldSeat.setStatus(3);
         soldSeat.setOrderId(9001L);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -213,7 +213,7 @@ class SessionSeatLayoutServiceTest {
         request.setCanvasHeight(720);
         request.setSections(List.of());
         request.setBlockLayout(blockLayout);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -239,7 +239,7 @@ class SessionSeatLayoutServiceTest {
         request.setCanvasWidth(960);
         request.setCanvasHeight(720);
         request.setSections(null);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -276,7 +276,7 @@ class SessionSeatLayoutServiceTest {
 
         SessionSeatLayoutSection existing = sessionSection(11L, "area-1", "旧A区", 8, 18);
         existing.setSessionLayoutId(55L);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -299,7 +299,7 @@ class SessionSeatLayoutServiceTest {
     void updateLayoutDisablesUnprotectedSeatsWhenBlockRemovedAndRecalculatesStock() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayout("A");
         SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -325,7 +325,7 @@ class SessionSeatLayoutServiceTest {
     void updateLayoutRejectsRemovedBlockWhenSeatProtected() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = blockLayout("A");
         SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -347,7 +347,7 @@ class SessionSeatLayoutServiceTest {
     void updateLayoutDisablesUnprotectedSeatsWhenGridBlockShrinks() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = gridBlockLayout("A", 1, 1);
         SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -374,7 +374,7 @@ class SessionSeatLayoutServiceTest {
     void updateLayoutRejectsGridShrinkWhenRemovedCoordinateProtected() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = gridBlockLayout("A", 1, 1);
         SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -397,7 +397,7 @@ class SessionSeatLayoutServiceTest {
     void updateLayoutDisablesUnprotectedSeatsWhenSeatBlockBecomesStandingBlock() {
         SeatCraftBlockDtos.LayoutRequest blockLayout = standingBlockLayout("A", 300);
         SeatCraftLayoutDtos.LayoutResponse request = layoutUpdateRequest(blockLayout);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -501,7 +501,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void bindTicketTypesRejectsSectionOutsideActiveLayout() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -520,7 +520,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void bindTicketTypesRejectsTicketTypeFromOtherSession() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -543,7 +543,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void bindTicketTypeUpdatesSectionAndExistingSectionSeats() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -572,7 +572,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void bindTicketTypesRejectsSectionAlreadyBoundToAnotherTicketType() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(sessionLayoutMapper.selectOne(any())).thenReturn(layout(55L, 99L));
@@ -610,7 +610,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void updateTicketBindingsRejectsProtectedSeatWhenTicketTypeChanges() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         TicketType ticketType = new TicketType();
@@ -635,7 +635,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void updateTicketBindingsUpdatesUnprotectedSeatsAndRecalculatesStock() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         TicketType ticketType = new TicketType();
@@ -660,7 +660,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void updateTicketBindingsRejectsTicketTypeFromOtherSession() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         TicketType ticketType = new TicketType();
@@ -681,7 +681,7 @@ class SessionSeatLayoutServiceTest {
 
     @Test
     void updateTicketBindingsRejectsDuplicateBlockAcrossTicketTypes() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(99L)).thenReturn(session(99L, 10L, 1L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         TicketType vip = new TicketType();
@@ -841,6 +841,13 @@ class SessionSeatLayoutServiceTest {
         user.setId(id);
         user.setRole(role);
         return user;
+    }
+
+    private void allowSessionManager(Long userId, String role) {
+        InternalUserRefResponse user = user(userId, role);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "session.manage"))
+                .thenReturn(user);
+        when(userAccessService.isOrganizer(user)).thenReturn("organizer".equals(role));
     }
 
     private Activity activity(Long id, Long organizerId) {

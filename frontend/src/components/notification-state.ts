@@ -1,3 +1,4 @@
+import { isPlatformAdminRole } from '../lib/console-auth.ts'
 import type { NotificationVO, UserRole } from '@/types/api'
 
 export interface NotificationTypeMeta {
@@ -96,7 +97,7 @@ export function getNotificationAction(
 
   if (key === 'TODO' || key.startsWith('RISK_')) {
     return {
-      href: role === 'admin' ? '/console/risk-resolutions' : role === 'organizer' ? '/console/risk-events' : '/notifications',
+      href: isPlatformAdminRole(role) ? '/console/risk-resolutions' : role === 'organizer' ? '/console/risk-events' : '/notifications',
       buttonLabel: key === 'TODO' ? '查看待办' : '查看处理',
     }
   }

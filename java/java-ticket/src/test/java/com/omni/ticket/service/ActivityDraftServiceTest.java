@@ -51,7 +51,7 @@ class ActivityDraftServiceTest {
 
     @Test
     void createDraftCreatesActivityDefaultStationAndLineupWithoutVenueProof() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
         doAnswer(invocation -> {
             Activity activity = invocation.getArgument(0);
             activity.setId(301L);
@@ -128,7 +128,7 @@ class ActivityDraftServiceTest {
 
     @Test
     void createDraftRejectsInvalidPerUserLimit() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
 
         BusinessException error = assertThrows(BusinessException.class, () -> service.createDraft(2003L, Map.of(
                 "categoryId", 5L,
@@ -143,7 +143,7 @@ class ActivityDraftServiceTest {
 
     @Test
     void createDraftConvertsInvalidLineupToBusinessException() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
         doAnswer(invocation -> {
             Activity activity = invocation.getArgument(0);
             activity.setId(301L);
@@ -165,7 +165,7 @@ class ActivityDraftServiceTest {
 
     @Test
     void createDraftDefaultsSeatMapVisibilityToHidden() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
 
         service.createDraft(2003L, Map.of(
                 "categoryId", 5L,
@@ -181,7 +181,7 @@ class ActivityDraftServiceTest {
 
     @Test
     void createDraftSavesNullPerUserLimitWhenMissingOrBlank() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
         Map<String, Object> blankLimitBody = new HashMap<>();
         blankLimitBody.put("categoryId", 5L);
         blankLimitBody.put("name", "万象音乐节");
@@ -203,7 +203,7 @@ class ActivityDraftServiceTest {
 
     @Test
     void createDraftRejectsInvalidSeatMapVisibility() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage")).thenReturn("organizer");
 
         BusinessException error = assertThrows(BusinessException.class, () -> service.createDraft(2003L, Map.of(
                 "categoryId", 5L,

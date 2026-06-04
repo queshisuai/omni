@@ -8,8 +8,9 @@ const PATH_PERMISSION_MAP: Record<string, string[]> = {
   '/console/organizer-applications': ['organizer.review'],
   '/console/organizer-admins': ['organizer.account.manage'],
   '/console/roles': ['rbac.manage'],
+  '/console/activities/new': ['activity.manage', 'tour.manage'],
   '/console/activities': ['activity.manage'],
-  '/console/tours': ['tour.manage'],
+  '/console/tours': ['activity.manage', 'tour.manage'],
   '/console/sessions': ['session.manage'],
   '/console/refunds': ['refund.review'],
   '/console/venue': ['venue.manage'],
@@ -31,12 +32,46 @@ const SUPPORT_MANAGER_PERMISSIONS = [
   'audit.view',
 ]
 
+const ORGANIZER_BUSINESS_PERMISSIONS = [
+  'activity.manage',
+  'tour.manage',
+  'session.manage',
+  'artist.manage',
+  'order.view',
+  'refund.review',
+  'venue.manage',
+  'risk.view',
+]
+
+const DEFAULT_PATH_BY_PERMISSION: Array<[string, string]> = [
+  ['organizer.account.manage', '/console/organizer-admins'],
+  ['activity.manage', '/console/activities'],
+  ['tour.manage', '/console/tours'],
+  ['session.manage', '/console/sessions'],
+  ['artist.manage', '/console/artists'],
+  ['order.view', '/console/orders'],
+  ['refund.review', '/console/refunds'],
+  ['venue.manage', '/console/venue'],
+  ['organizer.review', '/console/organizer-applications'],
+  ['venue.review', '/console/venue/applications'],
+  ['station.review', '/console/station-config-reviews'],
+  ['risk.review', '/console/risk-resolutions'],
+  ['risk.view', '/console/risk-cases'],
+  ['support.account.manage', '/console/support-accounts'],
+  ['support.conversation.view', '/console/support-conversations'],
+  ['audit.view', '/console/audit-logs'],
+  ['compensation.execute', '/console/exception-tasks'],
+  ['reconcile.view', '/console/reconciliation'],
+  ['rbac.manage', '/console/roles'],
+]
+
 export function isPlatformAdminRole(role: string | null | undefined): boolean {
   return role === 'admin' || role === 'platform_super_admin'
 }
 
 function getPathPermission(pathname: string): string[] {
   if (pathname === '/console' || pathname === '/console/profile') return ['*']
+  if (pathname.startsWith('/console/tours/')) return ['tour.manage']
   const exact = PATH_PERMISSION_MAP[pathname]
   if (exact) return exact
   for (const [prefix, perms] of Object.entries(PATH_PERMISSION_MAP)) {
@@ -56,6 +91,12 @@ export function canUseConsoleAction(action: string, permissionCodes: string[]): 
   return permissionCodes.includes(action)
 }
 
+export function hasConsolePermission(role: string | null | undefined, permissionCodes: string[] = [], permissionCode: string): boolean {
+  if (isPlatformAdminRole(role)) return true
+  if (role === 'organizer' && ORGANIZER_BUSINESS_PERMISSIONS.includes(permissionCode)) return true
+  return permissionCodes.includes(permissionCode)
+}
+
 export function canEnterConsole(role: string | null | undefined, permissionCodes: string[] = []): boolean {
   if (isPlatformAdminRole(role) || role === 'organizer' || role === 'organizer_admin') return true
   if (role !== 'support') return false
@@ -69,13 +110,20 @@ export function shouldDefaultToConsoleAfterLogin(role: string | null | undefined
 }
 
 export function getDefaultConsolePath(role: string | null | undefined, permissionCodes: string[] = []): string {
-  if (role === 'organizer_admin') return '/console/organizer-admins'
+  if (role === 'organizer_admin') return getFirstPermissionPath(permissionCodes) || '/console'
   if (role === 'support') {
     if (permissionCodes.includes('support.account.manage')) return '/console/support-accounts'
     if (permissionCodes.includes('audit.view')) return '/console/audit-logs'
     if (permissionCodes.includes('support.conversation.view')) return '/console/support-conversations'
   }
   return '/console'
+}
+
+function getFirstPermissionPath(permissionCodes: string[]): string | null {
+  for (const [permission, path] of DEFAULT_PATH_BY_PERMISSION) {
+    if (permissionCodes.includes(permission)) return path
+  }
+  return null
 }
 
 export function getConsoleRoleLabel(role: string | null | undefined, permissionCodes: string[] = []): string {

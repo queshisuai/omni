@@ -105,7 +105,7 @@ class SeatCraftLayoutVersionServiceTest {
                 tourMapper,
                 null,
                 null);
-        lenient().when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         lenient().when(sessionMapper.selectById(3001L)).thenReturn(session(3001L, 10L));
         lenient().when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
     }
@@ -229,7 +229,7 @@ class SeatCraftLayoutVersionServiceTest {
 
     @Test
     void organizerCanSaveStationSeatCraftForOwnTourStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         Station station = station(10L, 20L, null);
         when(stationMapper.selectById(10L)).thenReturn(station);
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -254,7 +254,7 @@ class SeatCraftLayoutVersionServiceTest {
 
     @Test
     void organizerCannotSaveStationSeatCraftForOtherTourStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 9999L));
 
@@ -267,7 +267,7 @@ class SeatCraftLayoutVersionServiceTest {
 
     @Test
     void organizerCannotSaveActivitySeatCraftForOtherOrganizerActivity() {
-        when(userAccessService.requireAdminOrOrganizer(2004L)).thenReturn(user(2004L, "organizer"));
+        allowActivityManager(2004L, "organizer");
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -924,9 +924,33 @@ class SeatCraftLayoutVersionServiceTest {
     }
 
     private void allowSessionOwnerAccess() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowSessionManager(2003L, "organizer");
         when(sessionMapper.selectById(3001L)).thenReturn(session(3001L, 10L));
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+    }
+
+    private void allowSessionManager(Long userId, String role) {
+        InternalUserRefResponse user = user(userId, role);
+        lenient().when(userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "session.manage"))
+                .thenReturn(user);
+        lenient().when(userAccessService.isAdmin(user)).thenReturn("admin".equals(role));
+        lenient().when(userAccessService.isOrganizer(user)).thenReturn("organizer".equals(role));
+    }
+
+    private void allowActivityManager(Long userId, String role) {
+        InternalUserRefResponse user = user(userId, role);
+        lenient().when(userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage"))
+                .thenReturn(user);
+        lenient().when(userAccessService.isAdmin(user)).thenReturn("admin".equals(role));
+        lenient().when(userAccessService.isOrganizer(user)).thenReturn("organizer".equals(role));
+    }
+
+    private void allowStationManager(Long userId, String role) {
+        InternalUserRefResponse user = user(userId, role);
+        lenient().when(userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage"))
+                .thenReturn(user);
+        lenient().when(userAccessService.isAdmin(user)).thenReturn("admin".equals(role));
+        lenient().when(userAccessService.isOrganizer(user)).thenReturn("organizer".equals(role));
     }
 
     private InternalUserRefResponse user(Long id, String role) {

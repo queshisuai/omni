@@ -5,6 +5,28 @@ export interface ConsoleQuickAction {
   href: string
 }
 
+const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href: string }> = [
+  { permission: 'organizer.account.manage', label: '主办方管理员', href: '/console/organizer-admins' },
+  { permission: 'activity.manage', label: '活动管理', href: '/console/activities' },
+  { permission: 'tour.manage', label: '巡演草稿', href: '/console/tours' },
+  { permission: 'session.manage', label: '场次管理', href: '/console/sessions' },
+  { permission: 'artist.manage', label: '艺人管理', href: '/console/artists' },
+  { permission: 'order.view', label: '订单查看', href: '/console/orders' },
+  { permission: 'refund.review', label: '退款审核', href: '/console/refunds' },
+  { permission: 'venue.manage', label: '场馆记录', href: '/console/venue' },
+  { permission: 'organizer.review', label: '主办方管理', href: '/console/organizer-applications' },
+  { permission: 'venue.review', label: '场馆资料审核', href: '/console/venue/applications' },
+  { permission: 'station.review', label: '站点变更审核', href: '/console/station-config-reviews' },
+  { permission: 'risk.review', label: '恢复售票审核', href: '/console/risk-resolutions' },
+  { permission: 'risk.view', label: '风险案例管理', href: '/console/risk-cases' },
+  { permission: 'support.account.manage', label: '客服账号管理', href: '/console/support-accounts' },
+  { permission: 'support.conversation.view', label: '客服会话查询', href: '/console/support-conversations' },
+  { permission: 'audit.view', label: '操作审计', href: '/console/audit-logs' },
+  { permission: 'compensation.execute', label: '异常任务', href: '/console/exception-tasks' },
+  { permission: 'reconcile.view', label: '日结对账', href: '/console/reconciliation' },
+  { permission: 'rbac.manage', label: '角色权限', href: '/console/roles' },
+]
+
 const ORGANIZER_BLOCKED_PREFIXES = [
   '/console/artists/pending',
   '/console/risk-cases',
@@ -74,7 +96,9 @@ export function getConsoleQuickActions(role: UserRole | string | null | undefine
 
   if (role === 'organizer_admin') {
     return [
-      { label: '主办方管理员', href: '/console/organizer-admins' },
+      ...PERMISSION_QUICK_ACTIONS
+        .filter(action => permissionCodes.includes(action.permission))
+        .map(({ label, href }) => ({ label, href })),
       { label: '个人中心', href: '/console/profile' },
     ]
   }

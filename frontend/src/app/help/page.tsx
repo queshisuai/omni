@@ -14,7 +14,7 @@ import {
   listMySupportConversations,
   listSupportMessages,
   markSupportHelpPresence,
-  sendSupportMessage,
+  sendSupportMessageStream,
   startSupportConversation,
 } from '@/lib/api'
 import { getToken, getUser } from '@/lib/auth'
@@ -29,10 +29,13 @@ export default function HelpPage() {
   const [messages, setMessages] = useState<SupportMessageVO[]>([])
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
+  const [aiThinking, setAiThinking] = useState(false)
   const [message, setMessage] = useState('')
   const [loggedIn, setLoggedIn] = useState(false)
   const [currentUserId, setCurrentUserId] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const streamingRef = useRef(false)
+  const streamingAiMessageIdRef = useRef(-1)
 
   useEffect(() => {
     const hasToken = Boolean(getToken())
@@ -59,6 +62,15 @@ export default function HelpPage() {
   const refreshMessages = async (id: number) => {
     const data = await listSupportMessages(id)
     setMessages(data)
+    if (data.length > 0) {
+      setMessage(current => {
+        if (current.includes('服务暂不可用') || current.includes('服务响应超时') || current.includes('消息发送失败')) {
+          return ''
+        }
+        return current
+      })
+    }
+    return data
   }
 
   async function loadMyConversation(preferredId?: number | null, ownerUserId = currentUserId) {
@@ -78,6 +90,7 @@ export default function HelpPage() {
 
     let cancelled = false
     const poll = async () => {
+      if (streamingRef.current) return
       try {
         const next = await loadMyConversation(conversation.id)
         if (cancelled || !next) return
@@ -139,7 +152,61 @@ export default function HelpPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'end' })
-  }, [messages.length, conversation?.id])
+  }, [messages, conversation?.id, aiThinking])
+
+  const hasSubmittedUserMessage = (items: SupportMessageVO[], content: string) => {
+    return items.some(item => item.senderType === 'USER' && item.content.trim() === content)
+  }
+
+  const appendStreamMessage = (message: SupportMessageVO) => {
+    setMessages(current => current.some(item => item.id === message.id) ? current : [...current, message])
+  }
+
+  const ensureStreamingAiMessage = (conversationId: number, messageId: number) => {
+    setMessages(current => {
+      if (current.some(item => item.id === messageId)) return current
+      return [
+        ...current,
+        {
+          id: messageId,
+          conversationId,
+          senderUserId: null,
+          senderType: 'AI',
+          senderDisplayName: 'AI 客服',
+          content: '',
+          createTime: new Date().toISOString(),
+        },
+      ]
+    })
+  }
+
+  const appendStreamingAiDelta = (conversationId: number, messageId: number, delta: string) => {
+    setMessages(current => {
+      const exists = current.some(item => item.id === messageId)
+      const next = exists ? current : [
+        ...current,
+        {
+          id: messageId,
+          conversationId,
+          senderUserId: null,
+          senderType: 'AI',
+          senderDisplayName: 'AI 客服',
+          content: '',
+          createTime: new Date().toISOString(),
+        },
+      ]
+      return next.map(item => item.id === messageId ? { ...item, content: `${item.content}${delta}` } : item)
+    })
+  }
+
+  const finishStreamingAiMessage = (messageId: number, assistantMessage?: SupportMessageVO | null) => {
+    setMessages(current => {
+      if (assistantMessage) {
+        return current.map(item => item.id === messageId ? assistantMessage : item)
+      }
+      return current.filter(item => item.id !== messageId || item.content.trim())
+    })
+  }
 
   const send = async () => {
     const content = text.trim()
@@ -149,23 +216,65 @@ export default function HelpPage() {
       return
     }
     setLoading(true)
+    setAiThinking(false)
     setMessage('')
+    let current = conversation
+    let submitted = false
+    let aiDraftId = streamingAiMessageIdRef.current
     try {
-      let current = conversation
       if (!current) {
         current = await startSupportConversation({
           subject: buildSupportSubject(content),
-          initialMessage: content,
+          initialMessage: null,
         })
         setConversation(current)
-      } else {
-        await sendSupportMessage(current.id, content)
       }
-      setText('')
-      await loadMyConversation(current.id)
+      const conversationId = current.id
+      aiDraftId = streamingAiMessageIdRef.current - 1
+      streamingAiMessageIdRef.current = aiDraftId
+      streamingRef.current = true
+      await sendSupportMessageStream(conversationId, content, {
+        onUserMessage: userMessage => {
+          submitted = true
+          setText('')
+          appendStreamMessage(userMessage)
+        },
+        onThinking: () => {
+          setAiThinking(true)
+          ensureStreamingAiMessage(conversationId, aiDraftId)
+        },
+        onDelta: delta => {
+          setAiThinking(false)
+          appendStreamingAiDelta(conversationId, aiDraftId, delta)
+        },
+        onDone: assistantMessage => {
+          setAiThinking(false)
+          finishStreamingAiMessage(aiDraftId, assistantMessage)
+        },
+      })
+      await loadMyConversation(conversationId)
     } catch (err: unknown) {
+      try {
+        const recovered = await loadMyConversation(current?.id ?? null)
+        if (recovered) {
+          const latestMessages = await refreshMessages(recovered.id)
+          if (hasSubmittedUserMessage(latestMessages, content)) {
+            setText('')
+            setMessage('')
+            return
+          }
+        }
+      } catch {
+        // 保留原始发送错误，避免二次同步失败覆盖用户可见提示。
+      }
+      if (!submitted) {
+        setText(content)
+      }
+      finishStreamingAiMessage(aiDraftId, null)
       setMessage(err instanceof Error ? err.message : '消息发送失败')
     } finally {
+      streamingRef.current = false
+      setAiThinking(false)
       setLoading(false)
     }
   }
@@ -260,6 +369,7 @@ export default function HelpPage() {
                   <div className="space-y-3">
                     {messages.map(item => {
                       const mine = item.senderType === 'USER'
+                      const streamingAi = item.id === streamingAiMessageIdRef.current && item.senderType === 'AI' && loading
                       return (
                         <div key={item.id || `${item.senderType}-${item.content}`} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                           <div className={`max-w-[86%] rounded-2xl px-4 py-3 text-[13px] leading-6 ${mine ? 'bg-[#ff1268] text-white' : 'bg-white text-gray-700 shadow-sm'}`}>
@@ -267,7 +377,21 @@ export default function HelpPage() {
                               {mine ? <UserRound className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
                               {formatSupportMessageSender(item, 'customer')}
                             </div>
-                            {item.content}
+                            {item.content ? (
+                              <>
+                                {item.content}
+                                {streamingAi && <span className="ml-1 inline-block h-3 w-1 animate-pulse rounded-full bg-[#ff1268] align-[-2px]" />}
+                              </>
+                            ) : streamingAi || aiThinking ? (
+                              <span className="inline-flex items-center gap-1 text-gray-400">
+                                客服正在思考
+                                <span className="inline-flex gap-0.5">
+                                  <span className="h-1 w-1 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.2s]" />
+                                  <span className="h-1 w-1 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.1s]" />
+                                  <span className="h-1 w-1 animate-bounce rounded-full bg-gray-400" />
+                                </span>
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                       )

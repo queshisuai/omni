@@ -111,7 +111,7 @@ public class TicketWalletService {
             ticket.setStatus(STATUS_UNUSED);
             ticket.setCreateTime(now);
             ticket.setUpdateTime(now);
-            electronicTicketMapper.insert(ticket);
+            electronicTicketMapper.insertIgnoreTicketNo(ticket);
         }
     }
 

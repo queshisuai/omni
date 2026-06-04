@@ -76,7 +76,7 @@ class TicketWalletServiceTest {
         service.issueForPaidOrder(order);
 
         ArgumentCaptor<ElectronicTicket> captor = ArgumentCaptor.forClass(ElectronicTicket.class);
-        verify(electronicTicketMapper, org.mockito.Mockito.times(2)).insert(captor.capture());
+        verify(electronicTicketMapper, org.mockito.Mockito.times(2)).insertIgnoreTicketNo(captor.capture());
         List<ElectronicTicket> tickets = captor.getAllValues();
         assertEquals(List.of("Alice", "Bob"), tickets.stream().map(ElectronicTicket::getRealName).collect(Collectors.toList()));
         assertEquals(List.of("A-1", "A-2"), tickets.stream().map(ElectronicTicket::getSeatLabel).collect(Collectors.toList()));
@@ -91,7 +91,7 @@ class TicketWalletServiceTest {
 
         service.issueForPaidOrder(order);
 
-        verify(electronicTicketMapper, never()).insert(any(ElectronicTicket.class));
+        verify(electronicTicketMapper, never()).insertIgnoreTicketNo(any(ElectronicTicket.class));
     }
 
     @Test

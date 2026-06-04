@@ -774,12 +774,12 @@ public class SeatCraftLayoutVersionService {
             if (activityMapper == null || userAccessService == null) {
                 throw new BusinessException(500, "活动权限服务未初始化");
             }
-            InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(operatorId);
+            InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(operatorId, "activity.manage");
             Activity activity = activityMapper.selectById(ownerId);
             if (activity == null || !Integer.valueOf(1).equals(activity.getStatus())) {
                 throw new BusinessException(404, "活动不存在");
             }
-            if ("organizer".equals(user.getRole()) && !operatorId.equals(activity.getOrganizerId())) {
+            if (userAccessService.isOrganizer(user) && !operatorId.equals(activity.getOrganizerId())) {
                 throw new BusinessException(403, "只能管理自己的活动");
             }
             return;
@@ -788,7 +788,7 @@ public class SeatCraftLayoutVersionService {
             if (sessionMapper == null || activityMapper == null || userAccessService == null) {
                 throw new BusinessException(500, "场次权限服务未初始化");
             }
-            InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(operatorId);
+            InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(operatorId, "session.manage");
             Session session = sessionMapper.selectById(ownerId);
             if (session == null || !Integer.valueOf(1).equals(session.getStatus())) {
                 throw new BusinessException(404, "场次不存在");
@@ -797,7 +797,7 @@ public class SeatCraftLayoutVersionService {
             if (activity == null || !Integer.valueOf(1).equals(activity.getStatus())) {
                 throw new BusinessException(404, "活动不存在");
             }
-            if ("organizer".equals(user.getRole()) && !operatorId.equals(activity.getOrganizerId())) {
+            if (userAccessService.isOrganizer(user) && !operatorId.equals(activity.getOrganizerId())) {
                 throw new BusinessException(403, "只能管理自己的场次");
             }
             return;
@@ -806,12 +806,12 @@ public class SeatCraftLayoutVersionService {
             if (stationMapper == null || tourMapper == null || activityMapper == null || userAccessService == null) {
                 throw new BusinessException(500, "站点权限服务未初始化");
             }
-            InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(operatorId);
+            InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(operatorId, "activity.manage", "tour.manage");
             Station station = stationMapper.selectById(ownerId);
             if (station == null || !Integer.valueOf(1).equals(station.getStatus())) {
                 throw new BusinessException(404, "站点不存在");
             }
-            if ("admin".equals(user.getRole())) {
+            if (userAccessService.isAdmin(user)) {
                 return;
             }
             if (station.getTourId() != null) {

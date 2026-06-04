@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ClipboardList, RefreshCw, Search } from 'lucide-react'
 import { getUserInfo, listOperationAuditLogs } from '@/lib/api'
-import { canUseConsoleAction } from '@/lib/console-auth'
+import { canUseConsoleAction, isPlatformAdminRole } from '@/lib/console-auth'
 import type { OperationAuditLogVO } from '@/types/api'
 
 type SuccessFilter = '' | 'true' | 'false'
@@ -53,7 +53,7 @@ export default function AuditLogsPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (info.role !== 'admin' && !canUseConsoleAction('audit.view', info.permissionCodes || [])) {
+        if (!isPlatformAdminRole(info.role) && !canUseConsoleAction('audit.view', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }

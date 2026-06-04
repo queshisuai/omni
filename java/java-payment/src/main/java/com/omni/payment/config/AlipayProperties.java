@@ -16,6 +16,8 @@ public class AlipayProperties {
     private String signType;
     private String charset;
     private String format;
+    private boolean mockQrFallbackEnabled;
+    private boolean mockQrAutoConfirmEnabled;
 
     public String getGatewayUrl() {
         return gatewayUrl;
@@ -87,5 +89,21 @@ public class AlipayProperties {
 
     public void setFormat(String format) {
         this.format = format;
+    }
+
+    public boolean isMockQrFallbackEnabled() {
+        return mockQrFallbackEnabled;
+    }
+
+    public void setMockQrFallbackEnabled(boolean mockQrFallbackEnabled) {
+        this.mockQrFallbackEnabled = mockQrFallbackEnabled;
+    }
+
+    public boolean isMockQrAutoConfirmEnabled() {
+        return mockQrAutoConfirmEnabled;
+    }
+
+    public void setMockQrAutoConfirmEnabled(boolean mockQrAutoConfirmEnabled) {
+        this.mockQrAutoConfirmEnabled = mockQrAutoConfirmEnabled;
     }
 }

@@ -59,11 +59,24 @@ class RbacServiceTest {
     }
 
     @Test
-    void organizerAdminIsPlatformSideRoleForManagingOrganizerAccounts() {
+    void organizerAdminIncludesOrganizerConsolePermissions() {
         when(userMapper.selectById(10L)).thenReturn(user(10L, "organizer_admin", 1));
-        when(rbacRolePermissionMapper.selectList(any())).thenReturn(List.of(
-                rolePermission("organizer.account.manage")
-        ));
+        List<String> permissions = List.of(
+                "activity.manage",
+                "tour.manage",
+                "session.manage",
+                "artist.manage",
+                "order.view",
+                "refund.review",
+                "venue.manage",
+                "organizer.review",
+                "organizer.account.manage",
+                "venue.review",
+                "audit.view"
+        );
+        when(rbacRolePermissionMapper.selectList(any())).thenReturn(
+                permissions.stream().map(this::rolePermission).collect(java.util.stream.Collectors.toList())
+        );
 
         InternalAuthContextResponse response = service.getInternalAuthContext(10L);
 
@@ -71,7 +84,7 @@ class RbacServiceTest {
         assertEquals("organizer_admin", response.getEffectiveRole());
         assertEquals("platform", response.getScopeType());
         assertEquals(null, response.getScopeId());
-        assertEquals(List.of("organizer.account.manage"), response.getPermissionCodes());
+        assertEquals(permissions, response.getPermissionCodes());
     }
 
     private User user(Long id, String role, Integer status) {

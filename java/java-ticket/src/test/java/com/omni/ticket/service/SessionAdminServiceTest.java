@@ -1,6 +1,7 @@
 package com.omni.ticket.service;
 
 import com.omni.exception.BusinessException;
+import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
@@ -66,7 +67,7 @@ class SessionAdminServiceTest {
 
     @Test
     void createSessionGeneratesSeatSnapshotAfterInsert() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowSessionManager(2003L, "organizer");
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueMapper.selectById(101L)).thenReturn(venue(101L));
         when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
@@ -84,7 +85,7 @@ class SessionAdminServiceTest {
 
     @Test
     void createSessionCopiesActivityLayoutWhenActivityLayoutIdProvided() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowSessionManager(2003L, "organizer");
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueMapper.selectById(101L)).thenReturn(venue(101L));
         when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
@@ -113,7 +114,7 @@ class SessionAdminServiceTest {
 
     @Test
     void createSessionRejectsWhenEndTimeNotAfterStartTime() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowSessionManager(2003L, "organizer");
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueMapper.selectById(101L)).thenReturn(venue(101L));
 
@@ -128,7 +129,7 @@ class SessionAdminServiceTest {
 
     @Test
     void createSessionRejectsWhenVenueTimeOverlapsActiveSession() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowSessionManager(2003L, "organizer");
         when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
         when(venueMapper.selectById(101L)).thenReturn(venue(101L));
         Session existing = new Session();
@@ -147,7 +148,7 @@ class SessionAdminServiceTest {
 
     @Test
     void deleteSessionDeletesSeatsThenSession() {
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowSessionManager(2003L, "organizer");
         Session session = new Session();
         session.setId(50L);
         session.setActivityId(10L);
@@ -174,7 +175,7 @@ class SessionAdminServiceTest {
 
     @Test
     void listSessionsIncludesTicketTypesForManagement() {
-        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        allowSessionManager(2002L, "admin");
         Session session = new Session();
         session.setId(501L);
         session.setActivityId(10L);
@@ -199,7 +200,7 @@ class SessionAdminServiceTest {
 
     @Test
     void listSessionsUsesSeatStatusesForSeatBasedStockSummary() {
-        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        allowSessionManager(2002L, "admin");
         Session session = new Session();
         session.setId(501L);
         session.setActivityId(10L);
@@ -231,7 +232,7 @@ class SessionAdminServiceTest {
 
     @Test
     void listSessionsFallsBackToTicketStockWhenPaidOrderHasNoSeatState() {
-        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        allowSessionManager(2002L, "admin");
         Session session = new Session();
         session.setId(501L);
         session.setActivityId(10L);
@@ -258,6 +259,29 @@ class SessionAdminServiceTest {
         assertEquals(10, response.getTotalStock());
         assertEquals(8, response.getRemainStock());
         assertEquals(2, response.getSoldStock());
+    }
+
+    @Test
+    void organizerAdminWithSessionPermissionCanListSessionsWithoutOrganizerOwnerFilter() {
+        allowSessionManager(2100L, "organizer_admin");
+        Session session = new Session();
+        session.setId(501L);
+        session.setActivityId(10L);
+        session.setVenueId(101L);
+        session.setStartTime(LocalDateTime.of(2026, 6, 1, 20, 0));
+        session.setEndTime(LocalDateTime.of(2026, 6, 1, 22, 0));
+        session.setStatus(1);
+        Page<Session> page = new Page<>(1, 10, 1);
+        page.setRecords(List.of(session));
+        when(sessionMapper.selectPage(any(), any())).thenReturn(page);
+        when(activityMapper.selectBatchIds(any())).thenReturn(List.of(activity(10L, 2003L)));
+        when(venueMapper.selectBatchIds(any())).thenReturn(List.of(venue(101L)));
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of());
+
+        Page<com.omni.ticket.dto.SessionAdminResponse> result = service.listSessions(2100L, 1, 10, null, null, null);
+
+        assertEquals(1, result.getRecords().size());
+        verify(activityMapper, never()).selectList(any());
     }
 
     private Map<String, Object> baseBody() {
@@ -304,5 +328,19 @@ class SessionAdminServiceTest {
         seat.setTicketTypeId(ticketTypeId);
         seat.setStatus(status);
         return seat;
+    }
+
+    private void allowSessionManager(Long userId, String role) {
+        InternalUserRefResponse user = user(userId, role);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "session.manage")).thenReturn(user);
+        when(userAccessService.isOrganizer(user)).thenReturn("organizer".equals(role));
+    }
+
+    private InternalUserRefResponse user(Long id, String role) {
+        InternalUserRefResponse user = new InternalUserRefResponse();
+        user.setId(id);
+        user.setRole(role);
+        user.setStatus(1);
+        return user;
     }
 }

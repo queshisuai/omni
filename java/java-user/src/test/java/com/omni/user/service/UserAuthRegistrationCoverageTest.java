@@ -31,10 +31,11 @@ import static org.mockito.Mockito.*;
 class UserAuthRegistrationCoverageTest {
 
     @Mock UserMapper um;
+    @Mock RbacService rbacService;
     PasswordEncoder pe = new BCryptPasswordEncoder();
     UserService svc;
 
-    @BeforeEach void setup() { svc = new UserService(um, pe); }
+    @BeforeEach void setup() { svc = new UserService(um, pe, rbacService); }
     @BeforeAll static void jwt() { if (System.getenv("JWT_SECRET")==null) System.setProperty("JWT_SECRET","test-jwt-secret-must-be-at-least-32-bytes"); }
     @BeforeAll static void mybatis() { TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(),""), User.class); }
 
