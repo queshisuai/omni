@@ -59,7 +59,7 @@ public class OrganizerAdminAccountService {
 
     @Transactional
     public OrganizerAdminAccountResponse deactivate(Long id) {
-        User user = userMapper.selectById(id);
+        User user = requireOrganizerAdmin(id);
         if (user == null || !ROLE_ORGANIZER_ADMIN.equals(user.getRole())) {
             throw new BusinessException(ResultCode.NOT_FOUND, "主办方管理员账号不存在");
         }
@@ -67,6 +67,59 @@ public class OrganizerAdminAccountService {
         user.setUpdateTime(LocalDateTime.now());
         userMapper.updateById(user);
         return toResponse(user);
+    }
+
+    @Transactional
+    public OrganizerAdminAccountResponse update(Long id, OrganizerAdminAccountRequest request) {
+        if (request == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "主办方管理员账号参数不能为空");
+        }
+        User user = requireOrganizerAdmin(id);
+        String phone = requireText(request.getPhone(), "手机号不能为空");
+        String nickname = requireText(request.getNickname(), "昵称不能为空");
+        if (!phone.equals(user.getPhone())) {
+            User exists = userMapper.selectOne(new LambdaQueryWrapper<User>()
+                    .eq(User::getPhone, phone)
+                    .ne(User::getId, id));
+            if (exists != null) {
+                throw new BusinessException(ResultCode.CONFLICT, "该手机号已存在");
+            }
+        }
+        Integer status = request.getStatus() == null ? user.getStatus() : request.getStatus();
+        if (!Integer.valueOf(0).equals(status) && !Integer.valueOf(1).equals(status)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "主办方管理员账号状态不正确");
+        }
+        String password = trimToNull(request.getPassword());
+        if (password != null) {
+            if (password.length() < 6) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "密码长度不能少于6位");
+            }
+            user.setPassword(passwordEncoder.encode(password));
+        }
+        user.setPhone(phone);
+        user.setNickname(nickname);
+        user.setStatus(status);
+        user.setUpdateTime(LocalDateTime.now());
+        userMapper.updateById(user);
+        return toResponse(user);
+    }
+
+    @Transactional
+    public OrganizerAdminAccountResponse delete(Long id) {
+        User user = requireOrganizerAdmin(id);
+        userMapper.deleteById(id);
+        return toResponse(user);
+    }
+
+    private User requireOrganizerAdmin(Long id) {
+        if (id == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "主办方管理员账号ID不能为空");
+        }
+        User user = userMapper.selectById(id);
+        if (user == null || !ROLE_ORGANIZER_ADMIN.equals(user.getRole())) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "主办方管理员账号不存在");
+        }
+        return user;
     }
 
     private OrganizerAdminAccountResponse toResponse(User user) {
@@ -86,5 +139,11 @@ public class OrganizerAdminAccountService {
             throw new BusinessException(ResultCode.BAD_REQUEST, message);
         }
         return value.trim();
+    }
+
+    private String trimToNull(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

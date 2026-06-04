@@ -288,7 +288,7 @@ public class SupportController {
             @PathVariable Long id) {
         Long userId = parseUserId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
-        return Result.success(supportAccountService.deactivate(userId, id));
+        return Result.success(supportAccountService.delete(userId, id));
     }
 
     private Long parseUserId(String authorization) {

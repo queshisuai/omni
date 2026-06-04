@@ -137,6 +137,25 @@ class SupportAccountServiceTest {
     }
 
     @Test
+    void adminDeletesSupportAccountAndDisablesLinkedLoginUser() {
+        User support = user(3L, "support", 1);
+        support.setPhone("13900000003");
+        support.setNickname("客服三号");
+        SupportAccount account = supportAccount(3L, "13900000003", "客服三号", 1);
+        when(rbacService.getInternalAuthContext(1L)).thenReturn(authContextWithPermission("support.account.manage"));
+        when(userMapper.selectById(3L)).thenReturn(support);
+        when(supportAccountMapper.selectById(3L)).thenReturn(account);
+
+        SupportAccountResponse response = service.delete(1L, 3L);
+
+        assertEquals(3L, response.getId());
+        assertEquals("13900000003", response.getPhone());
+        assertEquals(0, support.getStatus());
+        verify(supportAccountMapper).deleteById(3L);
+        verify(userMapper).updateById(support);
+    }
+
+    @Test
     void rejectsUnknownSupportRoleWhenCreatingSupportAccount() {
         when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
         when(rbacService.getInternalAuthContext(1L)).thenReturn(authContextWithPermission("support.account.manage"));

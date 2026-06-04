@@ -599,6 +599,13 @@ export async function updateSupportAccount(id: number, params: { phone: string; 
 
 export async function deactivateSupportAccount(id: number) {
   assertPositiveInteger(id, '客服账号ID')
+  return request<import('@/types/api').SupportAccountVO>(`/api/user/support/admin/accounts/${id}/deactivate`, {
+    method: 'POST',
+  })
+}
+
+export async function deleteSupportAccount(id: number) {
+  assertPositiveInteger(id, '客服账号ID')
   return request<import('@/types/api').SupportAccountVO>(`/api/user/support/admin/accounts/${id}`, {
     method: 'DELETE',
   })
@@ -653,7 +660,22 @@ export async function createOrganizerAdminAccount(params: { phone: string; nickn
   })
 }
 
+export async function updateOrganizerAdminAccount(id: number, params: { phone: string; nickname: string; password?: string; status?: number }) {
+  assertPositiveInteger(id, '主办方管理员账号ID')
+  return request<import('@/types/api').OrganizerAdminAccountVO>(`/api/user/console/organizer-admins/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(params),
+  })
+}
+
 export async function deactivateOrganizerAdminAccount(id: number) {
+  assertPositiveInteger(id, '主办方管理员账号ID')
+  return request<import('@/types/api').OrganizerAdminAccountVO>(`/api/user/console/organizer-admins/${id}/deactivate`, {
+    method: 'POST',
+  })
+}
+
+export async function deleteOrganizerAdminAccount(id: number) {
   assertPositiveInteger(id, '主办方管理员账号ID')
   return request<import('@/types/api').OrganizerAdminAccountVO>(`/api/user/console/organizer-admins/${id}`, {
     method: 'DELETE',

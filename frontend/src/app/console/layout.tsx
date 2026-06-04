@@ -7,9 +7,18 @@ import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
 import { canAccessConsolePath, canEnterConsole, getConsoleBrandLabel, getConsoleRoleLabel, getDefaultConsolePath, isPlatformAdminRole } from '@/lib/console-auth'
 import { isConsolePathAllowedForRole } from '@/lib/console-paths'
-import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones, ShieldAlert, FileSearch, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones, ShieldAlert, FileSearch, ShieldCheck, ChevronDown } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
-const menuItems = [
+type ConsoleMenuItem = {
+  href: string
+  label: string
+  icon: LucideIcon
+  roles?: Array<'admin' | 'organizer'>
+  group?: string
+}
+
+const menuItems: ConsoleMenuItem[] = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
   { href: '/console/activities', label: '活动发布管理', icon: CalendarDays, roles: ['admin'] },
   { href: '/console/tours', label: '巡演草稿管理', icon: GitPullRequestArrow, roles: ['admin'] },
@@ -24,17 +33,17 @@ const menuItems = [
   { href: '/console/venue/applications', label: '场馆资料审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/station-config-reviews', label: '站点变更审核', icon: GitPullRequestArrow, roles: ['admin'] },
   { href: '/console/organizer-applications', label: '主办方管理', icon: ClipboardList, roles: ['admin'] },
-  { href: '/console/support-accounts', label: '客服账号管理', icon: Headphones, roles: ['admin'] },
+  { href: '/console/support-accounts', label: '客服账号管理', icon: Headphones, roles: ['admin'], group: '账号管理' },
+  { href: '/console/organizer-admins', label: '主办方管理员账号管理', icon: Users, roles: ['admin'], group: '账号管理' },
   { href: '/console/support-conversations', label: '客服会话记录', icon: Headphones, roles: ['admin'] },
   { href: '/console/roles', label: '角色权限', icon: ShieldCheck, roles: ['admin'] },
-  { href: '/console/organizer-admins', label: '主办方管理员', icon: Users, roles: ['admin'] },
   { href: '/console/audit-logs', label: '操作审计', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/exception-tasks', label: '异常任务', icon: ShieldAlert, roles: ['admin'] },
   { href: '/console/reconciliation', label: '日结对账', icon: FileSearch, roles: ['admin'] },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
 ]
 
-const organizerMenuItems = [
+const organizerMenuItems: ConsoleMenuItem[] = [
   { href: '/console', label: '概览', icon: LayoutDashboard },
   { href: '/console/activities', label: '我的活动管理', icon: CalendarDays },
   { href: '/console/tours', label: '巡演草稿', icon: GitPullRequestArrow },
@@ -56,6 +65,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const [role, setRole] = useState('')
   const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [checking, setChecking] = useState(true)
   const [redirecting, setRedirecting] = useState(false)
   const visibleMenuItems = useMemo(() => {
@@ -164,25 +174,75 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           </button>
         </div>
         <nav className="flex-1 px-3 py-4 overflow-y-auto custom-scrollbar">
-          {visibleMenuItems.map(item => {
-            const Icon = item.icon
-            const active = item.href === activeMenuHref
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 text-[14px] transition-all duration-200 ${
-                  active
-                    ? 'bg-[#fff0f5] text-[#ff1268] font-semibold'
-                    : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                {item.label}
-              </Link>
-            )
-          })}
+          {(() => {
+            const renderedGroups = new Set<string>()
+            return visibleMenuItems.map(item => {
+              if (item.group) {
+                if (renderedGroups.has(item.group)) return null
+                renderedGroups.add(item.group)
+                const groupItems = visibleMenuItems.filter(menuItem => menuItem.group === item.group)
+                const groupActive = groupItems.some(groupItem => groupItem.href === activeMenuHref)
+                const expanded = expandedGroups[item.group] ?? groupActive
+                return (
+                  <div key={`group-${item.group}`} className="mb-1">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedGroups(groups => ({ ...groups, [item.group!]: !expanded }))}
+                      className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-[14px] transition-all duration-200 ${
+                        groupActive
+                          ? 'bg-[#fff0f5] text-[#ff1268] font-semibold'
+                          : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
+                      }`}
+                    >
+                      <Users className="w-5 h-5" />
+                      <span className="flex-1 text-left">账号管理</span>
+                      <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                    </button>
+                    {expanded && (
+                      <div className="mt-1 space-y-1">
+                        {groupItems.map(groupItem => {
+                          const ChildIcon = groupItem.icon
+                          const active = groupItem.href === activeMenuHref
+                          return (
+                            <Link
+                              key={groupItem.href}
+                              href={groupItem.href}
+                              onClick={() => setSidebarOpen(false)}
+                              className={`flex items-center gap-2 rounded-lg py-2 pl-10 pr-3 text-[13px] leading-5 transition-all duration-200 ${
+                                active
+                                  ? 'bg-[#fff0f5] text-[#ff1268] font-semibold'
+                                  : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
+                              }`}
+                            >
+                              <ChildIcon className="h-4 w-4 shrink-0" />
+                              <span>{groupItem.label}</span>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+              const Icon = item.icon
+              const active = item.href === activeMenuHref
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 text-[14px] transition-all duration-200 ${
+                    active
+                      ? 'bg-[#fff0f5] text-[#ff1268] font-semibold'
+                      : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                  {item.label}
+                </Link>
+              )
+            })
+          })()}
         </nav>
         <div className="p-4 border-t border-gray-200 bg-gray-50/50">
           <div className="flex flex-col mb-4 px-2">

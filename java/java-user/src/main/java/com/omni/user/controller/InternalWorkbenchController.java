@@ -119,6 +119,20 @@ public class InternalWorkbenchController {
         return Result.success(response);
     }
 
+    @PutMapping("/organizer-admins/{id}")
+    public Result<OrganizerAdminAccountResponse> updateOrganizerAdmin(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody OrganizerAdminAccountRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        requirePermission(userId, "organizer.account.manage");
+        OrganizerAdminAccountResponse response = organizerAdminAccountService.update(id, request);
+        auditSuccess(userId, "organizer_admin.update", "user", response.getId(), response.getPhone(),
+                "更新主办方管理员账号", "更新成功");
+        return Result.success(response);
+    }
+
     @PostMapping("/organizer-admins/{id}/deactivate")
     public Result<OrganizerAdminAccountResponse> deactivateOrganizerAdmin(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -128,7 +142,7 @@ public class InternalWorkbenchController {
         requirePermission(userId, "organizer.account.manage");
         OrganizerAdminAccountResponse response = organizerAdminAccountService.deactivate(id);
         auditSuccess(userId, "organizer_admin.deactivate", "user", response.getId(), response.getPhone(),
-                "停用主办方管理员", "停用成功");
+                "删除主办方管理员账号", "删除成功");
         return Result.success(response);
     }
 
@@ -139,8 +153,8 @@ public class InternalWorkbenchController {
         Long userId = parseUserId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         requirePermission(userId, "organizer.account.manage");
-        OrganizerAdminAccountResponse response = organizerAdminAccountService.deactivate(id);
-        auditSuccess(userId, "organizer_admin.deactivate", "user", response.getId(), response.getPhone(),
+        OrganizerAdminAccountResponse response = organizerAdminAccountService.delete(id);
+        auditSuccess(userId, "organizer_admin.delete", "user", response.getId(), response.getPhone(),
                 "停用主办方管理员", "停用成功");
         return Result.success(response);
     }

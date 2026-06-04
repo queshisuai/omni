@@ -181,6 +181,25 @@ public class SupportAccountService {
         return toResponse(account);
     }
 
+    @Transactional
+    public SupportAccountResponse delete(Long operatorId, Long supportUserId) {
+        requirePermission(operatorId, "support.account.manage");
+        if (supportUserId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "客服账号ID不能为空");
+        }
+        User user = requireSupportUser(supportUserId);
+        SupportAccount account = requireSupportAccount(supportUserId);
+        user.setStatus(0);
+        user.setUpdateTime(LocalDateTime.now());
+        account.setStatus(0);
+        account.setUpdateTime(LocalDateTime.now());
+        supportAccountMapper.deleteById(supportUserId);
+        userMapper.updateById(user);
+        auditWrite(operatorId, "support.account.delete", Long.toString(supportUserId),
+                account.getPhone(), "删除成功", true);
+        return toResponse(account);
+    }
+
     private void requirePermission(Long operatorId, String permissionCode) {
         if (operatorId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);

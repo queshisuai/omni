@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -62,6 +63,68 @@ class OrganizerAdminAccountServiceTest {
 
         assertEquals(1, accounts.size());
         assertEquals("主办方管理员", accounts.get(0).getNickname());
+    }
+
+    @Test
+    void updatesOrganizerAdminAccountAndLinkedLoginFields() {
+        User user = new User();
+        user.setId(11L);
+        user.setPhone("13900000004");
+        user.setNickname("主办方管理员");
+        user.setRole("organizer_admin");
+        user.setStatus(0);
+        when(userMapper.selectById(11L)).thenReturn(user);
+        when(userMapper.selectOne(any())).thenReturn(null);
+        when(passwordEncoder.encode("newpass123")).thenReturn("encoded-newpass123");
+
+        OrganizerAdminAccountRequest request = request("13900000005", "主办方管理员账号", "newpass123");
+        request.setStatus(1);
+        var response = service.update(11L, request);
+
+        assertEquals("13900000005", response.getPhone());
+        assertEquals("主办方管理员账号", response.getNickname());
+        assertEquals(1, response.getStatus());
+        assertEquals("13900000005", user.getPhone());
+        assertEquals("主办方管理员账号", user.getNickname());
+        assertEquals("encoded-newpass123", user.getPassword());
+        verify(userMapper).updateById(user);
+    }
+
+    @Test
+    void updateOrganizerAdminWithoutPasswordKeepsOldPassword() {
+        User user = new User();
+        user.setId(11L);
+        user.setPhone("13900000004");
+        user.setNickname("主办方管理员");
+        user.setPassword("old-password");
+        user.setRole("organizer_admin");
+        user.setStatus(1);
+        when(userMapper.selectById(11L)).thenReturn(user);
+
+        OrganizerAdminAccountRequest request = request("13900000004", "主办方管理员账号", "");
+        request.setStatus(1);
+        service.update(11L, request);
+
+        assertEquals("old-password", user.getPassword());
+        verify(passwordEncoder, never()).encode(any());
+        verify(userMapper).updateById(user);
+    }
+
+    @Test
+    void deletesOrganizerAdminAccount() {
+        User user = new User();
+        user.setId(11L);
+        user.setPhone("13900000004");
+        user.setNickname("主办方管理员");
+        user.setRole("organizer_admin");
+        user.setStatus(1);
+        when(userMapper.selectById(11L)).thenReturn(user);
+
+        var response = service.delete(11L);
+
+        assertEquals(11L, response.getId());
+        assertEquals("13900000004", response.getPhone());
+        verify(userMapper).deleteById(11L);
     }
 
     private OrganizerAdminAccountRequest request(String phone, String nickname, String password) {

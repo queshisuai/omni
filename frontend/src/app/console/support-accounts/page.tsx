@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Check, Headphones, MessageSquareText, Pencil, Plus, ShieldOff, X } from 'lucide-react'
-import { createSupportAccount, deactivateSupportAccount, getUserInfo, listSupportAccounts, updateSupportAccount } from '@/lib/api'
+import { Check, Headphones, MessageSquareText, Pencil, Plus, ShieldOff, Trash2, X } from 'lucide-react'
+import { globalConfirm } from '@/components/GlobalDialog'
+import { createSupportAccount, deactivateSupportAccount, deleteSupportAccount, getUserInfo, listSupportAccounts, updateSupportAccount } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import { getSupportConversationRecordsHref } from '@/lib/support-tools'
 import type { SupportAccountVO } from '@/types/api'
@@ -74,16 +75,49 @@ export default function SupportAccountsPage() {
     }
   }
 
-  const deactivate = async (id: number) => {
+  const toggleStatus = async (account: SupportAccountVO) => {
     setMessage('')
     setError('')
     setSaving(true)
     try {
-      await deactivateSupportAccount(id)
+      if (account.status === 1) {
+        await deactivateSupportAccount(account.id)
+        setMessage('客服账号已停用，历史会话仍保留')
+      } else {
+        await updateSupportAccount(account.id, {
+          phone: account.phone,
+          nickname: account.nickname || '',
+          status: 1,
+          supportRole: account.supportRole || 'support_agent',
+        })
+        setMessage('客服账号已启用')
+      }
       await load()
-      setMessage('客服账号已停用，历史会话仍保留')
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '停用失败')
+      setError(err instanceof Error ? err.message : '更新账号状态失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const remove = async (account: SupportAccountVO) => {
+    const confirmed = await globalConfirm({
+      type: 'danger',
+      title: '删除客服账号',
+      content: `确认删除「${account.nickname || account.phone}」吗？删除后该账号将不再出现在客服账号列表中，登录账号会被停用。`,
+      confirmText: '删除',
+      cancelText: '取消',
+    })
+    if (!confirmed) return
+    setMessage('')
+    setError('')
+    setSaving(true)
+    try {
+      await deleteSupportAccount(account.id)
+      await load()
+      setMessage('客服账号已删除')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '删除客服账号失败')
     } finally {
       setSaving(false)
     }
@@ -234,12 +268,20 @@ export default function SupportAccountsPage() {
                     编辑
                   </button>
                   <button
-                    onClick={() => deactivate(account.id)}
-                    disabled={saving || account.status === 0}
+                    onClick={() => toggleStatus(account)}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {account.status === 1 ? <ShieldOff className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                    {account.status === 1 ? '停用' : '启用'}
+                  </button>
+                  <button
+                    onClick={() => remove(account)}
+                    disabled={saving}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-red-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <ShieldOff className="h-4 w-4" />
-                    停用
+                    <Trash2 className="h-4 w-4" />
+                    删除
                   </button>
                 </div>
               )}

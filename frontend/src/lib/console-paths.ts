@@ -14,7 +14,7 @@ const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href:
   { permission: 'refund.review', label: '退款审核', href: '/console/refunds' },
   { permission: 'venue.manage', label: '场馆记录', href: '/console/venue' },
   { permission: 'organizer.review', label: '主办方管理', href: '/console/organizer-applications' },
-  { permission: 'organizer.account.manage', label: '主办方管理员', href: '/console/organizer-admins' },
+  { permission: 'organizer.account.manage', label: '主办方管理员账号管理', href: '/console/organizer-admins' },
   { permission: 'venue.review', label: '场馆资料审核', href: '/console/venue/applications' },
   { permission: 'station.review', label: '站点变更审核', href: '/console/station-config-reviews' },
   { permission: 'risk.review', label: '恢复售票审核', href: '/console/risk-resolutions' },
