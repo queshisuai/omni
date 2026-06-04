@@ -271,7 +271,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-010: 上传资质证明")
         void uploadVenueProof() throws Exception {
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            allowPrivateAssetAccess(2003L, "organizer");
             when(privateAssetMapper.insert(any(PrivateAsset.class))).thenAnswer(inv -> {
                 PrivateAsset a = inv.getArgument(0); a.setId(10L); return 1;
             });
@@ -291,7 +291,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-011: 私有资产无 publicUrl")
         void privateAssetNoPublicUrl() throws Exception {
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            allowPrivateAssetAccess(2003L, "organizer");
             ArgumentCaptor<PrivateAsset> captor = ArgumentCaptor.forClass(PrivateAsset.class);
             when(privateAssetMapper.insert(captor.capture())).thenAnswer(inv -> { captor.getValue().setId(11L); return 1; });
             PrivateAssetService svc = new PrivateAssetService(privateAssetMapper, venueApplicationMapper,
@@ -310,7 +310,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-012: 关联业务ID(bizId可选)")
         void bizIdCanBeOptional() throws Exception {
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            allowPrivateAssetAccess(2003L, "organizer");
             when(privateAssetMapper.insert(any(PrivateAsset.class))).thenAnswer(inv -> {
                 PrivateAsset a = inv.getArgument(0); a.setId(12L); return 1;
             });
@@ -327,7 +327,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-013: 上传者记录=JWT userId")
         void uploaderIdFromJwt() throws Exception {
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            allowPrivateAssetAccess(2003L, "organizer");
             ArgumentCaptor<PrivateAsset> captor = ArgumentCaptor.forClass(PrivateAsset.class);
             when(privateAssetMapper.insert(captor.capture())).thenAnswer(inv -> { captor.getValue().setId(13L); return 1; });
             PrivateAssetService svc = new PrivateAssetService(privateAssetMapper, venueApplicationMapper,
@@ -465,7 +465,7 @@ class AssetManagementTest {
         @Test
         @DisplayName("AM-023: user角色上传资产 → 403")
         void userUploadRejectedByService() {
-            when(userAccessService.requireAdminOrOrganizer(2004L))
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2004L, "activity.manage", "tour.manage"))
                     .thenThrow(new BusinessException(403, "无权限"));
             PrivateAssetService svc = new PrivateAssetService(privateAssetMapper, venueApplicationMapper,
                     userAccessService, tempDir.toString());
@@ -509,10 +509,18 @@ class AssetManagementTest {
                     userAccessService, tempDir.toString());
 
             // prepareDownload 会校验权限
-            when(userAccessService.requireAdminOrOrganizer(2005L)).thenReturn(user(2005L, "organizer"));
+            allowPrivateAssetAccess(2005L, "organizer");
             assertThrows(BusinessException.class,
                     () -> svc.prepareDownload(200L, 2005L));
         }
+    }
+
+    private void allowPrivateAssetAccess(Long userId, String role) {
+        InternalUserRefResponse user = user(userId, role);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage"))
+                .thenReturn(user);
+        lenient().when(userAccessService.isAdmin(user)).thenReturn("admin".equals(role));
+        lenient().when(userAccessService.isOrganizer(user)).thenReturn("organizer".equals(role));
     }
 
     private static InternalUserRefResponse user(Long id, String role) {

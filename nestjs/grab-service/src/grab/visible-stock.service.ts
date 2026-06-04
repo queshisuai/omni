@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { GrabStockService } from './grab-stock.service';
 import { RedisService } from './redis.service';
 import { TicketClientService } from './ticket-client.service';
 
@@ -20,6 +21,7 @@ export class VisibleStockService {
   constructor(
     private readonly redisService: RedisService,
     private readonly ticketClient: TicketClientService,
+    @Optional() private readonly stockService?: GrabStockService,
   ) {}
 
   async getSessionVisibleStock(sessionId: number, ticketTypeIds: number[]): Promise<SessionVisibleStockResponse> {
@@ -28,7 +30,9 @@ export class VisibleStockService {
 
     for (const ticket of metadata) {
       const redisStock = await this.redisService.get(`grab:stock:${sessionId}:${ticket.ticketTypeId}`);
-      const visibleStock = this.toVisibleStock(redisStock, ticket.remainStock);
+      const visibleStock = redisStock == null && this.stockService
+        ? await this.stockService.initializeFromTicketInfo(sessionId, ticket)
+        : this.toVisibleStock(redisStock, ticket.remainStock);
       ticketTypes.push({
         ticketTypeId: ticket.ticketTypeId,
         name: ticket.name,

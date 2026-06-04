@@ -136,7 +136,7 @@ public class TourStationService {
 
     @Transactional
     public Tour createTourDraft(Long userId, Map<String, Object> body) {
-        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireTourManager(userId);
         String title = requireText(body == null ? null : body.get("title"), "演出项目名称不能为空");
         LocalDateTime now = LocalDateTime.now();
         Tour tour = new Tour();
@@ -169,7 +169,7 @@ public class TourStationService {
 
     @Transactional
     public Station createStationDraft(Long userId, Long tourId, Map<String, Object> body) {
-        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireTourManager(userId);
         Tour tour = tourMapper.selectById(tourId);
         if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
             throw new BusinessException(404, "演出项目不存在");
@@ -198,7 +198,7 @@ public class TourStationService {
     }
 
     public Page<Tour> listManageableTours(Long userId, int page, int size) {
-        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireTourManager(userId);
         LambdaQueryWrapper<Tour> wrapper = new LambdaQueryWrapper<Tour>()
                 .eq(Tour::getStatus, 1)
                 .orderByAsc(Tour::getId);
@@ -210,7 +210,7 @@ public class TourStationService {
 
     @Transactional
     public Tour announceTourCities(Long userId, Long tourId) {
-        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireTourManager(userId);
         Tour tour = tourMapper.selectById(tourId);
         if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
             throw new BusinessException(404, "演出项目不存在");
@@ -241,7 +241,7 @@ public class TourStationService {
 
     @Transactional
     public void deleteTourDraft(Long userId, Long tourId) {
-        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireTourManager(userId);
         Tour tour = tourMapper.selectById(tourId);
         if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
             throw new BusinessException(404, "演出项目不存在");
@@ -279,7 +279,7 @@ public class TourStationService {
         if (activityAdminService == null) {
             throw new BusinessException(500, "活动下架服务未配置");
         }
-        InternalUserRefResponse user = requireAdminOrOrganizer(request.getUserId());
+        InternalUserRefResponse user = requireTourManager(request.getUserId());
         Tour tour = tourMapper.selectById(tourId);
         if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
             throw new BusinessException(404, "演出项目不存在");
@@ -332,7 +332,7 @@ public class TourStationService {
     }
 
     public Map<String, Object> getManageableTourDetail(Long userId, Long tourId) {
-        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = requireTourManager(userId);
         Tour tour = tourMapper.selectById(tourId);
         if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
             throw new BusinessException(404, "演出项目不存在");
@@ -480,14 +480,15 @@ public class TourStationService {
 
     @Transactional
     public Map<String, Object> publishStation(Long userId, Long stationId, Map<String, Object> body) {
-        InternalUserRefResponse user = requireAdminOrOrganizer(userId);
         Station station = stationMapper.selectById(stationId);
         if (station == null || !Integer.valueOf(1).equals(station.getStatus())) {
             throw new BusinessException(404, "站点不存在");
         }
         if (station.getActivityId() != null && station.getTourId() == null) {
+            InternalUserRefResponse user = requireActivityManager(userId);
             return publishActivityStation(user, userId, station, body);
         }
+        InternalUserRefResponse user = requireTourManager(userId);
         Tour tour = tourMapper.selectById(station.getTourId());
         if (tour == null || !Integer.valueOf(1).equals(tour.getStatus())) {
             throw new BusinessException(404, "演出项目不存在");
@@ -682,8 +683,12 @@ public class TourStationService {
         return LocalDateTime.parse(text.replace(" ", "T"));
     }
 
-    private InternalUserRefResponse requireAdminOrOrganizer(Long userId) {
-        return userAccessService.requireAdminOrOrganizer(userId);
+    private InternalUserRefResponse requireActivityManager(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage");
+    }
+
+    private InternalUserRefResponse requireTourManager(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "tour.manage");
     }
 
     private String requireText(Object value, String message) {

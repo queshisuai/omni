@@ -34,7 +34,9 @@ import type {
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 const DEFAULT_REQUEST_TIMEOUT_MS = 5000
+const CONSOLE_ADMIN_REQUEST_TIMEOUT_MS = 20000
 const QR_PAY_REQUEST_TIMEOUT_MS = 15000
+const SUPPORT_MESSAGE_REQUEST_TIMEOUT_MS = 70000
 const MESSAGE_LABELS: Record<string, string> = {
   'ticket type sold out': '当前票档已售罄',
   'order confirmation pending': '订单确认中，请稍后查看订单结果',
@@ -310,7 +312,7 @@ export async function startSupportConversation(params: { subject?: string | null
   return request<import('@/types/api').SupportConversationVO>('/api/user/support/conversations', {
     method: 'POST',
     body: JSON.stringify(params),
-  })
+  }, { timeoutMs: SUPPORT_MESSAGE_REQUEST_TIMEOUT_MS })
 }
 
 export async function listMySupportConversations() {
@@ -340,7 +342,139 @@ export async function sendSupportMessage(conversationId: number, content: string
   return request<import('@/types/api').SupportMessageVO>(`/api/user/support/conversations/${conversationId}/messages`, {
     method: 'POST',
     body: JSON.stringify({ content }),
+  }, { timeoutMs: SUPPORT_MESSAGE_REQUEST_TIMEOUT_MS })
+}
+
+export type SupportMessageStreamHandlers = {
+  onUserMessage?: (message: import('@/types/api').SupportMessageVO) => void
+  onThinking?: (message?: string) => void
+  onDelta?: (content: string) => void
+  onAssistantMessage?: (message: import('@/types/api').SupportMessageVO) => void
+  onDone?: (message?: import('@/types/api').SupportMessageVO | null) => void
+}
+
+function parseSsePayload(data: string): unknown {
+  if (!data) return null
+  try {
+    return JSON.parse(data)
+  } catch {
+    return data
+  }
+}
+
+function readStringField(payload: unknown, field: string) {
+  if (payload && typeof payload === 'object' && field in payload) {
+    const value = (payload as Record<string, unknown>)[field]
+    return typeof value === 'string' ? value : ''
+  }
+  return ''
+}
+
+function readMessageField(payload: unknown) {
+  if (payload && typeof payload === 'object' && 'message' in payload) {
+    return (payload as Record<string, unknown>).message as import('@/types/api').SupportMessageVO | null
+  }
+  return null
+}
+
+function dispatchSupportStreamEvent(eventName: string, data: string, handlers: SupportMessageStreamHandlers) {
+  const payload = parseSsePayload(data)
+  if (eventName === 'userMessage') {
+    handlers.onUserMessage?.(payload as import('@/types/api').SupportMessageVO)
+    return ''
+  }
+  if (eventName === 'thinking') {
+    handlers.onThinking?.(readStringField(payload, 'message') || '客服正在思考')
+    return ''
+  }
+  if (eventName === 'delta') {
+    const content = readStringField(payload, 'content')
+    if (content) handlers.onDelta?.(content)
+    return ''
+  }
+  if (eventName === 'done') {
+    handlers.onDone?.(readMessageField(payload))
+    return ''
+  }
+  if (eventName === 'error') {
+    return readStringField(payload, 'message') || '客服暂时无法回复，请稍后重试'
+  }
+  return ''
+}
+
+function processSseBlock(block: string, handlers: SupportMessageStreamHandlers) {
+  let eventName = 'message'
+  const dataLines: string[] = []
+  for (const line of block.split(/\r?\n/)) {
+    if (!line || line.startsWith(':')) continue
+    if (line.startsWith('event:')) {
+      eventName = line.slice('event:'.length).trim()
+      continue
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice('data:'.length).trimStart())
+    }
+  }
+  if (dataLines.length === 0) return ''
+  return dispatchSupportStreamEvent(eventName, dataLines.join('\n'), handlers)
+}
+
+export async function sendSupportMessageStream(
+  conversationId: number,
+  content: string,
+  handlers: SupportMessageStreamHandlers = {}
+) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  const token = getToken()
+  const response = await fetch(`${BASE_URL}/api/user/support/conversations/${conversationId}/messages/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ content }),
+    cache: 'no-store',
   })
+
+  if (!response.ok) {
+    try {
+      const result = await response.json() as ApiResult<unknown>
+      throw new ApiError(result.code || response.status, toUserVisibleMessage(result.message || response.statusText))
+    } catch (err) {
+      if (err instanceof ApiError) throw err
+      throw new ApiError(response.status, toUserVisibleMessage(response.statusText))
+    }
+  }
+  if (!response.body) {
+    throw new ApiError(503, '客服暂时无法回复，请稍后重试')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let streamError = ''
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary >= 0) {
+      const block = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      streamError = processSseBlock(block, handlers) || streamError
+      boundary = buffer.indexOf('\n\n')
+    }
+  }
+
+  buffer += decoder.decode()
+  if (buffer.trim()) {
+    streamError = processSseBlock(buffer, handlers) || streamError
+  }
+  if (streamError) {
+    throw new ApiError(503, streamError)
+  }
 }
 
 export async function handoffSupportConversation(conversationId: number) {
@@ -1220,7 +1354,9 @@ export async function listAdminActivities(params: { page?: number; size?: number
   if (params.keyword?.trim()) searchParams.set('keyword', params.keyword.trim())
   if (params.status !== undefined) searchParams.set('status', String(params.status))
   return request<import('@/types/api').PageResult<import('@/types/api').ActivityEntity>>(
-    `/api/ticket/admin/activities?${searchParams.toString()}`
+    `/api/ticket/admin/activities?${searchParams.toString()}`,
+    undefined,
+    { timeoutMs: CONSOLE_ADMIN_REQUEST_TIMEOUT_MS }
   )
 }
 
@@ -1281,7 +1417,9 @@ export async function listAdminSessions(userId: number, params: { page?: number;
   if (params.venueId) searchParams.set('venueId', String(params.venueId))
   if (params.status !== undefined) searchParams.set('status', String(params.status))
   return request<import('@/types/api').PageResult<import('@/types/api').SessionAdminVO>>(
-    `/api/ticket/admin/sessions?${searchParams.toString()}`
+    `/api/ticket/admin/sessions?${searchParams.toString()}`,
+    undefined,
+    { timeoutMs: CONSOLE_ADMIN_REQUEST_TIMEOUT_MS }
   )
 }
 
@@ -1312,7 +1450,7 @@ export async function deleteAdminTicketType(id: number, userId: number) {
 }
 
 export async function listAdminVenues(userId: number) {
-  return request<import('@/types/api').VenueEntity[]>('/api/ticket/admin/venues')
+  return request<import('@/types/api').VenueEntity[]>('/api/ticket/admin/venues', undefined, { timeoutMs: CONSOLE_ADMIN_REQUEST_TIMEOUT_MS })
 }
 
 export async function createAdminVenue(body: Record<string, unknown>) {

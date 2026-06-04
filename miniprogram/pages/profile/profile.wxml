@@ -1,0 +1,39 @@
+<view class="page profile-page">
+  <view class="profile-hero">
+    <view class="avatar">万</view>
+    <view>
+      <text class="name">{{user.nickname}}</text>
+      <text class="role">userId：{{user.userId}} · {{user.role}}</text>
+      <text class="role">{{tokenStatus}}</text>
+    </view>
+  </view>
+
+  <view class="stat-grid">
+    <view class="stat-card">
+      <text>3</text>
+      <text>演示活动</text>
+    </view>
+    <view class="stat-card">
+      <text>模拟</text>
+      <text>支付方式</text>
+    </view>
+    <view class="stat-card">
+      <text>本地</text>
+      <text>接口环境</text>
+    </view>
+  </view>
+
+  <view class="menu">
+    <view class="menu-item">
+      <text>接口地址</text>
+      <text>{{apiBaseUrl}}</text>
+    </view>
+    <view class="menu-item">
+      <text>支付方式</text>
+      <text>模拟支付</text>
+    </view>
+  </view>
+
+  <button wx:if="{{tokenStatus !== '已登录'}}" class="primary-button" bindtap="quickLogin" loading="{{loggingIn}}">一键登录测试账号</button>
+  <button wx:else class="ghost-button" bindtap="clearLogin">退出登录</button>
+</view>

@@ -341,9 +341,9 @@ public class StationConfigVersionService {
     }
 
     private Station requireManageableStation(Long stationId, Long userId) {
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage");
         Station station = requireStation(stationId);
-        if (userAccessService.isAdmin(user)) {
+        if (userAccessService.isAdmin(user) || !userAccessService.isOrganizer(user)) {
             return station;
         }
         if (station.getTourId() != null) {

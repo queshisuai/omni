@@ -167,6 +167,11 @@ class AdminOrderManagementTest {
         return o;
     }
 
+    private void allowOrderAccess(Long userId, String role) {
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "order.view"))
+                .thenReturn(user(userId, role));
+    }
+
     // ==================== Service层测试 ====================
 
     @Nested
@@ -176,7 +181,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("AO-001: admin查看全部订单")
         void adminListAllOrders() {
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             Activity a1 = activity(100L, "演唱会A", 2003L);
             Activity a2 = activity(200L, "话剧B", 2005L);
             when(activityMapper.selectList(any())).thenReturn(List.of(a1, a2));
@@ -199,7 +204,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("AO-002: admin按paidOnly=true筛选")
         void adminFilterPaidOnly() {
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             Activity a1 = activity(100L, "活动", 2003L);
             when(activityMapper.selectList(any())).thenReturn(List.of(a1));
             Session s1 = session(1001L, 100L);
@@ -220,7 +225,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("AO-003: admin按paidOnly=false查询（全部订单）")
         void adminListAllOrdersPaidOnlyFalse() {
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             Activity a1 = activity(100L, "活动", 2003L);
             when(activityMapper.selectList(any())).thenReturn(List.of(a1));
             Session s1 = session(1001L, 100L);
@@ -238,7 +243,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("AO-004: 订单统计 — 无订单时返回空列表")
         void adminListOrdersEmpty() {
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             when(activityMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             List<OrderInfoResponse> result = service.listOrders(2002L, false);
@@ -255,7 +260,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("AO-005: organizer仅查看自己活动的订单")
         void organizerListOwnOrders() {
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            allowOrderAccess(2003L, "organizer");
             // organizer → 查询organizerId=2003的活动
             when(activityMapper.selectList(any())).thenAnswer(inv -> {
                 // 验证 lambda 过滤了 organizerId
@@ -276,7 +281,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("AO-006: organizer看不到他人活动的订单")
         void organizerCannotSeeOtherActivities() {
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            allowOrderAccess(2003L, "organizer");
             // organizer 只查 organizerId=2003，不会返回他人活动
             Activity ownActivity = activity(100L, "我的活动", 2003L);
             when(activityMapper.selectList(any())).thenReturn(List.of(ownActivity));
@@ -298,7 +303,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("AO-007: organizer按paidOnly筛选")
         void organizerFilterPaidOnly() {
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            allowOrderAccess(2003L, "organizer");
             Activity a1 = activity(100L, "活动", 2003L);
             when(activityMapper.selectList(any())).thenReturn(List.of(a1));
             Session s1 = session(1001L, 100L);
@@ -322,7 +327,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("AO-009: user角色→requireAdminOrOrganizer 拒绝")
         void userRoleRejected() {
-            when(userAccessService.requireAdminOrOrganizer(2004L))
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2004L, "order.view"))
                     .thenThrow(new BusinessException(ResultCode.FORBIDDEN, "无权限"));
 
             assertThrows(BusinessException.class, () -> service.listOrders(2004L, false));
@@ -332,7 +337,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("ao-017: 无活动时返回空列表")
         void noActivitiesEmptyResult() {
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             when(activityMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             List<OrderInfoResponse> result = service.listOrders(2002L, false);
@@ -344,7 +349,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("AO-017: 有活动但无场次时返回空列表")
         void hasActivitiesNoSessions() {
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             when(activityMapper.selectList(any())).thenReturn(List.of(activity(100L, "活动", 2003L)));
             when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
 
@@ -360,7 +365,7 @@ class AdminOrderManagementTest {
             service = new OrderAdminQueryService(userAccessService, activityMapper, sessionMapper,
                     orderInternalClient, ""); // 空 token
 
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             when(activityMapper.selectList(any())).thenReturn(List.of(activity(100L, "活动", 2003L)));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session(1001L, 100L)));
 
@@ -370,7 +375,7 @@ class AdminOrderManagementTest {
         @Test
         @DisplayName("订单服务返回失败→抛异常")
         void orderServiceError() {
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             when(activityMapper.selectList(any())).thenReturn(List.of(activity(100L, "活动", 2003L)));
             when(sessionMapper.selectList(any())).thenReturn(List.of(session(1001L, 100L)));
             when(orderInternalClient.listPaidBySessions(any(PaidOrdersBySessionsRequest.class), eq("test-token")))
@@ -428,7 +433,7 @@ class AdminOrderManagementTest {
             // 分页需由调用方或前端实现
             AdminController controller = controllerWithOrderService();
 
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             when(activityMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             Result<?> result = controller.listAdminOrders(adminToken(), null, false);
@@ -449,15 +454,15 @@ class AdminOrderManagementTest {
         void adminControllerDelegatesToService() {
             AdminController controller = controllerWithOrderService();
 
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             when(activityMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             Result<?> result = controller.listAdminOrders(adminToken(), 9999L, false);
 
             assertEquals(200, result.getCode());
             // userId query param 9999 被忽略，JWT 中的 2002 被使用
-            verify(userAccessService).requireAdminOrOrganizer(2002L);
-            verify(userAccessService, never()).requireAdminOrOrganizer(9999L);
+            verify(userAccessService).requireAdminOrOrganizerOrAnyPermission(2002L, "order.view");
+            verify(userAccessService, never()).requireAdminOrOrganizerOrAnyPermission(9999L, "order.view");
         }
 
         @Test
@@ -465,14 +470,14 @@ class AdminOrderManagementTest {
         void organizerControllerDelegatesToService() {
             AdminController controller = controllerWithOrderService();
 
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            allowOrderAccess(2003L, "organizer");
             when(activityMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             Result<?> result = controller.listAdminOrders(organizerToken(), 8888L, false);
 
             assertEquals(200, result.getCode());
-            verify(userAccessService).requireAdminOrOrganizer(2003L);
-            verify(userAccessService, never()).requireAdminOrOrganizer(8888L);
+            verify(userAccessService).requireAdminOrOrganizerOrAnyPermission(2003L, "order.view");
+            verify(userAccessService, never()).requireAdminOrOrganizerOrAnyPermission(8888L, "order.view");
         }
 
         @Test
@@ -480,7 +485,7 @@ class AdminOrderManagementTest {
         void adminControllerPaidOnlyTrue() {
             AdminController controller = controllerWithOrderService();
 
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+            allowOrderAccess(2002L, "admin");
             when(activityMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             Result<?> result = controller.listAdminOrders(adminToken(), null, true);
@@ -493,7 +498,7 @@ class AdminOrderManagementTest {
         void organizerControllerPaidOnlyTrue() {
             AdminController controller = controllerWithOrderService();
 
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+            allowOrderAccess(2003L, "organizer");
             when(activityMapper.selectList(any())).thenReturn(Collections.emptyList());
 
             Result<?> result = controller.listAdminOrders(organizerToken(), null, true);

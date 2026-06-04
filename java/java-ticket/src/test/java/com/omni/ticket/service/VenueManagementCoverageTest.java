@@ -34,6 +34,7 @@ class VenueManagementCoverageTest {
     String at() { return "Bearer "+JwtUtil.generateToken(2002L,"admin","admin"); }
     String ot() { return "Bearer "+JwtUtil.generateToken(2003L,"org","organizer"); }
     void ad() { when(uas.requireAdminOrOrganizerRole(2002L)).thenReturn("admin"); }
+    void rd(Long userId, String role) { when(uas.requireAdminOrOrganizerOrAnyPermissionRole(userId, "venue.manage", "session.manage", "activity.manage", "tour.manage")).thenReturn(role); }
     Venue v() { Venue v=new Venue(); v.setId(50L); v.setName("S"); v.setCity("C"); v.setStatus(1); return v; }
 
     @Nested @DisplayName("CRUD")
@@ -41,8 +42,8 @@ class VenueManagementCoverageTest {
         @Test @DisplayName("VN-001: create→200") void v1() { ad(); when(vm.insert(any())).thenReturn(1); Map<String,Object> b=new HashMap<>(); b.put("name","X"); assertEquals(200,ctl.createVenue(at(),b).getCode()); }
         @Test @DisplayName("VN-003: update→200") void v3() { ad(); when(vm.selectById(50L)).thenReturn(v()); Map<String,Object> b=new HashMap<>(); b.put("name","Y"); assertEquals(200,ctl.updateVenue(50L,at(),b).getCode()); }
         @Test @DisplayName("VN-004: delete→200") void v4() { ad(); when(vm.selectById(50L)).thenReturn(v()); assertEquals(200,ctl.deleteVenue(50L,at(),null).getCode()); }
-        @Test @DisplayName("VN-006: list→200") void v6() { ad(); when(vm.selectList(any())).thenReturn(List.of(v())); assertEquals(200,ctl.listAdminVenues(at(),null).getCode()); }
-        @Test @DisplayName("VN-007: org list→200") void v7() { when(uas.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer"); when(vm.selectList(any())).thenReturn(List.of(v())); assertEquals(200,ctl.listAdminVenues(ot(),null).getCode()); }
+        @Test @DisplayName("VN-006: list→200") void v6() { rd(2002L, "admin"); when(vm.selectList(any())).thenReturn(List.of(v())); assertEquals(200,ctl.listAdminVenues(at(),null).getCode()); }
+        @Test @DisplayName("VN-007: org list→200") void v7() { rd(2003L, "organizer"); when(vm.selectList(any())).thenReturn(List.of(v())); assertEquals(200,ctl.listAdminVenues(ot(),null).getCode()); }
         @Test @DisplayName("VN-008: org create→403") void v8() { when(uas.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer"); Map<String,Object> b=new HashMap<>(); b.put("name","S"); assertNotEquals(200,ctl.createVenue(ot(),b).getCode()); }
     }
     @Nested @DisplayName("Permission/Errors")

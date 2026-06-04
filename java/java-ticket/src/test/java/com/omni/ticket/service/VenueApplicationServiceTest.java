@@ -65,7 +65,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void organizerSubmitCreatesPendingApplication() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
 
         VenueApplication result = service.submit(request());
 
@@ -93,7 +93,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void adminSubmitCreatesApprovedApplicationWithoutReviewQueue() {
-        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2002L, "activity.manage", "tour.manage")).thenReturn(user(2002L, "admin"));
         when(userAccessService.isAdmin(any())).thenReturn(true);
         doAnswer(invocation -> {
             Venue venue = invocation.getArgument(0);
@@ -118,7 +118,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void submitCanAttachApprovalMaterialToExistingVenue() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
         Venue venue = new Venue();
         venue.setId(66L);
         venue.setName("国家体育馆");
@@ -149,7 +149,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void submitRejectsMissingUsageProof() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
         VenueApplicationRequest request = request();
         request.setProofNote(null);
         request.setProofFileUrl(null);
@@ -161,7 +161,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void submitBindsProofAssetAfterCreatingApplication() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
         when(venueApplicationMapper.insert(any())).thenAnswer(invocation -> {
             VenueApplication application = invocation.getArgument(0);
             application.setId(99L);
@@ -179,7 +179,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void submitAllowsOnlyProofAssetAsUsageProof() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
         when(venueApplicationMapper.insert(any())).thenAnswer(invocation -> {
             VenueApplication application = invocation.getArgument(0);
             application.setId(99L);
@@ -202,7 +202,7 @@ class VenueApplicationServiceTest {
     void submitRejectsProofAssetWhenPrivateAssetServiceUnavailableBeforeInsert() {
         VenueApplicationService shortConstructorService = new VenueApplicationService(
                 venueApplicationMapper, venueMapper, userAccessService);
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
         VenueApplicationRequest request = request();
         request.setProofAssetId(10L);
 
@@ -216,7 +216,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void submitPropagatesBindVenueProofExceptionAfterInsert() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
         when(venueApplicationMapper.insert(any())).thenAnswer(invocation -> {
             VenueApplication application = invocation.getArgument(0);
             application.setId(99L);
@@ -269,7 +269,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void submitRejectsLayoutWithoutTicketGroup() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
         VenueApplicationRequest request = request();
         request.getLayout().setTicketGroups(List.of());
 
@@ -322,7 +322,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void listSeatLayoutTemplatesReturnsApprovedApplicationAndLegacyDefaultCandidates() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
         when(venueMapper.selectById(99L)).thenReturn(activeVenue(99L));
         VenueApplication application = approvedApplication(301L, 99L);
         when(venueApplicationMapper.selectList(any())).thenReturn(List.of(application));

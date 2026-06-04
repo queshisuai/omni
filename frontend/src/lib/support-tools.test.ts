@@ -10,7 +10,9 @@ test('routes users to role-specific entry after login', () => {
   assert.equal(getLoginRedirectForRole('admin'), '/console')
   assert.equal(getLoginRedirectForRole('platform_super_admin'), '/console')
   assert.equal(getLoginRedirectForRole('organizer'), '/console')
-  assert.equal(getLoginRedirectForRole('organizer_admin'), '/console/organizer-admins')
+  assert.equal(getLoginRedirectForRole('organizer_admin'), '/console')
+  assert.equal(getLoginRedirectForRole('organizer_admin', ['organizer.account.manage']), '/console/organizer-admins')
+  assert.equal(getLoginRedirectForRole('organizer_admin', ['activity.manage']), '/console/activities')
   assert.equal(getLoginRedirectForRole('user'), '/')
 })
 

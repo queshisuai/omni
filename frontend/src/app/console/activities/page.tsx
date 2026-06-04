@@ -5,9 +5,10 @@ import Link from 'next/link'
 import { getToken, getUser } from '@/lib/auth'
 import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
 import { getRealNameRequirementLabel, getTicketTransferAllowedLabel } from '@/lib/activity-flags'
+import { hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
 import { Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
-import type { ActivityEntity, RefundImpactResponse, UserRole } from '@/types/api'
+import type { ActivityEntity, PageResult, RefundImpactResponse, TourEntity, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
 const ADMIN_FETCH_SIZE = 500
@@ -54,10 +55,21 @@ function canToggleSaleStatus(activity: ActivityEntity) {
   return true
 }
 
+function emptyPage<T>(): PageResult<T> {
+  return {
+    records: [],
+    total: 0,
+    size: ADMIN_FETCH_SIZE,
+    current: 1,
+    pages: 1,
+  }
+}
+
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState<ActivityEntity[]>([])
   const [userId, setUserId] = useState(0)
   const [role, setRole] = useState<UserRole | ''>('')
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [checkingRole, setCheckingRole] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -69,9 +81,12 @@ export default function ActivitiesPage() {
   const [publishingKey, setPublishingKey] = useState<string | null>(null)
   const loadDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
-  const isAdmin = role === 'admin'
+  const isAdmin = isPlatformAdminRole(role)
+  const canManageActivities = hasConsolePermission(role, permissionCodes, 'activity.manage')
+  const canManageTours = hasConsolePermission(role, permissionCodes, 'tour.manage')
   const canPublishDraft = (activity: ActivityEntity) => {
-    return activity.publishStatus === 'draft' && (isAdmin || activity.organizerId === userId)
+    const canManageRowType = activity.itemType === 'tour' ? canManageTours : canManageActivities
+    return activity.publishStatus === 'draft' && (canManageRowType || activity.organizerId === userId)
   }
 
   const loadData = (nextPage = page) => {
@@ -83,21 +98,25 @@ export default function ActivitiesPage() {
     }
     setUserId(u.userId)
     setRole(u.role || 'user')
+    const permissions = u.permissionCodes || []
+    setPermissionCodes(permissions)
     setCheckingRole(false)
-    if (u.role !== 'admin' && u.role !== 'organizer') {
+    const canLoadActivities = hasConsolePermission(u.role, permissions, 'activity.manage')
+    const canLoadTours = hasConsolePermission(u.role, permissions, 'tour.manage')
+    if (!canLoadActivities && !canLoadTours) {
       setLoading(false)
       return
     }
     setLoading(true)
     setError('')
     Promise.all([
-      listAdminActivities({
+      canLoadActivities ? listAdminActivities({
         page: 1,
         size: ADMIN_FETCH_SIZE,
         keyword,
         status: status === '' ? undefined : Number(status),
-      }),
-      listAdminTours(u.userId, { page: 1, size: ADMIN_FETCH_SIZE }),
+      }) : Promise.resolve(emptyPage<ActivityEntity>()),
+      canLoadTours ? listAdminTours(u.userId, { page: 1, size: ADMIN_FETCH_SIZE }) : Promise.resolve(emptyPage<TourEntity>()),
     ]).then(([activityRes, tourRes]) => {
       const tourActivities: ActivityEntity[] = tourRes.records
         .filter(tour => !keyword.trim() || tour.title.includes(keyword.trim()))
@@ -389,7 +408,7 @@ export default function ActivitiesPage() {
     )
   }
 
-  if (role !== 'admin' && role !== 'organizer') {
+  if (!canManageActivities && !canManageTours) {
     return <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">无权限访问</div>
   }
 
@@ -407,10 +426,12 @@ export default function ActivitiesPage() {
           新建活动草稿
           <span className="mt-1 block text-[12px] font-normal text-[#999]">普通活动或巡演活动都从这里创建，创建后继续补齐站点、场馆审核资料和座位票档。</span>
         </Link>
-        <Link href="/console/tours" className="rounded-xl border border-[#e5e5e5] bg-white p-4 text-[14px] font-medium text-[#1a1a2e] hover:bg-[#fafafa]">
-          活动发布/多站点草稿管理
-          <span className="mt-1 block text-[12px] font-normal text-[#999]">进入已创建的普通活动草稿和巡演/多站点草稿，补齐场馆审核资料、SeatCraft 座位票档和发布配置。</span>
-        </Link>
+        {(canManageActivities || canManageTours) && (
+          <Link href="/console/tours" className="rounded-xl border border-[#e5e5e5] bg-white p-4 text-[14px] font-medium text-[#1a1a2e] hover:bg-[#fafafa]">
+            活动发布/多站点草稿管理
+            <span className="mt-1 block text-[12px] font-normal text-[#999]">进入已创建的普通活动草稿和巡演/多站点草稿，补齐场馆审核资料、SeatCraft 座位票档和发布配置。</span>
+          </Link>
+        )}
       </div>
 
       <form onSubmit={handleSearch} className="mb-5 grid gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 sm:grid-cols-[1fr_180px_auto]">

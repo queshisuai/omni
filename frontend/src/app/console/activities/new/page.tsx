@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { listCategories, listAdminVenues, createActivityDraft, createStationConfigVersion, createTourDraft, getAdminTourDetail, listVenueSeatLayoutTemplates, submitStationConfigVersion, submitVenueApplication, uploadPrivateAsset, uploadTicketAsset } from '@/lib/api'
+import { hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react'
 import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
 import { LocalFileUpload } from '@/components/LocalFileUpload'
@@ -25,6 +26,7 @@ export default function NewActivityPage() {
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [role, setRole] = useState<UserRole | ''>('')
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [checkingRole, setCheckingRole] = useState(true)
 
   // 分类和场馆记录
@@ -58,6 +60,11 @@ export default function NewActivityPage() {
       return
     }
     setRole(u.role || 'user')
+    const permissions = u.permissionCodes || []
+    setPermissionCodes(permissions)
+    if (!hasConsolePermission(u.role, permissions, 'activity.manage') && hasConsolePermission(u.role, permissions, 'tour.manage')) {
+      setActivityMode('tour')
+    }
     setCheckingRole(false)
     listCategories().then(setCategories).catch(() => {})
     listAdminVenues(u.userId).then(setVenues).catch(() => {})
@@ -140,6 +147,17 @@ export default function NewActivityPage() {
   const handleSubmit = async () => {
     const u = getUser()
     if (!u || !categoryId || !name.trim() || artists.length === 0) return
+    const permissions = u.permissionCodes || []
+    const canSubmitActivity = hasConsolePermission(u.role, permissions, 'activity.manage')
+    const canSubmitTour = hasConsolePermission(u.role, permissions, 'tour.manage')
+    if (activityMode === 'single' && !canSubmitActivity) {
+      await globalAlert('当前账号没有普通活动管理权限')
+      return
+    }
+    if (activityMode === 'tour' && !canSubmitTour) {
+      await globalAlert('当前账号没有巡演管理权限')
+      return
+    }
     const limitText = perUserLimit.trim()
     if (limitText && (!/^\d+$/.test(limitText) || Number(limitText) <= 0)) {
       await globalAlert('个人限购张数必须为正整数')
@@ -274,7 +292,9 @@ export default function NewActivityPage() {
   }
 
   const steps = activityMode === 'tour' ? ['活动信息', '巡演站点', '确认提交'] : ['活动信息', '站点配置', '确认提交']
-  const isAdmin = role === 'admin'
+  const isAdmin = isPlatformAdminRole(role)
+  const canManageActivities = hasConsolePermission(role, permissionCodes, 'activity.manage')
+  const canManageTours = hasConsolePermission(role, permissionCodes, 'tour.manage')
 
   if (checkingRole) {
     return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
@@ -290,7 +310,7 @@ export default function NewActivityPage() {
     )
   }
 
-  if (role !== 'admin' && role !== 'organizer') {
+  if (!canManageActivities && !canManageTours) {
     return <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">无权限访问</div>
   }
 
@@ -347,12 +367,12 @@ export default function NewActivityPage() {
             <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-[#fafafa] p-4">
               <div className="mb-2 text-[14px] font-semibold text-[#1a1a2e]">活动类型 *</div>
               <div className="space-y-2 text-[13px] text-[#333]">
-                <label className="flex cursor-pointer items-start gap-2">
-                  <input type="radio" name="activityMode" value="single" checked={activityMode === 'single'} onChange={() => setActivityMode('single')} className="mt-0.5 accent-[#ff1268]" />
+                <label className={`flex items-start gap-2 ${canManageActivities ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                  <input type="radio" name="activityMode" value="single" checked={activityMode === 'single'} disabled={!canManageActivities} onChange={() => setActivityMode('single')} className="mt-0.5 accent-[#ff1268]" />
                   <span><span className="font-medium">普通活动</span>：创建一个活动草稿，并在下一步填写单个活动站点配置。</span>
                 </label>
-                <label className="flex cursor-pointer items-start gap-2">
-                  <input type="radio" name="activityMode" value="tour" checked={activityMode === 'tour'} onChange={() => setActivityMode('tour')} className="mt-0.5 accent-[#ff1268]" />
+                <label className={`flex items-start gap-2 ${canManageTours ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+                  <input type="radio" name="activityMode" value="tour" checked={activityMode === 'tour'} disabled={!canManageTours} onChange={() => setActivityMode('tour')} className="mt-0.5 accent-[#ff1268]" />
                   <span><span className="font-medium">巡演活动</span>：创建巡演草稿，下一步先添加城市站点，场馆和时间可后续补齐。</span>
                 </label>
               </div>

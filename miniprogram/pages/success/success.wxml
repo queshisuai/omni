@@ -1,0 +1,13 @@
+<view class="page success-page">
+  <view class="success-card">
+    <view class="checkmark">✓</view>
+    <text class="success-title">模拟支付成功</text>
+    <text class="success-desc">订单已更新为已支付状态，可在我的订单中查看。</text>
+    <text class="order-id">订单ID：{{orderId}}</text>
+    <text wx:if="{{orderNo}}" class="order-id">订单编号：{{orderNo}}</text>
+    <text wx:if="{{paymentNo}}" class="order-id">支付流水：{{paymentNo}}</text>
+  </view>
+
+  <button class="primary-button" bindtap="goOrders">查看订单</button>
+  <button class="ghost-button" bindtap="goHome">返回首页</button>
+</view>

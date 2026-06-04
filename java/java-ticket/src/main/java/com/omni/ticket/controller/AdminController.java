@@ -300,7 +300,7 @@ public class AdminController {
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
-        checkRole(operatorId);
+        checkActivityOrTourRole(operatorId);
         return Result.success(ticketAssetService.upload(operatorId, bizType, file));
     }
 
@@ -314,7 +314,7 @@ public class AdminController {
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
-        String role = checkRole(operatorId);
+        String role = checkActivityOrTourRole(operatorId);
         if (role == null) {
             return Result.fail(ResultCode.FORBIDDEN);
         }
@@ -364,7 +364,7 @@ public class AdminController {
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
-        String role = checkRole(operatorId);
+        String role = checkActivityOrTourRole(operatorId);
         if (role == null) {
             return Result.fail(ResultCode.FORBIDDEN);
         }
@@ -822,6 +822,22 @@ public class AdminController {
         return userAccessService.requireAdminOrOrganizerRole(userId);
     }
 
+    private String checkActivityRole(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "activity.manage");
+    }
+
+    private String checkActivityOrTourRole(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "activity.manage", "tour.manage");
+    }
+
+    private String checkSessionRole(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "session.manage", "activity.manage", "tour.manage");
+    }
+
+    private String checkVenueReadRole(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "venue.manage", "session.manage", "activity.manage", "tour.manage");
+    }
+
     private Long resolveArtistId(Map<String, Object> body) {
         Long artistId = parsePositiveLong(body.get("artistId"));
         if (artistId != null) return artistId;
@@ -856,7 +872,7 @@ public class AdminController {
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         Map<String, Object> safeBody = withOperatorUserId(body, userId);
         if (userId == null) return Result.fail(400, "用户ID不正确");
-        String role = checkRole(userId);
+        String role = checkActivityRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
         Long categoryId = parsePositiveLong(safeBody.get("categoryId"));
@@ -912,7 +928,7 @@ public class AdminController {
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         body = withOperatorUserId(body, userId);
         if (userId == null) return Result.fail(400, "用户ID不正确");
-        String role = checkRole(userId);
+        String role = checkActivityRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
         Activity activity = activityMapper.selectById(id);
@@ -984,7 +1000,7 @@ public class AdminController {
         userId = operatorId;
         if (id == null || id <= 0) return Result.fail(400, "活动ID不正确");
         if (userId == null || userId <= 0) return Result.fail(400, "用户ID不正确");
-        String role = checkRole(userId);
+        String role = checkActivityRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
         Activity activity = activityMapper.selectById(id);
@@ -1209,7 +1225,7 @@ public class AdminController {
         Long operatorId = parseOperatorId(authorization);
         if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         userId = operatorId;
-        String role = checkRole(userId);
+        String role = checkActivityRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
         LambdaQueryWrapper<Activity> wrapper = new LambdaQueryWrapper<>();
@@ -1355,7 +1371,7 @@ public class AdminController {
         Long userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         body = withOperatorUserId(body, userId);
-        String role = checkRole(userId);
+        String role = checkSessionRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
         Long sessionId = Long.valueOf(body.get("sessionId").toString());
@@ -1413,7 +1429,7 @@ public class AdminController {
         Long userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         body = withOperatorUserId(body, userId);
-        String role = checkRole(userId);
+        String role = checkSessionRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
         TicketType tt = ticketTypeMapper.selectById(id);
@@ -1441,7 +1457,7 @@ public class AdminController {
                                          @PathVariable Long id) {
         userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
-        String role = checkRole(userId);
+        String role = checkSessionRole(userId);
         if (role == null) return Result.fail(403, "无权限");
 
         TicketType tt = ticketTypeMapper.selectById(id);
@@ -1557,7 +1573,7 @@ public class AdminController {
                                                @RequestParam(required = false) Long userId) {
         userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
-        String role = checkRole(userId);
+        String role = checkVenueReadRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         return Result.success(venueMapper.selectList(new QueryWrapper<Venue>()
                 .eq("status", 1)

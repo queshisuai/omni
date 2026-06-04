@@ -11,6 +11,7 @@ import com.omni.user.entity.User;
 import com.omni.user.mapper.OrganizerApplicationMapper;
 import com.omni.user.mapper.UserMapper;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -30,19 +31,30 @@ public class OrganizerApplicationService {
     private static final int STATUS_PENDING = 0;
     private static final int STATUS_APPROVED = 1;
     private static final int STATUS_REJECTED = 2;
+    private static final String PERMISSION_ORGANIZER_REVIEW = "organizer.review";
     private static final Set<String> SUBJECT_TYPES = Set.of("personal", "enterprise");
 
     private final OrganizerApplicationMapper organizerApplicationMapper;
     private final UserMapper userMapper;
     private final TransactionTemplate transactionTemplate;
+    private final RbacService rbacService;
 
     public OrganizerApplicationService(OrganizerApplicationMapper organizerApplicationMapper,
                                        UserMapper userMapper,
                                        PlatformTransactionManager transactionManager) {
+        this(organizerApplicationMapper, userMapper, transactionManager, null);
+    }
+
+    @Autowired
+    public OrganizerApplicationService(OrganizerApplicationMapper organizerApplicationMapper,
+                                       UserMapper userMapper,
+                                       PlatformTransactionManager transactionManager,
+                                       RbacService rbacService) {
         this.organizerApplicationMapper = organizerApplicationMapper;
         this.userMapper = userMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
+        this.rbacService = rbacService;
     }
 
     @Transactional
@@ -298,6 +310,13 @@ public class OrganizerApplicationService {
         User reviewer = userMapper.selectById(reviewerId);
         if (reviewer == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+        if ("admin".equals(reviewer.getRole())) {
+            return;
+        }
+        if (rbacService != null
+                && rbacService.getInternalAuthContext(reviewerId).getPermissionCodes().contains(PERMISSION_ORGANIZER_REVIEW)) {
+            return;
         }
         if (!"admin".equals(reviewer.getRole())) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权限");

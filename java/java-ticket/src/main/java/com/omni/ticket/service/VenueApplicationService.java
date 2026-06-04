@@ -68,7 +68,7 @@ public class VenueApplicationService {
 
     @Transactional
     public VenueApplication submit(VenueApplicationRequest request) {
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
+        InternalUserRefResponse user = requireActivityOrTourManager(request.getUserId());
         validateUsageProof(request);
         if (request.getProofAssetId() != null && privateAssetService == null) {
             throw new BusinessException(500, "私有附件服务不可用");
@@ -219,7 +219,7 @@ public class VenueApplicationService {
     }
 
     public List<SeatLayoutTemplateCandidateResponse> listSeatLayoutTemplates(Long userId, Long venueId) {
-        userAccessService.requireAdminOrOrganizer(userId);
+        requireActivityOrTourManager(userId);
         Venue venue = venueMapper.selectById(venueId);
         if (venue == null || !Integer.valueOf(1).equals(venue.getStatus())) {
             throw new BusinessException(404, "场馆记录不存在");
@@ -255,6 +255,10 @@ public class VenueApplicationService {
             }
         }
         return candidates;
+    }
+
+    private InternalUserRefResponse requireActivityOrTourManager(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage");
     }
 
     @Transactional

@@ -35,6 +35,24 @@ describe('VisibleStockService', () => {
     expect(result.ticketTypes.map((ticket) => ticket.level)).toEqual(['SOLD_OUT', 'LOW', 'HOT']);
   });
 
+  it('initializes redis stock from db remain stock before displaying fallback stock', async () => {
+    const redis: any = {
+      get: jest.fn().mockResolvedValue(null),
+    };
+    const ticketClient: any = {
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 1, name: 'A', price: 1280, remainStock: 12 }]),
+    };
+    const stockService: any = {
+      initializeFromTicketInfo: jest.fn().mockResolvedValue(12),
+    };
+    const service = new VisibleStockService(redis, ticketClient, stockService);
+
+    const result = await service.getSessionVisibleStock(101, [1]);
+
+    expect(stockService.initializeFromTicketInfo).toHaveBeenCalledWith(101, { ticketTypeId: 1, name: 'A', price: 1280, remainStock: 12 });
+    expect(result.ticketTypes[0]).toEqual({ ticketTypeId: 1, name: 'A', visibleStock: 12, level: 'HOT' });
+  });
+
   it('marks unknown when neither redis nor metadata stock exists', async () => {
     const redis: any = {
       get: jest.fn().mockResolvedValue(null),

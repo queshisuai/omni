@@ -44,6 +44,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class StationConfigVersionServiceTest {
@@ -77,7 +78,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void createDraftUsesNextVersionNoWithoutChangingStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
         StationConfigVersion previous = version(99L, 10L, 3, "applied", "update_city");
@@ -104,7 +105,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void deleteDraftOnlyAllowsDraft() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "draft", "update_city"));
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -116,7 +117,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submittedDeleteFails() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "submitted", "update_city"));
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -129,7 +130,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submitSetVenueWithoutVenueInformationFails() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "draft", "set_venue"));
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -142,7 +143,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submitActivitySetVenueWithOnlyVenueIdFails() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         StationConfigVersion draft = version(100L, 10L, 1, "draft", "set_venue");
         draft.setVenueId(66L);
         when(versionMapper.selectById(100L)).thenReturn(draft);
@@ -157,7 +158,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submitActivitySetVenueWithApprovedVenueApplicationSucceeds() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         StationConfigVersion draft = version(100L, 10L, 1, "draft", "set_venue");
         draft.setVenueApplicationId(88L);
         when(versionMapper.selectById(100L)).thenReturn(draft);
@@ -172,7 +173,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submitActivityVenueChangeFailsWhenActivityHasPaidOrders() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         StationConfigVersion draft = version(100L, 10L, 1, "draft", "change_venue");
         draft.setActivityId(30L);
         draft.setCity("北京");
@@ -197,7 +198,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submitActivityVenueChangeRejectsCityChange() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         StationConfigVersion draft = version(100L, 10L, 1, "draft", "change_venue");
         draft.setActivityId(30L);
         draft.setCity("上海");
@@ -216,7 +217,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submitActivityVenueChangeChecksPaidOrdersAcrossAllSessions() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         StationConfigVersion draft = version(100L, 10L, 1, "draft", "change_venue");
         draft.setActivityId(30L);
         draft.setCity("北京");
@@ -301,7 +302,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submitTourSetVenueWithOnlyVenueIdStillFails() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         StationConfigVersion draft = version(100L, 10L, 1, "draft", "set_venue");
         draft.setVenueId(66L);
         draft.setTourId(20L);
@@ -317,7 +318,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submitScheduleChangeSucceedsForConfiguredStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         StationConfigVersion draft = version(100L, 10L, 1, "draft", "set_schedule");
         draft.setScheduleTba(false);
         draft.setStartTime(LocalDateTime.of(2026, 6, 1, 19, 30));
@@ -335,7 +336,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void submitChangeScheduleSucceedsForConfiguredStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         StationConfigVersion draft = version(100L, 10L, 1, "draft", "change_schedule");
         draft.setScheduleTba(false);
         draft.setStartTime(LocalDateTime.of(2026, 6, 1, 19, 30));
@@ -353,7 +354,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void organizerCannotManageOtherTourStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 9999L));
 
@@ -366,7 +367,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void organizerCanManageOwnTourStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
         when(versionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
@@ -378,7 +379,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void organizerCanManageOwnActivityStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(stationMapper.selectById(10L)).thenReturn(station(10L, null, 30L, "北京", "北京站"));
         when(activityMapper.selectById(30L)).thenReturn(activity(30L, 2003L));
         when(versionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
@@ -391,7 +392,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void organizerCannotManageOtherActivityStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(stationMapper.selectById(10L)).thenReturn(station(10L, null, 30L, "北京", "北京站"));
         when(activityMapper.selectById(30L)).thenReturn(activity(30L, 9999L));
 
@@ -405,9 +406,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void adminCanManageAnyStationWithoutOwnerMatch() {
-        InternalUserRefResponse admin = user(2002L, "admin");
-        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(admin);
-        when(userAccessService.isAdmin(admin)).thenReturn(true);
+        allowStationManager(2002L, "admin");
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, 30L, "北京", "北京站"));
         when(versionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
@@ -419,7 +418,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void updateDraftChangesDraftPayload() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         StationConfigVersion draft = version(100L, 10L, 1, "draft", "update_city");
         when(versionMapper.selectById(100L)).thenReturn(draft);
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
@@ -463,7 +462,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void withdrawSubmittedVersionToWithdrawn() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "submitted", "update_city"));
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -477,7 +476,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void withdrawnVersionCannotBeDeletedAsDraft() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "withdrawn", "update_city"));
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -490,7 +489,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void withdrawRejectsDraftVersion() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "draft", "update_city"));
         when(stationMapper.selectById(10L)).thenReturn(station(10L, 20L, null, "北京", "北京站"));
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -503,7 +502,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void getStationDetailReturnsStationAndVersionsForManageableStation() {
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        allowStationManager(2003L, "organizer");
         Station station = station(10L, 20L, null, "北京", "北京站");
         when(stationMapper.selectById(10L)).thenReturn(station);
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -852,5 +851,13 @@ class StationConfigVersionServiceTest {
         user.setId(id);
         user.setRole(role);
         return user;
+    }
+
+    private void allowStationManager(Long userId, String role) {
+        InternalUserRefResponse user = user(userId, role);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage"))
+                .thenReturn(user);
+        lenient().when(userAccessService.isAdmin(user)).thenReturn("admin".equals(role));
+        lenient().when(userAccessService.isOrganizer(user)).thenReturn("organizer".equals(role));
     }
 }

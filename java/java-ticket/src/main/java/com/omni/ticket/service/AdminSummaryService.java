@@ -58,7 +58,8 @@ public class AdminSummaryService {
     }
 
     public AdminSummaryResponse getSummary(Long userId) {
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(
+                userId, "activity.manage", "tour.manage", "session.manage", "order.view");
         String role = user.getRole();
 
         LambdaQueryWrapper<Activity> activityWrapper = new LambdaQueryWrapper<>();

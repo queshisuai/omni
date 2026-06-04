@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { approveRefund, listAdminRefunds, rejectRefund } from '@/lib/api'
+import { isPlatformAdminRole } from '@/lib/console-auth'
 import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
 import type { RefundRequestVO, RefundStatus, UserRole } from '@/types/api'
 
@@ -52,7 +53,7 @@ export default function ConsoleRefundsPage() {
   const [role, setRole] = useState<UserRole | ''>('')
   const [checkingRole, setCheckingRole] = useState(true)
   const [page, setPage] = useState(1)
-  const isAdmin = role === 'admin'
+  const isAdmin = isPlatformAdminRole(role)
   const pageRefunds = useMemo(() => refunds.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [refunds, page])
 
   useEffect(() => {

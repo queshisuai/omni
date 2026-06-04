@@ -1,6 +1,7 @@
 package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.omni.common.mq.MqPublishSupport;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.common.mq.message.NotificationMessage;
@@ -17,6 +18,7 @@ import com.omni.user.dto.SupportNoteResponse;
 import com.omni.user.dto.SupportQuickReplyResponse;
 import com.omni.user.dto.SupportTagUpdateRequest;
 import com.omni.user.dto.SupportTransferRequest;
+import com.omni.user.entity.SupportAccount;
 import com.omni.user.entity.SupportConversation;
 import com.omni.user.entity.SupportConversationAudit;
 import com.omni.user.entity.SupportConversationNote;
@@ -24,6 +26,7 @@ import com.omni.user.entity.SupportConversationTag;
 import com.omni.user.entity.SupportMessage;
 import com.omni.user.entity.SupportQuickReply;
 import com.omni.user.entity.User;
+import com.omni.user.mapper.SupportAccountMapper;
 import com.omni.user.mapper.SupportConversationAuditMapper;
 import com.omni.user.mapper.SupportConversationMapper;
 import com.omni.user.mapper.SupportConversationNoteMapper;
@@ -33,12 +36,16 @@ import com.omni.user.mapper.SupportQuickReplyMapper;
 import com.omni.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -46,6 +53,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 @Service
@@ -55,6 +63,7 @@ public class CustomerSupportService {
 
     private static final String ROLE_ADMIN = "admin";
     private static final String ROLE_SUPPORT = "support";
+    private static final String SUPPORT_ROLE_MANAGER = "support_manager";
     private static final String STATUS_OPEN = "OPEN";
     private static final String STATUS_WAITING_AGENT = "WAITING_AGENT";
     private static final String STATUS_ASSIGNED = "ASSIGNED";
@@ -64,6 +73,7 @@ public class CustomerSupportService {
     private static final String SOURCE_HUMAN = "HUMAN";
     private static final String AUTO_CLOSE_MESSAGE = "用户超过30分钟未继续咨询，系统已自动结束会话。";
     private static final long HELP_PRESENCE_TTL_SECONDS = 60L;
+    private static final long SUPPORT_AI_STREAM_TIMEOUT_MS = 90_000L;
 
     private final SupportConversationMapper conversationMapper;
     private final SupportMessageMapper messageMapper;
@@ -71,11 +81,40 @@ public class CustomerSupportService {
     private final SupportConversationTagMapper tagMapper;
     private final SupportConversationAuditMapper auditMapper;
     private final SupportQuickReplyMapper quickReplyMapper;
+    private final SupportAccountMapper supportAccountMapper;
     private final UserMapper userMapper;
     private final SupportAiService supportAiService;
     private final NotificationMqProducer notificationProducer;
     private final String internalApiToken;
+    private final Executor supportAiExecutor;
     private final ConcurrentMap<Long, LocalDateTime> helpPresence = new ConcurrentHashMap<>();
+
+    @Autowired
+    public CustomerSupportService(SupportConversationMapper conversationMapper,
+                                  SupportMessageMapper messageMapper,
+                                  SupportConversationNoteMapper noteMapper,
+                                  SupportConversationTagMapper tagMapper,
+                                  SupportConversationAuditMapper auditMapper,
+                                  SupportQuickReplyMapper quickReplyMapper,
+                                  SupportAccountMapper supportAccountMapper,
+                                  UserMapper userMapper,
+                                  SupportAiService supportAiService,
+                                  NotificationMqProducer notificationProducer,
+                                  @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
+                                  @Qualifier("supportAiExecutor") Executor supportAiExecutor) {
+        this.conversationMapper = conversationMapper;
+        this.messageMapper = messageMapper;
+        this.noteMapper = noteMapper;
+        this.tagMapper = tagMapper;
+        this.auditMapper = auditMapper;
+        this.quickReplyMapper = quickReplyMapper;
+        this.supportAccountMapper = supportAccountMapper;
+        this.userMapper = userMapper;
+        this.supportAiService = supportAiService;
+        this.notificationProducer = notificationProducer;
+        this.internalApiToken = internalApiToken;
+        this.supportAiExecutor = supportAiExecutor;
+    }
 
     public CustomerSupportService(SupportConversationMapper conversationMapper,
                                   SupportMessageMapper messageMapper,
@@ -86,17 +125,10 @@ public class CustomerSupportService {
                                   UserMapper userMapper,
                                   SupportAiService supportAiService,
                                   NotificationMqProducer notificationProducer,
-                                  @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
-        this.conversationMapper = conversationMapper;
-        this.messageMapper = messageMapper;
-        this.noteMapper = noteMapper;
-        this.tagMapper = tagMapper;
-        this.auditMapper = auditMapper;
-        this.quickReplyMapper = quickReplyMapper;
-        this.userMapper = userMapper;
-        this.supportAiService = supportAiService;
-        this.notificationProducer = notificationProducer;
-        this.internalApiToken = internalApiToken;
+                                  String internalApiToken,
+                                  Executor supportAiExecutor) {
+        this(conversationMapper, messageMapper, noteMapper, tagMapper, auditMapper, quickReplyMapper, null,
+                userMapper, supportAiService, notificationProducer, internalApiToken, supportAiExecutor);
     }
 
     @Transactional
@@ -123,11 +155,7 @@ public class CustomerSupportService {
         if (initialMessage != null) {
             insertMessage(conversation.getId(), userId, "USER", initialMessage);
             if (!preferHuman) {
-                String answer = supportAiService.answer(initialMessage);
-                insertMessage(conversation.getId(), null, "AI", answer);
-                conversation.setLastMessage(answer);
-                touch(conversation);
-                conversationMapper.updateById(conversation);
+                queueAiReply(conversation.getId(), initialMessage);
             }
         }
         return toConversationResponse(conversation);
@@ -150,6 +178,7 @@ public class CustomerSupportService {
 
     public List<SupportConversationResponse> listAgentConversations(Long agentUserId, String status, String queue) {
         User agent = requireSupportOrAdmin(agentUserId);
+        boolean managerScope = hasSupportManagerScope(agent);
         LambdaQueryWrapper<SupportConversation> wrapper = new LambdaQueryWrapper<SupportConversation>()
                 .orderByDesc(SupportConversation::getUpdateTime)
                 .orderByDesc(SupportConversation::getId);
@@ -162,21 +191,21 @@ public class CustomerSupportService {
         } else {
             wrapper.ne(SupportConversation::getStatus, STATUS_CLOSED);
         }
-        if (ROLE_SUPPORT.equals(agent.getRole()) && normalizedStatus == null && normalizedQueue == null) {
+        if (ROLE_SUPPORT.equals(agent.getRole()) && !managerScope && normalizedStatus == null && normalizedQueue == null) {
             wrapper.and(w -> w.eq(SupportConversation::getStatus, STATUS_WAITING_AGENT)
                     .isNull(SupportConversation::getAssignedAgentId)
                     .or()
                     .eq(SupportConversation::getAssignedAgentId, agentUserId));
         }
         return conversationMapper.selectList(wrapper).stream()
-                .filter(conversation -> isVisibleInAgentQueue(conversation, agent, agentUserId, normalizedStatus, normalizedQueue))
+                .filter(conversation -> isVisibleInAgentQueue(conversation, agent, agentUserId, normalizedStatus, normalizedQueue, managerScope))
                 .map(this::toConversationResponse)
                 .collect(Collectors.toList());
     }
 
-    private boolean isVisibleInAgentQueue(SupportConversation conversation, User agent, Long agentUserId, String status, String queue) {
-        if (!ROLE_SUPPORT.equals(agent.getRole())) {
-            return true;
+    private boolean isVisibleInAgentQueue(SupportConversation conversation, User agent, Long agentUserId, String status, String queue, boolean managerScope) {
+        if (managerScope || !ROLE_SUPPORT.equals(agent.getRole())) {
+            return isVisibleInManagerQueue(conversation, queue);
         }
         if (status != null) {
             if (STATUS_WAITING_AGENT.equals(status)) {
@@ -203,6 +232,25 @@ public class CustomerSupportService {
         }
         return (STATUS_WAITING_AGENT.equals(conversation.getStatus()) && conversation.getAssignedAgentId() == null)
                 || agentUserId.equals(conversation.getAssignedAgentId());
+    }
+
+    private boolean isVisibleInManagerQueue(SupportConversation conversation, String queue) {
+        if ("overdue".equals(queue)) {
+            return isSlaOverdue(conversation, LocalDateTime.now());
+        }
+        if ("pending".equals(queue)) {
+            return STATUS_WAITING_AGENT.equals(conversation.getStatus()) && conversation.getAssignedAgentId() == null;
+        }
+        if ("in_progress".equals(queue)) {
+            return STATUS_ASSIGNED.equals(conversation.getStatus());
+        }
+        if ("close_requested".equals(queue)) {
+            return STATUS_CLOSE_REQUESTED.equals(conversation.getStatus());
+        }
+        if ("closed".equals(queue)) {
+            return STATUS_CLOSED.equals(conversation.getStatus());
+        }
+        return true;
     }
 
     public List<SupportMessageResponse> listMessages(Long actorUserId, Long conversationId) {
@@ -335,13 +383,29 @@ public class CustomerSupportService {
         }
 
         if ("USER".equals(senderType) && SOURCE_AI.equals(conversation.getSourceType()) && conversation.getAssignedAgentId() == null) {
-            String answer = supportAiService.answer(content);
-            insertMessage(conversation.getId(), null, "AI", answer);
-            conversation.setLastMessage(answer);
-            touch(conversation);
-            conversationMapper.updateById(conversation);
+            queueAiReply(conversation.getId(), content);
         }
         return toMessageResponse(message);
+    }
+
+    @Transactional
+    public SseEmitter streamMessage(Long actorUserId, Long conversationId, SupportMessageRequest request) {
+        SseEmitter emitter = new SseEmitter(SUPPORT_AI_STREAM_TIMEOUT_MS);
+        String content = request == null ? null : trimToNull(request.getContent());
+        try {
+            SupportMessageResponse userMessage = insertUserMessageForAiStream(actorUserId, conversationId, content);
+            MqPublishSupport.afterCommitOrNow(() -> {
+                try {
+                    supportAiExecutor.execute(() -> streamAiReply(emitter, conversationId, userMessage, content));
+                } catch (RuntimeException e) {
+                    log.warn("客服 AI 流式任务提交失败: conversationId={}, message={}", conversationId, e.getMessage());
+                    sendErrorAndComplete(emitter, "客服暂时无法回复，请稍后重试");
+                }
+            });
+        } catch (RuntimeException e) {
+            sendErrorAndComplete(emitter, toUserVisibleError(e));
+        }
+        return emitter;
     }
 
     @Transactional
@@ -593,6 +657,22 @@ public class CustomerSupportService {
         return ROLE_SUPPORT.equals(role) || ROLE_ADMIN.equals(role);
     }
 
+    private boolean hasSupportManagerScope(User user) {
+        if (user == null) {
+            return false;
+        }
+        if (ROLE_ADMIN.equals(user.getRole())) {
+            return true;
+        }
+        if (!ROLE_SUPPORT.equals(user.getRole()) || supportAccountMapper == null) {
+            return false;
+        }
+        SupportAccount account = supportAccountMapper.selectById(user.getId());
+        return account != null
+                && !Integer.valueOf(0).equals(account.getStatus())
+                && SUPPORT_ROLE_MANAGER.equals(account.getSupportRole());
+    }
+
     private SupportMessage insertMessage(Long conversationId, Long senderUserId, String senderType, String content) {
         SupportMessage message = new SupportMessage();
         message.setConversationId(conversationId);
@@ -601,6 +681,93 @@ public class CustomerSupportService {
         message.setContent(content);
         messageMapper.insert(message);
         return message;
+    }
+
+    private SupportMessageResponse insertUserMessageForAiStream(Long actorUserId, Long conversationId, String content) {
+        if (content == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "消息内容不能为空");
+        }
+        requireActiveUser(actorUserId);
+        SupportConversation conversation = requireOwnerConversation(actorUserId, conversationId);
+        if (STATUS_CLOSED.equals(conversation.getStatus())) {
+            throw new BusinessException(ResultCode.CONFLICT, "会话已结束");
+        }
+
+        SupportMessage message = insertMessage(conversation.getId(), actorUserId, "USER", content);
+        LocalDateTime messageTime = message.getCreateTime() == null ? LocalDateTime.now() : message.getCreateTime();
+        conversation.setLastMessage(content);
+        conversation.setLastUserMessageAt(messageTime);
+        if (STATUS_CLOSE_REQUESTED.equals(conversation.getStatus())) {
+            conversation.setStatus(STATUS_ASSIGNED);
+        }
+        touch(conversation);
+        conversationMapper.updateById(conversation);
+        return toMessageResponse(message);
+    }
+
+    private void streamAiReply(SseEmitter emitter, Long conversationId, SupportMessageResponse userMessage, String question) {
+        try {
+            sendSseEvent(emitter, "userMessage", userMessage);
+            SupportConversation beforeAnswer = conversationMapper.selectById(conversationId);
+            if (!canAutoReplyWithAi(beforeAnswer)) {
+                sendDoneAndComplete(emitter, null);
+                return;
+            }
+
+            sendSseEvent(emitter, "thinking", eventPayload("message", "客服正在思考"));
+            String answer = supportAiService.answerStreaming(question, chunk ->
+                    sendSseEvent(emitter, "delta", eventPayload("content", chunk)));
+
+            SupportConversation conversation = conversationMapper.selectById(conversationId);
+            SupportMessageResponse assistantMessage = null;
+            if (canAutoReplyWithAi(conversation) && StringUtils.hasText(answer)) {
+                SupportMessage message = insertMessage(conversation.getId(), null, "AI", answer);
+                conversation.setLastMessage(answer);
+                touch(conversation);
+                conversationMapper.updateById(conversation);
+                assistantMessage = toMessageResponse(message);
+            }
+            sendDoneAndComplete(emitter, assistantMessage);
+        } catch (RuntimeException e) {
+            log.warn("客服 AI 流式回复失败: conversationId={}, message={}", conversationId, e.getMessage());
+            sendErrorAndComplete(emitter, "客服暂时无法回复，请稍后重试");
+        }
+    }
+
+    private LinkedHashMap<String, Object> eventPayload(String key, Object value) {
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+        payload.put(key, value);
+        return payload;
+    }
+
+    private void sendDoneAndComplete(SseEmitter emitter, SupportMessageResponse assistantMessage) {
+        sendSseEvent(emitter, "done", eventPayload("message", assistantMessage));
+        emitter.complete();
+    }
+
+    private void sendErrorAndComplete(SseEmitter emitter, String message) {
+        try {
+            sendSseEvent(emitter, "error", eventPayload("message", message));
+        } catch (RuntimeException ignored) {
+            // 客户端已断开时无需继续写入。
+        } finally {
+            emitter.complete();
+        }
+    }
+
+    private void sendSseEvent(SseEmitter emitter, String name, Object data) {
+        try {
+            emitter.send(SseEmitter.event().name(name).data(data));
+        } catch (IOException e) {
+            throw new IllegalStateException("客服流式连接已关闭", e);
+        }
+    }
+
+    private String toUserVisibleError(RuntimeException e) {
+        if (e instanceof BusinessException && StringUtils.hasText(e.getMessage())) {
+            return e.getMessage();
+        }
+        return "客服暂时无法回复，请稍后重试";
     }
 
     private void touch(SupportConversation conversation) {
@@ -632,6 +799,48 @@ public class CustomerSupportService {
             log.warn("客服回复通知发送失败: conversationId={}, userId={}, message={}",
                     conversation.getId(), conversation.getUserId(), e.getMessage());
         }
+    }
+
+    private void queueAiReply(Long conversationId, String question) {
+        if (conversationId == null || !StringUtils.hasText(question) || supportAiExecutor == null) {
+            return;
+        }
+        MqPublishSupport.afterCommitOrNow(() -> {
+            try {
+                supportAiExecutor.execute(() -> generateAndPersistAiReply(conversationId, question));
+            } catch (RuntimeException e) {
+                log.warn("客服 AI 回复任务提交失败: conversationId={}, message={}", conversationId, e.getMessage());
+            }
+        });
+    }
+
+    private void generateAndPersistAiReply(Long conversationId, String question) {
+        try {
+            SupportConversation beforeAnswer = conversationMapper.selectById(conversationId);
+            if (!canAutoReplyWithAi(beforeAnswer)) {
+                return;
+            }
+
+            String answer = supportAiService.answer(question);
+            SupportConversation conversation = conversationMapper.selectById(conversationId);
+            if (!canAutoReplyWithAi(conversation) || !StringUtils.hasText(answer)) {
+                return;
+            }
+
+            insertMessage(conversation.getId(), null, "AI", answer);
+            conversation.setLastMessage(answer);
+            touch(conversation);
+            conversationMapper.updateById(conversation);
+        } catch (RuntimeException e) {
+            log.warn("客服 AI 回复生成失败: conversationId={}, message={}", conversationId, e.getMessage());
+        }
+    }
+
+    private boolean canAutoReplyWithAi(SupportConversation conversation) {
+        return conversation != null
+                && STATUS_OPEN.equals(conversation.getStatus())
+                && SOURCE_AI.equals(conversation.getSourceType())
+                && conversation.getAssignedAgentId() == null;
     }
 
     private boolean isUserViewingHelp(Long userId, LocalDateTime now) {

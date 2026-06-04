@@ -14,6 +14,7 @@ import com.omni.user.dto.SupportNoteRequest;
 import com.omni.user.dto.SupportNoteResponse;
 import com.omni.user.dto.SupportTagUpdateRequest;
 import com.omni.user.dto.SupportTransferRequest;
+import com.omni.user.entity.SupportAccount;
 import com.omni.user.entity.SupportConversation;
 import com.omni.user.entity.SupportConversationAudit;
 import com.omni.user.entity.SupportConversationNote;
@@ -26,6 +27,7 @@ import com.omni.user.mapper.SupportConversationNoteMapper;
 import com.omni.user.mapper.SupportConversationTagMapper;
 import com.omni.user.mapper.SupportMessageMapper;
 import com.omni.user.mapper.SupportQuickReplyMapper;
+import com.omni.user.mapper.SupportAccountMapper;
 import com.omni.user.mapper.UserMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
@@ -34,6 +36,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,6 +66,7 @@ class CustomerSupportServiceTest {
     private final SupportConversationTagMapper tagMapper = mock(SupportConversationTagMapper.class);
     private final SupportConversationAuditMapper auditMapper = mock(SupportConversationAuditMapper.class);
     private final SupportQuickReplyMapper quickReplyMapper = mock(SupportQuickReplyMapper.class);
+    private final SupportAccountMapper supportAccountMapper = mock(SupportAccountMapper.class);
     private final UserMapper userMapper = mock(UserMapper.class);
     private final NotificationMqProducer notificationProducer = mock(NotificationMqProducer.class);
     private final CustomerSupportService service = new CustomerSupportService(
@@ -72,20 +76,25 @@ class CustomerSupportServiceTest {
             tagMapper,
             auditMapper,
             quickReplyMapper,
+            supportAccountMapper,
             userMapper,
             new SupportAiService((question, projectKnowledge) -> java.util.Optional.empty()),
             notificationProducer,
-            "internal-token"
+            "internal-token",
+            Runnable::run
         );
 
     @Test
     void startsAiConversationAndPersistsUserAndAiMessages() {
         when(userMapper.selectById(10L)).thenReturn(user(10L, "user"));
+        AtomicReference<SupportConversation> insertedConversation = new AtomicReference<>();
         when(conversationMapper.insert(any())).thenAnswer(invocation -> {
             SupportConversation conversation = invocation.getArgument(0);
             conversation.setId(99L);
+            insertedConversation.set(conversation);
             return 1;
         });
+        when(conversationMapper.selectById(99L)).thenAnswer(invocation -> insertedConversation.get());
 
         SupportConversationRequest request = new SupportConversationRequest();
         request.setInitialMessage("电子票二维码在哪里？");
@@ -636,6 +645,21 @@ class CustomerSupportServiceTest {
     }
 
     @Test
+    void supportManagerConversationListIncludesAiAndOtherAgentsConversations() {
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        when(supportAccountMapper.selectById(30L)).thenReturn(supportAccount(30L, "support_manager"));
+        SupportConversation aiOnly = supportConversation(98L, 10L, "OPEN", null);
+        aiOnly.setSourceType("AI");
+        SupportConversation waiting = supportConversation(99L, 11L, "WAITING_AGENT", null);
+        SupportConversation otherAssigned = supportConversation(100L, 12L, "ASSIGNED", 31L);
+        when(conversationMapper.selectList(any())).thenReturn(List.of(aiOnly, waiting, otherAssigned));
+
+        List<SupportConversationResponse> response = service.listAgentConversations(30L, null);
+
+        assertEquals(List.of(98L, 99L, 100L), response.stream().map(SupportConversationResponse::getId).collect(Collectors.toList()));
+    }
+
+    @Test
     void adminConversationListIncludesUserDisplayInfo() {
         when(userMapper.selectById(30L)).thenReturn(user(30L, "admin"));
         User customer = user(10L, "user");
@@ -660,6 +684,14 @@ class CustomerSupportServiceTest {
         user.setRole(role);
         user.setStatus(1);
         return user;
+    }
+
+    private SupportAccount supportAccount(Long userId, String supportRole) {
+        SupportAccount account = new SupportAccount();
+        account.setUserId(userId);
+        account.setStatus(1);
+        account.setSupportRole(supportRole);
+        return account;
     }
 
     private SupportConversation supportConversation(Long id, Long userId, String status, Long assignedAgentId) {

@@ -61,7 +61,7 @@ public class PrivateAssetService {
         if (!BIZ_TYPE_VENUE_PROOF.equals(bizType)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的私有资产类型");
         }
-        userAccessService.requireAdminOrOrganizer(uploaderId);
+        userAccessService.requireAdminOrOrganizerOrAnyPermission(uploaderId, "activity.manage", "tour.manage");
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "上传文件不能为空");
         }
@@ -110,7 +110,7 @@ public class PrivateAssetService {
 
     @Transactional
     public PrivateAssetResponse bindVenueProof(Long assetId, Long venueApplicationId, Long userId) {
-        userAccessService.requireAdminOrOrganizer(userId);
+        userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage");
         if (venueApplicationId == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "场馆审核资料ID不能为空");
         }
@@ -137,7 +137,7 @@ public class PrivateAssetService {
     }
 
     public PrivateAssetDownload prepareDownload(Long assetId, Long userId) {
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage");
         PrivateAsset asset = requireAsset(assetId);
         verifyDownloadPermission(asset, user);
         Path path = privateRoot.resolve(asset.getRelativePath()).normalize();
@@ -169,7 +169,7 @@ public class PrivateAssetService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权下载该私有资产");
         }
         if (STATUS_PENDING.equals(asset.getStatus())) {
-            if ("admin".equals(user.getRole())) {
+            if (userAccessService.isAdmin(user) || !userAccessService.isOrganizer(user)) {
                 return;
             }
             if (asset.getUploaderId().equals(user.getId())) {
@@ -178,7 +178,7 @@ public class PrivateAssetService {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权下载该私有资产");
         }
         if (STATUS_BOUND.equals(asset.getStatus())) {
-            if ("admin".equals(user.getRole())) {
+            if (userAccessService.isAdmin(user) || !userAccessService.isOrganizer(user)) {
                 return;
             }
             VenueApplication application = requireVenueApplication(asset.getBizId());

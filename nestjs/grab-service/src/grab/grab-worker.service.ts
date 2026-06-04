@@ -4,6 +4,7 @@ import { TeamGrabProcessorService } from '../team-grab/team-grab-processor.servi
 import { GrabAdmissionService } from './grab-admission.service';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository } from './grab.repository';
+import { GrabStockService } from './grab-stock.service';
 import { GRAB_STATUS, isTerminalGrabStatus } from './grab-status';
 import type { GrabAttemptSnapshot, GrabRequestRecord, GrabTicketPreference } from './grab.types';
 import { OrderClientService } from './order-client.service';
@@ -26,6 +27,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly orderClient: OrderClientService,
     private readonly queueService: GrabQueueService,
     @Optional() private readonly teamGrabProcessor?: TeamGrabProcessorService,
+    @Optional() private readonly stockService?: GrabStockService,
   ) {}
 
   onModuleInit(): void {
@@ -159,7 +161,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     });
     if (!lockingRecord) return await this.missingProgressOutcome(record.requestId);
 
-    const admission = await this.admissionService.admit({
+    let admission = await this.admissionService.admit({
       requestId: record.requestId,
       userId: record.userId,
       sessionId: record.sessionId,
@@ -169,6 +171,21 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       idempotencyKey: record.idempotencyKey,
       ttlSeconds: this.requestTtlSeconds,
     });
+    if (admission.outcome === 'STOCK_UNINITIALIZED') {
+      const initializedStock = await this.stockService?.ensureInitialized(record.sessionId, preference.ticketTypeId);
+      if (initializedStock != null) {
+        admission = await this.admissionService.admit({
+          requestId: record.requestId,
+          userId: record.userId,
+          sessionId: record.sessionId,
+          ticketTypeId: preference.ticketTypeId,
+          quantity: record.quantity,
+          seatIds: record.seatIds,
+          idempotencyKey: record.idempotencyKey,
+          ttlSeconds: this.requestTtlSeconds,
+        });
+      }
+    }
 
     if (admission.outcome === 'SOLD_OUT') {
       return 'SOLD_OUT';

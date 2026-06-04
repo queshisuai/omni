@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { KeyRound, RefreshCw, Save, ShieldCheck } from 'lucide-react'
 import { globalConfirm } from '@/components/GlobalDialog'
 import { getUserInfo, listRbacPermissions, listRbacRoles, updateRbacRolePermissions } from '@/lib/api'
-import { canUseConsoleAction } from '@/lib/console-auth'
+import { canUseConsoleAction, isPlatformAdminRole } from '@/lib/console-auth'
 import type { RbacPermissionVO, RbacRoleVO } from '@/types/api'
 
 function groupPermission(code: string) {
@@ -76,7 +76,7 @@ export default function ConsoleRolesPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (info.role !== 'admin' && !canUseConsoleAction('rbac.manage', info.permissionCodes || [])) {
+        if (!isPlatformAdminRole(info.role) && !canUseConsoleAction('rbac.manage', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }

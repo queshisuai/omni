@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Check, Headphones, MessageSquareText, Pencil, Plus, ShieldOff, X } from 'lucide-react'
 import { createSupportAccount, deactivateSupportAccount, getUserInfo, listSupportAccounts, updateSupportAccount } from '@/lib/api'
-import { canUseConsoleAction } from '@/lib/console-auth'
+import { canUseConsoleAction, isPlatformAdminRole } from '@/lib/console-auth'
 import { getSupportConversationRecordsHref } from '@/lib/support-tools'
 import type { SupportAccountVO } from '@/types/api'
 
@@ -39,7 +39,7 @@ export default function SupportAccountsPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (info.role !== 'admin' && !canUseConsoleAction('support.account.manage', info.permissionCodes || [])) {
+        if (!isPlatformAdminRole(info.role) && !canUseConsoleAction('support.account.manage', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }

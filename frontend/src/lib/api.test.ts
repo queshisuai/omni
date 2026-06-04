@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, addSupportNote, closeSupportConversation, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, listActivities, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, rejectCloseSupportConversation, removeTeamGrabMember, transferSupportConversation, updateActivityMarketing, updateRbacRolePermissions, updateSupportTags } from './api.ts'
+import { ApiError, addSupportNote, closeSupportConversation, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, listActivities, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, rejectCloseSupportConversation, removeTeamGrabMember, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateRbacRolePermissions, updateSupportTags } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -33,6 +33,39 @@ test('allows alipay qr pay response that takes longer than the default request t
     assert.equal(aborted, false)
     assert.equal(result.orderId, 9001)
     assert.equal(result.qrCode, 'qr-code')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('allows support AI replies that take longer than the default request timeout', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  let aborted = false
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    init?.signal?.addEventListener('abort', () => {
+      aborted = true
+    })
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    await wait(6000)
+    const url = String(input)
+    const data = url.endsWith('/messages')
+      ? { id: 2, conversationId: 88, senderType: 'USER', content: '然后如何转赠' }
+      : { id: 88, status: 'OPEN', sourceType: 'AI' }
+    return new Response(JSON.stringify({ code: 200, message: 'success', data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const conversation = await startSupportConversation({ subject: '转赠', initialMessage: '如何转赠' })
+    const message = await sendSupportMessage(88, '然后如何转赠')
+
+    assert.equal(aborted, false)
+    assert.equal(conversation.id, 88)
+    assert.equal(message.conversationId, 88)
+    assert.deepEqual(requested.map(item => [item.url, item.method, item.body]), [
+      ['/api/user/support/conversations', 'POST', JSON.stringify({ subject: '转赠', initialMessage: '如何转赠' })],
+      ['/api/user/support/conversations/88/messages', 'POST', JSON.stringify({ content: '然后如何转赠' })],
+    ])
   } finally {
     globalThis.fetch = originalFetch
   }

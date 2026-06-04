@@ -23,6 +23,9 @@ public class JwtUtil {
     private static Key buildKey() {
         String secret = System.getenv(ENV_JWT_SECRET);
         if (secret == null || secret.trim().isEmpty()) {
+            secret = System.getProperty(ENV_JWT_SECRET);
+        }
+        if (secret == null || secret.trim().isEmpty()) {
             throw new IllegalStateException("JWT_SECRET 环境变量未配置，无法初始化 JWT 签名密钥");
         }
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));

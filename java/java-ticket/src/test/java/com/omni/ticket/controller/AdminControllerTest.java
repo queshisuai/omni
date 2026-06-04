@@ -174,10 +174,32 @@ class AdminControllerTest {
     @Mock
     private ActivityMarketingService activityMarketingService;
 
+    private void allowActivityRole(Long userId, String role) {
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "activity.manage"))
+                .thenReturn(role);
+    }
+
+    private void allowActivityOrTourRole(Long userId, String role) {
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "activity.manage", "tour.manage"))
+                .thenReturn(role);
+    }
+
+    private void allowSessionRole(Long userId, String role) {
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(
+                userId, "session.manage", "activity.manage", "tour.manage"))
+                .thenReturn(role);
+    }
+
+    private void allowVenueReadRole(Long userId, String role) {
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(
+                userId, "venue.manage", "session.manage", "activity.manage", "tour.manage"))
+                .thenReturn(role);
+    }
+
     @Test
     void listAdminVenuesUsesStableDisplayOrder() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        allowVenueReadRole(2002L, "admin");
         when(venueMapper.selectList(any())).thenReturn(Collections.emptyList());
 
         controller.listAdminVenues(adminToken(), 9999L);
@@ -192,7 +214,7 @@ class AdminControllerTest {
     @Test
     void searchArtistsRequiresAuthorizationToken() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityOrTourRole(2003L, "organizer");
         when(artistAdminService.search("周")).thenReturn(List.of(new ArtistSearchResponse()));
 
         Result<List<ArtistSearchResponse>> result = controller.searchArtists(organizerToken(), "周");
@@ -245,7 +267,7 @@ class AdminControllerTest {
         MockMultipartFile file = new MockMultipartFile("file", "proof.pdf", "application/pdf", "%PDF-1.4".getBytes());
         PrivateAssetResponse response = new PrivateAssetResponse();
         response.setId(1L);
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityOrTourRole(2003L, "organizer");
         when(privateAssetService.upload(eq(2003L), eq("venue-proof"), eq(file))).thenReturn(response);
 
         Result<PrivateAssetResponse> result = controller.uploadPrivateAsset(
@@ -261,7 +283,7 @@ class AdminControllerTest {
     void uploadPrivateAssetRejectsUserRole() {
         AdminController controller = controller();
         MockMultipartFile file = new MockMultipartFile("file", "proof.pdf", "application/pdf", "%PDF-1.4".getBytes());
-        when(userAccessService.requireAdminOrOrganizerRole(2004L)).thenReturn(null);
+        allowActivityOrTourRole(2004L, null);
 
         Result<PrivateAssetResponse> result = controller.uploadPrivateAsset(
                 "Bearer " + JwtUtil.generateToken(2004L, "13900000001", "user"), 2004L, "venue_proof", file);
@@ -674,7 +696,7 @@ class AdminControllerTest {
     @Test
     void createTicketTypeRejectsEmptyLayoutSectionIds() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowSessionRole(2003L, "organizer");
         com.omni.ticket.entity.Session mockSession = new com.omni.ticket.entity.Session();
         mockSession.setActivityId(10L);
         mockSession.setVenueId(1L);
@@ -693,7 +715,7 @@ class AdminControllerTest {
     @Test
     void deleteTicketTypeRejectsProtectedSeats() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowSessionRole(2003L, "organizer");
         TicketType ticketType = new TicketType();
         ticketType.setId(900L);
         ticketType.setSessionId(99L);
@@ -963,7 +985,7 @@ class AdminControllerTest {
     @Test
     void createActivityStoresExternalVenueApprovalProof() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
 
         Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
                 "userId", 2003L,
@@ -986,7 +1008,7 @@ class AdminControllerTest {
     @Test
     void createActivityUsesAuthorizationToken() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
 
         Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
                 "userId", 9999L,
@@ -999,14 +1021,14 @@ class AdminControllerTest {
         verify(activityMapper).insert(captor.capture());
         assertEquals(200, result.getCode());
         assertEquals(2003L, captor.getValue().getOrganizerId());
-        verify(userAccessService).requireAdminOrOrganizerRole(2003L);
-        verify(userAccessService, never()).requireAdminOrOrganizerRole(9999L);
+        verify(userAccessService).requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage");
+        verify(userAccessService, never()).requireAdminOrOrganizerOrAnyPermissionRole(9999L, "activity.manage");
     }
 
     @Test
     void updateActivityUsesAuthorizationToken() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Activity activity = new Activity();
         activity.setId(10L);
         activity.setOrganizerId(2003L);
@@ -1019,8 +1041,8 @@ class AdminControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals("updated auth activity", result.getData().getName());
-        verify(userAccessService).requireAdminOrOrganizerRole(2003L);
-        verify(userAccessService, never()).requireAdminOrOrganizerRole(9999L);
+        verify(userAccessService).requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage");
+        verify(userAccessService, never()).requireAdminOrOrganizerOrAnyPermissionRole(9999L, "activity.manage");
     }
 
     @Test
@@ -1043,7 +1065,7 @@ class AdminControllerTest {
     @Test
     void createActivityStoresPrivateVenueApprovalProofReferenceWithoutBindingAsApplicationProof() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         when(activityMapper.insert(any(Activity.class))).thenAnswer(invocation -> {
             Activity activity = invocation.getArgument(0);
             activity.setId(100L);
@@ -1066,7 +1088,7 @@ class AdminControllerTest {
     @Test
     void createActivityStoresSeatMapVisibility() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
 
         Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
                 "userId", 2003L,
@@ -1085,7 +1107,7 @@ class AdminControllerTest {
     @Test
     void createActivityRejectsNonPositivePerUserLimit() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Map<String, Object> body = validCreateActivityBody();
         body.put("perUserLimit", 0);
 
@@ -1099,7 +1121,7 @@ class AdminControllerTest {
     @Test
     void createActivitySavesPerUserLimit() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Map<String, Object> body = validCreateActivityBody();
         body.put("perUserLimit", 3);
         when(activityMapper.insert(any(Activity.class))).thenAnswer(invocation -> {
@@ -1117,7 +1139,7 @@ class AdminControllerTest {
     @Test
     void createActivityStoresRealNameRequirement() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Map<String, Object> body = validCreateActivityBody();
         body.put("realNameRequired", true);
 
@@ -1132,7 +1154,7 @@ class AdminControllerTest {
     @Test
     void createActivityStoresTicketTransferRule() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Map<String, Object> body = validCreateActivityBody();
         body.put("ticketTransferAllowed", false);
 
@@ -1147,7 +1169,7 @@ class AdminControllerTest {
     @Test
     void createActivityRejectsNonNumericPerUserLimit() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Map<String, Object> body = validCreateActivityBody();
         body.put("perUserLimit", "abc");
 
@@ -1161,7 +1183,7 @@ class AdminControllerTest {
     @Test
     void updateActivitySavesPerUserLimit() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Activity activity = new Activity();
         activity.setId(10L);
         activity.setOrganizerId(2003L);
@@ -1180,7 +1202,7 @@ class AdminControllerTest {
     @Test
     void updateActivityStoresRealNameRequirement() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Activity activity = new Activity();
         activity.setId(10L);
         activity.setOrganizerId(2003L);
@@ -1200,7 +1222,7 @@ class AdminControllerTest {
     @Test
     void updateActivityStoresTicketTransferRule() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Activity activity = new Activity();
         activity.setId(10L);
         activity.setOrganizerId(2003L);
@@ -1220,7 +1242,7 @@ class AdminControllerTest {
     @Test
     void updateActivityClearsBlankPerUserLimit() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Activity activity = new Activity();
         activity.setId(10L);
         activity.setOrganizerId(2003L);
@@ -1240,7 +1262,7 @@ class AdminControllerTest {
     @Test
     void createActivityCreatesArtistFromName() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         when(artistMapper.insert(any())).thenAnswer(invocation -> {
             Artist artist = invocation.getArgument(0);
             artist.setId(88L);
@@ -1266,7 +1288,7 @@ class AdminControllerTest {
     @Test
     void getAdminActivityReturnsArtistName() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Activity activity = new Activity();
         activity.setId(10L);
         activity.setOrganizerId(2003L);
@@ -1286,7 +1308,7 @@ class AdminControllerTest {
     @Test
     void updateActivityUpdatesArtistFromName() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Activity activity = new Activity();
         activity.setId(10L);
         activity.setOrganizerId(2003L);
@@ -1312,7 +1334,7 @@ class AdminControllerTest {
     @Test
     void createActivityStoresLineupAndSyncsPrimaryArtist() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
 
         Result<Activity> result = controller.createActivity(organizerToken(), Map.of(
                 "userId", 2003L,
@@ -1334,7 +1356,7 @@ class AdminControllerTest {
     @Test
     void getAdminActivityReturnsFullLineupIncludingHiddenGuest() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Activity activity = new Activity();
         activity.setId(10L);
         activity.setOrganizerId(2003L);
@@ -1359,7 +1381,7 @@ class AdminControllerTest {
     @Test
     void listAdminActivitiesReturnsLineupSummary() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<Activity> page = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10, 1);
         Activity activity = new Activity();
         activity.setId(10L);
@@ -1385,7 +1407,7 @@ class AdminControllerTest {
     @Test
     void listAdminActivitiesOrdersByIdAsc() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<Activity> page = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10, 0);
         when(activityMapper.selectPage(any(), any())).thenReturn(page);
 
@@ -1403,7 +1425,7 @@ class AdminControllerTest {
     @Test
     void updateActivityWithLineupUsesFirstArtistWhenNoPrimary() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityRole(2003L, "organizer");
         Activity activity = new Activity();
         activity.setId(10L);
         activity.setOrganizerId(2003L);
@@ -1442,7 +1464,7 @@ class AdminControllerTest {
     @Test
     void uploadAssetRequiresAdminOrOrganizerAndDelegatesToService() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowActivityOrTourRole(2003L, "organizer");
         MockMultipartFile file = new MockMultipartFile("file", "poster.png", "image/png", new byte[] {1, 2, 3});
         AssetUploadResponse response = new AssetUploadResponse();
         response.setBizType("activity-poster");
@@ -1457,7 +1479,7 @@ class AdminControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals("/uploads/ticket/activity-poster/2026/05/a.png", result.getData().getPublicUrl());
-        verify(userAccessService).requireAdminOrOrganizerRole(2003L);
+        verify(userAccessService).requireAdminOrOrganizerOrAnyPermissionRole(2003L, "activity.manage", "tour.manage");
         verify(ticketAssetService).upload(2003L, "activity-poster", file);
     }
 
@@ -1473,7 +1495,7 @@ class AdminControllerTest {
                 file);
 
         assertEquals(401, result.getCode());
-        verify(userAccessService, never()).requireAdminOrOrganizerRole(any());
+        verify(userAccessService, never()).requireAdminOrOrganizerOrAnyPermissionRole(anyLong(), any(), any());
         verify(ticketAssetService, never()).upload(any(), any(), any());
     }
 

@@ -3,6 +3,7 @@ package com.omni.order.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.omni.order.dto.TicketWalletItemResponse;
 import com.omni.order.entity.ElectronicTicket;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -15,6 +16,15 @@ public interface ElectronicTicketMapper extends BaseMapper<ElectronicTicket> {
 
     @Select("SELECT COALESCE(COUNT(*), 0) FROM electronic_ticket WHERE order_id = #{orderId}")
     Long countByOrderId(@Param("orderId") Long orderId);
+
+    @Insert("INSERT INTO electronic_ticket (" +
+            "ticket_no, order_id, order_seat_id, user_id, original_user_id, session_id, ticket_type_id, " +
+            "attendee_user_profile_id, real_name, id_type, id_no_mask, phone, seat_label, status, create_time, update_time" +
+            ") VALUES (" +
+            "#{ticketNo}, #{orderId}, #{orderSeatId}, #{userId}, #{originalUserId}, #{sessionId}, #{ticketTypeId}, " +
+            "#{attendeeUserProfileId}, #{realName}, #{idType}, #{idNoMask}, #{phone}, #{seatLabel}, #{status}, #{createTime}, #{updateTime}" +
+            ") ON CONFLICT (ticket_no) DO NOTHING")
+    int insertIgnoreTicketNo(ElectronicTicket ticket);
 
     @Select("SELECT * FROM electronic_ticket WHERE id = #{id} FOR UPDATE")
     ElectronicTicket selectByIdForUpdate(@Param("id") Long id);

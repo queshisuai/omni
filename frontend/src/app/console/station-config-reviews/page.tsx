@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { approveStationConfigVersion, listStationConfigReviews, rejectStationConfigVersion } from '@/lib/api'
+import { isPlatformAdminRole } from '@/lib/console-auth'
 import { globalPrompt } from '@/components/GlobalDialog'
 import type { StationConfigVersionVO } from '@/types/api'
 
@@ -38,7 +39,7 @@ export default function StationConfigReviewsPage() {
 
   useEffect(() => {
     const user = getUser()
-    if (!user || user.role !== 'admin') {
+    if (!user || !isPlatformAdminRole(user.role)) {
       setForbidden(true)
       setLoading(false)
       return

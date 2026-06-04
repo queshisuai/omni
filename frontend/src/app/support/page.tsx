@@ -20,6 +20,7 @@ import {
   updateSupportTags,
 } from '@/lib/api'
 import { logout } from '@/lib/auth'
+import { isPlatformAdminRole } from '@/lib/console-auth'
 import { appendQuickReply, buildCloseRequestMessage, formatSupportAuditAction, formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getSupportQueueTabs, getSupportTagOptions, mergeSupportConversations, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue, type SupportQueueFilter } from '@/lib/support-tools'
 import type { SupportAccountVO, SupportAuditVO, SupportConversationVO, SupportMessageVO, SupportNoteVO, SupportQuickReplyVO } from '@/types/api'
 
@@ -131,7 +132,7 @@ export default function SupportWorkbenchPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (info.role !== 'support' && info.role !== 'admin') {
+        if (info.role !== 'support' && !isPlatformAdminRole(info.role)) {
           router.replace('/')
           return
         }

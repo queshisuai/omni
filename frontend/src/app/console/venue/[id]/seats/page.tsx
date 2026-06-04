@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getVenueDefaultLayout, updateVenueDefaultLayout } from '@/lib/api'
 import { getUser } from '@/lib/auth'
+import { isPlatformAdminRole } from '@/lib/console-auth'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
 import { toSeatCraftLayoutPayload } from '@/components/seatcraft/block-layout'
 import { toSeatCraftLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
@@ -44,7 +45,7 @@ export default function VenueSeatTemplatePage() {
       setLoading(false)
       return
     }
-    if (user.role !== 'admin') {
+    if (!isPlatformAdminRole(user.role)) {
       setError('仅管理员可维护场馆 SeatCraft 座位图')
       setLoading(false)
       return

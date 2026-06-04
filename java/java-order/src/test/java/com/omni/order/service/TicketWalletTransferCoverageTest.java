@@ -49,7 +49,7 @@ class TicketWalletTransferCoverageTest {
             when(etm.countByOrderId(1L)).thenReturn(0L);
             when(osnm.selectByOrderId(anyLong())).thenReturn(snap());
             svc.issueForPaidOrder(order);
-            verify(etm, atLeastOnce()).insert(any(ElectronicTicket.class));
+            verify(etm, atLeastOnce()).insertIgnoreTicketNo(any(ElectronicTicket.class));
         }
         @Test @DisplayName("TW-002: qty=3→3 tickets") void tw002() {
             com.omni.order.entity.Order order = o(1L,2004L,2,3);
@@ -58,7 +58,7 @@ class TicketWalletTransferCoverageTest {
             when(etm.countByOrderId(1L)).thenReturn(0L);
             when(osnm.selectByOrderId(anyLong())).thenReturn(snap());
             svc.issueForPaidOrder(order);
-            verify(etm, times(3)).insert(any(ElectronicTicket.class));
+            verify(etm, times(3)).insertIgnoreTicketNo(any(ElectronicTicket.class));
         }
         @Test @DisplayName("TW-003: list→200") void tw003() { when(etm.selectWalletItemsByUserId(2004L)).thenReturn(List.of(wi())); assertEquals(1,svc.listMyTickets(2004L).size()); }
         @Test @DisplayName("TW-004: filter by status") void tw004() { TicketWalletItemResponse wi=wi(); wi.setStatus(1); when(etm.selectWalletItemsByUserId(2004L)).thenReturn(List.of(wi)); assertEquals(1,svc.listMyTickets(2004L).size()); }

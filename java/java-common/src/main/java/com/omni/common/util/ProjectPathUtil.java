@@ -3,6 +3,7 @@ package com.omni.common.util;
 import org.springframework.util.StringUtils;
 
 import java.net.URISyntaxException;
+import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -41,7 +42,7 @@ public final class ProjectPathUtil {
             return Paths.get(ProjectPathUtil.class.getProtectionDomain().getCodeSource().getLocation().toURI())
                     .toAbsolutePath()
                     .normalize();
-        } catch (URISyntaxException | IllegalArgumentException e) {
+        } catch (URISyntaxException | IllegalArgumentException | FileSystemNotFoundException e) {
             return null;
         }
     }

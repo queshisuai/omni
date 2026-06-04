@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Edit, Search } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { listAdminArtists, updateAdminArtistRisk } from '@/lib/api'
+import { isPlatformAdminRole } from '@/lib/console-auth'
 import type { ArtistEntity, ArtistReviewStatus, ArtistRiskStatus, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
@@ -23,7 +24,7 @@ export default function ArtistsPage() {
   const [pages, setPages] = useState(1)
   const loadDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
-  const isAdmin = role === 'admin'
+  const isAdmin = isPlatformAdminRole(role)
 
   const loadData = (nextPage = page) => {
     const user = getUser()

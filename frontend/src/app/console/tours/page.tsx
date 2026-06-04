@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { announceTourCities, deleteAdminActivity, deleteTourDraft, getActivityStation, listAdminActivities, listAdminTours, publishStation } from '@/lib/api'
+import { hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
-import type { ActivityEntity, UserRole } from '@/types/api'
+import type { ActivityEntity, PageResult, TourEntity, UserRole } from '@/types/api'
 
 const ADMIN_FETCH_SIZE = 500
 
@@ -37,17 +38,30 @@ function toActivityDraft(activity: ActivityEntity): DraftRow {
   }
 }
 
+function emptyPage<T>(): PageResult<T> {
+  return {
+    records: [],
+    total: 0,
+    size: ADMIN_FETCH_SIZE,
+    current: 1,
+    pages: 1,
+  }
+}
+
 export default function ToursPage() {
   const [rows, setRows] = useState<DraftRow[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [role, setRole] = useState<UserRole | ''>('')
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [checkingRole, setCheckingRole] = useState(true)
   const [deletingKey, setDeletingKey] = useState<string | null>(null)
   const [publishingKey, setPublishingKey] = useState<string | null>(null)
   const loadDraftsRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
-  const isAdmin = role === 'admin'
+  const isAdmin = isPlatformAdminRole(role)
+  const canManageActivities = hasConsolePermission(role, permissionCodes, 'activity.manage')
+  const canManageTours = hasConsolePermission(role, permissionCodes, 'tour.manage')
 
   const loadDrafts = useCallback(() => {
     const user = getUser()
@@ -58,8 +72,12 @@ export default function ToursPage() {
       return
     }
     setRole(user.role || 'user')
+    const permissions = user.permissionCodes || []
+    setPermissionCodes(permissions)
     setCheckingRole(false)
-    if (user.role !== 'admin' && user.role !== 'organizer') {
+    const canLoadActivities = hasConsolePermission(user.role, permissions, 'activity.manage')
+    const canLoadTours = hasConsolePermission(user.role, permissions, 'tour.manage')
+    if (!canLoadActivities && !canLoadTours) {
       setLoading(false)
       setError('无权限访问')
       return
@@ -67,8 +85,8 @@ export default function ToursPage() {
     setLoading(true)
     setError('')
     Promise.all([
-      listAdminActivities({ page: 1, size: ADMIN_FETCH_SIZE }),
-      listAdminTours(user.userId, { page: 1, size: ADMIN_FETCH_SIZE }),
+      canLoadActivities ? listAdminActivities({ page: 1, size: ADMIN_FETCH_SIZE }) : Promise.resolve(emptyPage<ActivityEntity>()),
+      canLoadTours ? listAdminTours(user.userId, { page: 1, size: ADMIN_FETCH_SIZE }) : Promise.resolve(emptyPage<TourEntity>()),
     ])
       .then(([activityRes, tourRes]) => {
         const activityDrafts = activityRes.records
@@ -207,7 +225,7 @@ export default function ToursPage() {
           <h1 className="text-[22px] font-bold text-[#1a1a2e]">活动发布/多站点草稿管理</h1>
           <p className="mt-1 text-[13px] text-[#999]">管理普通活动草稿和巡演/多站点草稿，补齐配置后发布活动。</p>
         </div>
-        {!isAdmin && <Link href="/console/activities/new" className="rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">新建活动草稿</Link>}
+        {(canManageActivities || canManageTours) && !isAdmin && <Link href="/console/activities/new" className="rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white">新建活动草稿</Link>}
       </div>
       {loading ? (
         <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>

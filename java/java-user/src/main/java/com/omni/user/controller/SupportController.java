@@ -22,8 +22,10 @@ import com.omni.user.service.CustomerSupportService;
 import com.omni.user.service.HelpCenterService;
 import com.omni.user.service.SupportAccountService;
 import io.jsonwebtoken.Claims;
+import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -102,6 +104,15 @@ public class SupportController {
         Long userId = parseUserId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(customerSupportService.sendMessage(userId, id, request));
+    }
+
+    @PostMapping(value = "/support/conversations/{id}/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter sendMessageStream(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody SupportMessageRequest request) {
+        Long userId = parseUserId(authorization);
+        return customerSupportService.streamMessage(userId, id, request);
     }
 
     @PostMapping("/support/conversations/{id}/handoff")

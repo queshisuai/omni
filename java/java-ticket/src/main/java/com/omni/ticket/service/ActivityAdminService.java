@@ -103,7 +103,7 @@ public class ActivityAdminService {
         if (activity == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "活动不存在");
         }
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
+        InternalUserRefResponse user = requireActivityManager(request.getUserId());
         String role = user.getRole();
         if ("organizer".equals(role) && !request.getUserId().equals(activity.getOrganizerId())) {
             throw new BusinessException(ResultCode.FORBIDDEN, "只能管理自己主办的活动");
@@ -122,7 +122,7 @@ public class ActivityAdminService {
         if (activity == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "活动不存在");
         }
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
+        InternalUserRefResponse user = requireActivityManager(request.getUserId());
         String role = user.getRole();
         if ("organizer".equals(role) && !request.getUserId().equals(activity.getOrganizerId())) {
             throw new BusinessException(ResultCode.FORBIDDEN, "只能管理自己主办的活动");
@@ -151,7 +151,7 @@ public class ActivityAdminService {
         if (activity == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "活动不存在");
         }
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
+        InternalUserRefResponse user = requireActivityManager(request.getUserId());
         if ("organizer".equals(user.getRole()) && !request.getUserId().equals(activity.getOrganizerId())) {
             throw new BusinessException(ResultCode.FORBIDDEN, "只能管理自己主办的活动");
         }
@@ -402,5 +402,9 @@ public class ActivityAdminService {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "内部接口令牌未配置");
         }
         return internalApiToken;
+    }
+
+    private InternalUserRefResponse requireActivityManager(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage");
     }
 }

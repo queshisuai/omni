@@ -44,7 +44,7 @@ public class OrderAdminQueryService {
     }
 
     public List<OrderInfoResponse> listOrders(Long userId, Boolean paidOnly) {
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "order.view");
         String role = user.getRole();
         List<Activity> activities = "organizer".equals(role)
                 ? activityMapper.selectList(new LambdaQueryWrapper<Activity>().eq(Activity::getOrganizerId, userId))

@@ -68,8 +68,6 @@ function Test-SqlStatementTargetOwner($match, [string] $filePath, [string] $serv
 $schemaColumns = @{
     "activity" = New-ColumnSet @("id", "category_id", "artist_id", "per_user_limit", "real_name_required", "ticket_transfer_allowed")
     "activity_marketing_rule" = New-ColumnSet @("id", "activity_id", "enabled", "coupon_name", "discount_type", "threshold_amount", "discount_amount", "max_coupon_count", "per_user_limit", "claimed_count", "used_count", "status", "start_time", "end_time", "create_time", "update_time")
-    "activity_question" = New-ColumnSet @("id", "activity_id", "user_id", "content", "answer", "answered_by", "status", "create_time", "answered_at")
-    "activity_review" = New-ColumnSet @("id", "activity_id", "user_id", "order_id", "rating", "content", "images", "like_count", "status", "create_time")
     "activity_seat_layout" = New-ColumnSet @("id", "activity_id", "source_venue_layout_id")
     "activity_seat_layout_section" = New-ColumnSet @("id", "activity_layout_id")
     "artist" = New-ColumnSet @("id")

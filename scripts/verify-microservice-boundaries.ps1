@@ -49,9 +49,18 @@ Invoke-Step -Name "Production split SQL safety" -Command {
 
 Invoke-Step -Name "Java boundary tests" -Command {
     Push-Location -LiteralPath $javaRoot
+    $previousJwtSecret = $env:JWT_SECRET
     try {
+        if (-not $env:JWT_SECRET) {
+            $env:JWT_SECRET = "omni-boundary-test-jwt-secret-32-bytes-minimum-20260603"
+        }
         mvn test -pl java-payment,java-ticket,java-order -am --% -Dsurefire.failIfNoSpecifiedTests=false
     } finally {
+        if ($null -eq $previousJwtSecret) {
+            Remove-Item Env:\JWT_SECRET -ErrorAction SilentlyContinue
+        } else {
+            $env:JWT_SECRET = $previousJwtSecret
+        }
         Pop-Location
     }
 }

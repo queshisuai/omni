@@ -8,6 +8,7 @@ import com.omni.ticket.controller.AdminController;
 import com.omni.ticket.dto.*;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
+import com.omni.ticket.mq.NotificationMqProducer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,7 +45,7 @@ class ArtistRiskGovernanceTest {
     @Mock SessionMapper sessionMapper;
     @Mock TicketTypeMapper ticketTypeMapper;
     @Mock ActivityRiskResolutionMapper resolutionMapper;
-    @Mock com.omni.ticket.client.NotificationInternalClient notificationClient;
+    @Mock NotificationMqProducer notificationProducer;
     @Mock ActivityAdminService activityAdminService;
 
     // === controller mocks (for adminSuspend + risk update endpoints) ===
@@ -89,7 +90,7 @@ class ArtistRiskGovernanceTest {
         riskService = new ArtistGovernanceService(artistMapper, userAccessService, activityRiskResponseService);
         suspendService = new ActivityRiskResponseService(activityMapper, activityArtistMapper,
                 sessionMapper, ticketTypeMapper, resolutionMapper, userAccessService,
-                notificationClient, activityAdminService, "test-token");
+                notificationProducer, activityAdminService, "test-token");
     }
 
     // ==================== 3.1 风险标记 (RK-001 ~ RK-006) ====================

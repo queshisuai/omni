@@ -25,6 +25,10 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
+  async setIfAbsent(key: string, value: string): Promise<boolean> {
+    return (await this.client.set(key, value, 'NX')) === 'OK';
+  }
+
   async decr(key: string): Promise<number> {
     return this.client.decr(key);
   }

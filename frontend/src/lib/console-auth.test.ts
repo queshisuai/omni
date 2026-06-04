@@ -40,6 +40,13 @@ test('organizer admin manages organizer accounts but not organizer business page
   assert.equal(canAccessConsolePath('/console/activities', permissions), false)
 })
 
+test('organizer admin default entry follows granted permissions', () => {
+  assert.equal(getDefaultConsolePath('organizer_admin', ['activity.manage']), '/console/activities')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['tour.manage']), '/console/tours')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['order.view']), '/console/orders')
+  assert.equal(getDefaultConsolePath('organizer_admin', []), '/console')
+})
+
 test('formats console role and brand labels without mixing platform and scoped admins', () => {
   assert.equal(getConsoleRoleLabel('admin'), '平台管理员')
   assert.equal(getConsoleRoleLabel('platform_super_admin'), '平台超管')

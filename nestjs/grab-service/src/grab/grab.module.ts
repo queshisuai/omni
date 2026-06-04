@@ -16,6 +16,7 @@ import { GrabOpsService } from './grab-ops.service';
 import { GrabQueueService } from './grab-queue.service';
 import { GrabRepository } from './grab.repository';
 import { GrabService } from './grab.service';
+import { GrabStockService } from './grab-stock.service';
 import { GrabWorkerService } from './grab-worker.service';
 import { OrderClientService } from './order-client.service';
 import { RedisService } from './redis.service';
@@ -33,6 +34,7 @@ import { VisibleStockService } from './visible-stock.service';
     GrabOpsService,
     GrabQueueService,
     GrabWorkerService,
+    GrabStockService,
     OrderClientService,
     RedisService,
     TicketClientService,

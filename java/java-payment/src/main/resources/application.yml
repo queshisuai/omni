@@ -40,6 +40,8 @@ alipay:
   sign-type: RSA2
   charset: utf-8
   format: json
+  mock-qr-fallback-enabled: ${ALIPAY_MOCK_QR_FALLBACK_ENABLED:false}
+  mock-qr-auto-confirm-enabled: ${ALIPAY_MOCK_QR_AUTO_CONFIRM_ENABLED:false}
 
 internal:
   api:

@@ -29,6 +29,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class PrivateAssetServiceTest {
@@ -47,7 +48,7 @@ class PrivateAssetServiceTest {
     @Test
     void uploadVenueProofStoresPrivatePendingAsset() throws Exception {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(APPLICANT_ID, "organizer");
         when(privateAssetMapper.insert(any(PrivateAsset.class))).thenAnswer(invocation -> {
             PrivateAsset asset = invocation.getArgument(0);
             asset.setId(9101L);
@@ -91,7 +92,7 @@ class PrivateAssetServiceTest {
 
     @Test
     void uploadRejectsUnsupportedFileType() throws Exception {
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(APPLICANT_ID, "organizer");
         PrivateAssetService service = service(Files.createTempDirectory("omni-private-asset-test"));
         MockMultipartFile file = new MockMultipartFile("file", "proof.txt", "text/plain", "plain".getBytes());
 
@@ -105,7 +106,7 @@ class PrivateAssetServiceTest {
 
     @Test
     void uploadRejectsMismatchedOriginalExtension() throws Exception {
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(APPLICANT_ID, "organizer");
         PrivateAssetService service = service(Files.createTempDirectory("omni-private-asset-test"));
         MockMultipartFile file = new MockMultipartFile("file", "proof.txt", "application/pdf", "%PDF-1.7\ncontent".getBytes());
 
@@ -119,7 +120,7 @@ class PrivateAssetServiceTest {
 
     @Test
     void uploadRejectsFileLargerThan20Mb() throws Exception {
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(APPLICANT_ID, "organizer");
         PrivateAssetService service = service(Files.createTempDirectory("omni-private-asset-test"));
         MockMultipartFile file = new MockMultipartFile("file", "proof.pdf", "application/pdf", new byte[20 * 1024 * 1024 + 1]);
 
@@ -133,7 +134,7 @@ class PrivateAssetServiceTest {
 
     @Test
     void bindVenueProofMarksPendingAssetAsBound() throws Exception {
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(APPLICANT_ID, "organizer");
         PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, Files.createTempDirectory("omni-private-asset-test"));
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
         PrivateAssetService service = service(Files.createTempDirectory("omni-private-asset-test"));
@@ -167,7 +168,7 @@ class PrivateAssetServiceTest {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
         PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, privateRoot);
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(APPLICANT_ID, "organizer");
         PrivateAssetService service = service(privateRoot);
 
         PrivateAssetDownload download = service.prepareDownload(9101L, APPLICANT_ID);
@@ -183,7 +184,7 @@ class PrivateAssetServiceTest {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
         PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, privateRoot);
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
-        when(userAccessService.requireAdminOrOrganizer(ADMIN_ID)).thenReturn(user(ADMIN_ID, "admin"));
+        allowAssetAccess(ADMIN_ID, "admin");
         PrivateAssetService service = service(privateRoot);
 
         PrivateAssetDownload download = service.prepareDownload(9101L, ADMIN_ID);
@@ -196,7 +197,7 @@ class PrivateAssetServiceTest {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
         PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, privateRoot);
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
-        when(userAccessService.requireAdminOrOrganizer(OTHER_ORGANIZER_ID)).thenReturn(user(OTHER_ORGANIZER_ID, "organizer"));
+        allowAssetAccess(OTHER_ORGANIZER_ID, "organizer");
         PrivateAssetService service = service(privateRoot);
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -210,8 +211,8 @@ class PrivateAssetServiceTest {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
         PrivateAsset asset = boundAsset(9101L, APPLICANT_ID, privateRoot);
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
-        when(userAccessService.requireAdminOrOrganizer(ADMIN_ID)).thenReturn(user(ADMIN_ID, "admin"));
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(ADMIN_ID, "admin");
+        allowAssetAccess(APPLICANT_ID, "organizer");
         when(venueApplicationMapper.selectById(301L)).thenReturn(venueApplication(301L, APPLICANT_ID));
         PrivateAssetService service = service(privateRoot);
 
@@ -224,7 +225,7 @@ class PrivateAssetServiceTest {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
         PrivateAsset asset = boundAsset(9101L, APPLICANT_ID, privateRoot);
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
-        when(userAccessService.requireAdminOrOrganizer(OTHER_ORGANIZER_ID)).thenReturn(user(OTHER_ORGANIZER_ID, "organizer"));
+        allowAssetAccess(OTHER_ORGANIZER_ID, "organizer");
         when(venueApplicationMapper.selectById(301L)).thenReturn(venueApplication(301L, APPLICANT_ID));
         PrivateAssetService service = service(privateRoot);
 
@@ -239,7 +240,7 @@ class PrivateAssetServiceTest {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
         PrivateAsset asset = boundAsset(9101L, OTHER_ORGANIZER_ID, privateRoot);
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(APPLICANT_ID, "organizer");
         when(venueApplicationMapper.selectById(301L)).thenReturn(venueApplication(301L, APPLICANT_ID));
         PrivateAssetService service = service(privateRoot);
 
@@ -251,7 +252,7 @@ class PrivateAssetServiceTest {
         Path privateRoot = Files.createTempDirectory("omni-private-asset-test");
         PrivateAsset asset = boundAsset(9101L, OTHER_ORGANIZER_ID, privateRoot);
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
-        when(userAccessService.requireAdminOrOrganizer(OTHER_ORGANIZER_ID)).thenReturn(user(OTHER_ORGANIZER_ID, "organizer"));
+        allowAssetAccess(OTHER_ORGANIZER_ID, "organizer");
         when(venueApplicationMapper.selectById(301L)).thenReturn(venueApplication(301L, APPLICANT_ID));
         PrivateAssetService service = service(privateRoot);
 
@@ -280,7 +281,7 @@ class PrivateAssetServiceTest {
         PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, privateRoot);
         asset.setDeletedAt(LocalDateTime.now());
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(APPLICANT_ID, "organizer");
         PrivateAssetService service = service(privateRoot);
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -296,7 +297,7 @@ class PrivateAssetServiceTest {
         Path expectedRoot = projectRoot.resolve("runtime/private-uploads/ticket");
         try {
             System.setProperty("user.dir", projectRoot.resolve("java/java-ticket").toString());
-            when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+            allowAssetAccess(APPLICANT_ID, "organizer");
             when(privateAssetMapper.insert(any(PrivateAsset.class))).thenAnswer(invocation -> {
                 PrivateAsset asset = invocation.getArgument(0);
                 asset.setId(9102L);
@@ -323,7 +324,7 @@ class PrivateAssetServiceTest {
         PrivateAsset asset = pendingAsset(9101L, APPLICANT_ID, privateRoot);
         asset.setRelativePath("../" + outside.getFileName());
         when(privateAssetMapper.selectById(9101L)).thenReturn(asset);
-        when(userAccessService.requireAdminOrOrganizer(APPLICANT_ID)).thenReturn(user(APPLICANT_ID, "organizer"));
+        allowAssetAccess(APPLICANT_ID, "organizer");
         PrivateAssetService service = service(privateRoot);
 
         BusinessException error = assertThrows(BusinessException.class,
@@ -383,6 +384,14 @@ class PrivateAssetServiceTest {
         user.setId(id);
         user.setRole(role);
         return user;
+    }
+
+    private void allowAssetAccess(Long userId, String role) {
+        InternalUserRefResponse ref = user(userId, role);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage"))
+                .thenReturn(ref);
+        lenient().when(userAccessService.isAdmin(ref)).thenReturn("admin".equals(role));
+        lenient().when(userAccessService.isOrganizer(ref)).thenReturn("organizer".equals(role));
     }
 
     private VenueApplication venueApplication(Long id, Long applicantId) {

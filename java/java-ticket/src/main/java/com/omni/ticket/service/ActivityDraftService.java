@@ -37,7 +37,7 @@ public class ActivityDraftService {
 
     @Transactional
     public ActivityDraftResponse createDraft(Long userId, Map<String, Object> body) {
-        userAccessService.requireAdminOrOrganizerRole(userId);
+        userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "activity.manage");
         if (body == null) {
             throw new BusinessException(400, "活动参数不能为空");
         }

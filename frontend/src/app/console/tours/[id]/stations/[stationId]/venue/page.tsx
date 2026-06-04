@@ -13,6 +13,7 @@ import {
   submitVenueApplication,
   uploadPrivateAsset,
 } from '@/lib/api'
+import { isPlatformAdminRole } from '@/lib/console-auth'
 import {
   StationVenueApprovalForm,
   createEmptyStationVenueApprovalValue,
@@ -130,7 +131,7 @@ export default function AddStationVenuePage() {
         reason: '巡演城市站添加场馆',
       })
       await submitStationConfigVersion(version.id)
-      if (role === 'admin') {
+      if (isPlatformAdminRole(role)) {
         await approveStationConfigVersion(version.id, { reviewNote: '管理员直接添加场馆' })
         setMessage('场馆已添加并应用到该城市站。')
       } else {

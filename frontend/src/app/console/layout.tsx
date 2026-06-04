@@ -63,7 +63,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     if (isPlatformAdminRole(role)) {
       return menuItems
     }
-    if (permissionCodes.length > 0) {
+    if (permissionCodes.length > 0 || role === 'organizer_admin') {
       return menuItems.filter((item) => {
         return canAccessConsolePath(item.href, permissionCodes)
       })
@@ -108,7 +108,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setRole(latest.role)
         setPermissionCodes(latestPermissions)
         if (!isPlatformAdminRole(latest.role)) {
-          if (latestPermissions.length > 0) {
+          if (latestPermissions.length > 0 || latest.role === 'organizer_admin') {
             if (!canAccessConsolePath(pathname, latestPermissions)) {
               setRedirecting(true)
               router.replace('/console')
@@ -131,7 +131,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setRole(cached.role || '')
         setPermissionCodes(cachedPermissions)
         if (!isPlatformAdminRole(cached.role)) {
-          if (cachedPermissions.length > 0) {
+          if (cachedPermissions.length > 0 || cached.role === 'organizer_admin') {
             if (!canAccessConsolePath(pathname, cachedPermissions)) {
               setRedirecting(true)
               router.replace('/console')

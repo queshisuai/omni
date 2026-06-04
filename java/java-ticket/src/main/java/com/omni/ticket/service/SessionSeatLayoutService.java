@@ -900,8 +900,7 @@ public class SessionSeatLayoutService {
     }
 
     private Session requireManageableSession(Long userId, Long sessionId) {
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(userId);
-        String role = user.getRole();
+        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "session.manage");
         Session session = sessionMapper.selectById(sessionId);
         if (session == null) {
             throw new BusinessException(404, "场次不存在");
@@ -910,7 +909,7 @@ public class SessionSeatLayoutService {
         if (activity == null) {
             throw new BusinessException(404, "活动不存在");
         }
-        if ("organizer".equals(role) && !userId.equals(activity.getOrganizerId())) {
+        if (userAccessService.isOrganizer(user) && !userId.equals(activity.getOrganizerId())) {
             throw new BusinessException(403, "只能操作自己主办的场次");
         }
         return session;

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { createStationConfigVersion, getActivityStation, getAdminActivity, listAdminSessions, listAdminVenues, listCategories, submitStationConfigVersion, submitVenueApplication, updateAdminActivity, uploadPrivateAsset, uploadTicketAsset } from '@/lib/api'
+import { isPlatformAdminRole } from '@/lib/console-auth'
 import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
 import { LocalFileUpload } from '@/components/LocalFileUpload'
 import { StationVenueApprovalForm, createEmptyStationVenueApprovalValue, validateStationVenueApproval, type StationVenueApprovalValue } from '@/components/station-config/StationVenueApprovalForm'
@@ -151,7 +152,7 @@ export default function EditActivityPage() {
         realNameRequired: form.realNameRequired,
         ticketTransferAllowed: form.ticketTransferAllowed,
       })
-      setMessage(role === 'admin' ? '平台活动基础信息已保存' : '我的活动基础信息已保存')
+      setMessage(isPlatformAdminRole(role) ? '平台活动基础信息已保存' : '我的活动基础信息已保存')
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存活动失败')
     } finally {
@@ -251,7 +252,7 @@ export default function EditActivityPage() {
     )
   }
 
-  const isAdmin = role === 'admin'
+  const isAdmin = isPlatformAdminRole(role)
   const primarySession = sessions[0]
 
   return (
