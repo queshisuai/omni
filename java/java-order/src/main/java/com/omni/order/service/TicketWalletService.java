@@ -95,6 +95,7 @@ public class TicketWalletService {
             OrderAttendee attendee = attendees != null && i < attendees.size() ? attendees.get(i) : null;
             OrderSeat seat = seats != null && i < seats.size() ? seats.get(i) : null;
             ElectronicTicket ticket = new ElectronicTicket();
+            ticket.setId(electronicTicketMapper.nextId());
             ticket.setTicketNo(buildTicketNo(order.getId(), i + 1));
             ticket.setOrderId(order.getId());
             ticket.setOrderSeatId(seat != null ? seat.getId() : null);

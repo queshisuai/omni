@@ -72,12 +72,14 @@ class TicketWalletServiceTest {
         when(electronicTicketMapper.countByOrderId(9001L)).thenReturn(0L);
         when(orderAttendeeMapper.selectByOrderIds(List.of(9001L))).thenReturn(List.of(alice, bob));
         when(orderSeatMapper.selectLockedAndSoldSeatsByOrderId(9001L)).thenReturn(List.of(seatA, seatB));
+        when(electronicTicketMapper.nextId()).thenReturn(7101L, 7102L);
 
         service.issueForPaidOrder(order);
 
         ArgumentCaptor<ElectronicTicket> captor = ArgumentCaptor.forClass(ElectronicTicket.class);
         verify(electronicTicketMapper, org.mockito.Mockito.times(2)).insertIgnoreTicketNo(captor.capture());
         List<ElectronicTicket> tickets = captor.getAllValues();
+        assertEquals(List.of(7101L, 7102L), tickets.stream().map(ElectronicTicket::getId).collect(Collectors.toList()));
         assertEquals(List.of("Alice", "Bob"), tickets.stream().map(ElectronicTicket::getRealName).collect(Collectors.toList()));
         assertEquals(List.of("A-1", "A-2"), tickets.stream().map(ElectronicTicket::getSeatLabel).collect(Collectors.toList()));
         assertEquals(1, tickets.get(0).getStatus());

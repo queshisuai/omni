@@ -28,6 +28,11 @@ class OrderSeataPostgresqlIdStrategyTest {
         assertSeataCompatibleSequenceId(OrderSeat.class, "order_seat_id_seq");
     }
 
+    @Test
+    void electronicTicketInsertUsesExplicitPostgresqlSequenceIdForSeataAt() throws Exception {
+        assertSeataCompatibleSequenceId(ElectronicTicket.class, "electronic_ticket_id_seq");
+    }
+
     private static void assertSeataCompatibleSequenceId(Class<?> entityType, String sequenceName) throws Exception {
         KeySequence keySequence = entityType.getAnnotation(KeySequence.class);
         assertNotNull(keySequence);
