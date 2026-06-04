@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Plus, RefreshCw, ShieldAlert } from 'lucide-react'
 import { createExceptionTask, listExceptionTasks } from '@/lib/api'
+import { formatExceptionSeverity, formatExceptionStatus, formatExceptionTaskType } from '@/lib/operation-display'
 import type { ExceptionTaskCreatePayload, ExceptionTaskVO } from '@/types/api'
 
 const severityOptions = [
@@ -25,18 +26,6 @@ const taskTypeOptions = [
   { value: 'stock_deduct_failed', label: '库存扣减失败' },
   { value: 'duplicate_payment', label: '重复支付' },
 ]
-
-const severityText: Record<string, string> = {
-  high: '高',
-  medium: '中',
-  low: '低',
-}
-
-const statusText: Record<string, string> = {
-  pending: '待处理',
-  processing: '处理中',
-  resolved: '已处理',
-}
 
 function formatTime(value?: string | null) {
   if (!value) return '-'
@@ -222,13 +211,13 @@ export default function ExceptionTasksPage() {
               <tbody className="divide-y divide-gray-100">
                 {filteredItems.map(item => (
                   <tr key={item.id} className="text-[#333]">
-                    <td className="px-4 py-3 font-mono text-[12px]">{item.taskType}</td>
+                    <td className="px-4 py-3">{formatExceptionTaskType(item.taskType)}</td>
                     <td className="px-4 py-3">
                       <div>{item.businessNo || item.orderNo || '-'}</div>
                       <div className="mt-1 text-[12px] text-gray-500">{item.refundNo || item.paymentNo || item.ticketNo || ''}</div>
                     </td>
-                    <td className="px-4 py-3">{severityText[item.severity] || item.severity}</td>
-                    <td className="px-4 py-3">{statusText[item.status] || item.status}</td>
+                    <td className="px-4 py-3">{formatExceptionSeverity(item.severity)}</td>
+                    <td className="px-4 py-3">{formatExceptionStatus(item.status)}</td>
                     <td className="max-w-[320px] px-4 py-3 text-gray-600">{item.result || item.reason || '-'}</td>
                     <td className="px-4 py-3 font-mono text-[12px] text-gray-500">{item.traceId || '-'}</td>
                     <td className="whitespace-nowrap px-4 py-3">{formatTime(item.createTime)}</td>

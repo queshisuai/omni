@@ -142,7 +142,7 @@ public class InternalWorkbenchController {
         requirePermission(userId, "organizer.account.manage");
         OrganizerAdminAccountResponse response = organizerAdminAccountService.deactivate(id);
         auditSuccess(userId, "organizer_admin.deactivate", "user", response.getId(), response.getPhone(),
-                "删除主办方管理员账号", "删除成功");
+                "停用主办方管理员账号", "停用成功");
         return Result.success(response);
     }
 
@@ -155,7 +155,7 @@ public class InternalWorkbenchController {
         requirePermission(userId, "organizer.account.manage");
         OrganizerAdminAccountResponse response = organizerAdminAccountService.delete(id);
         auditSuccess(userId, "organizer_admin.delete", "user", response.getId(), response.getPhone(),
-                "停用主办方管理员", "停用成功");
+                "删除主办方管理员账号", "删除成功");
         return Result.success(response);
     }
 

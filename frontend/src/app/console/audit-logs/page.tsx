@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ClipboardList, RefreshCw, Search } from 'lucide-react'
 import { getUserInfo, listOperationAuditLogs } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
+import { formatOperationAction, formatOperationTargetRef, formatOperationTargetType, formatOperatorRole } from '@/lib/operation-display'
 import type { OperationAuditLogVO } from '@/types/api'
 
 type SuccessFilter = '' | 'true' | 'false'
@@ -154,12 +155,12 @@ export default function AuditLogsPage() {
                     <td className="whitespace-nowrap px-4 py-3">{formatTime(item.createTime)}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-[#111]">{item.operatorId}</div>
-                      <div className="mt-1 text-[12px] text-gray-500">{item.operatorRole || '-'}</div>
+                      <div className="mt-1 text-[12px] text-gray-500">{formatOperatorRole(item.operatorRole)}</div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-[12px]">{item.action}</td>
+                    <td className="px-4 py-3">{formatOperationAction(item.action)}</td>
                     <td className="px-4 py-3">
-                      <div className="font-mono text-[12px]">{item.targetType}</div>
-                      <div className="mt-1 text-[12px] text-gray-500">{item.targetRef || item.targetId || '-'}</div>
+                      <div className="font-medium text-[#111]">{formatOperationTargetType(item.targetType)}</div>
+                      <div className="mt-1 text-[12px] text-gray-500">{formatOperationTargetRef(item.targetType, item.targetRef, item.targetId)}</div>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] ${item.success ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>

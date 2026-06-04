@@ -7,6 +7,7 @@ import { canLoadPlatformOpsSummary } from '@/lib/console-ops'
 import { getConsoleQuickActions } from '@/lib/console-paths'
 import { getConsoleBrandLabel, hasConsolePermission } from '@/lib/console-auth'
 import { buildDashboardBars, summarizeOpsMetric } from '@/lib/marketing-tools'
+import { formatOperationAction } from '@/lib/operation-display'
 import { ConsoleDashboardSkeleton } from '@/components/Skeleton'
 import { Activity, AlertTriangle, CalendarDays, ClipboardList, FileSearch, Gauge, RotateCcw, ShieldAlert, ShoppingCart, Ticket, TrendingUp, Users } from 'lucide-react'
 import type { AdminSummaryVO, ExceptionTaskVO, GrabOpsSummaryVO, OperationAuditLogVO, ReconciliationBatchVO } from '@/types/api'
@@ -229,7 +230,9 @@ export default function ConsoleHome() {
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
                   <ClipboardList className="h-4 w-4 text-[#16a34a]" /> 最新人工操作
                 </div>
-                <div className="truncate text-[16px] font-bold leading-tight text-gray-900">{platformOps?.latestAudit?.action || '暂无记录'}</div>
+                <div className="truncate text-[16px] font-bold leading-tight text-gray-900">
+                  {platformOps?.latestAudit ? formatOperationAction(platformOps.latestAudit.action) : '暂无记录'}
+                </div>
                 <div className="mt-2 text-[12px] text-gray-500">{formatDateTime(platformOps?.latestAudit?.createTime)}</div>
               </a>
             </div>
