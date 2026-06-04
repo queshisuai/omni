@@ -1,0 +1,24 @@
+Slide size: 1280x720.
+Background:
+- Cover/closing: deep ink #101828 with magenta #ff1268 and cyan #2dd4bf accents.
+- Content slides: warm white #fbfcfe or light gray #f5f7fb.
+Typography:
+- Title: Microsoft YaHei UI / Aptos Display fallback, 34-54px.
+- Body: Microsoft YaHei UI / Aptos fallback, 16-24px.
+- Code/API labels: Consolas / Aptos Mono fallback, 13-16px.
+Palette:
+- Brand accent #ff1268.
+- Technical accent #2dd4bf.
+- Ink #101828, text #1f2937, muted #667085.
+- Support colors: blue #2563eb, green #16a34a, amber #f59e0b.
+Diagram grammar:
+- Services are solid rounded rectangles with port/database metadata.
+- Internal API arrows are thin magenta; user flow arrows are blue; infrastructure support lines are muted gray.
+- Database items use small cylinder-like stacks built from editable shapes.
+Footer/page marker:
+- Left footer: Omni 万象抢票平台 | 答辩演示.
+- Right footer: page number.
+Banned motifs:
+- No fake official logos.
+- No decorative card grids without encoded meaning.
+- No text-only slides.

@@ -1,0 +1,22 @@
+task mode: create
+primary deck-profile: product-platform
+secondary profile gates: engineering-platform
+required proof objects:
+- 项目定位与业务闭环
+- 三个 2 人小组的职责边界
+- 五个微服务与前端的系统架构图
+- 八个中间件/基础设施组件的支撑关系
+- C 端购票链路、B 端活动管理链路
+- 三组负责模块的答辩要点
+- 验证命令与演示路径
+source/asset requirements:
+- 使用 AGENTS.md、docker-compose.yml、start-project.ps1、pom.xml、frontend/package.json 和 Java Controller/Client 路由检索结果。
+- 当前会话未暴露内置 image_gen 工具，不调用外部图片 API；图片资产用本地生成的项目贴合架构图、流程图、矩阵图和可编辑图形完成。
+brand authenticity constraints:
+- 不生成伪官方 logo；只使用“Omni / 万象抢票平台”文字品牌、项目品牌色 #ff1268 和工程图形。
+profile-specific QA gates:
+- 每页有明确主张与证明对象。
+- 架构、流程、依赖方向必须与项目实际一致。
+- 图形和文本不重叠；流程箭头方向清晰。
+known missing inputs:
+- 未提供 6 名成员姓名，PPT 使用“第 1 组 / 第 2 组 / 第 3 组”占位，便于现场替换。

@@ -1,0 +1,10 @@
+Sources used:
+- AGENTS.md / project-doc: 项目定位、运行模式、五库 prod-split、服务端口、测试账号、边界约束、验收命令。
+- docker-compose.yml: PostgreSQL、Redis、Nacos、Seata config init、Seata server、RabbitMQ、grab-service、frontend 容器化支撑。
+- start-project.ps1: 推荐启动方式、本机 prod-split 启动、PostgreSQL/Nacos 检查、Java 服务和前端启动。
+- java/pom.xml: Spring Boot 2.7.18、Spring Cloud 2021.0.8、Spring Cloud Alibaba、Seata、MyBatis-Plus、JWT、AMQP。
+- frontend/package.json: Next.js 16、React 19、Tailwind CSS、lucide-react、typecheck/build 脚本。
+- rg Controller/Client results: 用户、票务、订单、支付、通知服务关键接口，以及 internal API 调用边界。
+Asset notes:
+- No external logos, partner marks, product screenshots, or generated brand marks were used.
+- Visuals are local presentation diagrams and generated geometry matching the actual Omni architecture.

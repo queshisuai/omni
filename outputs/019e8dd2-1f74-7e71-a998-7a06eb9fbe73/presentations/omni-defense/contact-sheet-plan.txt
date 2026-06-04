@@ -1,0 +1,18 @@
+Macro layouts:
+01 Dark cover with component rail and abstract ticketing scene.
+02 Two-column business map: B 端 supply and C 端 demand.
+03 Three-lane responsibility matrix.
+04 System architecture topology.
+05 Infrastructure/middleware grid with support bands.
+06 C 端 sequence flow.
+07 B 端 workflow and management objects.
+08 Module deep dive with left responsibility stack and right route proof.
+09 Ticket domain model and lock-stock interaction.
+10 Order/payment state machine.
+11 Verification checklist with demo route.
+12 Closing synthesis with end-to-end chain.
+
+Rhythm gates:
+- No more than two card-grid slides.
+- No three consecutive slides use the same macro layout.
+- Every slide includes at least one diagram/table/proof visual.
