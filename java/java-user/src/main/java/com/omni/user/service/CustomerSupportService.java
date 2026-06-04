@@ -568,42 +568,91 @@ public class CustomerSupportService {
     @Scheduled(fixedDelay = 60_000L)
     @Transactional
     public void closeInactiveAssignedHumanConversationsOnSchedule() {
-        int closedCount = closeInactiveAssignedHumanConversations(LocalDateTime.now());
+        int closedCount = closeInactiveSupportConversations(LocalDateTime.now());
         if (closedCount > 0) {
             log.info("自动结束超时客服会话: count={}", closedCount);
         }
     }
 
     public int closeInactiveAssignedHumanConversations(LocalDateTime now) {
+        return closeInactiveSupportConversations(now);
+    }
+
+    public int closeInactiveSupportConversations(LocalDateTime now) {
         LocalDateTime effectiveNow = now == null ? LocalDateTime.now() : now;
         LocalDateTime deadline = effectiveNow.minusMinutes(30);
         List<SupportConversation> conversations = conversationMapper.selectList(new LambdaQueryWrapper<SupportConversation>()
-                .eq(SupportConversation::getSourceType, SOURCE_HUMAN)
-                .eq(SupportConversation::getStatus, STATUS_ASSIGNED));
+                .in(SupportConversation::getStatus, STATUS_OPEN, STATUS_ASSIGNED, STATUS_CLOSE_REQUESTED));
         int closedCount = 0;
         for (SupportConversation conversation : conversations) {
-            SupportMessage lastUserMessage = messageMapper.selectOne(new LambdaQueryWrapper<SupportMessage>()
-                    .eq(SupportMessage::getConversationId, conversation.getId())
-                    .eq(SupportMessage::getSenderType, "USER")
-                    .orderByDesc(SupportMessage::getCreateTime)
-                    .orderByDesc(SupportMessage::getId)
-                    .last("limit 1"));
-            if (lastUserMessage == null || lastUserMessage.getCreateTime() == null) {
+            LocalDateTime lastServiceMessageAt = resolveLastServiceMessageAt(conversation);
+            if (lastServiceMessageAt == null) {
                 continue;
             }
-            if (!lastUserMessage.getCreateTime().isBefore(deadline)) {
+            if (!lastServiceMessageAt.isBefore(deadline)) {
                 continue;
             }
+            if (hasUserReplyAtOrAfter(conversation.getId(), lastServiceMessageAt)) {
+                continue;
+            }
+            String fromStatus = conversation.getStatus();
             conversation.setStatus(STATUS_CLOSED);
             conversation.setClosedAt(effectiveNow);
             conversation.setLastMessage(AUTO_CLOSE_MESSAGE);
             touch(conversation, effectiveNow);
             conversationMapper.updateById(conversation);
             insertMessage(conversation.getId(), null, "SYSTEM", AUTO_CLOSE_MESSAGE);
-            writeAudit(conversation.getId(), null, "AUTO_CLOSED", STATUS_ASSIGNED, STATUS_CLOSED, AUTO_CLOSE_MESSAGE);
+            writeAudit(conversation.getId(), null, "AUTO_CLOSED", fromStatus, STATUS_CLOSED, AUTO_CLOSE_MESSAGE);
             closedCount++;
         }
         return closedCount;
+    }
+
+    private LocalDateTime resolveLastServiceMessageAt(SupportConversation conversation) {
+        if (conversation == null || conversation.getId() == null) {
+            return null;
+        }
+        if (STATUS_CLOSE_REQUESTED.equals(conversation.getStatus())) {
+            return conversation.getCloseRequestedAt();
+        }
+        if (STATUS_ASSIGNED.equals(conversation.getStatus())) {
+            if (conversation.getLastAgentMessageAt() != null) {
+                return conversation.getLastAgentMessageAt();
+            }
+            return findLastMessageTime(conversation.getId(), Collections.singletonList("AGENT"));
+        }
+        if (STATUS_OPEN.equals(conversation.getStatus()) && SOURCE_AI.equals(conversation.getSourceType())) {
+            return findLastMessageTime(conversation.getId(), Collections.singletonList("AI"));
+        }
+        return null;
+    }
+
+    private LocalDateTime findLastMessageTime(Long conversationId, List<String> senderTypes) {
+        if (conversationId == null || senderTypes == null || senderTypes.isEmpty()) {
+            return null;
+        }
+        SupportMessage message = messageMapper.selectOne(new LambdaQueryWrapper<SupportMessage>()
+                .eq(SupportMessage::getConversationId, conversationId)
+                .in(SupportMessage::getSenderType, senderTypes)
+                .orderByDesc(SupportMessage::getCreateTime)
+                .orderByDesc(SupportMessage::getId)
+                .last("limit 1"));
+        return message == null ? null : message.getCreateTime();
+    }
+
+    private boolean hasUserReplyAtOrAfter(Long conversationId, LocalDateTime serviceMessageAt) {
+        if (conversationId == null || serviceMessageAt == null) {
+            return false;
+        }
+        SupportMessage lastUserMessage = messageMapper.selectOne(new LambdaQueryWrapper<SupportMessage>()
+                .eq(SupportMessage::getConversationId, conversationId)
+                .eq(SupportMessage::getSenderType, "USER")
+                .orderByDesc(SupportMessage::getCreateTime)
+                .orderByDesc(SupportMessage::getId)
+                .last("limit 1"));
+        return lastUserMessage != null
+                && lastUserMessage.getCreateTime() != null
+                && !lastUserMessage.getCreateTime().isBefore(serviceMessageAt);
     }
 
     private SupportConversation requireVisibleConversation(Long actorUserId, Long conversationId) {

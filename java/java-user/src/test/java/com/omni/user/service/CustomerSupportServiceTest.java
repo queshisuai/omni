@@ -1,5 +1,6 @@
 package com.omni.user.service;
 
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.omni.exception.BusinessException;
 import com.omni.user.mq.NotificationMqProducer;
@@ -286,7 +287,7 @@ class CustomerSupportServiceTest {
     }
 
     @Test
-    void autoClosesAssignedHumanConversationWhenUserInactiveMoreThanThirtyMinutes() {
+    void autoClosesAssignedHumanConversationWhenUserDoesNotReplyAfterAgentMessage() {
         LocalDateTime now = LocalDateTime.of(2026, 6, 1, 17, 0);
         SupportConversation conversation = new SupportConversation();
         conversation.setId(99L);
@@ -294,11 +295,13 @@ class CustomerSupportServiceTest {
         conversation.setStatus("ASSIGNED");
         conversation.setSourceType("HUMAN");
         when(conversationMapper.selectList(any())).thenReturn(List.of(conversation));
-        SupportMessage lastUserMessage = new SupportMessage();
-        lastUserMessage.setConversationId(99L);
-        lastUserMessage.setSenderType("USER");
-        lastUserMessage.setCreateTime(now.minusMinutes(31));
-        when(messageMapper.selectOne(any())).thenReturn(lastUserMessage);
+        SupportMessage lastAgentMessage = new SupportMessage();
+        lastAgentMessage.setConversationId(99L);
+        lastAgentMessage.setSenderType("AGENT");
+        lastAgentMessage.setCreateTime(now.minusMinutes(31));
+        when(messageMapper.selectOne(any())).thenAnswer(invocation ->
+                wrapperHasParam(invocation.getArgument(0), "AGENT") ? lastAgentMessage : null
+        );
 
         int closedCount = service.closeInactiveAssignedHumanConversations(now);
 
@@ -314,6 +317,65 @@ class CustomerSupportServiceTest {
     }
 
     @Test
+    void autoClosesAiConversationWhenUserDoesNotReplyAfterAiMessage() {
+        LocalDateTime now = LocalDateTime.of(2026, 6, 1, 17, 0);
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("OPEN");
+        conversation.setSourceType("AI");
+        when(conversationMapper.selectList(any())).thenReturn(List.of(conversation));
+        SupportMessage lastAiMessage = new SupportMessage();
+        lastAiMessage.setConversationId(99L);
+        lastAiMessage.setSenderType("AI");
+        lastAiMessage.setCreateTime(now.minusMinutes(31));
+        when(messageMapper.selectOne(any())).thenAnswer(invocation ->
+                wrapperHasParam(invocation.getArgument(0), "AI") ? lastAiMessage : null
+        );
+
+        int closedCount = service.closeInactiveAssignedHumanConversations(now);
+
+        assertEquals(1, closedCount);
+        assertEquals("CLOSED", conversation.getStatus());
+        assertEquals(now, conversation.getClosedAt());
+    }
+
+    @Test
+    void doesNotAutoCloseWhenUserRepliedAfterLastServiceMessage() {
+        LocalDateTime now = LocalDateTime.of(2026, 6, 1, 17, 0);
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("ASSIGNED");
+        conversation.setSourceType("HUMAN");
+        when(conversationMapper.selectList(any())).thenReturn(List.of(conversation));
+        SupportMessage lastAgentMessage = new SupportMessage();
+        lastAgentMessage.setConversationId(99L);
+        lastAgentMessage.setSenderType("AGENT");
+        lastAgentMessage.setCreateTime(now.minusMinutes(45));
+        SupportMessage userReplyAfterAgent = new SupportMessage();
+        userReplyAfterAgent.setConversationId(99L);
+        userReplyAfterAgent.setSenderType("USER");
+        userReplyAfterAgent.setCreateTime(now.minusMinutes(31));
+        when(messageMapper.selectOne(any())).thenAnswer(invocation -> {
+            Object wrapper = invocation.getArgument(0);
+            if (wrapperHasParam(wrapper, "AGENT")) {
+                return lastAgentMessage;
+            }
+            if (wrapperHasParam(wrapper, "USER")) {
+                return userReplyAfterAgent;
+            }
+            return null;
+        });
+
+        int closedCount = service.closeInactiveAssignedHumanConversations(now);
+
+        assertEquals(0, closedCount);
+        assertEquals("ASSIGNED", conversation.getStatus());
+        verify(conversationMapper, org.mockito.Mockito.never()).updateById(any());
+    }
+
+    @Test
     void doesNotAutoCloseWhenLastUserMessageIsWithinThirtyMinutes() {
         LocalDateTime now = LocalDateTime.of(2026, 6, 1, 17, 0);
         SupportConversation conversation = new SupportConversation();
@@ -322,11 +384,13 @@ class CustomerSupportServiceTest {
         conversation.setStatus("ASSIGNED");
         conversation.setSourceType("HUMAN");
         when(conversationMapper.selectList(any())).thenReturn(List.of(conversation));
-        SupportMessage lastUserMessage = new SupportMessage();
-        lastUserMessage.setConversationId(99L);
-        lastUserMessage.setSenderType("USER");
-        lastUserMessage.setCreateTime(now.minusMinutes(29));
-        when(messageMapper.selectOne(any())).thenReturn(lastUserMessage);
+        SupportMessage lastAgentMessage = new SupportMessage();
+        lastAgentMessage.setConversationId(99L);
+        lastAgentMessage.setSenderType("AGENT");
+        lastAgentMessage.setCreateTime(now.minusMinutes(29));
+        when(messageMapper.selectOne(any())).thenAnswer(invocation ->
+                wrapperHasParam(invocation.getArgument(0), "AGENT") ? lastAgentMessage : null
+        );
 
         int closedCount = service.closeInactiveAssignedHumanConversations(now);
 
@@ -704,5 +768,32 @@ class CustomerSupportServiceTest {
         conversation.setCreateTime(LocalDateTime.of(2026, 6, 2, 10, 0));
         conversation.setUpdateTime(LocalDateTime.of(2026, 6, 2, 10, 0));
         return conversation;
+    }
+
+    private boolean wrapperHasParam(Object wrapper, Object expected) {
+        if (!(wrapper instanceof AbstractWrapper)) {
+            return false;
+        }
+        AbstractWrapper<?, ?, ?> queryWrapper = (AbstractWrapper<?, ?, ?>) wrapper;
+        queryWrapper.getSqlSegment();
+        return queryWrapper.getParamNameValuePairs().values().stream()
+                .anyMatch(value -> paramMatches(value, expected));
+    }
+
+    private boolean paramMatches(Object value, Object expected) {
+        if (expected == null) {
+            return value == null;
+        }
+        if (expected.equals(value)) {
+            return true;
+        }
+        if (value instanceof Iterable) {
+            for (Object item : (Iterable<?>) value) {
+                if (expected.equals(item)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }
