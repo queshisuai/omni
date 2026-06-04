@@ -35,6 +35,38 @@ describe('VisibleStockService', () => {
     expect(result.ticketTypes.map((ticket) => ticket.level)).toEqual(['SOLD_OUT', 'LOW', 'HOT']);
   });
 
+  it('caps fallback visible stock at ticket total stock when redis stock is absent', async () => {
+    const redis: any = {
+      get: jest.fn().mockResolvedValue(null),
+    };
+    const ticketClient: any = {
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([
+        { ticketTypeId: 91, name: 'A', price: 280, remainStock: 440, totalStock: 300 },
+      ]),
+    };
+    const service = new VisibleStockService(redis, ticketClient);
+
+    const result = await service.getSessionVisibleStock(3, [91]);
+
+    expect(result.ticketTypes[0]).toEqual({ ticketTypeId: 91, name: 'A', visibleStock: 300, level: 'AVAILABLE' });
+  });
+
+  it('caps fallback redis stock at ticket total stock', async () => {
+    const redis: any = {
+      get: jest.fn().mockResolvedValue('440'),
+    };
+    const ticketClient: any = {
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([
+        { ticketTypeId: 91, name: 'A', price: 280, remainStock: 300, totalStock: 300 },
+      ]),
+    };
+    const service = new VisibleStockService(redis, ticketClient);
+
+    const result = await service.getSessionVisibleStock(3, [91]);
+
+    expect(result.ticketTypes[0]).toEqual({ ticketTypeId: 91, name: 'A', visibleStock: 300, level: 'AVAILABLE' });
+  });
+
   it('initializes redis stock from db remain stock before displaying fallback stock', async () => {
     const redis: any = {
       get: jest.fn().mockResolvedValue(null),
@@ -43,13 +75,13 @@ describe('VisibleStockService', () => {
       listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 1, name: 'A', price: 1280, remainStock: 12 }]),
     };
     const stockService: any = {
-      initializeFromTicketInfo: jest.fn().mockResolvedValue(12),
+      syncFromTicketInfo: jest.fn().mockResolvedValue(12),
     };
     const service = new VisibleStockService(redis, ticketClient, stockService);
 
     const result = await service.getSessionVisibleStock(101, [1]);
 
-    expect(stockService.initializeFromTicketInfo).toHaveBeenCalledWith(101, { ticketTypeId: 1, name: 'A', price: 1280, remainStock: 12 });
+    expect(stockService.syncFromTicketInfo).toHaveBeenCalledWith(101, { ticketTypeId: 1, name: 'A', price: 1280, remainStock: 12 });
     expect(result.ticketTypes[0]).toEqual({ ticketTypeId: 1, name: 'A', visibleStock: 12, level: 'HOT' });
   });
 

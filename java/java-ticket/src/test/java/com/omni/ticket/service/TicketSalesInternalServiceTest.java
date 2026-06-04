@@ -144,6 +144,26 @@ class TicketSalesInternalServiceTest {
     }
 
     @Test
+    void listVisibleTicketTypesCapsRemainStockAtTotalStock() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = service(ticketTypeMapper, sessionSeatMapper);
+        TicketType ticketType = ticketType(4001L, "A", new BigDecimal("380.00"));
+        ticketType.setTotalStock(300);
+        ticketType.setRemainStock(440);
+        when(ticketTypeMapper.selectBatchIds(List.of(4001L))).thenReturn(List.of(ticketType));
+
+        com.omni.ticket.dto.TicketTypesVisibleRequest request = new com.omni.ticket.dto.TicketTypesVisibleRequest();
+        request.setSessionId(3001L);
+        request.setTicketTypeIds(List.of(4001L));
+
+        List<com.omni.ticket.dto.TicketTypeVisibleResponse> result = service.listVisibleTicketTypes(request);
+
+        assertEquals(300, result.get(0).getTotalStock());
+        assertEquals(300, result.get(0).getRemainStock());
+    }
+
+    @Test
     void lockStockDecreasesTicketTypeStock() {
         TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
         TicketSalesInternalService service = service(ticketTypeMapper, mock(SessionSeatMapper.class));

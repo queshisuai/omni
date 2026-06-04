@@ -166,6 +166,51 @@ describe('GrabWorkerService', () => {
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
 
+  it('refreshes stale sold-out redis stock from ticket stock and retries admission', async () => {
+    const record = queuedRecord();
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn().mockResolvedValue({
+        ...record,
+        progressStatus: GRAB_STATUS.ORDER_CREATED,
+        orderId: 9001,
+        matchedTicketTypeId: 1,
+      }),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn()
+        .mockResolvedValueOnce({ outcome: 'SOLD_OUT', existingRequestId: null })
+        .mockResolvedValueOnce({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', amount: 360 }),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const stockService: any = {
+      syncFromTicketType: jest.fn().mockResolvedValue(112),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue, undefined, stockService);
+    record.workerId = (service as any).workerId;
+
+    await service.processRequest('GRAB1');
+
+    expect(stockService.syncFromTicketType).toHaveBeenCalledWith(101, 1);
+    expect(admission.admit).toHaveBeenCalledTimes(2);
+    expect(orderClient.createOrder).toHaveBeenCalledWith(expect.objectContaining({
+      ticketTypeId: 1,
+      quantity: 2,
+      grabRequestId: 'GRAB1',
+    }));
+    expect(repository.updateStatus).not.toHaveBeenCalledWith('GRAB1', GRAB_STATUS.SOLD_OUT, expect.any(String));
+    expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
+  });
+
   it('releases the redis hold when order creation fails and lookup confirms no order exists', async () => {
     const record = queuedRecord();
     const repository: any = {

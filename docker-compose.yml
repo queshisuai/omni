@@ -102,6 +102,7 @@ services:
         condition: service_healthy
     environment:
       GRAB_SERVICE_PORT: 3001
+      GRAB_SERVICE_HOST: 0.0.0.0
       GRAB_DB_HOST: host.docker.internal
       GRAB_DB_PORT: 5432
       GRAB_DB_NAME: omni_grab

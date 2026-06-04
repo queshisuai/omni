@@ -69,6 +69,16 @@ export class RedisService implements OnModuleDestroy {
     return this.client.hgetall(key);
   }
 
+  async existsByPattern(pattern: string): Promise<boolean> {
+    let cursor = '0';
+    do {
+      const [nextCursor, keys] = await this.client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      if (keys.length > 0) return true;
+      cursor = nextCursor;
+    } while (cursor !== '0');
+    return false;
+  }
+
   async lrange(key: string, start: number, stop: number): Promise<string[]> {
     return this.client.lrange(key, start, stop);
   }

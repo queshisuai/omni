@@ -139,10 +139,24 @@ public class TicketSalesInternalService {
                     response.setTicketTypeId(ticketType.getId());
                     response.setName(ticketType.getName());
                     response.setPrice(ticketType.getPrice());
-                    response.setRemainStock(ticketType.getRemainStock());
+                    response.setTotalStock(ticketType.getTotalStock());
+                    response.setRemainStock(visibleRemainStock(ticketType));
                     return response;
                 })
                 .collect(Collectors.toList());
+    }
+
+    private Integer visibleRemainStock(TicketType ticketType) {
+        Integer remainStock = ticketType.getRemainStock();
+        if (remainStock == null) {
+            return null;
+        }
+        int visibleRemainStock = Math.max(0, remainStock);
+        Integer totalStock = ticketType.getTotalStock();
+        if (totalStock != null) {
+            visibleRemainStock = Math.min(visibleRemainStock, Math.max(0, totalStock));
+        }
+        return visibleRemainStock;
     }
 
     @Transactional(rollbackFor = Exception.class)

@@ -6,6 +6,7 @@ public class TicketTypeVisibleResponse {
     private Long ticketTypeId;
     private String name;
     private BigDecimal price;
+    private Integer totalStock;
     private Integer remainStock;
 
     public Long getTicketTypeId() {
@@ -30,6 +31,14 @@ public class TicketTypeVisibleResponse {
 
     public void setPrice(BigDecimal price) {
         this.price = price;
+    }
+
+    public Integer getTotalStock() {
+        return totalStock;
+    }
+
+    public void setTotalStock(Integer totalStock) {
+        this.totalStock = totalStock;
     }
 
     public Integer getRemainStock() {

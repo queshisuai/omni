@@ -1,7 +1,7 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { GrabStockService } from './grab-stock.service';
 import { RedisService } from './redis.service';
-import { TicketClientService } from './ticket-client.service';
+import { TicketClientService, TicketTypeVisibleInfo } from './ticket-client.service';
 
 export type VisibleStockLevel = 'AVAILABLE' | 'LOW' | 'HOT' | 'SOLD_OUT' | 'UNKNOWN';
 
@@ -29,10 +29,9 @@ export class VisibleStockService {
     const ticketTypes = [];
 
     for (const ticket of metadata) {
-      const redisStock = await this.redisService.get(`grab:stock:${sessionId}:${ticket.ticketTypeId}`);
-      const visibleStock = redisStock == null && this.stockService
-        ? await this.stockService.initializeFromTicketInfo(sessionId, ticket)
-        : this.toVisibleStock(redisStock, ticket.remainStock);
+      const visibleStock = this.stockService
+        ? await this.stockService.syncFromTicketInfo(sessionId, ticket)
+        : this.toVisibleStock(await this.redisService.get(`grab:stock:${sessionId}:${ticket.ticketTypeId}`), ticket);
       ticketTypes.push({
         ticketTypeId: ticket.ticketTypeId,
         name: ticket.name,
@@ -44,12 +43,19 @@ export class VisibleStockService {
     return { sessionId, ticketTypes, snapshotTime: new Date().toISOString() };
   }
 
-  private toVisibleStock(redisStock: string | null, remainStock: number | null): number | null {
+  private toVisibleStock(redisStock: string | null, ticket: TicketTypeVisibleInfo): number | null {
     if (redisStock != null) {
       const parsed = Number(redisStock);
-      return Number.isFinite(parsed) ? parsed : null;
+      if (!Number.isFinite(parsed)) return null;
+      return this.capAtTotalStock(Math.max(0, Math.floor(parsed)), ticket);
     }
-    return remainStock == null ? null : remainStock;
+    if (ticket.remainStock == null) return null;
+    return this.capAtTotalStock(Math.max(0, Math.floor(ticket.remainStock)), ticket);
+  }
+
+  private capAtTotalStock(stock: number, ticket: TicketTypeVisibleInfo): number {
+    if (ticket.totalStock == null) return stock;
+    return Math.min(stock, Math.max(0, Math.floor(ticket.totalStock)));
   }
 
   private level(stock: number | null): VisibleStockLevel {

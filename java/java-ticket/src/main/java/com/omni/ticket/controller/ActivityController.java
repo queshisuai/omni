@@ -2,9 +2,17 @@ package com.omni.ticket.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.common.result.Result;
+import com.omni.common.result.ResultCode;
+import com.omni.common.util.JwtUtil;
+import com.omni.ticket.dto.ActivityQuestionRequest;
+import com.omni.ticket.dto.ActivityReviewListResponse;
+import com.omni.ticket.dto.ActivityReviewRequest;
 import com.omni.ticket.dto.ActivityDetailVO;
 import com.omni.ticket.dto.ActivityVO;
+import com.omni.ticket.entity.ActivityQuestion;
+import com.omni.ticket.entity.ActivityReview;
 import com.omni.ticket.entity.Category;
+import com.omni.ticket.service.ActivityEngagementService;
 import com.omni.ticket.service.ActivityService;
 import com.omni.ticket.service.TourStationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,17 +31,27 @@ import java.util.Map;
 @RequestMapping("/api/ticket")
 public class ActivityController {
 
+    private static final String BEARER_PREFIX = "Bearer ";
+
     private final ActivityService activityService;
     private final TourStationService tourStationService;
+    private final ActivityEngagementService engagementService;
 
     public ActivityController(ActivityService activityService) {
-        this(activityService, null);
+        this(activityService, null, null);
+    }
+
+    public ActivityController(ActivityService activityService, TourStationService tourStationService) {
+        this(activityService, tourStationService, null);
     }
 
     @Autowired
-    public ActivityController(ActivityService activityService, TourStationService tourStationService) {
+    public ActivityController(ActivityService activityService,
+                              TourStationService tourStationService,
+                              ActivityEngagementService engagementService) {
         this.activityService = activityService;
         this.tourStationService = tourStationService;
+        this.engagementService = engagementService;
     }
 
     /**
@@ -68,6 +86,36 @@ public class ActivityController {
         return Result.success(detail);
     }
 
+    @GetMapping("/activities/{id}/reviews")
+    public Result<ActivityReviewListResponse> listActivityReviews(@PathVariable Long id) {
+        return Result.success(engagementService.listReviews(id));
+    }
+
+    @PostMapping("/activities/{id}/reviews")
+    public Result<ActivityReview> createActivityReview(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) ActivityReviewRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(engagementService.createReview(id, userId, request));
+    }
+
+    @GetMapping("/activities/{id}/questions")
+    public Result<List<ActivityQuestion>> listActivityQuestions(@PathVariable Long id) {
+        return Result.success(engagementService.listQuestions(id));
+    }
+
+    @PostMapping("/activities/{id}/questions")
+    public Result<ActivityQuestion> createActivityQuestion(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) ActivityQuestionRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(engagementService.createQuestion(id, userId, request));
+    }
+
     @GetMapping("/tours/{id}")
     public Result<Map<String, Object>> getTourDetail(@PathVariable Long id) {
         return Result.success(tourStationService.getTourDetail(id));
@@ -80,5 +128,14 @@ public class ActivityController {
     public Result<List<Category>> listCategories() {
         List<Category> categories = activityService.listCategories();
         return Result.success(categories);
+    }
+
+    private Long parseUserId(String authorization) {
+        if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) return null;
+        try {
+            return Long.valueOf(JwtUtil.parseToken(authorization.substring(BEARER_PREFIX.length())).getSubject());
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 }

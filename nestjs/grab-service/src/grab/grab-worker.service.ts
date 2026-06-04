@@ -188,6 +188,22 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (admission.outcome === 'SOLD_OUT') {
+      const refreshedStock = await this.stockService?.syncFromTicketType?.(record.sessionId, preference.ticketTypeId);
+      if (refreshedStock != null && refreshedStock >= record.quantity) {
+        admission = await this.admissionService.admit({
+          requestId: record.requestId,
+          userId: record.userId,
+          sessionId: record.sessionId,
+          ticketTypeId: preference.ticketTypeId,
+          quantity: record.quantity,
+          seatIds: record.seatIds,
+          idempotencyKey: record.idempotencyKey,
+          ttlSeconds: this.requestTtlSeconds,
+        });
+      }
+    }
+
+    if (admission.outcome === 'SOLD_OUT') {
       return 'SOLD_OUT';
     }
     if (admission.outcome === 'LIMITED') {

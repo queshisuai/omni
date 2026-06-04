@@ -197,24 +197,44 @@ public class OrderService {
     @GlobalTransactional(name = "omni-create-order", rollbackFor = Exception.class)
     @Transactional(rollbackFor = Exception.class)
     public Order createOrder(CreateOrderRequest request) {
-        int quantity = requirePositiveQuantity(request.getQuantity());
-        Order existingGrabOrder = resolveExistingNormalGrabOrder(request, quantity);
-        if (existingGrabOrder != null) {
-            return existingGrabOrder;
+        OrderCreationTiming timing = OrderCreationTiming.start();
+        Order order = null;
+        Integer quantity = request != null ? request.getQuantity() : null;
+        try {
+            quantity = requirePositiveQuantity(request.getQuantity());
+            Order existingGrabOrder = resolveExistingNormalGrabOrder(request, quantity);
+            timing.mark("existingLookup");
+            if (existingGrabOrder != null) {
+                order = existingGrabOrder;
+                return existingGrabOrder;
+            }
+            validateUserExists(request.getUserId());
+            timing.mark("user");
+            TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), null, quantity);
+            timing.mark("quote");
+            validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
+            validatePerUserLimit(request.getUserId(), quote, quantity);
+            timing.mark("limit");
+            List<ResolvedAttendeeResponse> attendees = resolveOrderAttendees(request.getUserId(), request.getAttendeeIds(), quote, quantity);
+            timing.mark("attendee");
+            order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity, quote.getUnitPrice());
+            lockStockForOrder(order);
+            timing.mark("lockStock");
+            orderMapper.insert(order);
+            writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(),
+                    request.getMatchedTicketTypeId(), request.getAutoDowngraded(), SEAT_SELECTION_NONE);
+            writeOrderAttendees(order, attendees, Collections.emptyList());
+            timing.mark("persist");
+            log.info("订单创建成功: orderNo={}, userId={}, amount={}", order.getOrderNo(), request.getUserId(), order.getAmount());
+            return order;
+        } finally {
+            log.info("订单创建耗时: {}", timing.summary("createOrder", request != null ? request.getGrabRequestId() : null,
+                    order != null ? order.getId() : null,
+                    request != null ? request.getUserId() : null,
+                    request != null ? request.getSessionId() : null,
+                    request != null ? request.getTicketTypeId() : null,
+                    quantity));
         }
-        validateUserExists(request.getUserId());
-        TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), null, quantity);
-        validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
-        validatePerUserLimit(request.getUserId(), quote, quantity);
-        List<ResolvedAttendeeResponse> attendees = resolveOrderAttendees(request.getUserId(), request.getAttendeeIds(), quote, quantity);
-        Order order = buildPendingOrder(request.getUserId(), request.getSessionId(), request.getTicketTypeId(), quantity, quote.getUnitPrice());
-        lockStockForOrder(order);
-        orderMapper.insert(order);
-        writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(),
-                request.getMatchedTicketTypeId(), request.getAutoDowngraded(), SEAT_SELECTION_NONE);
-        writeOrderAttendees(order, attendees, Collections.emptyList());
-        log.info("订单创建成功: orderNo={}, userId={}, amount={}", order.getOrderNo(), request.getUserId(), order.getAmount());
-        return order;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -251,79 +271,100 @@ public class OrderService {
     @GlobalTransactional(name = "omni-create-order-with-seats", rollbackFor = Exception.class)
     @Transactional(rollbackFor = Exception.class)
     public Order createOrderWithSeats(LockSeatsRequest request) {
-        boolean hasSeatIds = request.getSeatIds() != null && !request.getSeatIds().isEmpty();
-        int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
-        String seatSelectionMode = hasSeatIds ? SEAT_SELECTION_EXPLICIT : SEAT_SELECTION_RANDOM;
-        Order existingGrabOrder = resolveExistingNormalGrabOrder(request, quantity, seatSelectionMode);
-        if (existingGrabOrder != null) {
-            return existingGrabOrder;
-        }
-        validateUserExists(request.getUserId());
-        TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
-        validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
-        validatePerUserLimit(request.getUserId(), quote, quantity);
-        List<ResolvedAttendeeResponse> attendees = resolveOrderAttendees(request.getUserId(), request.getAttendeeIds(), quote, quantity);
-        TicketSalesLockRequest lockRequest = new TicketSalesLockRequest();
-        lockRequest.setOrderId(0L);
-        lockRequest.setSessionId(request.getSessionId());
-        lockRequest.setTicketTypeId(request.getTicketTypeId());
-        lockRequest.setSeatIds(request.getSeatIds());
-        lockRequest.setQuantity(quantity);
-        lockRequest.setLockExpireTime(LocalDateTime.now().plusMinutes(15));
-        lockRequest.setAllocateRandom(!hasSeatIds);
-        TicketSalesSeatLockResponse lockResponse = lockSeats(lockRequest);
-        List<Long> lockedSeatIds = lockResponse.getLockedSeatIds();
-        List<String> lockSeatLabels = lockResponse.getSeatLabels();
-        boolean hasLockedSeatIds = lockedSeatIds != null && !lockedSeatIds.isEmpty();
-        boolean hasAggregateSeatLabels = lockSeatLabels != null && !lockSeatLabels.isEmpty();
-        Map<Long, String> lockedSeatLabelsById = Collections.emptyMap();
-        if (hasLockedSeatIds) {
-            if (lockedSeatIds.size() != quantity) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "锁定座位数量与购买数量不一致");
+        OrderCreationTiming timing = OrderCreationTiming.start();
+        Order order = null;
+        Integer quantityForLog = request != null ? request.getQuantity() : null;
+        try {
+            boolean hasSeatIds = request.getSeatIds() != null && !request.getSeatIds().isEmpty();
+            int quantity = hasSeatIds ? request.getSeatIds().size() : requirePositiveQuantity(request.getQuantity());
+            quantityForLog = quantity;
+            String seatSelectionMode = hasSeatIds ? SEAT_SELECTION_EXPLICIT : SEAT_SELECTION_RANDOM;
+            Order existingGrabOrder = resolveExistingNormalGrabOrder(request, quantity, seatSelectionMode);
+            timing.mark("existingLookup");
+            if (existingGrabOrder != null) {
+                order = existingGrabOrder;
+                return existingGrabOrder;
             }
-            if (hasSeatIds && !sameSeatIds(request.getSeatIds(), lockedSeatIds)) {
-                throw new BusinessException(ResultCode.BAD_REQUEST, "锁定座位与所选座位不一致");
-            }
-            lockedSeatLabelsById = buildSeatLabelMap(lockedSeatIds, lockSeatLabels,
-                    "锁定座位标签与座位数量不一致");
-            if (!lockedSeatLabelsById.isEmpty()) {
+            validateUserExists(request.getUserId());
+            timing.mark("user");
+            TicketSalesQuoteResponse quote = quoteTickets(request.getSessionId(), request.getTicketTypeId(), request.getSeatIds(), quantity);
+            timing.mark("quote");
+            validateAuthorizedPrice(request.getAuthorizedMaxUnitPrice(), quote, request.getGrabRequestId());
+            validatePerUserLimit(request.getUserId(), quote, quantity);
+            timing.mark("limit");
+            List<ResolvedAttendeeResponse> attendees = resolveOrderAttendees(request.getUserId(), request.getAttendeeIds(), quote, quantity);
+            timing.mark("attendee");
+            TicketSalesLockRequest lockRequest = new TicketSalesLockRequest();
+            lockRequest.setOrderId(0L);
+            lockRequest.setSessionId(request.getSessionId());
+            lockRequest.setTicketTypeId(request.getTicketTypeId());
+            lockRequest.setSeatIds(request.getSeatIds());
+            lockRequest.setQuantity(quantity);
+            lockRequest.setLockExpireTime(LocalDateTime.now().plusMinutes(15));
+            lockRequest.setAllocateRandom(!hasSeatIds);
+            TicketSalesSeatLockResponse lockResponse = lockSeats(lockRequest);
+            timing.mark("lockSeats");
+            List<Long> lockedSeatIds = lockResponse.getLockedSeatIds();
+            List<String> lockSeatLabels = lockResponse.getSeatLabels();
+            boolean hasLockedSeatIds = lockedSeatIds != null && !lockedSeatIds.isEmpty();
+            boolean hasAggregateSeatLabels = lockSeatLabels != null && !lockSeatLabels.isEmpty();
+            Map<Long, String> lockedSeatLabelsById = Collections.emptyMap();
+            if (hasLockedSeatIds) {
+                if (lockedSeatIds.size() != quantity) {
+                    throw new BusinessException(ResultCode.BAD_REQUEST, "锁定座位数量与购买数量不一致");
+                }
+                if (hasSeatIds && !sameSeatIds(request.getSeatIds(), lockedSeatIds)) {
+                    throw new BusinessException(ResultCode.BAD_REQUEST, "锁定座位与所选座位不一致");
+                }
+                lockedSeatLabelsById = buildSeatLabelMap(lockedSeatIds, lockSeatLabels,
+                        "锁定座位标签与座位数量不一致");
+                if (!lockedSeatLabelsById.isEmpty()) {
+                    quote.setSeatLabels(String.join(", ", lockSeatLabels));
+                }
+            } else if (hasAggregateSeatLabels) {
                 quote.setSeatLabels(String.join(", ", lockSeatLabels));
+            } else {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "锁座结果缺少座位或座位标签");
             }
-        } else if (hasAggregateSeatLabels) {
-            quote.setSeatLabels(String.join(", ", lockSeatLabels));
-        } else {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "锁座结果缺少座位或座位标签");
-        }
-        Order order = buildPendingOrder(
-                request.getUserId(),
-                request.getSessionId(),
-                request.getTicketTypeId(),
-                quantity,
-                quote.getUnitPrice());
-        orderMapper.insert(order);
-        writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(),
-                request.getMatchedTicketTypeId(), request.getAutoDowngraded(), seatSelectionMode);
-        List<Long> orderSeatIds = new ArrayList<>();
-        if (lockedSeatIds != null && !lockedSeatIds.isEmpty() && orderSeatMapper != null) {
-            LocalDateTime now = LocalDateTime.now();
-            LocalDateTime expireTime = now.plusMinutes(15);
-            for (Long seatId : lockedSeatIds) {
-                OrderSeat orderSeat = new OrderSeat();
-                orderSeat.setOrderId(order.getId());
-                orderSeat.setSessionSeatId(seatId);
-                orderSeat.setSessionId(request.getSessionId());
-                orderSeat.setTicketTypeId(request.getTicketTypeId());
-                orderSeat.setStatus(1);
-                orderSeat.setSeatLabel(lockedSeatLabelsById.get(seatId));
-                orderSeat.setLockExpireTime(expireTime);
-                orderSeat.setCreateTime(now);
-                orderSeat.setUpdateTime(now);
-                orderSeatMapper.insert(orderSeat);
-                orderSeatIds.add(orderSeat.getId());
+            order = buildPendingOrder(
+                    request.getUserId(),
+                    request.getSessionId(),
+                    request.getTicketTypeId(),
+                    quantity,
+                    quote.getUnitPrice());
+            orderMapper.insert(order);
+            writeSnapshot(order, quote, request.getGrabRequestId(), request.getRequestedTicketTypeId(),
+                    request.getMatchedTicketTypeId(), request.getAutoDowngraded(), seatSelectionMode);
+            List<Long> orderSeatIds = new ArrayList<>();
+            if (lockedSeatIds != null && !lockedSeatIds.isEmpty() && orderSeatMapper != null) {
+                LocalDateTime now = LocalDateTime.now();
+                LocalDateTime expireTime = now.plusMinutes(15);
+                for (Long seatId : lockedSeatIds) {
+                    OrderSeat orderSeat = new OrderSeat();
+                    orderSeat.setOrderId(order.getId());
+                    orderSeat.setSessionSeatId(seatId);
+                    orderSeat.setSessionId(request.getSessionId());
+                    orderSeat.setTicketTypeId(request.getTicketTypeId());
+                    orderSeat.setStatus(1);
+                    orderSeat.setSeatLabel(lockedSeatLabelsById.get(seatId));
+                    orderSeat.setLockExpireTime(expireTime);
+                    orderSeat.setCreateTime(now);
+                    orderSeat.setUpdateTime(now);
+                    orderSeatMapper.insert(orderSeat);
+                    orderSeatIds.add(orderSeat.getId());
+                }
             }
+            writeOrderAttendees(order, attendees, orderSeatIds);
+            timing.mark("persist");
+            return order;
+        } finally {
+            log.info("订单创建耗时: {}", timing.summary("createOrderWithSeats", request != null ? request.getGrabRequestId() : null,
+                    order != null ? order.getId() : null,
+                    request != null ? request.getUserId() : null,
+                    request != null ? request.getSessionId() : null,
+                    request != null ? request.getTicketTypeId() : null,
+                    quantityForLog));
         }
-        writeOrderAttendees(order, attendees, orderSeatIds);
-        return order;
     }
 
     @GlobalTransactional(name = "omni-create-team-order-with-locked-seats", rollbackFor = Exception.class)

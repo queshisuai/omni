@@ -11,6 +11,7 @@ import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDia
 import { cancelGrabRequest, createActivityQuestion, createActivityReview, createAlipayQrPay, createSubscription, createSubscriptionCalendar, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listActivityQuestions, listActivityReviews, listUserAttendees, recordUserBrowseHistory, submitGrabRequest } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, canShowWaitlistEntry, getPurchaseConfirmCopy, getPurchaseQuantityMax, getWaitlistQuantityMax, shouldResetGrabIdempotencyForStatus, type PurchaseConfirmMode } from '@/lib/purchase-intent'
+import { startGrabProgressPolling } from '@/lib/grab-progress-polling'
 import { getCountdownText } from '@/lib/subscription'
 import { buildZoomTargetFromTicketGroup, toSeatCraftSelectionModel } from '@/components/seatcraft-unified/adapters'
 import { defaultTeamFallbacks } from '@/lib/team-grab'
@@ -352,10 +353,10 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         })
     }
 
-    const timer = window.setInterval(fetchProgress, 1000)
+    const stopPolling = startGrabProgressPolling(fetchProgress)
     return () => {
       cancelled = true
-      window.clearInterval(timer)
+      stopPolling()
     }
   }, [grabProgressOpen, grabProgress?.requestId, grabProgress?.status])
 
@@ -1384,7 +1385,10 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
               <section className="p-6">
                 <div className="mb-5 flex items-center justify-between">
                   <h3 className="text-[16px] font-medium text-[#111]">问答区</h3>
-                  <MessageCircle className="h-5 w-5 text-[#ff1268]" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] text-[#999]">{questions.length} 条问答</span>
+                    <MessageCircle className="h-5 w-5 text-[#ff1268]" />
+                  </div>
                 </div>
                 <div className="mb-5 rounded-lg bg-[#fafafa] p-4">
                   <textarea

@@ -4,6 +4,7 @@ export interface TicketTypeVisibleInfo {
   ticketTypeId: number;
   name: string;
   price: number;
+  totalStock?: number | null;
   remainStock: number | null;
 }
 

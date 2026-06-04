@@ -15,7 +15,7 @@ public interface TicketTypeMapper extends BaseMapper<TicketType> {
     int decreaseRemainStockIfEnough(@Param("ticketTypeId") Long ticketTypeId,
                                     @Param("quantity") int quantity);
 
-    @Update("UPDATE ticket_type SET remain_stock = remain_stock + #{quantity} WHERE id = #{ticketTypeId}")
+    @Update("UPDATE ticket_type SET remain_stock = LEAST(total_stock, remain_stock + #{quantity}) WHERE id = #{ticketTypeId}")
     int increaseRemainStock(@Param("ticketTypeId") Long ticketTypeId,
                             @Param("quantity") int quantity);
 
