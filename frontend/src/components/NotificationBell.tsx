@@ -26,6 +26,7 @@ export function NotificationBell() {
   const [loggedIn, setLoggedIn] = useState(false)
   const [userId, setUserId] = useState(0)
   const [role, setRole] = useState<UserRole | null>(null)
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationVO[]>([])
   const [loading, setLoading] = useState(false)
@@ -41,9 +42,11 @@ export function NotificationBell() {
         const uid = user?.userId || 0
         setUserId(uid)
         setRole(user?.role || null)
+        setPermissionCodes(user?.permissionCodes || [])
       } else {
         setUserId(0)
         setRole(null)
+        setPermissionCodes([])
         setItems([])
       }
     }
@@ -122,7 +125,7 @@ export function NotificationBell() {
   }
 
   const handlePickItem = async (item: NotificationVO) => {
-    const action = getNotificationAction(item, role)
+    const action = getNotificationAction(item, role, permissionCodes)
     if (isNotificationUnread(item)) {
       try {
         await markNotificationRead(item.id)

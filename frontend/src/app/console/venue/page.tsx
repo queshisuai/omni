@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { createAdminVenue, deleteAdminVenue, listAdminVenues, updateAdminVenue } from '@/lib/api'
-import { isPlatformAdminRole } from '@/lib/console-auth'
+import { canUseConsoleAction } from '@/lib/console-auth'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
 import { ClipboardList, Plus, Trash2 } from 'lucide-react'
@@ -13,6 +13,7 @@ import type { VenueEntity } from '@/types/api'
 export default function VenuePage() {
   const [venues, setVenues] = useState<VenueEntity[]>([])
   const [role, setRole] = useState('')
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [city, setCity] = useState('')
@@ -25,12 +26,13 @@ export default function VenuePage() {
 
   const [editingVenue, setEditingVenue] = useState<VenueEntity | null>(null)
   const pageVenues = useMemo(() => venues.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [venues, page])
-  const isAdmin = isPlatformAdminRole(role)
+  const canManageVenueRecords = role !== 'organizer' && canUseConsoleAction('venue.manage', permissionCodes)
 
   const loadData = useCallback(() => {
     const u = getUser()
     if (!u) return
     setRole(u.role || '')
+    setPermissionCodes(u.permissionCodes || [])
     setLoading(true)
     setLoadError('')
     listAdminVenues(u.userId)
@@ -119,7 +121,7 @@ export default function VenuePage() {
               <ClipboardList className="w-4 h-4" /> 提交场馆审核资料
             </Link>
           )}
-          {isAdmin && (
+          {canManageVenueRecords && (
             <button onClick={openCreate} className="flex items-center gap-1.5 bg-[#ff1268] text-white px-4 py-2 rounded-lg text-[14px] font-medium hover:bg-[#e0105a] transition-colors border-none cursor-pointer">
               <Plus className="w-4 h-4" /> 新增场馆记录
             </button>
@@ -165,7 +167,7 @@ export default function VenuePage() {
               <th className="text-left p-3 font-medium text-[#666]">城市</th>
               <th className="text-left p-3 font-medium text-[#666]">地址</th>
               <th className="text-left p-3 font-medium text-[#666]">容量</th>
-              {isAdmin && <th className="text-center p-3 font-medium text-[#666]">操作</th>}
+              {canManageVenueRecords && <th className="text-center p-3 font-medium text-[#666]">操作</th>}
             </tr>
           </thead>
           <tbody>
@@ -176,7 +178,7 @@ export default function VenuePage() {
                 <td className="p-3 text-[#666]">{v.city || '-'}</td>
                 <td className="p-3 text-[#666]">{v.address || '-'}</td>
                 <td className="p-3 text-[#666]">{v.capacity ?? '-'}</td>
-                {isAdmin && (
+                {canManageVenueRecords && (
                   <td className="p-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => openEdit(v)} className="rounded-lg border border-[#ddd] px-3 py-1.5 text-[13px] text-[#666] hover:bg-[#fafafa] cursor-pointer">编辑</button>

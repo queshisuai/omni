@@ -6,7 +6,6 @@ export interface ConsoleQuickAction {
 }
 
 const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href: string }> = [
-  { permission: 'organizer.account.manage', label: '主办方管理员', href: '/console/organizer-admins' },
   { permission: 'activity.manage', label: '活动管理', href: '/console/activities' },
   { permission: 'tour.manage', label: '巡演草稿', href: '/console/tours' },
   { permission: 'session.manage', label: '场次管理', href: '/console/sessions' },
@@ -15,6 +14,7 @@ const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href:
   { permission: 'refund.review', label: '退款审核', href: '/console/refunds' },
   { permission: 'venue.manage', label: '场馆记录', href: '/console/venue' },
   { permission: 'organizer.review', label: '主办方管理', href: '/console/organizer-applications' },
+  { permission: 'organizer.account.manage', label: '主办方管理员', href: '/console/organizer-admins' },
   { permission: 'venue.review', label: '场馆资料审核', href: '/console/venue/applications' },
   { permission: 'station.review', label: '站点变更审核', href: '/console/station-config-reviews' },
   { permission: 'risk.review', label: '恢复售票审核', href: '/console/risk-resolutions' },
@@ -57,7 +57,7 @@ function matchesPath(pathname: string, prefix: string) {
 
 export function isConsolePathAllowedForRole(role: UserRole | string | null | undefined, pathname: string) {
   if (!pathname.startsWith('/console')) return false
-  if (role === 'admin' || role === 'platform_super_admin') return true
+  if (role === 'admin' || role === 'platform_super_admin') return pathname === '/console' || pathname === '/console/profile'
   if (role !== 'organizer') return false
   if (pathname === '/console') return true
   if (ORGANIZER_BLOCKED_PREFIXES.some(prefix => matchesPath(pathname, prefix))) return false
@@ -67,20 +67,9 @@ export function isConsolePathAllowedForRole(role: UserRole | string | null | und
 
 export function getConsoleQuickActions(role: UserRole | string | null | undefined, permissionCodes: string[] = []): ConsoleQuickAction[] {
   if (role === 'admin' || role === 'platform_super_admin') {
-    return [
-      { label: '新建活动', href: '/console/activities/new' },
-      { label: '管理活动', href: '/console/activities' },
-      { label: '巡演草稿', href: '/console/tours' },
-      { label: '主办方管理', href: '/console/organizer-applications' },
-      { label: '角色权限', href: '/console/roles' },
-      { label: '主办方管理员', href: '/console/organizer-admins' },
-      { label: '客服账号管理', href: '/console/support-accounts' },
-      { label: '客服会话记录', href: '/console/support-conversations' },
-      { label: '操作审计', href: '/console/audit-logs' },
-      { label: '异常任务', href: '/console/exception-tasks' },
-      { label: '日结对账', href: '/console/reconciliation' },
-      { label: '查看订单', href: '/console/orders' },
-    ]
+    return PERMISSION_QUICK_ACTIONS
+      .filter(action => permissionCodes.includes(action.permission))
+      .map(({ label, href }) => ({ label, href }))
   }
 
   if (role === 'organizer') {

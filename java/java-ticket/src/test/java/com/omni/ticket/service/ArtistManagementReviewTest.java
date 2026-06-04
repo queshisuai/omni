@@ -135,7 +135,8 @@ class ArtistManagementReviewTest {
             request.setAgency("杰威尔音乐");
             request.setRepresentativeWorks("《青花瓷》《稻香》");
 
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(u(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "artist.manage", "activity.manage", "tour.manage"))
+                    .thenReturn(u(2003L, "organizer"));
             when(artistMapper.insert(any(Artist.class))).thenAnswer(inv -> {
                 Artist a = inv.getArgument(0);
                 a.setId(3001L);
@@ -159,7 +160,8 @@ class ArtistManagementReviewTest {
             ArtistGovernanceService service = new ArtistGovernanceService(artistMapper, userAccessService);
             Artist artist = artist(3001L, "旧名称", "pending", 2003L);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(u(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "artist.manage"))
+                    .thenReturn(u(2003L, "organizer"));
 
             ArtistUpdateRequest request = new ArtistUpdateRequest();
             request.setUserId(2003L);
@@ -177,7 +179,9 @@ class ArtistManagementReviewTest {
             ArtistGovernanceService service = new ArtistGovernanceService(artistMapper, userAccessService);
             Artist artist = artist(3001L, "旧名称", "approved", 2003L);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
-            when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(u(2002L, "admin"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2002L, "artist.manage"))
+                    .thenReturn(u(2002L, "admin"));
+            when(userAccessService.hasPlatformPermission(2002L, "artist.manage")).thenReturn(true);
 
             ArtistUpdateRequest request = new ArtistUpdateRequest();
             request.setUserId(2002L);
@@ -195,7 +199,8 @@ class ArtistManagementReviewTest {
             ArtistGovernanceService service = new ArtistGovernanceService(artistMapper, userAccessService);
             Artist artist = artist(3001L, "已审核艺人", "approved", 2003L);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(u(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "artist.manage"))
+                    .thenReturn(u(2003L, "organizer"));
 
             ArtistUpdateRequest request = new ArtistUpdateRequest();
             request.setUserId(2003L);
@@ -243,7 +248,7 @@ class ArtistManagementReviewTest {
         @DisplayName("AR-006: 查看待审核列表 → admin only")
         void listPendingArtists() {
             ArtistGovernanceService service = new ArtistGovernanceService(artistMapper, userAccessService);
-            when(userAccessService.requireAdmin(2002L)).thenReturn(u(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
             Artist p1 = artist(3001L, "待审艺人A", "pending", 2003L);
             Artist p2 = artist(3002L, "待审艺人B", "pending", 2005L);
             when(artistMapper.selectList(any())).thenReturn(List.of(p1, p2));
@@ -261,7 +266,7 @@ class ArtistManagementReviewTest {
             ArtistGovernanceService service = new ArtistGovernanceService(artistMapper, userAccessService);
             Artist artist = artist(3001L, "待审艺人", "pending", 2003L);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
-            when(userAccessService.requireAdmin(2002L)).thenReturn(u(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
 
             ArtistReviewRequest request = new ArtistReviewRequest();
             request.setUserId(2002L);
@@ -283,7 +288,7 @@ class ArtistManagementReviewTest {
             ArtistGovernanceService service = new ArtistGovernanceService(artistMapper, userAccessService);
             Artist artist = artist(3001L, "待审艺人", "pending", 2003L);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
-            when(userAccessService.requireAdmin(2002L)).thenReturn(u(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
 
             ArtistReviewRequest request = new ArtistReviewRequest();
             request.setUserId(2002L);
@@ -301,7 +306,7 @@ class ArtistManagementReviewTest {
         @DisplayName("AR-009: organizer尝试审核 → 403")
         void organizerReviewRejected() {
             ArtistGovernanceService service = new ArtistGovernanceService(artistMapper, userAccessService);
-            when(userAccessService.requireAdmin(2003L))
+            when(userAccessService.requirePlatformPermission(2003L, "artist.manage"))
                     .thenThrow(new BusinessException(403, "仅平台管理员可操作"));
 
             ArtistReviewRequest request = new ArtistReviewRequest();
@@ -316,10 +321,11 @@ class ArtistManagementReviewTest {
         @DisplayName("AR-006: organizer 查看待审核列表 → 403 (Controller)")
         void organizerListPendingController() {
             AdminController ctl = controller();
+            when(artistGovernanceService.listPending(2003L))
+                    .thenThrow(new BusinessException(403, "无权限"));
 
-            Result<?> result = ctl.listPendingArtists(organizerToken());
-
-            assertEquals(403, result.getCode());
+            assertThrows(BusinessException.class, () -> ctl.listPendingArtists(organizerToken()));
+            verify(artistGovernanceService).listPending(2003L);
         }
 
         @Test
@@ -413,7 +419,7 @@ class ArtistManagementReviewTest {
         @DisplayName("AR-014: user角色提交艺人 → 403")
         void userSubmitArtistRejected() {
             ArtistGovernanceService service = new ArtistGovernanceService(artistMapper, userAccessService);
-            when(userAccessService.requireAdminOrOrganizer(2004L))
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2004L, "artist.manage", "activity.manage", "tour.manage"))
                     .thenThrow(new BusinessException(403, "无权限"));
 
             ArtistSubmissionRequest request = new ArtistSubmissionRequest();
@@ -465,7 +471,8 @@ class ArtistManagementReviewTest {
         @DisplayName("AR-016: artist名称不能为空 → 400")
         void artistNameEmpty() {
             ArtistGovernanceService service = new ArtistGovernanceService(artistMapper, userAccessService);
-            when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(u(2003L, "organizer"));
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "artist.manage", "activity.manage", "tour.manage"))
+                    .thenReturn(u(2003L, "organizer"));
 
             ArtistSubmissionRequest request = new ArtistSubmissionRequest();
             request.setUserId(2003L);

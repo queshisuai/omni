@@ -281,7 +281,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void approveWithCreateModeCreatesNewVenueAndApprovesApplication() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "venue.review")).thenReturn(null);
         VenueApplication application = pendingApplication();
         when(venueApplicationMapper.selectById(301L)).thenReturn(application);
 
@@ -303,8 +303,33 @@ class VenueApplicationServiceTest {
     }
 
     @Test
+    void venueReviewerWithPermissionCanApproveApplication() {
+        when(userAccessService.requirePlatformPermission(2100L, "venue.review")).thenReturn(null);
+        VenueApplication application = pendingApplication();
+        when(venueApplicationMapper.selectById(301L)).thenReturn(application);
+
+        VenueApplication result = service.approve(301L, 2100L, "create", null, "资料真实");
+
+        assertEquals(1, result.getStatus());
+        assertEquals(2100L, result.getReviewerId());
+        verify(userAccessService).requirePlatformPermission(2100L, "venue.review");
+        verify(venueApplicationMapper).updateById(application);
+    }
+
+    @Test
+    void venueReviewerWithPermissionCanListApplications() {
+        when(userAccessService.requirePlatformPermission(2100L, "venue.review")).thenReturn(null);
+        when(venueApplicationMapper.selectList(any())).thenReturn(List.of(pendingApplication()));
+
+        List<VenueApplicationResponse> result = service.listAdmin(2100L, 0);
+
+        assertEquals(1, result.size());
+        verify(userAccessService).requirePlatformPermission(2100L, "venue.review");
+    }
+
+    @Test
     void approveWithLinkModeAssociatesExistingVenueWithoutCreatingVenue() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "venue.review")).thenReturn(null);
         VenueApplication application = pendingApplication();
         when(venueApplicationMapper.selectById(301L)).thenReturn(application);
         when(venueMapper.selectById(99L)).thenReturn(activeVenue(99L));

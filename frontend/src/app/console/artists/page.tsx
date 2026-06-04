@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Edit, Search } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { listAdminArtists, updateAdminArtistRisk } from '@/lib/api'
-import { isPlatformAdminRole } from '@/lib/console-auth'
+import { canUseConsoleAction } from '@/lib/console-auth'
 import type { ArtistEntity, ArtistReviewStatus, ArtistRiskStatus, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
@@ -13,6 +13,7 @@ const PAGE_SIZE = 10
 export default function ArtistsPage() {
   const [items, setItems] = useState<ArtistEntity[]>([])
   const [role, setRole] = useState<UserRole | ''>('')
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [checkingRole, setCheckingRole] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -24,12 +25,13 @@ export default function ArtistsPage() {
   const [pages, setPages] = useState(1)
   const loadDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
-  const isAdmin = isPlatformAdminRole(role)
+  const canManageAllArtists = role !== 'organizer' && canUseConsoleAction('artist.manage', permissionCodes)
 
   const loadData = (nextPage = page) => {
     const user = getUser()
     if (!user) return
     setRole(user.role || 'user')
+    setPermissionCodes(user.permissionCodes || [])
     setCheckingRole(false)
     setLoading(true)
     setError('')
@@ -91,10 +93,10 @@ export default function ArtistsPage() {
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '艺人管理' : '我的艺人'}</h1>
-          <p className="mt-1 text-[13px] text-[#999]">{isAdmin ? '查看、筛选和维护全平台艺人档案。' : '查看自己提交的艺人档案和审核状态。'}</p>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">{canManageAllArtists ? '艺人管理' : '我的艺人'}</h1>
+          <p className="mt-1 text-[13px] text-[#999]">{canManageAllArtists ? '查看、筛选和维护全平台艺人档案。' : '查看自己提交的艺人档案和审核状态。'}</p>
         </div>
-        {isAdmin && <Link href="/console/artists/pending" className="rounded-lg border border-[#ffd9e6] bg-[#fff0f5] px-4 py-2 text-[14px] font-medium text-[#ff1268] hover:bg-[#ffe4ef]">待审核艺人</Link>}
+        {canManageAllArtists && <Link href="/console/artists/pending" className="rounded-lg border border-[#ffd9e6] bg-[#fff0f5] px-4 py-2 text-[14px] font-medium text-[#ff1268] hover:bg-[#ffe4ef]">待审核艺人</Link>}
       </div>
 
       <form onSubmit={handleSearch} className="mb-5 grid gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 lg:grid-cols-[1fr_180px_180px_auto]">
@@ -122,7 +124,7 @@ export default function ArtistsPage() {
         <div className="rounded-xl border border-[#eee] bg-white p-8 text-center text-[14px] text-[#999]">暂无艺人档案</div>
       ) : (
         <div className="space-y-3">
-          {items.map(item => <ArtistCard key={item.id} item={item} isAdmin={isAdmin} onUpdate={() => loadData(page)} />)}
+          {items.map(item => <ArtistCard key={item.id} item={item} canManageAllArtists={canManageAllArtists} onUpdate={() => loadData(page)} />)}
         </div>
       )}
 
@@ -137,7 +139,7 @@ export default function ArtistsPage() {
   )
 }
 
-function ArtistCard({ item, isAdmin, onUpdate }: { item: ArtistEntity; isAdmin: boolean; onUpdate: () => void }) {
+function ArtistCard({ item, canManageAllArtists, onUpdate }: { item: ArtistEntity; canManageAllArtists: boolean; onUpdate: () => void }) {
   const [updating, setUpdating] = useState(false)
   const [riskModalOpen, setRiskModalOpen] = useState(false)
   const [riskReason, setRiskReason] = useState('')
@@ -192,7 +194,7 @@ function ArtistCard({ item, isAdmin, onUpdate }: { item: ArtistEntity; isAdmin: 
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {isAdmin && (
+            {canManageAllArtists && (
               <button
                 onClick={() => {
                   setRiskReason('')

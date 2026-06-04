@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, Loader2, Search, ShieldOff, XCircle } from 'lucide-react'
 import { approveOrganizerApplication, deactivateOrganizer, getUserInfo, listOrganizerApplications, rejectOrganizerApplication } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import { isPlatformAdminRole } from '@/lib/console-auth'
+import { canUseConsoleAction } from '@/lib/console-auth'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import type { OrganizerApplicationStatus, OrganizerApplicationVO, UserInfo } from '@/types/api'
 
@@ -65,7 +65,7 @@ export default function OrganizerApplicationsPage() {
       try {
         const info = await getUserInfo()
         if (!active) return
-        if (!isPlatformAdminRole(info.role)) {
+        if (!canUseConsoleAction('organizer.review', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }

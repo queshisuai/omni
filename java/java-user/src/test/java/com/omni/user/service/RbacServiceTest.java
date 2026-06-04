@@ -1,8 +1,10 @@
 package com.omni.user.service;
 
 import com.omni.common.dto.InternalAuthContextResponse;
+import com.omni.user.entity.RbacPermission;
 import com.omni.user.entity.SupportAccount;
 import com.omni.user.entity.RbacRolePermission;
+import com.omni.user.mapper.RbacPermissionMapper;
 import com.omni.user.mapper.RbacRolePermissionMapper;
 import com.omni.user.mapper.SupportAccountMapper;
 import com.omni.user.mapper.UserMapper;
@@ -20,8 +22,9 @@ class RbacServiceTest {
 
     private final UserMapper userMapper = mock(UserMapper.class);
     private final SupportAccountMapper supportAccountMapper = mock(SupportAccountMapper.class);
+    private final RbacPermissionMapper rbacPermissionMapper = mock(RbacPermissionMapper.class);
     private final RbacRolePermissionMapper rbacRolePermissionMapper = mock(RbacRolePermissionMapper.class);
-    private final RbacService service = new RbacService(userMapper, supportAccountMapper, rbacRolePermissionMapper);
+    private final RbacService service = new RbacService(userMapper, supportAccountMapper, rbacPermissionMapper, rbacRolePermissionMapper);
 
     @Test
     void internalAuthContextIncludesRolePermissionsAndSupportRole() {
@@ -87,6 +90,31 @@ class RbacServiceTest {
         assertEquals(permissions, response.getPermissionCodes());
     }
 
+    @Test
+    void platformSuperAdminIncludesAllRegisteredPermissionCodes() {
+        when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
+        when(rbacPermissionMapper.selectList(any())).thenReturn(List.of(
+                permission("activity.manage"),
+                permission("tour.manage"),
+                permission("station.review"),
+                permission("organizer.review"),
+                permission("rbac.manage")
+        ));
+
+        InternalAuthContextResponse response = service.getInternalAuthContext(1L);
+
+        assertEquals("admin", response.getRole());
+        assertEquals("platform_super_admin", response.getEffectiveRole());
+        assertEquals("platform", response.getScopeType());
+        assertEquals(List.of(
+                "activity.manage",
+                "tour.manage",
+                "station.review",
+                "organizer.review",
+                "rbac.manage"
+        ), response.getPermissionCodes());
+    }
+
     private User user(Long id, String role, Integer status) {
         User user = new User();
         user.setId(id);
@@ -99,6 +127,12 @@ class RbacServiceTest {
         RbacRolePermission rp = new RbacRolePermission();
         rp.setPermissionCode(permissionCode);
         return rp;
+    }
+
+    private RbacPermission permission(String code) {
+        RbacPermission permission = new RbacPermission();
+        permission.setCode(code);
+        return permission;
     }
 
     private SupportAccount supportAccount(Long userId, String supportRole) {

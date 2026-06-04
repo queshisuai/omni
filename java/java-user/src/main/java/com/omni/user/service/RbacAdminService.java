@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 @Service
 public class RbacAdminService {
     private static final String PERMISSION_RBAC_MANAGE = "rbac.manage";
+    private static final String ROLE_PLATFORM_SUPER_ADMIN = "platform_super_admin";
 
     private final RbacRoleMapper roleMapper;
     private final RbacPermissionMapper permissionMapper;
@@ -43,10 +44,15 @@ public class RbacAdminService {
     public List<RbacRoleResponse> listRoles() {
         List<RbacRole> roles = roleMapper.selectList(new LambdaQueryWrapper<RbacRole>().orderByAsc(RbacRole::getCode));
         List<RbacRolePermission> rolePermissions = rolePermissionMapper.selectList(null);
+        List<String> allPermissionCodes = listAllPermissionCodes();
         Map<String, List<String>> permissionsByRole = rolePermissions.stream()
                 .collect(Collectors.groupingBy(RbacRolePermission::getRoleCode,
                         Collectors.mapping(RbacRolePermission::getPermissionCode, Collectors.toList())));
-        return roles.stream().map(role -> toRoleResponse(role, permissionsByRole.get(role.getCode()))).collect(Collectors.toList());
+        return roles.stream()
+                .map(role -> toRoleResponse(role, ROLE_PLATFORM_SUPER_ADMIN.equals(role.getCode())
+                        ? allPermissionCodes
+                        : permissionsByRole.get(role.getCode())))
+                .collect(Collectors.toList());
     }
 
     public List<RbacPermissionResponse> listPermissions() {
@@ -61,7 +67,9 @@ public class RbacAdminService {
         if (role == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "角色不存在");
         }
-        List<String> normalizedPermissionCodes = normalizePermissionCodes(permissionCodes);
+        List<String> normalizedPermissionCodes = ROLE_PLATFORM_SUPER_ADMIN.equals(normalizedRoleCode)
+                ? listAllPermissionCodes()
+                : normalizePermissionCodes(permissionCodes);
         if (!normalizedPermissionCodes.isEmpty()) {
             List<RbacPermission> permissions = permissionMapper.selectList(
                     new LambdaQueryWrapper<RbacPermission>().in(RbacPermission::getCode, normalizedPermissionCodes));
@@ -118,6 +126,13 @@ public class RbacAdminService {
             }
         }
         return normalized;
+    }
+
+    private List<String> listAllPermissionCodes() {
+        return permissionMapper.selectList(new LambdaQueryWrapper<RbacPermission>().orderByAsc(RbacPermission::getCode))
+                .stream()
+                .map(RbacPermission::getCode)
+                .collect(Collectors.toList());
     }
 
     private String requireText(String value, String message) {

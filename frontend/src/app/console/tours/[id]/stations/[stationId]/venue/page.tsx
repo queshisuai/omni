@@ -13,7 +13,7 @@ import {
   submitVenueApplication,
   uploadPrivateAsset,
 } from '@/lib/api'
-import { isPlatformAdminRole } from '@/lib/console-auth'
+import { canUseConsoleAction } from '@/lib/console-auth'
 import {
   StationVenueApprovalForm,
   createEmptyStationVenueApprovalValue,
@@ -28,7 +28,7 @@ export default function AddStationVenuePage() {
   const tourId = Number(params.id)
   const stationId = Number(params.stationId)
   const [userId, setUserId] = useState(0)
-  const [role, setRole] = useState('')
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [station, setStation] = useState<StationEntity | null>(null)
   const [venues, setVenues] = useState<VenueEntity[]>([])
   const [value, setValue] = useState<StationVenueApprovalValue>(() => ({
@@ -54,7 +54,7 @@ export default function AddStationVenuePage() {
       return
     }
     setUserId(user.userId)
-    setRole(user.role || '')
+    setPermissionCodes(user.permissionCodes || [])
     Promise.all([getAdminTourDetail(user.userId, tourId), listAdminVenues(user.userId)])
       .then(([detail, venueList]) => {
         const matched = detail.stations.find(item => item.id === stationId) || null
@@ -131,7 +131,7 @@ export default function AddStationVenuePage() {
         reason: '巡演城市站添加场馆',
       })
       await submitStationConfigVersion(version.id)
-      if (isPlatformAdminRole(role)) {
+      if (canUseConsoleAction('station.review', permissionCodes)) {
         await approveStationConfigVersion(version.id, { reviewNote: '管理员直接添加场馆' })
         setMessage('场馆已添加并应用到该城市站。')
       } else {

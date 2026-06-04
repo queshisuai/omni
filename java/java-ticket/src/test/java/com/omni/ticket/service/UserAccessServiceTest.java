@@ -1,6 +1,7 @@
 package com.omni.ticket.service;
 
 import com.omni.common.result.Result;
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.client.UserInternalClient;
 import com.omni.ticket.dto.InternalUserRefResponse;
@@ -46,6 +47,29 @@ class UserAccessServiceTest {
     }
 
     @Test
+    void requireAdminOrAnyPermissionRejectsAdminWithoutPermissionCode() {
+        UserAccessService service = new UserAccessService(userInternalClient, "internal-token");
+        when(userInternalClient.getUserRef(2002L, "internal-token")).thenReturn(Result.success(user("admin")));
+        when(userInternalClient.getAuthContext(2002L, "internal-token")).thenReturn(Result.success(authContext("platform", "rbac.manage")));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.requireAdminOrAnyPermission(2002L, "activity.manage"));
+
+        assertEquals(403, exception.getCode());
+    }
+
+    @Test
+    void requireAdminOrAnyPermissionAllowsAdminWithPermissionCode() {
+        UserAccessService service = new UserAccessService(userInternalClient, "internal-token");
+        when(userInternalClient.getUserRef(2002L, "internal-token")).thenReturn(Result.success(user("admin")));
+        when(userInternalClient.getAuthContext(2002L, "internal-token")).thenReturn(Result.success(authContext("platform", "activity.manage")));
+
+        InternalUserRefResponse response = service.requireAdminOrAnyPermission(2002L, "activity.manage");
+
+        assertEquals("admin", response.getRole());
+    }
+
+    @Test
     void requireUserRejectsEmptyInternalToken() {
         UserAccessService service = new UserAccessService(userInternalClient, "");
 
@@ -70,5 +94,12 @@ class UserAccessServiceTest {
         user.setRole(role);
         user.setStatus(1);
         return user;
+    }
+
+    private InternalAuthContextResponse authContext(String scopeType, String permissionCode) {
+        InternalAuthContextResponse auth = new InternalAuthContextResponse();
+        auth.setScopeType(scopeType);
+        auth.setPermissionCodes(java.util.List.of(permissionCode));
+        return auth;
     }
 }

@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Save } from 'lucide-react'
 import { getAdminArtist, getUserInfo, updateAdminArtist, uploadTicketAsset } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import { isPlatformAdminRole } from '@/lib/console-auth'
+import { canUseConsoleAction } from '@/lib/console-auth'
 import { LocalFileUpload } from '@/components/LocalFileUpload'
 import type { ArtistEntity, UserInfo } from '@/types/api'
 
@@ -36,7 +36,7 @@ const EMPTY_FORM: FormState = {
 
 function canEditArtist(user: UserInfo | null, artist: ArtistEntity | null) {
   if (!user || !artist) return false
-  if (isPlatformAdminRole(user.role)) return true
+  if (user.role !== 'organizer' && canUseConsoleAction('artist.manage', user.permissionCodes || [])) return true
   return user.role === 'organizer' && artist.submittedBy === user.id && artist.reviewStatus === 'pending'
 }
 

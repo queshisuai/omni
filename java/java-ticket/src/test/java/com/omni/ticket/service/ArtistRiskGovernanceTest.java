@@ -103,7 +103,7 @@ class ArtistRiskGovernanceTest {
         @DisplayName("RK-001: admin 标记艺人为风险")
         void markArtistAsRisky() {
             Artist artist = artist(3001L, "normal");
-            when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
 
             ArtistRiskRequest request = riskReq(2002L, "risky", "涉事原因");
@@ -120,7 +120,7 @@ class ArtistRiskGovernanceTest {
         @DisplayName("RK-002: 标记风险后活动自动暂停")
         void markRiskTriggersCascadeSuspend() {
             Artist artist = artist(3001L, "normal");
-            when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
             when(activityRiskResponseService.suspendPublishedActivitiesForRiskArtist(3001L, "涉事原因")).thenReturn(2);
 
@@ -161,7 +161,7 @@ class ArtistRiskGovernanceTest {
         @DisplayName("RK-004: 标记风险后记录操作信息")
         void markRiskRecordsAuditFields() {
             Artist artist = artist(3001L, "normal");
-            when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
 
             ArtistRiskRequest request = riskReq(2002L, "risky", "违规演出");
@@ -178,7 +178,7 @@ class ArtistRiskGovernanceTest {
         void clearRiskMark() {
             Artist artist = artist(3001L, "risky");
             artist.setRiskReason("之前的原因");
-            when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
 
             ArtistRiskRequest request = riskReq(2002L, "normal", null);
@@ -197,7 +197,7 @@ class ArtistRiskGovernanceTest {
             Artist artist = artist(3001L, "risky");
             artist.setRiskReason("旧原因");
             artist.setRiskMarkedBy(2002L);
-            when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
 
             ArtistRiskRequest request = riskReq(2002L, "risky", "新原因");
@@ -283,7 +283,7 @@ class ArtistRiskGovernanceTest {
             Session session = session(1001L, 100L);
             TicketType ticketType = ticketType(2001L, 1001L);
 
-            when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "risk.review")).thenReturn(null);
             when(activityMapper.selectById(100L)).thenReturn(activity);
             when(sessionMapper.selectList(any())).thenReturn(List.of(session));
             when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
@@ -302,7 +302,7 @@ class ArtistRiskGovernanceTest {
         void suspendAlreadySuspended() {
             Activity activity = activity(100L, "risk_suspended", 2003L);
 
-            when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "risk.review")).thenReturn(null);
             when(activityMapper.selectById(100L)).thenReturn(activity);
 
             BusinessException ex = assertThrows(BusinessException.class,
@@ -321,7 +321,7 @@ class ArtistRiskGovernanceTest {
         @Test
         @DisplayName("RK-012: organizer标记艺人风险 → 403")
         void organizerMarkRiskRejected() {
-            when(userAccessService.requireAdmin(2003L))
+            when(userAccessService.requirePlatformPermission(2003L, "artist.manage"))
                     .thenThrow(new BusinessException(403, "仅平台管理员可操作"));
 
             ArtistRiskRequest request = riskReq(2003L, "risky", "原因");
@@ -332,7 +332,7 @@ class ArtistRiskGovernanceTest {
         @Test
         @DisplayName("RK-013: user标记艺人风险 → 403")
         void userMarkRiskRejected() {
-            when(userAccessService.requireAdmin(2004L))
+            when(userAccessService.requirePlatformPermission(2004L, "artist.manage"))
                     .thenThrow(new BusinessException(403, "仅平台管理员可操作"));
 
             ArtistRiskRequest request = riskReq(2004L, "risky", "原因");
@@ -354,6 +354,7 @@ class ArtistRiskGovernanceTest {
         @Test
         @DisplayName("RK-015: 不存在的艺人ID → 404")
         void nonExistentArtist() {
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
             when(artistMapper.selectById(999999L)).thenReturn(null);
 
             ArtistRiskRequest request = riskReq(2002L, "risky", "原因");
@@ -365,7 +366,7 @@ class ArtistRiskGovernanceTest {
         @DisplayName("RK-016: 非法riskStatus → 400")
         void invalidRiskStatus() {
             Artist artist = artist(3001L, "normal");
-            when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
             when(artistMapper.selectById(3001L)).thenReturn(artist);
 
             ArtistRiskRequest request = riskReq(2002L, "invalid_status", "原因");
@@ -378,7 +379,7 @@ class ArtistRiskGovernanceTest {
         @Test
         @DisplayName("RK-016: riskStatus=risky但无reason → 400")
         void riskyWithoutReason() {
-            when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+            when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
             // reason为空 → 在 requireArtist(selectById) 之前就抛出异常
 
             ArtistRiskRequest request = riskReq(2002L, "risky", "");

@@ -164,8 +164,7 @@ public class StationConfigVersionService {
     @Transactional
     public StationConfigVersionResponse approve(Long versionId, StationConfigVersionReviewRequest request) {
         requireReviewRequest(request);
-        userAccessService.requireAdmin(request.getReviewerId());
-        userAccessService.requirePermission(request.getReviewerId(), "station.review");
+        userAccessService.requirePlatformPermission(request.getReviewerId(), "station.review");
         StationConfigVersion version = requireVersion(versionId);
         requireStatus(version, STATUS_SUBMITTED, "仅已提交版本可审核通过");
         validateBeforeApprove(version);
@@ -194,8 +193,7 @@ public class StationConfigVersionService {
     @Transactional
     public StationConfigVersionResponse reject(Long versionId, StationConfigVersionReviewRequest request) {
         requireReviewRequest(request);
-        userAccessService.requireAdmin(request.getReviewerId());
-        userAccessService.requirePermission(request.getReviewerId(), "station.review");
+        userAccessService.requirePlatformPermission(request.getReviewerId(), "station.review");
         StationConfigVersion version = requireVersion(versionId);
         requireStatus(version, STATUS_SUBMITTED, "仅已提交版本可驳回");
         LocalDateTime now = LocalDateTime.now();
@@ -243,7 +241,7 @@ public class StationConfigVersionService {
     }
 
     public List<StationConfigVersionResponse> listReviews(Long adminUserId, String status) {
-        userAccessService.requireAdmin(adminUserId);
+        userAccessService.requirePlatformPermission(adminUserId, "station.review");
         LambdaQueryWrapper<StationConfigVersion> wrapper = new LambdaQueryWrapper<StationConfigVersion>()
                 .orderByDesc(StationConfigVersion::getUpdatedAt)
                 .orderByDesc(StationConfigVersion::getId);

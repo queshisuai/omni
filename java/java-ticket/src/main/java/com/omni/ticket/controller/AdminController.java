@@ -382,7 +382,7 @@ public class AdminController {
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
-        String role = checkRole(operatorId);
+        String role = checkArtistManageRole(operatorId);
         if (role == null) {
             return Result.fail(ResultCode.FORBIDDEN);
         }
@@ -396,7 +396,7 @@ public class AdminController {
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
-        String role = checkRole(operatorId);
+        String role = checkArtistManageRole(operatorId);
         if (role == null) {
             return Result.fail(ResultCode.FORBIDDEN);
         }
@@ -436,10 +436,6 @@ public class AdminController {
         Long operatorId = parseOperatorId(authorization);
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
-        }
-        String role = checkRole(operatorId);
-        if (!"admin".equals(role)) {
-            return Result.fail(ResultCode.FORBIDDEN);
         }
         return Result.success(artistGovernanceService.listPending(operatorId));
     }
@@ -834,8 +830,16 @@ public class AdminController {
         return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "session.manage", "activity.manage", "tour.manage");
     }
 
+    private String checkArtistManageRole(Long userId) {
+        return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "artist.manage");
+    }
+
     private String checkVenueReadRole(Long userId) {
         return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "venue.manage", "session.manage", "activity.manage", "tour.manage");
+    }
+
+    private String checkVenueManageRole(Long userId) {
+        return userAccessService.requireAdminOrAnyPermissionRole(userId, "venue.manage");
     }
 
     private Long resolveArtistId(Map<String, Object> body) {
@@ -1504,7 +1508,7 @@ public class AdminController {
         Long userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         body = withOperatorUserId(body, userId);
-        String role = checkRole(userId);
+        String role = checkVenueManageRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         if ("organizer".equals(role)) return Result.fail(403, "仅平台管理员可创建场馆");
 
@@ -1532,7 +1536,7 @@ public class AdminController {
         Long userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         body = withOperatorUserId(body, userId);
-        String role = checkRole(userId);
+        String role = checkVenueManageRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         if ("organizer".equals(role)) return Result.fail(403, "仅平台管理员可修改场馆");
 
@@ -1552,7 +1556,7 @@ public class AdminController {
                                     @RequestParam(required = false) Long userId) {
         userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
-        String role = checkRole(userId);
+        String role = checkVenueManageRole(userId);
         if (role == null) return Result.fail(403, "无权限");
         if ("organizer".equals(role)) return Result.fail(403, "仅平台管理员可删除场馆记录");
 

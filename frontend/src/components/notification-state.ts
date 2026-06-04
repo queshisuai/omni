@@ -1,4 +1,4 @@
-import { isPlatformAdminRole } from '../lib/console-auth.ts'
+import { canUseConsoleAction } from '../lib/console-auth.ts'
 import type { NotificationVO, UserRole } from '@/types/api'
 
 export interface NotificationTypeMeta {
@@ -61,6 +61,7 @@ function orderHref(notification: NotificationVO) {
 export function getNotificationAction(
   notification: NotificationVO,
   role?: UserRole | string | null,
+  permissionCodes: string[] = [],
 ): NotificationAction | null {
   if (notification.actionHref && notification.actionLabel) {
     return {
@@ -97,7 +98,7 @@ export function getNotificationAction(
 
   if (key === 'TODO' || key.startsWith('RISK_')) {
     return {
-      href: isPlatformAdminRole(role) ? '/console/risk-resolutions' : role === 'organizer' ? '/console/risk-events' : '/notifications',
+      href: canUseConsoleAction('risk.review', permissionCodes) ? '/console/risk-resolutions' : role === 'organizer' ? '/console/risk-events' : '/notifications',
       buttonLabel: key === 'TODO' ? '查看待办' : '查看处理',
     }
   }

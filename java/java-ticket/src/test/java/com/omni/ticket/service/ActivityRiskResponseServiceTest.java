@@ -77,7 +77,7 @@ class ActivityRiskResponseServiceTest {
 
         service.adminSuspendActivity(5L, 2002L, "艺人风险");
 
-        verify(userAccessService).requireAdmin(2002L);
+        verify(userAccessService).requirePlatformPermission(2002L, "risk.review");
         ArgumentCaptor<ActivityRiskResolution> captor = ArgumentCaptor.forClass(ActivityRiskResolution.class);
         verify(resolutionMapper).insert(captor.capture());
         assertEquals("awaiting_response", captor.getValue().getStatus());

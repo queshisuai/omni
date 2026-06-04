@@ -5,7 +5,7 @@ import { getUser } from '@/lib/auth'
 import { getAdminSummary, getGrabOpsSummary, listAdminRefunds, listExceptionTasks, listOperationAuditLogs, listReconciliationBatches } from '@/lib/api'
 import { canLoadPlatformOpsSummary } from '@/lib/console-ops'
 import { getConsoleQuickActions } from '@/lib/console-paths'
-import { getConsoleBrandLabel, isPlatformAdminRole } from '@/lib/console-auth'
+import { getConsoleBrandLabel, hasConsolePermission } from '@/lib/console-auth'
 import { buildDashboardBars, summarizeOpsMetric } from '@/lib/marketing-tools'
 import { ConsoleDashboardSkeleton } from '@/components/Skeleton'
 import { Activity, AlertTriangle, CalendarDays, ClipboardList, FileSearch, Gauge, RotateCcw, ShieldAlert, ShoppingCart, Ticket, TrendingUp, Users } from 'lucide-react'
@@ -72,7 +72,9 @@ export default function ConsoleHome() {
       setPlatformOps(null)
       setStatsError('')
       setSummaryReady(false)
-      const canLoadBusinessSummary = isPlatformAdminRole(u.role) || u.role === 'organizer'
+      const permissions = u.permissionCodes || []
+      const canLoadBusinessSummary = u.role === 'organizer'
+        || ['activity.manage', 'tour.manage', 'session.manage', 'order.view'].some(permission => hasConsolePermission(u.role, permissions, permission))
       if (!canLoadBusinessSummary) {
         setSummaryReady(true)
         return
@@ -81,7 +83,7 @@ export default function ConsoleHome() {
         .then(res => {
           setStats(res)
           setSummaryReady(true)
-          if (canLoadPlatformOpsSummary(u.role)) {
+          if (canLoadPlatformOpsSummary(u.role, permissions)) {
             getGrabOpsSummary()
               .then(setGrabOps)
               .catch(() => setGrabOps(null))
@@ -150,7 +152,9 @@ export default function ConsoleHome() {
   }
 
   const quickActions = getConsoleQuickActions(user?.role, user?.permissionCodes || [])
-  const canShowBusinessStats = isPlatformAdminRole(user?.role) || user?.role === 'organizer'
+  const userPermissions = user?.permissionCodes || []
+  const canShowBusinessStats = user?.role === 'organizer'
+    || ['activity.manage', 'tour.manage', 'session.manage', 'order.view'].some(permission => hasConsolePermission(user?.role, userPermissions, permission))
 
   return (
     <div>
@@ -203,7 +207,7 @@ export default function ConsoleHome() {
       </div>}
 
       <div className="mb-6">
-        {canLoadPlatformOpsSummary(user?.role) && (
+        {canLoadPlatformOpsSummary(user?.role, userPermissions) && (
           <div className="mb-8">
             <h2 className="text-[16px] font-semibold text-gray-900 mb-4">运营驾驶舱</h2>
             <div className="mb-4 grid gap-4 md:grid-cols-3">

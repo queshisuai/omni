@@ -55,7 +55,7 @@ class VenueDefaultLayoutServiceTest {
 
     @Test
     void saveLayoutAcceptsBlockOnlyLayoutAndPersistsBlocks() {
-        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user("admin"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2002L, "venue.manage")).thenReturn(user("admin"));
         when(venueMapper.selectById(9L)).thenReturn(venue());
         when(layoutMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
         doAnswer(invocation -> {

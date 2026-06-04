@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getUserInfo, listPendingAdminArtists, reviewAdminArtist, updateAdminArtistRisk } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import { isPlatformAdminRole } from '@/lib/console-auth'
+import { canUseConsoleAction } from '@/lib/console-auth'
 import type { ArtistEntity, UserInfo } from '@/types/api'
 
 export default function PendingArtistsPage() {
@@ -39,7 +39,7 @@ export default function PendingArtistsPage() {
       try {
         const info = await getUserInfo()
         if (!active) return
-        if (!isPlatformAdminRole(info.role)) {
+        if (!canUseConsoleAction('artist.manage', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }

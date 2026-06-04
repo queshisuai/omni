@@ -2,6 +2,8 @@ package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.omni.common.dto.InternalAuthContextResponse;
+import com.omni.exception.BusinessException;
 import com.omni.user.dto.OrganizerApplicationRequest;
 import com.omni.user.dto.OrganizerApplicationResponse;
 import com.omni.user.entity.OrganizerApplication;
@@ -17,9 +19,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 class OrganizerApplicationServiceTest {
@@ -32,10 +36,12 @@ class OrganizerApplicationServiceTest {
     private final OrganizerApplicationMapper organizerApplicationMapper = mock(OrganizerApplicationMapper.class);
     private final UserMapper userMapper = mock(UserMapper.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+    private final RbacService rbacService = mock(RbacService.class);
     private final OrganizerApplicationService service = new OrganizerApplicationService(
             organizerApplicationMapper,
             userMapper,
-            transactionManager
+            transactionManager,
+            rbacService
     );
 
     @Test
@@ -60,6 +66,7 @@ class OrganizerApplicationServiceTest {
         application.setStatus(1);
 
         when(userMapper.selectById(2002L)).thenReturn(admin);
+        when(rbacService.getInternalAuthContext(2002L)).thenReturn(authContext(List.of("organizer.review")));
         when(organizerApplicationMapper.selectList(any())).thenReturn(List.of(application));
         when(userMapper.selectBatchIds(List.of(2003L))).thenReturn(List.of(cancelledOrganizer));
 
@@ -67,6 +74,26 @@ class OrganizerApplicationServiceTest {
 
         assertEquals(3, response.getOrganizerStatus());
         assertEquals("user", response.getRole());
+    }
+
+    @Test
+    void listForAdminRequiresOrganizerReviewPermissionInsteadOfAdminRoleBypass() {
+        RbacService rbacService = mock(RbacService.class);
+        OrganizerApplicationService serviceWithRbac = new OrganizerApplicationService(
+                organizerApplicationMapper,
+                userMapper,
+                transactionManager,
+                rbacService
+        );
+        User admin = new User();
+        admin.setId(2002L);
+        admin.setRole("admin");
+        when(userMapper.selectById(2002L)).thenReturn(admin);
+        when(rbacService.getInternalAuthContext(2002L)).thenReturn(authContext(List.of("rbac.manage")));
+
+        assertThrows(BusinessException.class, () -> serviceWithRbac.listForAdmin(2002L, null));
+
+        verify(organizerApplicationMapper, never()).selectList(any());
     }
 
     @Test
@@ -102,5 +129,12 @@ class OrganizerApplicationServiceTest {
         assertEquals(0, response.getOrganizerStatus());
         assertEquals("user", response.getRole());
         verify(organizerApplicationMapper).update(any(), any(LambdaUpdateWrapper.class));
+    }
+
+    private InternalAuthContextResponse authContext(List<String> permissionCodes) {
+        InternalAuthContextResponse auth = new InternalAuthContextResponse();
+        auth.setPermissionCodes(permissionCodes);
+        auth.setScopeType("platform");
+        return auth;
     }
 }

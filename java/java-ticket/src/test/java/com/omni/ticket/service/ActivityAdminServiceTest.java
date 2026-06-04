@@ -270,7 +270,7 @@ class ActivityAdminServiceTest {
 
     @Test
     void deactivateOrganizerRejectsNonAdminOperator() {
-        when(userAccessService.requireAdmin(2003L)).thenThrow(new BusinessException(403, "仅平台管理员可操作"));
+        when(userAccessService.requirePlatformPermission(2003L, "organizer.review")).thenThrow(new BusinessException(403, "无权限"));
 
         DeactivateOrganizerRequest request = new DeactivateOrganizerRequest();
         request.setUserId(2003L);
@@ -284,7 +284,7 @@ class ActivityAdminServiceTest {
 
     @Test
     void deactivateOrganizerRejectsWhenRefundNotConfirmed() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "organizer.review")).thenReturn(null);
 
         DeactivateOrganizerRequest request = new DeactivateOrganizerRequest();
         request.setUserId(2002L);
@@ -310,7 +310,7 @@ class ActivityAdminServiceTest {
         OrderInfoResponse firstOrder = order(5001L, "DM5001", 101L);
         OrderInfoResponse secondOrder = order(5002L, "DM5002", 102L);
 
-        when(userAccessService.requireAdmin(2002L)).thenReturn(admin);
+        when(userAccessService.requirePlatformPermission(2002L, "organizer.review")).thenReturn(null);
         when(userAccessService.requireUser(2003L)).thenReturn(organizer);
         when(activityMapper.selectList(any())).thenReturn(Arrays.asList(firstActivity, secondActivity));
         when(sessionMapper.selectList(any())).thenReturn(Arrays.asList(firstSession, secondSession));

@@ -52,7 +52,7 @@ class ArtistGovernanceServiceTest {
     @Test
     void submitArtistCreatesPendingArtist() {
         ArtistGovernanceService service = service();
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "artist.manage", "activity.manage", "tour.manage")).thenReturn(user(2003L, "organizer"));
         when(artistMapper.insert(any())).thenAnswer(invocation -> {
             Artist artist = invocation.getArgument(0);
             artist.setId(99L);
@@ -75,10 +75,29 @@ class ArtistGovernanceServiceTest {
     }
 
     @Test
+    void organizerAdminWithActivityPermissionCanSubmitArtist() {
+        ArtistGovernanceService service = service();
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2100L, "artist.manage", "activity.manage", "tour.manage")).thenReturn(user(2100L, "organizer_admin"));
+        when(artistMapper.insert(any())).thenAnswer(invocation -> {
+            Artist artist = invocation.getArgument(0);
+            artist.setId(100L);
+            return 1;
+        });
+        ArtistSubmissionRequest request = new ArtistSubmissionRequest();
+        request.setUserId(2100L);
+        request.setName("鏂拌壓浜?");
+
+        Artist artist = service.submit(request);
+
+        assertEquals(100L, artist.getId());
+        assertEquals(2100L, artist.getSubmittedBy());
+    }
+
+    @Test
     void reviewArtistApprovesAndWritesAuditFields() {
         ArtistGovernanceService service = service();
         Artist artist = artist(99L);
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
         when(artistMapper.selectById(99L)).thenReturn(artist);
         ArtistReviewRequest request = new ArtistReviewRequest();
         request.setUserId(2002L);
@@ -95,10 +114,28 @@ class ArtistGovernanceServiceTest {
     }
 
     @Test
+    void artistManagerWithPlatformPermissionCanReviewArtist() {
+        ArtistGovernanceService service = service();
+        Artist artist = artist(99L);
+        when(userAccessService.requirePlatformPermission(2100L, "artist.manage")).thenReturn(null);
+        when(artistMapper.selectById(99L)).thenReturn(artist);
+        ArtistReviewRequest request = new ArtistReviewRequest();
+        request.setUserId(2100L);
+        request.setAction("approve");
+        request.setNote("资料完整");
+
+        Artist reviewed = service.review(99L, request);
+
+        assertEquals("approved", reviewed.getReviewStatus());
+        assertEquals(2100L, reviewed.getReviewedBy());
+        verify(userAccessService).requirePlatformPermission(2100L, "artist.manage");
+    }
+
+    @Test
     void reviewArtistRejectsAndWritesAuditFields() {
         ArtistGovernanceService service = service();
         Artist artist = artist(99L);
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
         when(artistMapper.selectById(99L)).thenReturn(artist);
         ArtistReviewRequest request = new ArtistReviewRequest();
         request.setUserId(2002L);
@@ -116,7 +153,7 @@ class ArtistGovernanceServiceTest {
     @Test
     void markRiskRequiresReason() {
         ArtistGovernanceService service = service();
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
         ArtistRiskRequest request = new ArtistRiskRequest();
         request.setUserId(2002L);
         request.setRiskStatus("risky");
@@ -130,7 +167,7 @@ class ArtistGovernanceServiceTest {
     void markRiskWritesRiskAuditFields() {
         ArtistGovernanceService service = service();
         Artist artist = artist(99L);
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
         when(artistMapper.selectById(99L)).thenReturn(artist);
         ArtistRiskRequest request = new ArtistRiskRequest();
         request.setUserId(2002L);
@@ -147,12 +184,24 @@ class ArtistGovernanceServiceTest {
     }
 
     @Test
+    void artistManagerWithPlatformPermissionCanListPendingArtists() {
+        ArtistGovernanceService service = service();
+        Artist artist = artist(99L);
+        when(userAccessService.requirePlatformPermission(2100L, "artist.manage")).thenReturn(null);
+        when(artistMapper.selectList(any())).thenReturn(Collections.singletonList(artist));
+
+        assertEquals(1, service.listPending(2100L).size());
+
+        verify(userAccessService).requirePlatformPermission(2100L, "artist.manage");
+    }
+
+    @Test
     void clearRiskWritesClearAuditFields() {
         ArtistGovernanceService service = service();
         Artist artist = artist(99L);
         artist.setRiskStatus("risky");
         artist.setRiskReason("风险原因");
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
         when(artistMapper.selectById(99L)).thenReturn(artist);
         ArtistRiskRequest request = new ArtistRiskRequest();
         request.setUserId(2002L);
@@ -167,10 +216,10 @@ class ArtistGovernanceServiceTest {
     }
 
     @Test
-    void listPendingRequiresAdminAndReturnsPendingArtists() {
+    void listPendingRequiresArtistManagePermissionAndReturnsPendingArtists() {
         ArtistGovernanceService service = service();
         Artist artist = artist(99L);
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
         when(artistMapper.selectList(any())).thenReturn(Collections.singletonList(artist));
 
         assertEquals(1, service.listPending(2002L).size());
@@ -186,7 +235,8 @@ class ArtistGovernanceServiceTest {
         Artist artist = artist(99L);
         artist.setSubmittedBy(2003L);
         artist.setReviewStatus("approved");
-        when(userAccessService.requireAdminOrOrganizer(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2002L, "artist.manage")).thenReturn(user(2002L, "admin"));
+        when(userAccessService.hasPlatformPermission(2002L, "artist.manage")).thenReturn(true);
         when(artistMapper.selectById(99L)).thenReturn(artist);
         ArtistUpdateRequest request = updateRequest(2002L);
         request.setName("更新艺人");
@@ -202,12 +252,30 @@ class ArtistGovernanceServiceTest {
     }
 
     @Test
+    void platformScopedArtistManagerCanUpdateAnyArtistProfile() {
+        ArtistGovernanceService service = service();
+        Artist artist = artist(99L);
+        artist.setSubmittedBy(2003L);
+        artist.setReviewStatus("approved");
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2100L, "artist.manage")).thenReturn(user(2100L, "organizer_admin"));
+        when(userAccessService.hasPlatformPermission(2100L, "artist.manage")).thenReturn(true);
+        when(artistMapper.selectById(99L)).thenReturn(artist);
+        ArtistUpdateRequest request = updateRequest(2100L);
+        request.setName("鏇存柊鑹轰汉");
+
+        Artist updated = service.updateProfile(99L, request);
+
+        assertEquals("鏇存柊鑹轰汉", updated.getName());
+        verify(artistMapper).updateById(artist);
+    }
+
+    @Test
     void organizerCanUpdateOwnPendingArtistProfile() {
         ArtistGovernanceService service = service();
         Artist artist = artist(99L);
         artist.setSubmittedBy(2003L);
         artist.setReviewStatus("pending");
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "artist.manage")).thenReturn(user(2003L, "organizer"));
         when(artistMapper.selectById(99L)).thenReturn(artist);
         ArtistUpdateRequest request = updateRequest(2003L);
         request.setName("主办方补充艺人");
@@ -225,7 +293,7 @@ class ArtistGovernanceServiceTest {
         Artist artist = artist(99L);
         artist.setSubmittedBy(2003L);
         artist.setReviewStatus("approved");
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "artist.manage")).thenReturn(user(2003L, "organizer"));
         when(artistMapper.selectById(99L)).thenReturn(artist);
         ArtistUpdateRequest request = updateRequest(2003L);
 
@@ -240,7 +308,7 @@ class ArtistGovernanceServiceTest {
         Artist artist = artist(99L);
         artist.setSubmittedBy(2004L);
         artist.setReviewStatus("pending");
-        when(userAccessService.requireAdminOrOrganizer(2003L)).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "artist.manage")).thenReturn(user(2003L, "organizer"));
         when(artistMapper.selectById(99L)).thenReturn(artist);
         ArtistUpdateRequest request = updateRequest(2003L);
 

@@ -79,7 +79,7 @@ public class ActivityRiskResponseService {
     }
 
     public ActivityRiskResolutionResponse adminSuspendActivity(Long activityId, Long adminUserId, String reason) {
-        userAccessService.requireAdmin(adminUserId);
+        userAccessService.requirePlatformPermission(adminUserId, "risk.review");
         Activity activity = requireActivity(activityId);
         if (!"published".equals(activity.getPublishStatus())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "仅已发布活动可被主动停售");
@@ -95,7 +95,7 @@ public class ActivityRiskResponseService {
     }
 
     public List<ActivityRiskCaseResponse> listRiskCases(Long adminUserId) {
-        userAccessService.requireAdmin(adminUserId);
+        userAccessService.requirePlatformPermission(adminUserId, "risk.view");
         List<Activity> activities = activityMapper.selectList(new LambdaQueryWrapper<Activity>()
                 .eq(Activity::getPublishStatus, "risk_suspended")
                 .orderByDesc(Activity::getRiskSuspendedAt));
@@ -159,7 +159,8 @@ public class ActivityRiskResponseService {
     }
 
     public List<ActivityRiskResolutionResponse> listResolutions(Long userId, String status) {
-        String role = userAccessService.requireAdminOrOrganizerRole(userId);
+        boolean platformReviewer = userAccessService.hasPlatformPermission(userId, "risk.review");
+        String role = platformReviewer ? "platform" : userAccessService.requireAdminOrOrganizerRole(userId);
         LambdaQueryWrapper<ActivityRiskResolution> wrapper = new LambdaQueryWrapper<ActivityRiskResolution>()
                 .orderByDesc(ActivityRiskResolution::getCreateTime);
         if (StringUtils.hasText(status)) wrapper.eq(ActivityRiskResolution::getStatus, status.trim());
@@ -169,7 +170,7 @@ public class ActivityRiskResponseService {
 
     public ActivityRiskResolutionResponse reviewResolution(Long id, ActivityRiskResolutionReviewRequest request) {
         if (request == null || request.getUserId() == null) throw new BusinessException(ResultCode.BAD_REQUEST, "审核参数不能为空");
-        userAccessService.requireAdmin(request.getUserId());
+        userAccessService.requirePlatformPermission(request.getUserId(), "risk.review");
         ActivityRiskResolution resolution = resolutionMapper.selectById(id);
         if (resolution == null) throw new BusinessException(ResultCode.NOT_FOUND, "处理申请不存在");
         Activity activity = requireActivity(resolution.getActivityId());

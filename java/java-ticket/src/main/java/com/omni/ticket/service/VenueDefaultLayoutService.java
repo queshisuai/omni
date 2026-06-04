@@ -257,7 +257,7 @@ public class VenueDefaultLayoutService {
     }
 
     private void requireAdminOrOrganizer(Long userId, Long venueId) {
-        userAccessService.requireAdminOrOrganizer(userId);
+        userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "venue.manage");
         Venue venue = venueMapper.selectById(venueId);
         if (venue == null) {
             throw new BusinessException(404, "场馆不存在");

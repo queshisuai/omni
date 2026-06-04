@@ -445,7 +445,7 @@ class ActivityPublishDeactivateTest {
             Activity a1 = activity(10L, 2003L, "published", 1);
             Activity a2 = activity(11L, 2003L, "published", 1);
 
-            when(userAccessService.requireAdmin(2002L)).thenReturn(adminUser);
+            when(userAccessService.requirePlatformPermission(2002L, "organizer.review")).thenReturn(null);
             when(userAccessService.requireUser(2003L)).thenReturn(organizerUser);
             when(activityMapper.selectList(any())).thenReturn(List.of(a1, a2));
             when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());

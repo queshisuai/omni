@@ -82,9 +82,6 @@ public class UserAccessService {
 
     public InternalUserRefResponse requireAdminOrAnyPermission(Long userId, String... permissionCodes) {
         InternalUserRefResponse user = requireUser(userId);
-        if (isAdmin(user)) {
-            return user;
-        }
         if (hasAnyPermission(getAuthContext(userId), permissionCodes)) {
             return user;
         }
@@ -93,7 +90,7 @@ public class UserAccessService {
 
     public InternalUserRefResponse requireAdminOrOrganizerOrAnyPermission(Long userId, String... permissionCodes) {
         InternalUserRefResponse user = requireUser(userId);
-        if (isAdmin(user) || isOrganizer(user)) {
+        if (isOrganizer(user)) {
             return user;
         }
         InternalAuthContextResponse auth = getAuthContext(userId);
@@ -169,6 +166,11 @@ public class UserAccessService {
 
     public boolean hasAnyPermission(Long userId, String... permissionCodes) {
         return hasAnyPermission(getAuthContext(userId), permissionCodes);
+    }
+
+    public boolean hasPlatformPermission(Long userId, String... permissionCodes) {
+        InternalAuthContextResponse auth = getAuthContext(userId);
+        return "platform".equals(auth.getScopeType()) && hasAnyPermission(auth, permissionCodes);
     }
 
     private boolean hasPermission(InternalAuthContextResponse auth, String permissionCode) {

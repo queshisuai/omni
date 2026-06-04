@@ -188,7 +188,7 @@ public class ActivityAdminService {
         if (request == null || request.getUserId() == null || request.getOrganizerId() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "取消主办方资格参数不能为空");
         }
-        userAccessService.requireAdmin(request.getUserId());
+        userAccessService.requirePlatformPermission(request.getUserId(), "organizer.review");
         if (!Boolean.TRUE.equals(request.getConfirmRefund())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "取消主办方资格前必须确认同意为该主办方所有已支付订单退款");
         }

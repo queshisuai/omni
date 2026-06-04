@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, RefreshCw, ShieldOff, Users } from 'lucide-react'
 import { globalConfirm } from '@/components/GlobalDialog'
 import { createOrganizerAdminAccount, deactivateOrganizerAdminAccount, getUserInfo, listOrganizerAdminAccounts } from '@/lib/api'
-import { canUseConsoleAction, isPlatformAdminRole } from '@/lib/console-auth'
+import { canUseConsoleAction } from '@/lib/console-auth'
 import type { OrganizerAdminAccountVO } from '@/types/api'
 
 export default function OrganizerAdminsPage() {
@@ -32,7 +32,7 @@ export default function OrganizerAdminsPage() {
   useEffect(() => {
     getUserInfo()
       .then(info => {
-        if (!isPlatformAdminRole(info.role) && !canUseConsoleAction('organizer.account.manage', info.permissionCodes || [])) {
+        if (!canUseConsoleAction('organizer.account.manage', info.permissionCodes || [])) {
           router.replace('/console')
           return
         }

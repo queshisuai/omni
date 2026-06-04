@@ -16,10 +16,12 @@ test('allows organizer business paths but blocks admin-only console paths', () =
   assert.equal(isConsolePathAllowedForRole('organizer', '/console/risk-cases'), false)
 })
 
-test('keeps admin console paths unrestricted and rejects non-console roles', () => {
-  assert.equal(isConsolePathAllowedForRole('admin', '/console/support-accounts'), true)
-  assert.equal(isConsolePathAllowedForRole('admin', '/console/venue/1/seats'), true)
-  assert.equal(isConsolePathAllowedForRole('platform_super_admin', '/console/support-accounts'), true)
+test('does not use platform admin role as a permission-code bypass', () => {
+  assert.equal(isConsolePathAllowedForRole('admin', '/console'), true)
+  assert.equal(isConsolePathAllowedForRole('admin', '/console/profile'), true)
+  assert.equal(isConsolePathAllowedForRole('admin', '/console/support-accounts'), false)
+  assert.equal(isConsolePathAllowedForRole('admin', '/console/venue/1/seats'), false)
+  assert.equal(isConsolePathAllowedForRole('platform_super_admin', '/console/support-accounts'), false)
   assert.equal(isConsolePathAllowedForRole('support', '/console'), false)
   assert.equal(isConsolePathAllowedForRole('user', '/console/orders'), false)
 })
@@ -33,19 +35,31 @@ test('builds role-specific console quick actions', () => {
     '/console/refunds',
     '/console/orders',
   ])
-  assert.deepEqual(getConsoleQuickActions('admin').map(item => item.href), [
-    '/console/activities/new',
+  assert.deepEqual(getConsoleQuickActions('admin').map(item => item.href), [])
+  assert.deepEqual(getConsoleQuickActions('admin', [
+    'activity.manage',
+    'tour.manage',
+    'organizer.review',
+    'rbac.manage',
+    'organizer.account.manage',
+    'support.account.manage',
+    'support.conversation.view',
+    'audit.view',
+    'compensation.execute',
+    'reconcile.view',
+    'order.view',
+  ]).map(item => item.href), [
     '/console/activities',
     '/console/tours',
+    '/console/orders',
     '/console/organizer-applications',
-    '/console/roles',
     '/console/organizer-admins',
     '/console/support-accounts',
     '/console/support-conversations',
     '/console/audit-logs',
     '/console/exception-tasks',
     '/console/reconciliation',
-    '/console/orders',
+    '/console/roles',
   ])
   assert.deepEqual(getConsoleQuickActions('organizer_admin').map(item => item.href), [
     '/console/profile',

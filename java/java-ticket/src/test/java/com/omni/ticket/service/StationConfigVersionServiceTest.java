@@ -242,7 +242,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void approveActivityVenueChangeFailsWhenPaidOrdersAppearAfterSubmit() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         Station station = station(10L, null, 30L, "北京", "北京站");
         when(stationMapper.selectById(10L)).thenReturn(station);
         StationConfigVersion submitted = version(100L, 10L, 2, "submitted", "change_venue");
@@ -269,8 +269,38 @@ class StationConfigVersionServiceTest {
     }
 
     @Test
+    void stationReviewerWithPermissionCanListSubmittedReviews() {
+        when(versionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(version(100L, 10L, 2, "submitted", "change_venue")));
+
+        List<StationConfigVersionResponse> result = service.listReviews(2100L, "submitted");
+
+        assertEquals(1, result.size());
+        verify(userAccessService).requirePlatformPermission(2100L, "station.review");
+    }
+
+    @Test
+    void stationReviewerWithPermissionCanApproveSubmittedVersion() {
+        when(userAccessService.requirePlatformPermission(2100L, "station.review")).thenReturn(null);
+        Station station = station(10L, null, 30L, "北京", "北京站");
+        when(stationMapper.selectById(10L)).thenReturn(station);
+        StationConfigVersion submitted = version(100L, 10L, 2, "submitted", "update_city");
+        submitted.setCity("北京");
+        submitted.setStationName("北京新站");
+        when(versionMapper.selectById(100L)).thenReturn(submitted);
+
+        StationConfigVersionReviewRequest review = new StationConfigVersionReviewRequest();
+        review.setReviewerId(2100L);
+        StationConfigVersionResponse result = service.approve(100L, review);
+
+        assertEquals("applied", result.getStatus());
+        verify(userAccessService).requirePlatformPermission(2100L, "station.review");
+        verify(versionMapper).updateById(argThat(updated -> Long.valueOf(2100L).equals(updated.getReviewerId())
+                && "applied".equals(updated.getStatus())));
+    }
+
+    @Test
     void approveActivityVenueChangeRejectsVenueInAnotherCity() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         Station station = station(10L, null, 30L, "北京", "北京站");
         when(stationMapper.selectById(10L)).thenReturn(station);
         StationConfigVersion submitted = version(100L, 10L, 2, "submitted", "change_venue");
@@ -518,7 +548,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void listReviewsReturnsFilteredReviewVersions() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         StationConfigVersion submitted = version(100L, 10L, 1, "submitted", "update_city");
         when(versionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(submitted));
 
@@ -526,13 +556,13 @@ class StationConfigVersionServiceTest {
 
         assertEquals(1, result.size());
         assertEquals("submitted", result.get(0).getStatus());
-        verify(userAccessService).requireAdmin(2002L);
+        verify(userAccessService).requirePlatformPermission(2002L, "station.review");
         verify(versionMapper).selectList(any(LambdaQueryWrapper.class));
     }
 
     @Test
-    void listReviewsRequiresAdmin() {
-        when(userAccessService.requireAdmin(2003L)).thenThrow(new BusinessException(403, "仅平台管理员可操作"));
+    void listReviewsRequiresStationReviewPermission() {
+        when(userAccessService.requirePlatformPermission(2003L, "station.review")).thenThrow(new BusinessException(403, "无权限"));
 
         BusinessException error = assertThrows(BusinessException.class, () -> service.listReviews(2003L, "submitted"));
 
@@ -542,7 +572,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void approveAppliesVenueCityStationNameAndKeepsHistoryFields() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         Station station = station(10L, 20L, null, "北京", "北京站");
         when(stationMapper.selectById(10L)).thenReturn(station);
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -585,7 +615,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void approveRejectsVenueApplicationOwnedByOtherOrganizer() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         Station station = station(10L, 20L, null, "北京", "北京站");
         when(stationMapper.selectById(10L)).thenReturn(station);
         when(tourMapper.selectById(20L)).thenReturn(tour(20L, 2003L));
@@ -609,7 +639,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void approveActivityVenueIdCreatesActiveSessionWhenScheduled() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         Station station = station(10L, null, 30L, "北京", "北京站");
         when(stationMapper.selectById(10L)).thenReturn(station);
         StationConfigVersion submitted = version(100L, 10L, 2, "submitted", "set_venue");
@@ -639,7 +669,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void approveActivityVenueIdUpdatesExistingActiveSession() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         Station station = station(10L, null, 30L, "北京", "北京站");
         when(stationMapper.selectById(10L)).thenReturn(station);
         StationConfigVersion submitted = version(100L, 10L, 2, "submitted", "set_venue");
@@ -670,7 +700,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void approveScheduleChangeUpdatesExistingActivitySession() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         Station station = station(10L, null, 30L, "北京", "北京站");
         station.setVenueApplicationId(88L);
         when(stationMapper.selectById(10L)).thenReturn(station);
@@ -711,7 +741,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void approveActivityVenueIdRejectsInactiveVenue() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         when(stationMapper.selectById(10L)).thenReturn(station(10L, null, 30L, "北京", "北京站"));
         StationConfigVersion submitted = version(100L, 10L, 2, "submitted", "set_venue");
         submitted.setActivityId(30L);
@@ -733,7 +763,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void approveRejectsSubmittedScheduleChange() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "submitted", "change_schedule"));
 
         StationConfigVersionReviewRequest review = new StationConfigVersionReviewRequest();
@@ -747,7 +777,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void rejectChangesSubmittedToRejected() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "submitted", "update_city"));
 
         StationConfigVersionReviewRequest review = new StationConfigVersionReviewRequest();
@@ -764,7 +794,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void approveOverloadOverridesForgedReviewerIdWithAdminUserId() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         Station station = station(10L, 20L, null, "北京", "北京站");
         when(stationMapper.selectById(10L)).thenReturn(station);
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "submitted", "update_city"));
@@ -781,7 +811,7 @@ class StationConfigVersionServiceTest {
 
     @Test
     void rejectOverloadOverridesForgedReviewerIdWithAdminUserId() {
-        when(userAccessService.requireAdmin(2002L)).thenReturn(user(2002L, "admin"));
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
         when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "submitted", "update_city"));
 
         StationConfigVersionReviewRequest review = new StationConfigVersionReviewRequest();

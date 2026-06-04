@@ -33,7 +33,7 @@ class VenueManagementCoverageTest {
     @BeforeAll static void j() { if (System.getenv("JWT_SECRET")==null) System.setProperty("JWT_SECRET","test-jwt-secret-must-be-at-least-32-bytes"); }
     String at() { return "Bearer "+JwtUtil.generateToken(2002L,"admin","admin"); }
     String ot() { return "Bearer "+JwtUtil.generateToken(2003L,"org","organizer"); }
-    void ad() { when(uas.requireAdminOrOrganizerRole(2002L)).thenReturn("admin"); }
+    void ad() { when(uas.requireAdminOrAnyPermissionRole(2002L, "venue.manage")).thenReturn("admin"); }
     void rd(Long userId, String role) { when(uas.requireAdminOrOrganizerOrAnyPermissionRole(userId, "venue.manage", "session.manage", "activity.manage", "tour.manage")).thenReturn(role); }
     Venue v() { Venue v=new Venue(); v.setId(50L); v.setName("S"); v.setCity("C"); v.setStatus(1); return v; }
 
@@ -44,7 +44,7 @@ class VenueManagementCoverageTest {
         @Test @DisplayName("VN-004: delete→200") void v4() { ad(); when(vm.selectById(50L)).thenReturn(v()); assertEquals(200,ctl.deleteVenue(50L,at(),null).getCode()); }
         @Test @DisplayName("VN-006: list→200") void v6() { rd(2002L, "admin"); when(vm.selectList(any())).thenReturn(List.of(v())); assertEquals(200,ctl.listAdminVenues(at(),null).getCode()); }
         @Test @DisplayName("VN-007: org list→200") void v7() { rd(2003L, "organizer"); when(vm.selectList(any())).thenReturn(List.of(v())); assertEquals(200,ctl.listAdminVenues(ot(),null).getCode()); }
-        @Test @DisplayName("VN-008: org create→403") void v8() { when(uas.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer"); Map<String,Object> b=new HashMap<>(); b.put("name","S"); assertNotEquals(200,ctl.createVenue(ot(),b).getCode()); }
+        @Test @DisplayName("VN-008: org create→403") void v8() { when(uas.requireAdminOrAnyPermissionRole(2003L, "venue.manage")).thenThrow(new com.omni.exception.BusinessException(403, "无权限")); Map<String,Object> b=new HashMap<>(); b.put("name","S"); assertThrows(com.omni.exception.BusinessException.class, () -> ctl.createVenue(ot(),b)); }
     }
     @Nested @DisplayName("Permission/Errors")
     class P {

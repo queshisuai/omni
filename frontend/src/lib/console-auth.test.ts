@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canAccessConsolePath, canUseConsoleAction, canEnterConsole, getConsoleBrandLabel, getConsoleRoleLabel, getDefaultConsolePath, shouldDefaultToConsoleAfterLogin } from './console-auth.ts'
+import { canAccessConsolePath, canUseConsoleAction, canEnterConsole, getConsoleBrandLabel, getConsoleRoleLabel, getDefaultConsolePath, hasConsolePermission, shouldDefaultToConsoleAfterLogin } from './console-auth.ts'
 
 test('support manager can access support pages but not audit pages', () => {
   const permissions = ['support.conversation.view', 'support.account.manage']
@@ -32,6 +32,11 @@ test('platform super admin role code can enter console without extra permissions
   assert.equal(canEnterConsole('platform_super_admin', []), true)
 })
 
+test('platform admin actions still require permission codes', () => {
+  assert.equal(hasConsolePermission('platform_super_admin', [], 'activity.manage'), false)
+  assert.equal(hasConsolePermission('platform_super_admin', ['activity.manage'], 'activity.manage'), true)
+})
+
 test('organizer admin manages organizer accounts but not organizer business pages', () => {
   const permissions = ['organizer.account.manage']
   assert.equal(canEnterConsole('organizer_admin', permissions), true)
@@ -44,6 +49,7 @@ test('organizer admin default entry follows granted permissions', () => {
   assert.equal(getDefaultConsolePath('organizer_admin', ['activity.manage']), '/console/activities')
   assert.equal(getDefaultConsolePath('organizer_admin', ['tour.manage']), '/console/tours')
   assert.equal(getDefaultConsolePath('organizer_admin', ['order.view']), '/console/orders')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['organizer.account.manage', 'activity.manage']), '/console/activities')
   assert.equal(getDefaultConsolePath('organizer_admin', []), '/console')
 })
 

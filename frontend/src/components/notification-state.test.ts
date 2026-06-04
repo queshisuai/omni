@@ -141,9 +141,10 @@ test('turns matching notification content text into an inline action segment', (
 
 test('links risk messages to their service workbenches', () => {
   assert.deepEqual(getNotificationAction({ ...notification(11, '2026-05-22T12:00:00'), type: 'TODO' }, 'admin'), {
-    href: '/console/risk-resolutions',
+    href: '/notifications',
     buttonLabel: '查看待办',
   })
+  assert.equal(getNotificationAction({ ...notification(111, '2026-05-22T12:00:00'), type: 'TODO' }, 'admin', ['risk.review'])?.href, '/console/risk-resolutions')
   assert.deepEqual(getNotificationAction({ ...notification(12, '2026-05-22T12:00:00'), type: 'TODO' }, 'organizer'), {
     href: '/console/risk-events',
     buttonLabel: '查看待办',

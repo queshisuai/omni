@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { getToken, getUser } from '@/lib/auth'
 import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
 import { getRealNameRequirementLabel, getTicketTransferAllowedLabel } from '@/lib/activity-flags'
-import { hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
+import { canUseConsoleAction, hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
 import { Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
 import type { ActivityEntity, PageResult, RefundImpactResponse, TourEntity, UserRole } from '@/types/api'
@@ -84,6 +84,7 @@ export default function ActivitiesPage() {
   const isAdmin = isPlatformAdminRole(role)
   const canManageActivities = hasConsolePermission(role, permissionCodes, 'activity.manage')
   const canManageTours = hasConsolePermission(role, permissionCodes, 'tour.manage')
+  const canReviewRisk = canUseConsoleAction('risk.review', permissionCodes)
   const canPublishDraft = (activity: ActivityEntity) => {
     const canManageRowType = activity.itemType === 'tour' ? canManageTours : canManageActivities
     return activity.publishStatus === 'draft' && (canManageRowType || activity.organizerId === userId)
@@ -573,7 +574,7 @@ export default function ActivitiesPage() {
                           <FileDown className="w-4 h-4" />
                         </button>
                       )}
-                      {isAdmin && isTour && a.publishStatus !== 'draft' && a.status === 1 && (
+                      {canReviewRisk && isTour && a.publishStatus !== 'draft' && a.status === 1 && (
                         <Link
                           href={`/console/tours/${a.id}?mode=risk`}
                           className="rounded px-2 py-1 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"
@@ -582,7 +583,7 @@ export default function ActivitiesPage() {
                           风险停售
                         </Link>
                       )}
-                      {isAdmin && !isTour && a.publishStatus === 'published' && a.status === 1 && (
+                      {canReviewRisk && !isTour && a.publishStatus === 'published' && a.status === 1 && (
                         <button
                           onClick={() => handleAdminSuspend(a)}
                           className="rounded px-2 py-1 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"

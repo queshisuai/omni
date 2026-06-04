@@ -23,6 +23,7 @@ export default function NotificationsPage() {
   const [error, setError] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<NotificationVO[]>([])
   const [role, setRole] = useState<UserRole | null>(null)
+  const [permissionCodes, setPermissionCodes] = useState<string[]>([])
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -35,6 +36,7 @@ export default function NotificationsPage() {
       return
     }
     setRole(user.role || null)
+    setPermissionCodes(user.permissionCodes || [])
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -115,7 +117,7 @@ export default function NotificationsPage() {
         <div className="space-y-3">
           {visibleNotifications.map((item) => {
             const meta = getNotificationTypeMeta(item)
-            const action = getNotificationAction(item, role)
+            const action = getNotificationAction(item, role, permissionCodes)
             const contentSegments = getNotificationContentSegments(item.content, action)
             const unread = isNotificationUnread(item)
             return (

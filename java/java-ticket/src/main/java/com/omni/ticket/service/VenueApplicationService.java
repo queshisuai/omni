@@ -201,7 +201,7 @@ public class VenueApplicationService {
     }
 
     public List<VenueApplicationResponse> listAdmin(Long userId, Integer status) {
-        userAccessService.requireAdmin(userId);
+        userAccessService.requirePlatformPermission(userId, "venue.review");
         LambdaQueryWrapper<VenueApplication> wrapper = new LambdaQueryWrapper<>();
         if (status != null) {
             wrapper.eq(VenueApplication::getStatus, status);
@@ -263,7 +263,7 @@ public class VenueApplicationService {
 
     @Transactional
     public VenueApplication approve(Long id, Long userId, String mode, Long venueId, String reviewNote) {
-        userAccessService.requireAdmin(userId);
+        userAccessService.requirePlatformPermission(userId, "venue.review");
         VenueApplication application = requirePendingApplication(id);
         Long approvedVenueId;
         if ("create".equals(mode)) {
@@ -295,7 +295,7 @@ public class VenueApplicationService {
     }
 
     public VenueApplication reject(Long id, Long userId, String reviewNote) {
-        userAccessService.requireAdmin(userId);
+        userAccessService.requirePlatformPermission(userId, "venue.review");
         if (trim(reviewNote) == null || trim(reviewNote).isEmpty()) {
             throw new BusinessException(400, "驳回原因不能为空");
         }

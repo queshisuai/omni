@@ -44,7 +44,6 @@ const ORGANIZER_BUSINESS_PERMISSIONS = [
 ]
 
 const DEFAULT_PATH_BY_PERMISSION: Array<[string, string]> = [
-  ['organizer.account.manage', '/console/organizer-admins'],
   ['activity.manage', '/console/activities'],
   ['tour.manage', '/console/tours'],
   ['session.manage', '/console/sessions'],
@@ -53,6 +52,7 @@ const DEFAULT_PATH_BY_PERMISSION: Array<[string, string]> = [
   ['refund.review', '/console/refunds'],
   ['venue.manage', '/console/venue'],
   ['organizer.review', '/console/organizer-applications'],
+  ['organizer.account.manage', '/console/organizer-admins'],
   ['venue.review', '/console/venue/applications'],
   ['station.review', '/console/station-config-reviews'],
   ['risk.review', '/console/risk-resolutions'],
@@ -92,7 +92,6 @@ export function canUseConsoleAction(action: string, permissionCodes: string[]): 
 }
 
 export function hasConsolePermission(role: string | null | undefined, permissionCodes: string[] = [], permissionCode: string): boolean {
-  if (isPlatformAdminRole(role)) return true
   if (role === 'organizer' && ORGANIZER_BUSINESS_PERMISSIONS.includes(permissionCode)) return true
   return permissionCodes.includes(permissionCode)
 }

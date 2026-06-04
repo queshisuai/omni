@@ -2,6 +2,7 @@ package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.user.dto.OrganizerApplicationRequest;
@@ -147,7 +148,7 @@ public class OrganizerApplicationService {
     }
 
     public List<OrganizerApplicationResponse> listForAdmin(Long reviewerId, Integer status) {
-        requireAdmin(reviewerId);
+        requireOrganizerReviewPermission(reviewerId);
         LambdaQueryWrapper<OrganizerApplication> wrapper = new LambdaQueryWrapper<>();
         if (status != null) {
             wrapper.eq(OrganizerApplication::getStatus, status);
@@ -170,7 +171,7 @@ public class OrganizerApplicationService {
 
     @Transactional
     public OrganizerApplicationResponse approve(Long id, Long reviewerId, String reviewNote) {
-        requireAdmin(reviewerId);
+        requireOrganizerReviewPermission(reviewerId);
         OrganizerApplication application = requirePendingApplication(id);
         LocalDateTime now = LocalDateTime.now();
 
@@ -206,7 +207,7 @@ public class OrganizerApplicationService {
 
     @Transactional
     public OrganizerApplicationResponse reject(Long id, Long reviewerId, String reviewNote) {
-        requireAdmin(reviewerId);
+        requireOrganizerReviewPermission(reviewerId);
         String note = requireText(reviewNote, "驳回原因不能为空");
         OrganizerApplication application = requirePendingApplication(id);
         LocalDateTime now = LocalDateTime.now();
@@ -306,21 +307,22 @@ public class OrganizerApplicationService {
         application.setUpdateTime(now);
     }
 
-    private void requireAdmin(Long reviewerId) {
+    private void requireOrganizerReviewPermission(Long reviewerId) {
         User reviewer = userMapper.selectById(reviewerId);
         if (reviewer == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
-        if ("admin".equals(reviewer.getRole())) {
+        if (rbacService == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "RBAC服务未配置");
+        }
+        InternalAuthContextResponse auth = rbacService.getInternalAuthContext(reviewerId);
+        if (auth != null
+                && "platform".equals(auth.getScopeType())
+                && auth.getPermissionCodes() != null
+                && auth.getPermissionCodes().contains(PERMISSION_ORGANIZER_REVIEW)) {
             return;
         }
-        if (rbacService != null
-                && rbacService.getInternalAuthContext(reviewerId).getPermissionCodes().contains(PERMISSION_ORGANIZER_REVIEW)) {
-            return;
-        }
-        if (!"admin".equals(reviewer.getRole())) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
-        }
+        throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
     }
 
     private OrganizerApplication findByUserId(Long userId) {

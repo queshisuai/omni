@@ -92,6 +92,7 @@ import org.springframework.http.ResponseEntity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -196,6 +197,16 @@ class AdminControllerTest {
                 .thenReturn(role);
     }
 
+    private void allowVenueManageRole(Long userId, String role) {
+        when(userAccessService.requireAdminOrAnyPermissionRole(userId, "venue.manage"))
+                .thenReturn(role);
+    }
+
+    private void allowArtistManageRole(Long userId, String role) {
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "artist.manage"))
+                .thenReturn(role);
+    }
+
     @Test
     void listAdminVenuesUsesStableDisplayOrder() {
         AdminController controller = controller();
@@ -240,7 +251,7 @@ class AdminControllerTest {
         Venue venue = new Venue();
         venue.setId(13L);
         venue.setStatus(1);
-        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        allowVenueManageRole(2002L, "admin");
         when(venueMapper.selectById(13L)).thenReturn(venue);
 
         Result<Void> result = controller.deleteVenue(13L, adminToken(), 9999L);
@@ -519,7 +530,7 @@ class AdminControllerTest {
     @Test
     void createVenueUsesAuthorizationToken() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        allowVenueManageRole(2002L, "admin");
         Map<String, Object> body = new HashMap<>();
         body.put("userId", 9999L);
         body.put("name", "venue");
@@ -527,14 +538,14 @@ class AdminControllerTest {
         Result<Venue> result = controller.createVenue(adminToken(), body);
 
         assertEquals(200, result.getCode());
-        verify(userAccessService).requireAdminOrOrganizerRole(2002L);
-        verify(userAccessService, never()).requireAdminOrOrganizerRole(9999L);
+        verify(userAccessService).requireAdminOrAnyPermissionRole(2002L, "venue.manage");
+        verify(userAccessService, never()).requireAdminOrAnyPermissionRole(9999L, "venue.manage");
     }
 
     @Test
     void updateVenueUsesAuthorizationToken() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        allowVenueManageRole(2002L, "admin");
         Venue venue = new Venue();
         venue.setId(13L);
         when(venueMapper.selectById(13L)).thenReturn(venue);
@@ -545,8 +556,8 @@ class AdminControllerTest {
         Result<Venue> result = controller.updateVenue(13L, adminToken(), body);
 
         assertEquals(200, result.getCode());
-        verify(userAccessService).requireAdminOrOrganizerRole(2002L);
-        verify(userAccessService, never()).requireAdminOrOrganizerRole(9999L);
+        verify(userAccessService).requireAdminOrAnyPermissionRole(2002L, "venue.manage");
+        verify(userAccessService, never()).requireAdminOrAnyPermissionRole(9999L, "venue.manage");
     }
 
     @Test
@@ -1544,7 +1555,7 @@ class AdminControllerTest {
     @Test
     void getArtistRequiresAdminOrOrganizerRole() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2004L)).thenReturn(null);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2004L, "artist.manage")).thenReturn(null);
 
         Result<Artist> result = controller.getArtist(
                 "Bearer " + JwtUtil.generateToken(2004L, "13900000001", "user"), 99L);
@@ -1559,7 +1570,7 @@ class AdminControllerTest {
         Artist artist = new Artist();
         artist.setId(99L);
         artist.setSubmittedBy(2003L);
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowArtistManageRole(2003L, "organizer");
         when(artistAdminService.getById(99L)).thenReturn(artist);
 
         Result<Artist> result = controller.getArtist(
@@ -1576,7 +1587,7 @@ class AdminControllerTest {
         Artist artist = new Artist();
         artist.setId(99L);
         artist.setSubmittedBy(2005L);
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowArtistManageRole(2003L, "organizer");
         when(artistAdminService.getById(99L)).thenReturn(artist);
 
         Result<Artist> result = controller.getArtist(
@@ -1599,7 +1610,7 @@ class AdminControllerTest {
     @Test
     void listArtistsRejectsUserRole() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2004L)).thenReturn(null);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2004L, "artist.manage")).thenReturn(null);
 
         Result<Page<Artist>> result = controller.listArtists(
                 "Bearer " + JwtUtil.generateToken(2004L, "13900000001", "user"), 1, 10, null, null, null);
@@ -1613,7 +1624,7 @@ class AdminControllerTest {
         AdminController controller = controller();
         Page<Artist> page = new Page<>(1, 10);
         page.setRecords(List.of(new Artist()));
-        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
+        allowArtistManageRole(2002L, "admin");
         when(artistAdminService.listManageable(2002L, "admin", 1, 10, "周", "approved", "normal")).thenReturn(page);
 
         Result<Page<Artist>> result = controller.listArtists(
@@ -1629,7 +1640,7 @@ class AdminControllerTest {
         AdminController controller = controller();
         Page<Artist> page = new Page<>(1, 10);
         page.setRecords(List.of(new Artist()));
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        allowArtistManageRole(2003L, "organizer");
         when(artistAdminService.listManageable(2003L, "organizer", 1, 10, null, "pending", null)).thenReturn(page);
 
         Result<Page<Artist>> result = controller.listArtists(
@@ -1678,7 +1689,6 @@ class AdminControllerTest {
         AdminController controller = controller();
         Artist artist = new Artist();
         artist.setId(99L);
-        when(userAccessService.requireAdminOrOrganizerRole(2002L)).thenReturn("admin");
         when(artistGovernanceService.listPending(2002L)).thenReturn(List.of(artist));
 
         Result<List<Artist>> result = controller.listPendingArtists(
@@ -1700,15 +1710,15 @@ class AdminControllerTest {
     }
 
     @Test
-    void listPendingArtistsRequiresAdminRole() {
+    void listPendingArtistsDelegatesPermissionFailureToGovernanceService() {
         AdminController controller = controller();
-        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(artistGovernanceService.listPending(2003L))
+                .thenThrow(new com.omni.exception.BusinessException(403, "无权限"));
 
-        Result<List<Artist>> result = controller.listPendingArtists(
-                "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer"));
+        assertThrows(com.omni.exception.BusinessException.class, () -> controller.listPendingArtists(
+                "Bearer " + JwtUtil.generateToken(2003L, "13800000002", "organizer")));
 
-        assertEquals(403, result.getCode());
-        verify(artistGovernanceService, never()).listPending(any());
+        verify(artistGovernanceService).listPending(2003L);
     }
 
     @Test

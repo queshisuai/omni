@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
+import com.omni.user.entity.RbacPermission;
 import com.omni.user.entity.RbacRolePermission;
 import com.omni.user.entity.SupportAccount;
 import com.omni.user.entity.User;
+import com.omni.user.mapper.RbacPermissionMapper;
 import com.omni.user.mapper.RbacRolePermissionMapper;
 import com.omni.user.mapper.SupportAccountMapper;
 import com.omni.user.mapper.UserMapper;
@@ -17,16 +19,20 @@ import java.util.stream.Collectors;
 
 @Service
 public class RbacService {
+    private static final String ROLE_PLATFORM_SUPER_ADMIN = "platform_super_admin";
 
     private final UserMapper userMapper;
     private final SupportAccountMapper supportAccountMapper;
+    private final RbacPermissionMapper rbacPermissionMapper;
     private final RbacRolePermissionMapper rbacRolePermissionMapper;
 
     public RbacService(UserMapper userMapper,
                        SupportAccountMapper supportAccountMapper,
+                       RbacPermissionMapper rbacPermissionMapper,
                        RbacRolePermissionMapper rbacRolePermissionMapper) {
         this.userMapper = userMapper;
         this.supportAccountMapper = supportAccountMapper;
+        this.rbacPermissionMapper = rbacPermissionMapper;
         this.rbacRolePermissionMapper = rbacRolePermissionMapper;
     }
 
@@ -36,12 +42,9 @@ public class RbacService {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
         String effectiveRole = resolveRole(user, resolveSupportAccount(user));
-        List<RbacRolePermission> rolePermissions = rbacRolePermissionMapper.selectList(
-                new LambdaQueryWrapper<RbacRolePermission>().eq(RbacRolePermission::getRoleCode, effectiveRole)
-        );
-        List<String> permissions = rolePermissions.stream()
-                .map(RbacRolePermission::getPermissionCode)
-                .collect(Collectors.toList());
+        List<String> permissions = ROLE_PLATFORM_SUPER_ADMIN.equals(effectiveRole)
+                ? listAllPermissionCodes()
+                : listRolePermissionCodes(effectiveRole);
 
         InternalAuthContextResponse response = new InternalAuthContextResponse();
         response.setUserId(userId);
@@ -54,6 +57,22 @@ public class RbacService {
         return response;
     }
 
+    private List<String> listRolePermissionCodes(String effectiveRole) {
+        List<RbacRolePermission> rolePermissions = rbacRolePermissionMapper.selectList(
+                new LambdaQueryWrapper<RbacRolePermission>().eq(RbacRolePermission::getRoleCode, effectiveRole)
+        );
+        return rolePermissions.stream()
+                .map(RbacRolePermission::getPermissionCode)
+                .collect(Collectors.toList());
+    }
+
+    private List<String> listAllPermissionCodes() {
+        return rbacPermissionMapper.selectList(new LambdaQueryWrapper<RbacPermission>().orderByAsc(RbacPermission::getCode))
+                .stream()
+                .map(RbacPermission::getCode)
+                .collect(Collectors.toList());
+    }
+
     public static String resolveRole(User user) {
         return resolveRole(user, null);
     }
@@ -62,7 +81,7 @@ public class RbacService {
         String role = user.getRole();
         if (role == null) return "user";
         switch (role) {
-            case "admin": return "platform_super_admin";
+            case "admin": return ROLE_PLATFORM_SUPER_ADMIN;
             case "support": return resolveSupportAccountRole(supportAccount);
             case "organizer": return "organizer";
             default: return role;

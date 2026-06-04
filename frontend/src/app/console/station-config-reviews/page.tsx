@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getUser } from '@/lib/auth'
-import { approveStationConfigVersion, listStationConfigReviews, rejectStationConfigVersion } from '@/lib/api'
-import { isPlatformAdminRole } from '@/lib/console-auth'
+import { getUser, updateStoredUser } from '@/lib/auth'
+import { approveStationConfigVersion, getUserInfo, listStationConfigReviews, rejectStationConfigVersion } from '@/lib/api'
+import { canUseConsoleAction } from '@/lib/console-auth'
 import { globalPrompt } from '@/components/GlobalDialog'
 import type { StationConfigVersionVO } from '@/types/api'
 
@@ -39,12 +39,26 @@ export default function StationConfigReviewsPage() {
 
   useEffect(() => {
     const user = getUser()
-    if (!user || !isPlatformAdminRole(user.role)) {
+    if (!user) {
       setForbidden(true)
       setLoading(false)
       return
     }
-    loadReviews()
+    getUserInfo()
+      .then(info => {
+        const permissions = info.permissionCodes || []
+        updateStoredUser({ role: info.role, nickname: info.nickname, permissionCodes: permissions })
+        if (!canUseConsoleAction('station.review', permissions)) {
+          setForbidden(true)
+          setLoading(false)
+          return
+        }
+        return loadReviews()
+      })
+      .catch(err => {
+        setError(err instanceof Error ? err.message : '校验后台权限失败')
+        setLoading(false)
+      })
   }, [])
 
   const handleReview = async (item: StationConfigVersionVO, action: 'approve' | 'reject') => {

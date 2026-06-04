@@ -8,6 +8,7 @@ import com.omni.user.mapper.RbacRoleMapper;
 import com.omni.user.mapper.RbacRolePermissionMapper;
 import com.omni.exception.BusinessException;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
@@ -78,18 +79,26 @@ class RbacAdminServiceTest {
     }
 
     @Test
-    void rejectsRemovingLastRbacManagePermission() {
+    void platformSuperAdminAlwaysSavesEveryPermissionCode() {
         RbacRole role = new RbacRole();
         role.setCode("platform_super_admin");
+        RbacPermission rbacManage = new RbacPermission();
+        rbacManage.setCode("rbac.manage");
+        RbacPermission stationReview = new RbacPermission();
+        stationReview.setCode("station.review");
+        RbacPermission organizerReview = new RbacPermission();
+        organizerReview.setCode("organizer.review");
         when(roleMapper.selectOne(any())).thenReturn(role);
-        when(permissionMapper.selectList(any())).thenReturn(List.of());
-        when(rolePermissionMapper.selectCount(any()))
-                .thenReturn(1L)
-                .thenReturn(1L);
+        when(permissionMapper.selectList(any())).thenReturn(List.of(rbacManage, stationReview, organizerReview));
 
-        BusinessException error = assertThrows(BusinessException.class,
-                () -> service.updateRolePermissions("platform_super_admin", List.of()));
+        service.updateRolePermissions("platform_super_admin", List.of("rbac.manage"));
 
-        assertEquals("至少保留一个拥有角色权限管理的角色", error.getMessage());
+        ArgumentCaptor<RbacRolePermission> captor = ArgumentCaptor.forClass(RbacRolePermission.class);
+        verify(rolePermissionMapper).delete(any());
+        verify(rolePermissionMapper, times(3)).insert(captor.capture());
+        assertEquals(
+                List.of("rbac.manage", "station.review", "organizer.review"),
+                captor.getAllValues().stream().map(RbacRolePermission::getPermissionCode).collect(java.util.stream.Collectors.toList())
+        );
     }
 }

@@ -7,7 +7,6 @@ import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.dto.ArtistUpdateRequest;
-import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Artist;
 import com.omni.ticket.mapper.ArtistMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,7 +44,7 @@ public class ArtistGovernanceService {
         if (request == null || request.getUserId() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "艺人提交参数不能为空");
         }
-        userAccessService.requireAdminOrOrganizer(request.getUserId());
+        userAccessService.requireAdminOrOrganizerOrAnyPermission(request.getUserId(), "artist.manage", "activity.manage", "tour.manage");
         if (!StringUtils.hasText(request.getName())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "艺人/团队名称不能为空");
         }
@@ -78,12 +77,11 @@ public class ArtistGovernanceService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "艺人/团队名称不能为空");
         }
         Artist artist = requireArtist(artistId);
-        InternalUserRefResponse user = userAccessService.requireAdminOrOrganizer(request.getUserId());
-        String role = user == null ? null : user.getRole();
-        boolean admin = "admin".equals(role);
+        userAccessService.requireAdminOrOrganizerOrAnyPermission(request.getUserId(), "artist.manage");
+        boolean platformManager = userAccessService.hasPlatformPermission(request.getUserId(), "artist.manage");
         boolean ownPending = request.getUserId().equals(artist.getSubmittedBy())
                 && REVIEW_PENDING.equals(artist.getReviewStatus());
-        if (!admin && !ownPending) {
+        if (!platformManager && !ownPending) {
             throw new BusinessException(ResultCode.FORBIDDEN, "只能编辑自己提交且待审核的艺人档案");
         }
         LocalDateTime now = LocalDateTime.now();
@@ -102,7 +100,7 @@ public class ArtistGovernanceService {
     }
 
     public List<Artist> listPending(Long userId) {
-        userAccessService.requireAdmin(userId);
+        userAccessService.requirePlatformPermission(userId, "artist.manage");
         return artistMapper.selectList(new LambdaQueryWrapper<Artist>()
                 .eq(Artist::getReviewStatus, REVIEW_PENDING)
                 .orderByAsc(Artist::getName));
@@ -112,7 +110,7 @@ public class ArtistGovernanceService {
         if (request == null || request.getUserId() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "艺人审核参数不能为空");
         }
-        userAccessService.requireAdmin(request.getUserId());
+        userAccessService.requirePlatformPermission(request.getUserId(), "artist.manage");
         Artist artist = requireArtist(artistId);
         String status;
         if ("approve".equals(request.getAction())) {
@@ -136,7 +134,7 @@ public class ArtistGovernanceService {
         if (request == null || request.getUserId() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "艺人风险参数不能为空");
         }
-        userAccessService.requireAdmin(request.getUserId());
+        userAccessService.requirePlatformPermission(request.getUserId(), "artist.manage");
         if (RISK_RISKY.equals(request.getRiskStatus()) && !StringUtils.hasText(request.getReason())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "标记风险艺人必须填写原因");
         }

@@ -1,4 +1,5 @@
-export function canLoadPlatformOpsSummary(role: string | null | undefined): boolean {
-  if (role === 'admin' || role === 'platform_super_admin') return true
-  return false
+const PLATFORM_OPS_PERMISSIONS = ['compensation.execute', 'reconcile.view', 'audit.view']
+
+export function canLoadPlatformOpsSummary(_role: string | null | undefined, permissionCodes: string[] = []): boolean {
+  return PLATFORM_OPS_PERMISSIONS.every(permission => permissionCodes.includes(permission))
 }
