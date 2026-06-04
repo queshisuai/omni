@@ -1,0 +1,86 @@
+<view class="page home-page">
+  <view wx:if="{{featured}}" class="hero" style="background: {{featured.gradient}};">
+    <view class="hero-glow"></view>
+    <view class="hero-top">
+      <view>
+        <text class="eyebrow">OMNI LIVE</text>
+        <text class="hero-title">发现下一场现场</text>
+      </view>
+      <view class="city-pill">{{featured.city}}</view>
+    </view>
+
+    <view class="search-box">
+      <text>搜索演唱会、音乐节、剧场</text>
+    </view>
+
+    <view class="hero-card" bindtap="goDetail" data-id="{{featured.id}}">
+      <view class="poster-stage">
+        <view class="beam beam-left"></view>
+        <view class="beam beam-right"></view>
+        <view class="crowd"></view>
+      </view>
+      <view class="hero-info">
+        <text class="hero-tag">{{featured.tag}}</text>
+        <text class="hero-name">{{featured.title}}</text>
+        <text class="hero-meta">{{featured.date}} {{featured.time}} · {{featured.venue}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:else class="hero loading-hero">
+    <view>
+      <text class="eyebrow">OMNI LIVE</text>
+      <text class="hero-title">{{loading ? '正在加载活动' : '活动暂不可用'}}</text>
+    </view>
+    <view wx:if="{{errorMessage}}" class="error-card">
+      <text>{{errorMessage}}</text>
+      <button bindtap="useDemoData">使用演示数据</button>
+    </view>
+  </view>
+
+  <scroll-view wx:if="{{allEvents.length}}" class="tabs" scroll-x enable-flex>
+    <view
+      wx:for="{{tabs}}"
+      wx:key="*this"
+      class="tab {{activeTab === item ? 'tab-active' : ''}}"
+      bindtap="chooseTab"
+      data-tab="{{item}}"
+    >{{item}}</view>
+  </scroll-view>
+
+  <view wx:if="{{allEvents.length}}" class="section-title">
+    <text>近期热门</text>
+    <text>共 {{events.length}} 场</text>
+  </view>
+
+  <view wx:if="{{events.length}}" class="event-list">
+    <view
+      wx:for="{{events}}"
+      wx:key="id"
+      class="event-card"
+      bindtap="goDetail"
+      data-id="{{item.id}}"
+    >
+      <view class="event-poster" style="background: {{item.gradient}};">
+        <view class="stage-line"></view>
+        <text>{{item.date}}</text>
+      </view>
+      <view class="event-body">
+        <view class="event-title-row">
+          <text class="event-title">{{item.title}}</text>
+          <text class="event-tag">{{item.tag}}</text>
+        </view>
+        <text class="event-artist">{{item.artist}}</text>
+        <text class="event-meta">{{item.city}} · {{item.venue}}</text>
+        <view class="event-bottom">
+          <text class="event-price">¥{{item.minPrice}}起</text>
+          <view class="detail-link">查看</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:elif="{{!loading}}" class="empty-state">
+    <text>没有匹配的活动</text>
+  </view>
+</view>

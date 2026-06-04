@@ -1,0 +1,45 @@
+<view class="page orders-page">
+  <view class="orders-head">
+    <view>
+      <text class="orders-title">我的订单</text>
+      <text class="orders-subtitle">展示后端真实订单记录</text>
+    </view>
+    <button class="clear-button" bindtap="refreshOrders">刷新</button>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">
+    <text class="empty-title">正在加载订单</text>
+  </view>
+
+  <view wx:elif="{{errorMessage}}" class="empty">
+    <view class="empty-visual"></view>
+    <text class="empty-title">{{errorMessage}}</text>
+    <text class="empty-desc">登录测试账号后，可以查看通过真实下单接口创建的订单。</text>
+    <button class="primary-button" bindtap="goProfile">去登录</button>
+  </view>
+
+  <view wx:elif="{{orders.length}}" class="order-list">
+    <view wx:for="{{orders}}" wx:key="id" class="order-item">
+      <view class="order-top">
+        <text class="order-title">{{item.title}}</text>
+        <text class="status {{item.statusClass}}">{{item.statusText}}</text>
+      </view>
+      <text class="order-meta">{{item.date}} · {{item.venue}}</text>
+      <view class="ticket-line">
+        <text>{{item.ticketName}} × {{item.quantity}}</text>
+        <text>¥{{item.total}}</text>
+      </view>
+      <view class="order-code">
+        <text>订单编号</text>
+        <text>{{item.orderNo}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:else class="empty">
+    <view class="empty-visual"></view>
+    <text class="empty-title">还没有真实订单</text>
+    <text class="empty-desc">去首页选择一场活动，提交订单后会出现在这里。</text>
+    <button class="primary-button" bindtap="goHome">去购票</button>
+  </view>
+</view>

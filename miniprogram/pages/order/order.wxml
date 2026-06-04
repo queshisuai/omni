@@ -1,0 +1,63 @@
+<view wx:if="{{errorMessage}}" class="page order-state">
+  <text>{{errorMessage}}</text>
+</view>
+
+<view wx:elif="{{event && ticket}}" class="page order-page">
+  <view class="order-card">
+    <view class="mini-poster" style="background: {{event.gradient}};">
+      <view class="poster-line"></view>
+    </view>
+    <view class="order-event">
+      <text class="order-title">{{event.title}}</text>
+      <text class="order-meta">{{event.date}} {{event.time}}</text>
+      <text class="order-meta">{{event.venue}}</text>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">票档信息</view>
+    <view class="row">
+      <text>票档</text>
+      <text>{{ticket.name}}</text>
+    </view>
+    <view class="row">
+      <text>区域</text>
+      <text>{{ticket.area}}</text>
+    </view>
+    <view class="row">
+      <text>单价</text>
+      <text class="price">¥{{ticket.price}}</text>
+    </view>
+    <view class="quantity-row">
+      <text>数量</text>
+      <view class="stepper">
+        <button bindtap="decrease">-</button>
+        <text>{{quantity}}</text>
+        <button bindtap="increase">+</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">购票人</view>
+    <view class="buyer">
+      <view class="avatar">毕</view>
+      <view>
+        <text class="buyer-name">毕设演示用户</text>
+        <text class="buyer-phone">13900000001</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="notice">
+    <text>当前为毕业设计演示流程，不产生真实交易，不调用微信支付。</text>
+  </view>
+
+  <view class="summary safe-bottom">
+    <view>
+      <text class="summary-label">合计</text>
+      <text class="summary-price">¥{{total}}</text>
+    </view>
+    <button class="primary-button pay-entry" bindtap="goPay" loading="{{submitting}}">提交订单</button>
+  </view>
+</view>

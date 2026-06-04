@@ -57,6 +57,13 @@ public class PaymentConfirmationService {
         paymentMapper.updateById(payment);
     }
 
+    public void confirmMockPayment(Payment payment) {
+        if (payment == null || payment.getOrderId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "支付记录无效");
+        }
+        markOrderPaid(payment.getOrderId());
+    }
+
     private void markOrderPaid(Long orderId) {
         String token = requireInternalApiToken();
         Result<OrderInfoResponse> result = callOrderClient(() -> orderClient.markPaid(orderId, token));
