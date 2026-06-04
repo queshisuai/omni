@@ -16,7 +16,16 @@ export function resolveRouteCity(pathname: string, cityParam: string | null | un
   if (pathname.startsWith('/search')) {
     return resolveInitialCity(cityParam)
   }
+  if (pathname === '/') {
+    return ALL_CITY_VALUE
+  }
   return resolveStoredCity(storedCity) || ALL_CITY_VALUE
+}
+
+export function resolveActivityCityParam(city: string | null | undefined) {
+  const normalized = city?.trim()
+  if (!normalized || normalized === ALL_CITY_VALUE) return undefined
+  return normalized
 }
 
 export function formatCityDisplay(city: string | null | undefined) {

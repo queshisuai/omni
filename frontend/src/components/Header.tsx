@@ -174,6 +174,15 @@ export function Header() {
                   <MapPin className="w-3 h-3 mr-1" />
                   {displayedCity}
                 </button>
+                {currentCity !== ALL_CITY_VALUE && (
+                  <button
+                    type="button"
+                    onClick={() => selectCity(ALL_CITY_VALUE)}
+                    className="flex items-center justify-center bg-gray-50 px-4 py-1.5 rounded-full text-xs font-medium text-gray-600 transition-colors hover:bg-[#fff4f8] hover:text-[#ff1268]"
+                  >
+                    全国
+                  </button>
+                )}
               </div>
 
               {/* Hot Cities */}

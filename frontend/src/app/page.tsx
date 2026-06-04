@@ -7,7 +7,7 @@ import { Banner } from '@/components/Banner'
 import { SectionRow } from '@/components/SectionRow'
 import { Footer } from '@/components/Footer'
 import { listActivities, listCategories } from '@/lib/api'
-import { CITY_KEY, resolveStoredCity } from '@/lib/city-selection'
+import { ALL_CITY_VALUE, resolveActivityCityParam } from '@/lib/city-selection'
 import { createHomeResumeRefreshHandlers, createLatestRequestGate } from '@/lib/home-resume-refresh'
 import { ACTIVITY_VIEW_SIGNAL_KEY, buildPersonalizedActivities, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
 import { categories as mockCategories, sections as mockSections, banners } from '@/lib/mock-data'
@@ -50,7 +50,7 @@ export default function HomePage() {
   const [sections, setSections] = useState<SectionData[]>([])
   const [loading, setLoading] = useState(true)
   const [viewSignals, setViewSignals] = useState<ActivityViewSignal[]>([])
-  const [currentCity, setCurrentCity] = useState('')
+  const [currentCity, setCurrentCity] = useState(ALL_CITY_VALUE)
   const [cityHydrated, setCityHydrated] = useState(false)
   const [requestGate] = useState(() => createLatestRequestGate())
   const fetchDataRef = useRef(() => {})
@@ -62,7 +62,7 @@ export default function HomePage() {
     try {
       const [catData, actData] = await Promise.all([
         listCategories(),
-        listActivities({ page: 1, size: 50, city: currentCity || undefined }),
+        listActivities({ page: 1, size: 50, city: resolveActivityCityParam(currentCity) }),
       ])
       if (!requestGate.isCurrent(requestId)) return
       setCategories(catData)
@@ -105,14 +105,14 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
-    setCurrentCity(resolveStoredCity(localStorage.getItem(CITY_KEY)))
+    setCurrentCity(ALL_CITY_VALUE)
     setCityHydrated(true)
   }, [])
 
   useEffect(() => {
     const handleCityUpdate = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail
-      setCurrentCity(detail || '')
+      setCurrentCity(detail || ALL_CITY_VALUE)
     }
     window.addEventListener('omni-city-updated', handleCityUpdate)
     return () => window.removeEventListener('omni-city-updated', handleCityUpdate)

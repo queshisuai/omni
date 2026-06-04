@@ -7,7 +7,7 @@ import { Footer } from '@/components/Footer'
 import { TicketCard } from '@/components/TicketCard'
 import { SearchResultsSkeleton } from '@/components/Skeleton'
 import { listActivities, listCategories } from '@/lib/api'
-import { resolveInitialCity } from '@/lib/city-selection'
+import { resolveActivityCityParam, resolveInitialCity } from '@/lib/city-selection'
 import { DEFAULT_POPULAR_SEARCHES, SEARCH_HISTORY_KEY, addSearchHistoryTerm, buildEmptySearchRecommendations, buildSearchSuggestions, parseSearchHistory } from '@/lib/search-experience'
 import { categories as mockCategories, sections as mockSections } from '@/lib/mock-data'
 import type { CategoryVO, ActivityVO } from '@/types/api'
@@ -251,7 +251,7 @@ function SearchContent() {
               page: p,
               size: 20,
               keyword: initialKeyword,
-              city: activeCity === '全部' ? undefined : activeCity,
+              city: resolveActivityCityParam(activeCity),
               ...dateRange,
               minPrice: minPrice ? Number(minPrice) : undefined,
               maxPrice: maxPrice ? Number(maxPrice) : undefined,
@@ -288,7 +288,7 @@ function SearchContent() {
         size: 20,
         categoryId,
         keyword: initialKeyword,
-        city: activeCity === '全部' ? undefined : activeCity,
+        city: resolveActivityCityParam(activeCity),
         ...dateRange,
         minPrice: minPrice ? Number(minPrice) : undefined,
         maxPrice: maxPrice ? Number(maxPrice) : undefined,
