@@ -7,6 +7,7 @@ import com.alipay.api.AlipayClient;
 import com.alipay.api.request.AlipayTradeRefundRequest;
 import com.alipay.api.response.AlipayTradeRefundResponse;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.payment.client.OrderClient;
@@ -137,6 +138,28 @@ class RefundServiceBoundaryTest {
         assertEquals(1, result.size());
         assertEquals("经典歌剧《茶花女》上海站", result.get(0).getActivityName());
         assertEquals("经典歌剧《茶花女》上海站", result.get(0).getOrderName());
+    }
+
+    @Test
+    void platformOrganizerAdminWithRefundReviewListsAllRefunds() {
+        Long reviewerId = 2100L;
+        RefundRequest refund = refund(1L, 10L, new BigDecimal("380.00"), 0);
+        OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("380.00"), 2);
+        order.setActivityName("平台侧退款审核活动");
+        InternalUserRefResponse reviewer = new InternalUserRefResponse();
+        reviewer.setId(reviewerId);
+        reviewer.setRole("organizer_admin");
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token")).thenReturn(Result.success(reviewer));
+        when(userInternalClient.getAuthContext(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(authContext("organizer_admin", "platform", "refund.review")));
+        when(refundRequestMapper.selectList(any())).thenReturn(List.of(refund));
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+
+        List<RefundRequestVO> result = service.listAdminRefunds(reviewerId, 0);
+
+        assertEquals(1, result.size());
+        assertEquals("平台侧退款审核活动", result.get(0).getActivityName());
+        verify(ticketRefundReviewInternalClient, never()).checkPermission(any(), any(), any());
     }
 
     @Test
@@ -614,6 +637,14 @@ class RefundServiceBoundaryTest {
         admin.setId(reviewerId);
         admin.setRole("admin");
         return admin;
+    }
+
+    private InternalAuthContextResponse authContext(String effectiveRole, String scopeType, String... permissionCodes) {
+        InternalAuthContextResponse auth = new InternalAuthContextResponse();
+        auth.setEffectiveRole(effectiveRole);
+        auth.setScopeType(scopeType);
+        auth.setPermissionCodes(List.of(permissionCodes));
+        return auth;
     }
 
     private AlipayProperties alipayProperties() {

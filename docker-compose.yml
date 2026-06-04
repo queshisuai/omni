@@ -1,22 +1,4 @@
 services:
-  postgres:
-    image: postgres:17-alpine
-    container_name: omni-postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: "123456"
-      POSTGRES_DB: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - omni-postgres-data:/var/lib/postgresql/data
-      - ./sql/docker-init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   redis:
     image: redis:7-alpine
     container_name: omni-redis
@@ -64,7 +46,7 @@ services:
       NACOS_ADDR: nacos:8848
       SEATA_CONFIG_DATA_ID: seataServer.properties
       SEATA_CONFIG_GROUP: SEATA_GROUP
-      SEATA_ADVERTISE_HOST: ${SEATA_ADVERTISE_HOST:-127.0.0.1}
+      SEATA_ADVERTISE_HOST: ${SEATA_ADVERTISE_HOST:-}
       SEATA_ADVERTISE_PORT: ${SEATA_ADVERTISE_PORT:-8091}
     command: ["/bin/sh", "/seata-config/import-config.sh"]
     restart: "no"
@@ -78,9 +60,9 @@ services:
       seata-config-init:
         condition: service_completed_successfully
     environment:
-      SEATA_IP: ${SEATA_ADVERTISE_HOST:-127.0.0.1}
+      SEATA_IP: ${SEATA_ADVERTISE_HOST:-}
       SEATA_PORT: ${SEATA_ADVERTISE_PORT:-8091}
-    command: ["-h", "${SEATA_ADVERTISE_HOST:-127.0.0.1}", "-p", "${SEATA_ADVERTISE_PORT:-8091}"]
+    command: ["-h", "${SEATA_ADVERTISE_HOST:-}", "-p", "${SEATA_ADVERTISE_PORT:-8091}"]
     ports:
       - "8091:8091"
       - "7091:7091"
@@ -114,15 +96,13 @@ services:
     container_name: omni-grab-service
     working_dir: /app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
     environment:
       GRAB_SERVICE_PORT: 3001
-      GRAB_DB_HOST: postgres
+      GRAB_DB_HOST: host.docker.internal
       GRAB_DB_PORT: 5432
       GRAB_DB_NAME: omni_grab
       GRAB_DB_USER: postgres
@@ -160,7 +140,6 @@ services:
     command: ["sh", "-c", "corepack enable && pnpm install && pnpm dev --hostname 0.0.0.0"]
 
 volumes:
-  omni-postgres-data:
   omni-redis-data:
   omni-rabbitmq-data:
   omni-nacos-data:

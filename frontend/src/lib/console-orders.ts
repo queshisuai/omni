@@ -71,6 +71,7 @@ export function paginateConsoleOrders(
 
 export function getConsoleOrderScopeCopy(role: UserRole | null | undefined) {
   if (isPlatformAdminRole(role)) return '当前权限：平台管理员，可查看全部活动订单。'
+  if (role === 'organizer_admin') return '当前权限：主办方管理员岗位账号，可按权限查看平台主办方业务订单。'
   if (role === 'organizer') return '当前权限：主办方，仅查看自己活动产生的订单。'
   return '当前权限：未识别后台角色，仅在登录后展示可访问订单。'
 }

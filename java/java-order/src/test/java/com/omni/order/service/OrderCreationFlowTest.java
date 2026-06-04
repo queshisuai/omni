@@ -5,10 +5,10 @@ import com.omni.exception.BusinessException;
 import com.omni.order.client.PaymentInternalClient;
 import com.omni.order.client.TicketSalesInternalClient;
 import com.omni.order.client.UserInternalClient;
-import com.omni.order.client.WaitlistInternalClient;
 import com.omni.order.dto.*;
 import com.omni.order.entity.Order;
 import com.omni.order.mapper.*;
+import com.omni.order.mq.WaitlistMqProducer;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -31,12 +31,12 @@ class OrderCreationFlowTest {
 
     @Mock OrderMapper om; @Mock OrderSeatMapper osm; @Mock OrderSnapshotMapper snm;
     @Mock PaymentInternalClient pc; @Mock TicketSalesInternalClient tc;
-    @Mock UserInternalClient uc; @Mock WaitlistInternalClient wc;
+    @Mock UserInternalClient uc; @Mock WaitlistMqProducer waitlistProducer;
     @Mock OrderAttendeeMapper am;
 
     OrderService svc;
     @BeforeEach void setup() {
-        svc = new OrderService(om, osm, snm, pc, tc, uc, wc, "t");
+        svc = new OrderService(om, osm, snm, pc, tc, uc, waitlistProducer, "t");
         svc.setOrderAttendeeMapper(am);
     }
 

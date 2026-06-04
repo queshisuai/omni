@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildConsoleOrderExportCsv, filterConsoleOrdersByStatus, formatOrderAttendees, getSelectedConsoleOrders } from './console-orders.ts'
+import { buildConsoleOrderExportCsv, filterConsoleOrdersByStatus, formatOrderAttendees, getConsoleOrderScopeCopy, getSelectedConsoleOrders } from './console-orders.ts'
 import type { OrderEntity } from '../types/api.ts'
 
 test('formats order attendees for console display', () => {
@@ -51,4 +51,11 @@ test('keeps selected console order export in table order', () => {
 
   assert.deepEqual(getSelectedConsoleOrders(orders, new Set([3, 1])).map(order => order.id), [1, 3])
   assert.deepEqual(filterConsoleOrdersByStatus(orders, 2).map(order => order.id), [1, 3])
+})
+
+test('describes organizer admin as a platform-side business role', () => {
+  assert.equal(
+    getConsoleOrderScopeCopy('organizer_admin'),
+    '当前权限：主办方管理员岗位账号，可按权限查看平台主办方业务订单。',
+  )
 })

@@ -217,7 +217,7 @@ class TourStationServiceTest {
 
     @Test
     void stationDraftStoresVenueApplicationIdWhenProvided() {
-        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "tour.manage")).thenReturn(user(2003L, "organizer"));
         when(tourMapper.selectById(10L)).thenReturn(tour(10L, 2003L));
 
         service.createStationDraft(2003L, 10L, Map.of("city", "上海", "stationName", "上海站", "venueApplicationId", 88L));
@@ -284,7 +284,7 @@ class TourStationServiceTest {
 
     @Test
     void publishSingleActivityStationPrefersActivitySeatCraftLayout() {
-        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "tour.manage")).thenReturn(user(2003L, "organizer"));
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
         Station station = activityStation(40L, 30L, 88L);
         Activity activity = activity(30L, null, 40L, "draft");
         activity.setOrganizerId(2003L);

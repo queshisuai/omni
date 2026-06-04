@@ -1,4 +1,4 @@
-# Omni Ticket Platform - Startup Script
+﻿# Omni Ticket Platform - Startup Script
 
 param(
     [switch]$SkipJava,
@@ -163,14 +163,14 @@ if ([string]::IsNullOrWhiteSpace($env:OMNI_ID_NO_KEY)) {
 }
 
 if ($UseDockerInfra) {
-    Write-Step "Starting Docker Infrastructure..."
+    Write-Step "启动 Docker 中间件..."
     & (Join-Path $projectRoot "scripts\start-infra.ps1")
 }
 
 # 2. Check PostgreSQL
 if ($UseDockerInfra) {
-    Write-Step "Using Docker PostgreSQL..."
-    Write-Host "[PostgreSQL] Docker infrastructure selected" -ForegroundColor Green
+    Write-Step "使用本机 PostgreSQL..."
+    Write-Host "[PostgreSQL] Docker 中间件模式下仍使用本机数据库" -ForegroundColor Green
 } else {
     Write-Step "Starting PostgreSQL..."
     $pgSvc = Get-Service -Name "postgresql-x64-17" -ErrorAction SilentlyContinue
@@ -265,12 +265,18 @@ if (-not $SkipJava) {
     $internalApiToken = $env:INTERNAL_API_TOKEN
     $jwtSecret = $env:JWT_SECRET
 
+    if (-not $UseSharedDatabase) {
+        Write-Step "发布 Seata 配置..."
+        & (Join-Path $projectRoot "scripts\update-seata-nacos-config.ps1") -NacosAddr "localhost:$nacosPort"
+    }
+
     foreach ($svc in $javaServices) {
         $fullPath = Join-Path $projectRoot $svc.Path
         Write-Host "Starting $($svc.Name) on port $($svc.Port)..." -ForegroundColor Cyan
         $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.arguments=`"--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot`""
         if (-not $UseSharedDatabase -and $svc.Database) {
-            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=$internalApiToken --jwt.secret=$jwtSecret --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot`""
+            $seataArg = if ($svc.Name -in @("java-ticket", "java-order", "java-payment")) { " --seata.enabled=true" } else { "" }
+            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=$internalApiToken --jwt.secret=$jwtSecret --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$seataArg`""
         }
         Start-Service-InBackground -Name $svc.Name -Command $command -WorkDir $fullPath
         Start-Sleep -Seconds 5

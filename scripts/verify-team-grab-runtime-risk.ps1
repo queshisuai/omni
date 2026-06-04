@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 function Write-Step {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -24,7 +24,7 @@ function Assert-DockerContainerRunning {
     }
 
     if (-not $containerId) {
-        throw "Docker container '$ContainerName' is not running. Start local dependencies with: docker compose up -d postgres redis"
+        throw "Docker 容器 '$ContainerName' 未运行。请先执行：docker compose up -d redis"
     }
 }
 
@@ -132,14 +132,13 @@ try {
         throw "Docker Engine is not reachable. Start Docker Desktop or the Docker daemon, then retry."
     }
 
-    Write-Step "Check required Docker containers are running"
-    Assert-DockerContainerRunning "omni-postgres"
-    Assert-DockerContainerRunning "omni-redis"
-
-    Write-Step "Check localhost:5432 is reachable"
+    Write-Step "检查本机 PostgreSQL 端口"
     Assert-TcpPortOpen "localhost" 5432
 
-    Write-Step "Check localhost:6379 is reachable"
+    Write-Step "检查必需 Docker 容器"
+    Assert-DockerContainerRunning "omni-redis"
+
+    Write-Step "检查 Redis 端口"
     Assert-TcpPortOpen "localhost" 6379
 
     $grabServiceDir = Join-Path $repoRoot "nestjs\grab-service"

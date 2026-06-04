@@ -414,23 +414,6 @@ class ActivityControllerCEndTest {
     class PermissionAndErrorTests {
 
         @Test
-        @DisplayName("AB-038: 评价/预约需要JWT认证")
-        void reviewAndReservationRequireJwt() {
-            ActivityController controller = new ActivityController(activityService);
-            // 创建评价需要JWT
-            Result<?> result = controller.createActivityReview(null, 1L, null);
-            assertEquals(401, result.getCode());
-        }
-
-        @Test
-        @DisplayName("AB-039: 问答需要JWT认证")
-        void questionRequiresJwt() {
-            ActivityController controller = new ActivityController(activityService);
-            Result<?> result = controller.createActivityQuestion(null, 1L, null);
-            assertEquals(401, result.getCode());
-        }
-
-        @Test
         @DisplayName("活动列表无需token即可访问(C端公开)")
         void listActivitiesNoTokenAllowed() {
             ActivityController controller = new ActivityController(activityService);

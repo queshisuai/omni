@@ -12,13 +12,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\verify-team-grab-run
 
 - Postgres team-grab 事务、found-order 恢复和 fencing 行为。
 - Redis queue、admission marker 和 team trigger lock 行为。
-- 测试连接被强制固定到本地 Docker：Postgres `localhost:5432`，Redis `localhost:6379`。
+- 测试连接被强制固定到本机 PostgreSQL `localhost:5432` 和 Docker Redis `localhost:6379`。
 
-如果依赖容器未运行，先执行：
+如果 Redis 容器未运行，先执行：
 
 ```powershell
-docker compose up -d postgres redis
+docker compose up -d redis
 ```
+
+PostgreSQL 使用本机服务，不再由 Docker Compose 启动；请确认本机 `localhost:5432` 可连接。
 
 ## 浏览器 E2E 准备
 

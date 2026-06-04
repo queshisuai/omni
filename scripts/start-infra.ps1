@@ -1,4 +1,4 @@
-param(
+﻿param(
     [int]$TimeoutSeconds = 120
 )
 
@@ -34,23 +34,23 @@ function Wait-Port {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         if (Test-PortOpen -HostName $HostName -Port $Port) {
-            Write-Host "[$Name] localhost:$Port is reachable" -ForegroundColor Green
+            Write-Host "[$Name] localhost:$Port 可连接" -ForegroundColor Green
             return
         }
         Start-Sleep -Seconds 2
     }
-    throw "Timed out waiting for $Name on localhost:$Port"
+    throw "等待 $Name 超时：localhost:$Port 不可连接"
 }
 
 function Assert-DockerAvailable {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-        throw "Docker CLI not found. Install Docker Desktop and make sure the docker command is available in PowerShell."
+        throw "未找到 Docker CLI，请先安装/启动 Docker Desktop，并确认 PowerShell 可以使用 docker 命令。"
     }
 
     try {
         docker version | Out-Null
     } catch {
-        throw "Docker is installed but the Docker Engine is not reachable. Start Docker Desktop and retry."
+        throw "Docker 已安装但 Docker Engine 不可连接，请启动 Docker Desktop 后重试。"
     }
 }
 
@@ -65,28 +65,29 @@ function Assert-PortAvailableOrOwned {
         return
     }
 
-    throw "$Name requires localhost:$Port, but that port is already in use. Stop the local service or the conflicting container, then retry."
+    throw "$Name 需要使用 localhost:$Port，但端口已被其他进程占用。请停止冲突服务或容器后重试。"
 }
 
-Write-Step "Checking Docker..."
+Write-Step "检查 Docker..."
 Assert-DockerAvailable
 
-Write-Step "Checking Middleware Ports..."
-Assert-PortAvailableOrOwned -Name "PostgreSQL" -Port 5432 -ContainerName "omni-postgres"
+Write-Step "检查本机 PostgreSQL..."
+Wait-Port -Name "本机 PostgreSQL" -HostName "localhost" -Port 5432 -TimeoutSeconds $TimeoutSeconds
+
+Write-Step "检查中间件端口..."
 Assert-PortAvailableOrOwned -Name "Redis" -Port 6379 -ContainerName "omni-redis"
 Assert-PortAvailableOrOwned -Name "Nacos" -Port 8848 -ContainerName "omni-nacos"
 
-Write-Step "Starting Docker Middleware..."
+Write-Step "启动 Docker 中间件..."
 Push-Location $projectRoot
 try {
-    docker compose up -d postgres redis nacos
+    docker compose up -d redis nacos
 } finally {
     Pop-Location
 }
 
-Write-Step "Waiting for Middleware Ports..."
-Wait-Port -Name "PostgreSQL" -HostName "localhost" -Port 5432 -TimeoutSeconds $TimeoutSeconds
+Write-Step "等待中间件端口..."
 Wait-Port -Name "Redis" -HostName "localhost" -Port 6379 -TimeoutSeconds $TimeoutSeconds
 Wait-Port -Name "Nacos" -HostName "localhost" -Port 8848 -TimeoutSeconds $TimeoutSeconds
 
-Write-Host "`n[Docker Infra] Ready: PostgreSQL 5432, Redis 6379, Nacos 8848" -ForegroundColor Green
+Write-Host "`n[Docker Infra] 已就绪：本机 PostgreSQL 5432，Docker Redis 6379，Docker Nacos 8848" -ForegroundColor Green

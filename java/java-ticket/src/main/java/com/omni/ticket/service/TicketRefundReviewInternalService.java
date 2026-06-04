@@ -7,16 +7,26 @@ import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class TicketRefundReviewInternalService {
+    private static final String PERMISSION_REFUND_REVIEW = "refund.review";
+
     private final SessionMapper sessionMapper;
     private final ActivityMapper activityMapper;
+    private final UserAccessService userAccessService;
 
-    public TicketRefundReviewInternalService(SessionMapper sessionMapper, ActivityMapper activityMapper) {
+    @Autowired
+    public TicketRefundReviewInternalService(SessionMapper sessionMapper, ActivityMapper activityMapper, UserAccessService userAccessService) {
         this.sessionMapper = sessionMapper;
         this.activityMapper = activityMapper;
+        this.userAccessService = userAccessService;
+    }
+
+    public TicketRefundReviewInternalService(SessionMapper sessionMapper, ActivityMapper activityMapper) {
+        this(sessionMapper, activityMapper, null);
     }
 
     public TicketRefundReviewPermissionResponse checkPermission(Long sessionId, Long reviewerId) {
@@ -53,7 +63,7 @@ public class TicketRefundReviewInternalService {
         response.setActivityId(activity.getId());
         response.setOrganizerId(activity.getOrganizerId());
 
-        if (reviewerId.equals(activity.getOrganizerId())) {
+        if (hasPlatformRefundReviewPermission(reviewerId) || reviewerId.equals(activity.getOrganizerId())) {
             response.setAllowed(true);
         } else {
             response.setAllowed(false);
@@ -61,5 +71,20 @@ public class TicketRefundReviewInternalService {
         }
 
         return response;
+    }
+
+    private boolean hasPlatformRefundReviewPermission(Long reviewerId) {
+        if (userAccessService == null) {
+            return false;
+        }
+        try {
+            userAccessService.requirePlatformPermission(reviewerId, PERMISSION_REFUND_REVIEW);
+            return true;
+        } catch (BusinessException e) {
+            if (e.getCode() == ResultCode.FORBIDDEN.getCode()) {
+                return false;
+            }
+            throw e;
+        }
     }
 }

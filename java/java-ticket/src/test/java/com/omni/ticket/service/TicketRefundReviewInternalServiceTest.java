@@ -61,6 +61,32 @@ class TicketRefundReviewInternalServiceTest {
     }
 
     @Test
+    void platformRefundReviewerWithPermissionReturnsAllowedTrue() {
+        SessionMapper sessionMapper = mock(SessionMapper.class);
+        ActivityMapper activityMapper = mock(ActivityMapper.class);
+        UserAccessService userAccessService = mock(UserAccessService.class);
+        TicketRefundReviewInternalService service = new TicketRefundReviewInternalService(sessionMapper, activityMapper, userAccessService);
+
+        Session session = new Session();
+        session.setId(3001L);
+        session.setActivityId(5001L);
+        when(sessionMapper.selectById(3001L)).thenReturn(session);
+
+        Activity activity = new Activity();
+        activity.setId(5001L);
+        activity.setOrganizerId(2003L);
+        when(activityMapper.selectById(5001L)).thenReturn(activity);
+        TicketRefundReviewPermissionResponse result = service.checkPermission(3001L, 2100L);
+
+        assertTrue(result.getAllowed());
+        assertEquals(3001L, result.getSessionId());
+        assertEquals(5001L, result.getActivityId());
+        assertEquals(2003L, result.getOrganizerId());
+        assertNull(result.getReason());
+        verify(userAccessService).requirePlatformPermission(2100L, "refund.review");
+    }
+
+    @Test
     void sessionNotFoundReturnsAllowedFalse() {
         SessionMapper sessionMapper = mock(SessionMapper.class);
         ActivityMapper activityMapper = mock(ActivityMapper.class);

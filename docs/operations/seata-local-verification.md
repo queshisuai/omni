@@ -13,19 +13,19 @@
 ## 启动
 
 ```bash
-docker compose up -d postgres redis nacos seata-config-init seata-server
+powershell -ExecutionPolicy Bypass -File scripts/start-seata-docker.ps1
 powershell -ExecutionPolicy Bypass -File start-project.ps1
 ```
 
-宿主机运行 Java 服务时，先设置 Seata 对 Nacos 暴露的地址：
+宿主机运行 Java 服务、Docker 运行 Nacos/Seata 时，不要手工维护 `.env` 里的 `SEATA_ADVERTISE_HOST`。统一使用脚本自动探测当前宿主机非回环 IPv4，并同步更新 Nacos 配置中心和 Seata 服务注册表：
 
 ```powershell
-$env:SEATA_ADVERTISE_HOST='<宿主机可达的非回环IPv4>'
-$env:SEATA_ADVERTISE_PORT='8091'
-docker compose up -d --force-recreate seata-config-init seata-server
+powershell -ExecutionPolicy Bypass -File scripts/start-seata-docker.ps1
 ```
 
 注意：Seata Server 1.6.1 不接受 `127.0.0.1` 作为注册 IP。若未设置 `SEATA_ADVERTISE_HOST` 或设置为回环地址，`seata-config-init` 会失败，避免向 Nacos 写入宿主机 Java 不可达的地址。
+
+本地 Docker Compose 不再启动 PostgreSQL 容器；Java 服务和 grab-service 均连接本机 PostgreSQL。不要恢复 `postgres` / `omni-postgres` Docker 服务，否则容易出现某个服务误连旧 Docker 数据库的运行错误。
 
 可选预拉取：
 
@@ -55,7 +55,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.
 
 ## 2026-05-29 第一阶段验证记录
 
-- `docker compose ps`: PASS，`postgres`、`redis`、`nacos`、`seata-server`、`grab-service`、`frontend` 均运行，`seata-server` 为 healthy。
+- `docker compose ps`: PASS，`redis`、`nacos`、`seata-server`、`grab-service`、`frontend` 均运行，`seata-server` 为 healthy；PostgreSQL 使用本机服务。
 - Seata image: PASS，使用 `seataio/seata-server:1.6.1`，未使用 `latest`。
 - Nacos Seata 配置: PASS，`SEATA_GROUP/seataServer.properties` 存在，包含 `service.vgroupMapping.omni_tx_group=default`。
 - Seata Server Nacos 注册: PASS，`SEATA_GROUP@@seata-server` 健康实例为宿主机可达的非回环 IPv4。
@@ -76,7 +76,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.
 
 ## 2026-05-29 Task 6 XID 传播验证记录
 
-- `docker compose ps`: PASS，`postgres`、`redis`、`nacos`、`seata-server`、`grab-service`、`frontend` 均运行，`seata-server` 为 healthy。
+- `docker compose ps`: PASS，`redis`、`nacos`、`seata-server`、`grab-service`、`frontend` 均运行，`seata-server` 为 healthy；PostgreSQL 使用本机服务。
 - Nacos Seata 注册查询: PASS，`SEATA_GROUP@@seata-server` 返回 `10.142.195.38:8091`，宿主机 Java 客户端可达。
 - `java-order` 与 `java-ticket` 端口: PASS，`8083` 和 `8082` 处于监听状态。
 - `POST http://localhost:8083/api/order/internal/create`: PASS，返回成功订单 `DM2026052915461620D5E7`。
@@ -98,7 +98,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.
 
 ### Docker / Nacos / Seata 状态
 
-- Docker Compose: PASS，`postgres`、`redis`、`nacos`、`seata-server` 均为 healthy。
+- Docker Compose: PASS，`redis`、`nacos`、`seata-server` 均为 healthy；PostgreSQL 使用本机服务，不使用 Docker 容器。
 - Seata image: PASS，`seata-server` 使用 `seataio/seata-server:1.6.1`。
 - Nacos Seata 注册: PASS，`SEATA_GROUP@@seata-server = 10.142.195.38:8091`，`healthy:true`。
 

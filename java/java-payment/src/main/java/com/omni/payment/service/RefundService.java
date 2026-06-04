@@ -64,7 +64,10 @@ public class RefundService {
     private static final Integer REFUND_STATUS_FAILED = 3;
     private static final Integer REFUND_STATUS_PROCESSING = 4;
     private static final String ROLE_ADMIN = "admin";
+    private static final String ROLE_PLATFORM_SUPER_ADMIN = "platform_super_admin";
     private static final String ROLE_ORGANIZER = "organizer";
+    private static final String PERMISSION_REFUND_REVIEW = "refund.review";
+    private static final String SCOPE_PLATFORM = "platform";
     private static final String DIRECT_REFUND_STATUS_SUCCESS = "SUCCESS";
     private static final String DIRECT_REFUND_STATUS_FAILED = "FAILED";
     private static final String DIRECT_REFUND_STATUS_UNKNOWN = "UNKNOWN";
@@ -211,7 +214,7 @@ public class RefundService {
                 .orderByDesc(RefundRequest::getId);
         List<RefundRequest> refunds = refundRequestMapper.selectList(wrapper);
 
-        if (ROLE_ADMIN.equals(reviewer.getRole())) {
+        if (isAdminReviewer(reviewer) || hasPlatformRefundReviewPermission(reviewerId)) {
             return refunds.stream().map(this::toVOWithOrderNo).collect(Collectors.toList());
         }
 
@@ -592,7 +595,9 @@ public class RefundService {
             throw new BusinessException(ResultCode.NOT_FOUND, "审核人不存在");
         }
         InternalUserRefResponse reviewer = result.getData();
-        if (!ROLE_ADMIN.equals(reviewer.getRole()) && !ROLE_ORGANIZER.equals(reviewer.getRole())) {
+        if (!isAdminReviewer(reviewer)
+                && !ROLE_ORGANIZER.equals(reviewer.getRole())
+                && !hasPlatformRefundReviewPermission(reviewerId)) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无退款审核权限");
         }
         return reviewer;
@@ -600,10 +605,10 @@ public class RefundService {
 
     private void requireReviewPermission(Long reviewerId, OrderInfoResponse order) {
         InternalUserRefResponse reviewer = requireReviewer(reviewerId);
-        requireRefundPermission(reviewerId);
-        if (ROLE_ADMIN.equals(reviewer.getRole())) {
+        if (isAdminReviewer(reviewer) || hasPlatformRefundReviewPermission(reviewerId)) {
             return;
         }
+        requireRefundPermission(reviewerId);
         if (!canOrganizerReview(order, reviewerId)) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权审核该活动退款");
         }
@@ -614,7 +619,7 @@ public class RefundService {
             Result<InternalAuthContextResponse> result = userInternalClient.getAuthContext(reviewerId, internalApiToken);
             if (result != null && result.getCode() == 200 && result.getData() != null) {
                 InternalAuthContextResponse auth = result.getData();
-                if (!auth.getPermissionCodes().contains("refund.review")) {
+                if (auth.getPermissionCodes() == null || !auth.getPermissionCodes().contains(PERMISSION_REFUND_REVIEW)) {
                     throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
                 }
             }
@@ -640,6 +645,27 @@ public class RefundService {
         } catch (RuntimeException e) {
             log.error("票务服务调用失败: sessionId={}, reviewerId={}", order.getSessionId(), reviewerId, e);
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "票务服务无响应");
+        }
+    }
+
+    private boolean isAdminReviewer(InternalUserRefResponse reviewer) {
+        return reviewer != null
+                && (ROLE_ADMIN.equals(reviewer.getRole()) || ROLE_PLATFORM_SUPER_ADMIN.equals(reviewer.getRole()));
+    }
+
+    private boolean hasPlatformRefundReviewPermission(Long reviewerId) {
+        try {
+            Result<InternalAuthContextResponse> result = userInternalClient.getAuthContext(reviewerId, internalApiToken);
+            if (result == null || result.getCode() != 200 || result.getData() == null) {
+                return false;
+            }
+            InternalAuthContextResponse auth = result.getData();
+            return SCOPE_PLATFORM.equals(auth.getScopeType())
+                    && auth.getPermissionCodes() != null
+                    && auth.getPermissionCodes().contains(PERMISSION_REFUND_REVIEW);
+        } catch (RuntimeException e) {
+            log.warn("RBAC权限查询失败，降级使用角色检查: reviewerId={}", reviewerId, e);
+            return false;
         }
     }
 

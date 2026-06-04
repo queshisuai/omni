@@ -90,6 +90,13 @@ Omni/
 - 当前本机联调必须使用 `prod-split` 或等价 datasource 覆盖，禁止误启默认 profile 后连回 `omni_ticket`。
 - `local-schema` 只允许用于本地 disposable DB；`sql/local/*` 禁止进入 staging / production 迁移链路。
 
+### 本机 Docker 基础设施边界
+
+- 本机 Docker Compose 不再启动 PostgreSQL 容器；PostgreSQL 固定使用宿主机 `localhost:5432`。
+- `docker-compose.yml` 只保留 Nacos、Seata、Redis、RabbitMQ、frontend、grab-service 等容器依赖，禁止恢复 `postgres` / `omni-postgres` 服务作为本机默认运行库。
+- Seata 使用 `scripts/start-seata-docker.ps1` 启动/刷新，脚本会自动探测当前宿主机非回环 IPv4，并同步更新 Nacos 配置中心与 Seata 服务注册表。
+- 网络环境变化后，先运行 `powershell -ExecutionPolicy Bypass -File scripts\start-seata-docker.ps1`，再重启 IDEA 中的 `java-ticket`、`java-order`、`java-payment`。
+
 ## 启动方式
 
 ### 推荐本机启动
@@ -99,7 +106,7 @@ powershell -ExecutionPolicy Bypass -File start-project.ps1
 ```
 
 脚本默认行为：
-- 启动/检查 PostgreSQL 与 Nacos。
+- 检查本机 PostgreSQL，并启动/检查 Nacos。
 - 以 `prod-split` profile 启动五个业务服务。
 - 为五个业务服务注入当前本机五库 datasource。
 - 启动前端开发服务。
@@ -284,6 +291,8 @@ psql -h localhost -p 5432 -U postgres -d postgres -t -A -c "SELECT datname, appl
 | 问题 | 原因 | 处理 |
 |:---|:---|:---|
 | 服务又连到 `omni_ticket` | 误启默认 profile 或旧 IDE 启动配置 | 改用 `prod-split`，显式注入五库 datasource |
+| 服务误连旧 Docker 数据库 | 恢复了 `postgres`/`omni-postgres` 容器或旧 Docker datasource | 删除 Docker PostgreSQL 路径，统一使用宿主机 `localhost:5432` 五库 |
+| Seata RM 注册失败并连接旧 IP | Nacos 中 Seata 注册表或 `service.default.grouplist` 残留旧 `SEATA_ADVERTISE_HOST` | 运行 `scripts\start-seata-docker.ps1` 刷新 Nacos 后重启 IDEA 中的 ticket/order/payment |
 | internal 接口 403 | token 参数名错误或服务间 token 不一致 | 使用 `--internal.api.token=omni-local-internal-token` 或 `INTERNAL_API_TOKEN` |
 | PowerShell curl 登录 500 | JSON 引号被 PowerShell 改写 | 使用 `curl.exe --%` |
 | Gateway 503 | 后端未注册到 Nacos 或服务未启动 | 检查 Nacos、服务端口和启动 profile |
