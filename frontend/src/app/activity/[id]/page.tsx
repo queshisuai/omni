@@ -8,7 +8,7 @@ import { Footer } from '@/components/Footer'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
-import { cancelGrabRequest, createActivityQuestion, createActivityReview, createAlipayQrPay, createSubscription, createSubscriptionCalendar, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listActivityQuestions, listActivityReviews, listUserAttendees, recordUserBrowseHistory, submitGrabRequest } from '@/lib/api'
+import { cancelGrabRequest, cancelSubscription, createActivityQuestion, createActivityReview, createAlipayQrPay, createSubscription, createSubscriptionCalendar, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listActivityQuestions, listActivityReviews, listSubscriptions, listUserAttendees, recordUserBrowseHistory, submitGrabRequest } from '@/lib/api'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, canShowWaitlistEntry, getPurchaseConfirmCopy, getPurchaseQuantityMax, getWaitlistQuantityMax, shouldResetGrabIdempotencyForStatus, type PurchaseConfirmMode } from '@/lib/purchase-intent'
 import { startGrabProgressPolling } from '@/lib/grab-progress-polling'
@@ -19,7 +19,7 @@ import { getAutoDowngradeDisplay, getGrabProgressDisplayMessage, getQueueRankTre
 import { canJoinWaitlistFromGrabStatus } from '@/lib/waitlist'
 import { formatAttendeeSummary, getAttendeeIdTypeLabel, normalizeChineseIdCard, removeAttendeeById, validateAttendeeSelection } from '@/lib/attendees'
 import { ACTIVITY_VIEW_SIGNAL_KEY, addActivityViewSignal, parseActivityViewSignals } from '@/lib/personalized-recommendations'
-import { getActivitySubscriptionActions, type ActivitySubscriptionActionType } from '@/lib/activity-actions'
+import { findActivitySubscriptionAction, getActivitySubscriptionActionLabel, getActivitySubscriptionActions, removeActivitySubscriptionById, upsertActivitySubscription, type ActivitySubscriptionActionType, type ActivitySubscriptionLike } from '@/lib/activity-actions'
 import { buildActivityDetailTabs, type ActivityDetailTabKey } from '@/lib/activity-detail-content'
 import type { ActivityDetailVO, ActivityQuestionVO, ActivityReviewListVO, GrabProgressResult, QrPayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
 
@@ -83,6 +83,8 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false)
   const [waitlistMessage, setWaitlistMessage] = useState('')
   const [subscriptionLoading, setSubscriptionLoading] = useState<string | null>(null)
+  const [subscriptions, setSubscriptions] = useState<ActivitySubscriptionLike[]>([])
+  const [calendarJoinedActivityIds, setCalendarJoinedActivityIds] = useState<number[]>([])
   const [visibleStock, setVisibleStock] = useState<SessionVisibleStockResult | null>(null)
   const [attendees, setAttendees] = useState<UserAttendeeVO[]>([])
   const [attendeesLoading, setAttendeesLoading] = useState(false)
@@ -245,6 +247,27 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     void loadDetail()
   }, [id])
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!detail || !isAuthenticated()) {
+      setSubscriptions([])
+      return
+    }
+
+    listSubscriptions()
+      .then(data => {
+        if (!cancelled) setSubscriptions(data || [])
+      })
+      .catch(() => {
+        if (!cancelled) setSubscriptions([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [detail?.activity.id])
 
   const loadReviewsAndQuestions = async () => {
     const activityId = Number(id)
@@ -827,7 +850,10 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  const handleSubscription = async (targetType: Exclude<ActivitySubscriptionActionType, 'CALENDAR'>) => {
+  const handleSubscription = async (
+    targetType: Exclude<ActivitySubscriptionActionType, 'CALENDAR'>,
+    existingSubscription?: ActivitySubscriptionLike | null,
+  ) => {
     if (!isAuthenticated()) {
       router.push(`/login?ru=/activity/${id}`)
       return
@@ -839,17 +865,30 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
     setSubscriptionLoading(targetType)
     try {
-      await createSubscription({
+      if (existingSubscription?.id) {
+        await cancelSubscription(existingSubscription.id)
+        setSubscriptions(prev => removeActivitySubscriptionById(prev, existingSubscription.id))
+        const message = targetType === 'ACTIVITY_WANT'
+          ? '已取消想看'
+          : targetType === 'SALE_REMINDER'
+            ? '开售提醒已关闭'
+            : '已取消关注'
+        await globalAlert(message)
+        return
+      }
+
+      const subscription = await createSubscription({
         targetType,
         targetId: targetType === 'ARTIST_FOLLOW' ? detail.artist.id : detail.activity.id,
         activityId: targetType === 'ARTIST_FOLLOW' ? null : detail.activity.id,
         artistId: detail.artist?.id ?? null,
       })
+      setSubscriptions(prev => upsertActivitySubscription(prev, subscription))
       const message = targetType === 'ACTIVITY_WANT'
         ? '已加入想看'
         : targetType === 'SALE_REMINDER'
           ? '开售提醒已开启'
-          : '艺人关注已开启'
+          : '已关注艺人'
       await globalAlert(message)
     } catch (err) {
       await globalAlert(err instanceof Error ? err.message : '操作失败')
@@ -865,7 +904,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
     setSubscriptionLoading('CALENDAR')
     try {
-      await createSubscription({ targetType: 'ACTIVITY_WANT', targetId: Number(id), activityId: Number(id), artistId: detail?.artist?.id ?? null })
+      const activityId = Number(id)
+      const subscription = await createSubscription({ targetType: 'ACTIVITY_WANT', targetId: activityId, activityId, artistId: detail?.artist?.id ?? null })
+      setSubscriptions(prev => upsertActivitySubscription(prev, subscription))
       const calendar = await createSubscriptionCalendar()
       const blob = new Blob([calendar.content], { type: 'text/calendar;charset=utf-8' })
       const url = URL.createObjectURL(blob)
@@ -876,6 +917,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       link.click()
       link.remove()
       URL.revokeObjectURL(url)
+      setCalendarJoinedActivityIds(prev => prev.includes(activityId) ? prev : [...prev, activityId])
     } catch (err) {
       await globalAlert(err instanceof Error ? err.message : '生成日历失败')
     } finally {
@@ -1006,6 +1048,16 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       ? UserRound
                       : CalendarDays
                 const isPrimary = action.tone === 'primary'
+                const activeSubscription = action.type === 'CALENDAR'
+                  ? null
+                  : findActivitySubscriptionAction(action.type, subscriptions, {
+                    activityId: activity.id,
+                    artistId: artist?.id ?? null,
+                  })
+                const isActive = action.type === 'CALENDAR'
+                  ? calendarJoinedActivityIds.includes(activity.id)
+                  : Boolean(activeSubscription)
+                const isActionLoading = subscriptionLoading === action.type
                 return (
                   <button
                     key={action.type}
@@ -1014,18 +1066,20 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       if (action.type === 'CALENDAR') {
                         void handleCalendarDownload()
                       } else {
-                        void handleSubscription(action.type)
+                        void handleSubscription(action.type, activeSubscription)
                       }
                     }}
-                    disabled={subscriptionLoading === action.type}
+                    disabled={isActionLoading}
                     className={`inline-flex h-10 min-w-[112px] items-center justify-center gap-2 rounded-lg border px-4 text-[14px] font-medium disabled:cursor-not-allowed disabled:opacity-60 ${
                       isPrimary
                         ? 'border-[#ff1268] bg-[#ff1268] text-white'
+                        : isActive
+                          ? 'border-[#ff1268] bg-[#fff0f5] text-[#ff1268]'
                         : 'border-[#e5e5e5] bg-white text-[#666] hover:border-[#ff1268] hover:text-[#ff1268]'
                     }`}
                   >
                     <Icon className="h-4 w-4" />
-                    {subscriptionLoading === action.type ? action.loadingLabel : action.label}
+                    {getActivitySubscriptionActionLabel(action, { active: isActive, loading: isActionLoading })}
                   </button>
                 )
               })}
