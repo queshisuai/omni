@@ -634,6 +634,12 @@ export async function createReconciliationBatch(bizDate: string) {
   })
 }
 
+export async function getReconciliationBatchDetail(batchNo: string) {
+  const normalized = batchNo.trim()
+  if (!normalized) throw new Error('对账批次号不能为空')
+  return request<import('@/types/api').ReconciliationBatchDetailVO>(`/api/user/console/reconciliation/batches/${encodeURIComponent(normalized)}`)
+}
+
 export async function listRbacRoles() {
   return request<import('@/types/api').RbacRoleVO[]>('/api/user/console/rbac/roles')
 }

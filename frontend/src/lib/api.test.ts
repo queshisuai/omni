@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, addSupportNote, closeSupportConversation, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getTeamGrabProgress, joinTeamGrab, listActivities, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, rejectCloseSupportConversation, removeTeamGrabMember, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateRbacRolePermissions, updateSupportTags } from './api.ts'
+import { ApiError, addSupportNote, closeSupportConversation, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getReconciliationBatchDetail, getTeamGrabProgress, joinTeamGrab, listActivities, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, rejectCloseSupportConversation, removeTeamGrabMember, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateOrganizerAdminAccount, updateRbacRolePermissions, updateSupportTags } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -297,6 +297,34 @@ test('loads and creates reconciliation batches through user console endpoint', a
   }
 })
 
+test('loads reconciliation batch detail through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: {
+        batch: { id: 1, batchNo: 'REC20260603-363F0A8A', bizDate: '2026-06-03', sourceType: 'local', status: 'generated' },
+        details: [{ id: 3, batchNo: 'REC20260603-363F0A8A', businessNo: 'PAY20260603001', businessType: 'payment', expectedAmount: 128, actualAmount: 128, status: 'matched' }],
+        differences: [{ id: 4, batchNo: 'REC20260603-363F0A8A', diffType: 'amount_mismatch', businessNo: 'RF20260603001', diffAmount: 6, status: 'open' }],
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const detail = await getReconciliationBatchDetail('REC20260603-363F0A8A')
+
+    assert.equal(requestedUrl, '/api/user/console/reconciliation/batches/REC20260603-363F0A8A')
+    assert.equal(detail.batch.batchNo, 'REC20260603-363F0A8A')
+    assert.equal(detail.details[0].businessNo, 'PAY20260603001')
+    assert.equal(detail.differences[0].diffType, 'amount_mismatch')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('loads and updates rbac roles through user console endpoint', async () => {
   const originalFetch = globalThis.fetch
   const requested: Array<{ url: string; method: string; body: string }> = []
@@ -348,14 +376,21 @@ test('manages organizer admin accounts through user console endpoint', async () 
   try {
     const accounts = await listOrganizerAdminAccounts()
     const created = await createOrganizerAdminAccount({ phone: '13900000004', nickname: '主办方管理员', password: 'admin123' })
+    await updateOrganizerAdminAccount(11, { phone: '13900000003', nickname: '主办方管理员', status: 1 })
     await deactivateOrganizerAdminAccount(11)
+    await deleteOrganizerAdminAccount(11)
 
     assert.equal(requested[0].url, '/api/user/console/organizer-admins')
     assert.equal(requested[1].url, '/api/user/console/organizer-admins')
     assert.equal(requested[1].method, 'POST')
     assert.equal(requested[1].body, JSON.stringify({ phone: '13900000004', nickname: '主办方管理员', password: 'admin123' }))
     assert.equal(requested[2].url, '/api/user/console/organizer-admins/11')
-    assert.equal(requested[2].method, 'DELETE')
+    assert.equal(requested[2].method, 'PUT')
+    assert.equal(requested[2].body, JSON.stringify({ phone: '13900000003', nickname: '主办方管理员', status: 1 }))
+    assert.equal(requested[3].url, '/api/user/console/organizer-admins/11/deactivate')
+    assert.equal(requested[3].method, 'POST')
+    assert.equal(requested[4].url, '/api/user/console/organizer-admins/11')
+    assert.equal(requested[4].method, 'DELETE')
     assert.equal(accounts[0].role, 'organizer_admin')
     assert.equal(created.id, 12)
   } finally {

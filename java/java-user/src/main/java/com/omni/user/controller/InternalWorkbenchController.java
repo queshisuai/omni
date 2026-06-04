@@ -5,6 +5,7 @@ import com.omni.common.dto.ExceptionTaskResponse;
 import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.dto.ReconciliationBatchCreateRequest;
+import com.omni.common.dto.ReconciliationBatchDetailResponse;
 import com.omni.common.dto.ReconciliationBatchResponse;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
@@ -211,6 +212,16 @@ public class InternalWorkbenchController {
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         requirePermission(userId, "reconcile.view");
         return Result.success(reconciliationService.createBatch(request));
+    }
+
+    @GetMapping("/reconciliation/batches/{batchNo}")
+    public Result<ReconciliationBatchDetailResponse> getBatchDetail(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String batchNo) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        requirePermission(userId, "reconcile.view");
+        return Result.success(reconciliationService.getBatchDetail(batchNo));
     }
 
     private void requirePermission(Long userId, String permissionCode) {

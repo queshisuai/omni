@@ -848,6 +848,36 @@ export interface ReconciliationBatchVO {
   createTime?: string | null
 }
 
+export interface ReconciliationDetailVO {
+  id: number
+  batchNo: string
+  businessNo: string
+  businessType: string
+  expectedAmount?: number | null
+  actualAmount?: number | null
+  status: string
+  createTime?: string | null
+}
+
+export interface ReconciliationDifferenceVO {
+  id: number
+  batchNo: string
+  diffType: string
+  businessNo?: string | null
+  expectedAmount?: number | null
+  actualAmount?: number | null
+  diffAmount?: number | null
+  reason?: string | null
+  status: string
+  createTime?: string | null
+}
+
+export interface ReconciliationBatchDetailVO {
+  batch: ReconciliationBatchVO
+  details: ReconciliationDetailVO[]
+  differences: ReconciliationDifferenceVO[]
+}
+
 export interface TourEntity {
   id: number
   title: string

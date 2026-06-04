@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { FileSearch, Plus, RefreshCw } from 'lucide-react'
-import { createReconciliationBatch, listReconciliationBatches } from '@/lib/api'
+import { Eye, FileSearch, Plus, RefreshCw, X } from 'lucide-react'
+import { createReconciliationBatch, getReconciliationBatchDetail, listReconciliationBatches } from '@/lib/api'
 import { globalAlert } from '@/components/GlobalDialog'
-import type { ReconciliationBatchVO } from '@/types/api'
+import type { ReconciliationBatchDetailVO, ReconciliationBatchVO } from '@/types/api'
 
 function todayText() {
   const now = new Date()
@@ -27,10 +27,47 @@ function formatStatus(status?: string | null) {
   return status || '-'
 }
 
+function formatDetailStatus(status?: string | null) {
+  if (status === 'matched') return '已匹配'
+  if (status === 'unmatched') return '未匹配'
+  if (status === 'pending') return '待处理'
+  return status || '-'
+}
+
+function formatDifferenceStatus(status?: string | null) {
+  if (status === 'open') return '待处理'
+  if (status === 'resolved') return '已处理'
+  if (status === 'ignored') return '已忽略'
+  return status || '-'
+}
+
 function formatSource(source?: string | null) {
   if (source === 'local') return '本地日结'
   if (source === 'alipay') return '支付宝'
   return source || '-'
+}
+
+function formatBusinessType(type?: string | null) {
+  if (type === 'payment') return '支付'
+  if (type === 'refund') return '退款'
+  if (type === 'ticket') return '票务'
+  if (type === 'summary') return '汇总'
+  return type || '-'
+}
+
+function formatDiffType(type?: string | null) {
+  if (type === 'amount_mismatch') return '金额不一致'
+  if (type === 'missing_local') return '本地缺失'
+  if (type === 'missing_channel') return '渠道缺失'
+  if (type === 'status_mismatch') return '状态不一致'
+  return type || '-'
+}
+
+function formatAmount(value?: number | string | null) {
+  if (value === null || value === undefined || value === '') return '-'
+  const amount = Number(value)
+  if (Number.isNaN(amount)) return String(value)
+  return amount.toFixed(2)
 }
 
 function parseSummary(summaryJson?: string | null) {
@@ -48,6 +85,9 @@ export default function ReconciliationPage() {
   const [bizDate, setBizDate] = useState(todayText())
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [selectedDetail, setSelectedDetail] = useState<ReconciliationBatchDetailVO | null>(null)
+  const [detailError, setDetailError] = useState('')
   const [error, setError] = useState('')
 
   const load = async () => {
@@ -82,12 +122,25 @@ export default function ReconciliationPage() {
     setSubmitting(true)
     setError('')
     try {
-      await createReconciliationBatch(bizDate)
+      const created = await createReconciliationBatch(bizDate)
       await load()
+      await handleView(created)
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成对账批次失败')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleView = async (item: ReconciliationBatchVO) => {
+    setDetailLoading(true)
+    setDetailError('')
+    try {
+      setSelectedDetail(await getReconciliationBatchDetail(item.batchNo))
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : '加载对账批次详情失败')
+    } finally {
+      setDetailLoading(false)
     }
   }
 
@@ -160,6 +213,7 @@ export default function ReconciliationPage() {
                   <th className="px-4 py-3 font-medium">状态</th>
                   <th className="px-4 py-3 font-medium">摘要</th>
                   <th className="px-4 py-3 font-medium">生成时间</th>
+                  <th className="px-4 py-3 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -175,6 +229,16 @@ export default function ReconciliationPage() {
                         {summary.length === 0 ? '-' : summary.map(part => `${part.key}: ${part.value}`).join('，')}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">{formatTime(item.createTime)}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleView(item)}
+                          disabled={detailLoading}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          查看
+                        </button>
+                      </td>
                     </tr>
                   )
                 })}
@@ -183,6 +247,112 @@ export default function ReconciliationPage() {
           </div>
         )}
       </section>
+
+      {(selectedDetail || detailLoading || detailError) && (
+        <section className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+            <div className="text-[16px] font-bold text-[#111]">批次详情</div>
+            <button
+              onClick={() => { setSelectedDetail(null); setDetailError('') }}
+              aria-label="关闭详情"
+              title="关闭详情"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-[#ff1268] hover:text-[#ff1268]"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {detailLoading ? (
+            <div className="py-12 text-center text-[14px] text-gray-400">正在加载批次详情...</div>
+          ) : detailError ? (
+            <div className="m-5 rounded-xl bg-red-50 px-4 py-3 text-[13px] text-red-500">{detailError}</div>
+          ) : selectedDetail ? (
+            <div className="space-y-5 p-5">
+              <div className="grid gap-3 md:grid-cols-4">
+                <div>
+                  <div className="text-[12px] text-gray-500">批次号</div>
+                  <div className="mt-1 font-mono text-[13px] text-[#111]">{selectedDetail.batch.batchNo}</div>
+                </div>
+                <div>
+                  <div className="text-[12px] text-gray-500">日期</div>
+                  <div className="mt-1 text-[13px] text-[#111]">{selectedDetail.batch.bizDate}</div>
+                </div>
+                <div>
+                  <div className="text-[12px] text-gray-500">来源</div>
+                  <div className="mt-1 text-[13px] text-[#111]">{formatSource(selectedDetail.batch.sourceType)}</div>
+                </div>
+                <div>
+                  <div className="text-[12px] text-gray-500">状态</div>
+                  <div className="mt-1 text-[13px] text-[#111]">{formatStatus(selectedDetail.batch.status)}</div>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-3 text-[14px] font-bold text-[#111]">对账明细</div>
+                {selectedDetail.details.length === 0 ? (
+                  <div className="rounded-lg bg-gray-50 py-8 text-center text-[13px] text-gray-400">暂无对账明细</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-gray-100">
+                    <table className="min-w-full text-left text-[13px]">
+                      <thead className="bg-gray-50 text-gray-500">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">业务号</th>
+                          <th className="px-4 py-3 font-medium">类型</th>
+                          <th className="px-4 py-3 font-medium">应收/应退</th>
+                          <th className="px-4 py-3 font-medium">实收/实退</th>
+                          <th className="px-4 py-3 font-medium">状态</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {selectedDetail.details.map(detail => (
+                          <tr key={detail.id}>
+                            <td className="px-4 py-3">{detail.businessNo}</td>
+                            <td className="px-4 py-3">{formatBusinessType(detail.businessType)}</td>
+                            <td className="px-4 py-3">{formatAmount(detail.expectedAmount)}</td>
+                            <td className="px-4 py-3">{formatAmount(detail.actualAmount)}</td>
+                            <td className="px-4 py-3">{formatDetailStatus(detail.status)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-3 text-[14px] font-bold text-[#111]">差异记录</div>
+                {selectedDetail.differences.length === 0 ? (
+                  <div className="rounded-lg bg-gray-50 py-8 text-center text-[13px] text-gray-400">暂无差异记录</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-gray-100">
+                    <table className="min-w-full text-left text-[13px]">
+                      <thead className="bg-gray-50 text-gray-500">
+                        <tr>
+                          <th className="px-4 py-3 font-medium">业务号</th>
+                          <th className="px-4 py-3 font-medium">差异类型</th>
+                          <th className="px-4 py-3 font-medium">差异金额</th>
+                          <th className="px-4 py-3 font-medium">状态</th>
+                          <th className="px-4 py-3 font-medium">原因</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {selectedDetail.differences.map(diff => (
+                          <tr key={diff.id}>
+                            <td className="px-4 py-3">{diff.businessNo || '-'}</td>
+                            <td className="px-4 py-3">{formatDiffType(diff.diffType)}</td>
+                            <td className="px-4 py-3">{formatAmount(diff.diffAmount)}</td>
+                            <td className="px-4 py-3">{formatDifferenceStatus(diff.status)}</td>
+                            <td className="max-w-[320px] px-4 py-3 text-gray-600">{diff.reason || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </section>
+      )}
     </div>
   )
 }

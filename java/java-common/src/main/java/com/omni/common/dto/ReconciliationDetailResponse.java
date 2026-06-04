@@ -1,14 +1,9 @@
-package com.omni.user.entity;
+package com.omni.common.dto;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@TableName("reconciliation_detail")
-public class ReconciliationDetail {
-    @TableId(type = IdType.AUTO)
+public class ReconciliationDetailResponse {
     private Long id;
     private String batchNo;
     private String businessNo;
