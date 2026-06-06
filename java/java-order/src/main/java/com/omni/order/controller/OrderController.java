@@ -16,8 +16,13 @@ import com.omni.order.dto.PaidOrdersBySessionsRequest;
 import com.omni.order.dto.RefundOptionsResponse;
 import com.omni.order.dto.SessionSeatUsageRequest;
 import com.omni.order.dto.SessionSeatUsageResponse;
+import com.omni.order.dto.TicketCheckInOverviewRequest;
+import com.omni.order.dto.TicketCheckInOverviewResponse;
+import com.omni.order.dto.TicketCheckInRecordQueryRequest;
+import com.omni.order.dto.TicketCheckInRecordResponse;
 import com.omni.order.dto.TicketCheckInRequest;
 import com.omni.order.dto.TicketCheckInResponse;
+import com.omni.order.dto.TicketCheckInSyncRequest;
 import com.omni.order.dto.TicketEntryCodeResponse;
 import com.omni.order.dto.TicketTransferClaimRequest;
 import com.omni.order.dto.TicketTransferClaimResponse;
@@ -26,6 +31,7 @@ import com.omni.order.dto.TicketTransferRevokeResponse;
 import com.omni.order.dto.TicketWalletItemResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.service.OrderService;
+import com.omni.order.service.TicketCheckInService;
 import com.omni.order.service.TicketWalletService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -47,22 +53,32 @@ public class OrderController {
 
     private final OrderService orderService;
     private final TicketWalletService ticketWalletService;
+    private final TicketCheckInService ticketCheckInService;
     private final String internalApiToken;
     private final String jwtSecret;
 
     public OrderController(OrderService orderService,
                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
                            @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
-        this(orderService, null, internalApiToken, jwtSecret);
+        this(orderService, null, null, internalApiToken, jwtSecret);
+    }
+
+    public OrderController(OrderService orderService,
+                           TicketWalletService ticketWalletService,
+                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
+                           @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
+        this(orderService, ticketWalletService, null, internalApiToken, jwtSecret);
     }
 
     @Autowired
     public OrderController(OrderService orderService,
                            TicketWalletService ticketWalletService,
+                           TicketCheckInService ticketCheckInService,
                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
                            @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
         this.orderService = orderService;
         this.ticketWalletService = ticketWalletService;
+        this.ticketCheckInService = ticketCheckInService;
         this.internalApiToken = internalApiToken;
         this.jwtSecret = jwtSecret;
     }
@@ -353,6 +369,36 @@ public class OrderController {
             return Result.fail(403, "无权限");
         }
         return Result.success(ticketWalletService.checkIn(request != null ? request.getEntryCode() : null));
+    }
+
+    @PostMapping("/internal/tickets/check-in/sync")
+    public Result<TicketCheckInRecordResponse> syncCheckInTicket(
+            @RequestBody(required = false) TicketCheckInSyncRequest request,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(ticketCheckInService.syncCheckIn(request));
+    }
+
+    @PostMapping("/internal/tickets/check-in/records")
+    public Result<List<TicketCheckInRecordResponse>> listCheckInRecords(
+            @RequestBody(required = false) TicketCheckInRecordQueryRequest request,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(ticketCheckInService.listRecords(request));
+    }
+
+    @PostMapping("/internal/tickets/check-in/overview")
+    public Result<TicketCheckInOverviewResponse> getCheckInOverview(
+            @RequestBody(required = false) TicketCheckInOverviewRequest request,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(ticketCheckInService.getOverview(request));
     }
 
     /**

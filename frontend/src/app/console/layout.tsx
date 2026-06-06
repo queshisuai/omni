@@ -24,6 +24,7 @@ const menuItems: ConsoleMenuItem[] = [
   { href: '/console/tours', label: '巡演草稿管理', icon: GitPullRequestArrow, roles: ['admin'] },
   { href: '/console/sessions', label: '场次管理', icon: Clock },
   { href: '/console/orders', label: '订单查看', icon: ShoppingCart },
+  { href: '/console/check-in', label: '入场核验', icon: ClipboardList },
   { href: '/console/refunds', label: '退款审核', icon: RotateCcw },
   { href: '/console/artists', label: '艺人管理', icon: Users, roles: ['admin'] },
   { href: '/console/artists/pending', label: '艺人档案审核', icon: ClipboardList, roles: ['admin'] },
@@ -54,6 +55,7 @@ const organizerMenuItems: ConsoleMenuItem[] = [
   { href: '/console/venue', label: '场馆记录', icon: MapPin },
   { href: '/console/venue/apply', label: '提交场馆资料', icon: MapPin },
   { href: '/console/orders', label: '订单', icon: ShoppingCart },
+  { href: '/console/check-in', label: '入场核验', icon: ClipboardList },
   { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
 ]
 

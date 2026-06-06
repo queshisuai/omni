@@ -1251,6 +1251,25 @@ export async function listConsoleOrders(params: { paidOnly?: boolean } = {}) {
   return request<import('@/types/api').OrderEntity[]>(`/api/ticket/admin/orders?${searchParams.toString()}`)
 }
 
+export async function getCheckInOverview(sessionId: number) {
+  assertPositiveInteger(sessionId, '场次ID')
+  return request<import('@/types/api').CheckInOverviewVO>(
+    `/api/ticket/admin/check-in/overview?sessionId=${encodeURIComponent(String(sessionId))}`
+  )
+}
+
+export async function listCheckInRecords(params: { sessionId: number; result?: string; page?: number; size?: number }) {
+  assertPositiveInteger(params.sessionId, '场次ID')
+  const searchParams = new URLSearchParams()
+  searchParams.set('sessionId', String(params.sessionId))
+  if (params.result) searchParams.set('result', params.result)
+  if (params.page) searchParams.set('page', String(params.page))
+  if (params.size) searchParams.set('size', String(params.size))
+  return request<import('@/types/api').CheckInRecordVO[]>(
+    `/api/ticket/admin/check-in/records?${searchParams.toString()}`
+  )
+}
+
 export async function listAdminTours(userId: number, params: { page?: number; size?: number } = {}) {
   const searchParams = new URLSearchParams()
   searchParams.set('page', String(params.page || 1))

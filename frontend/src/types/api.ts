@@ -622,6 +622,33 @@ export interface AdminSummaryVO {
   hotActivities?: HotActivityVO[]
 }
 
+export interface CheckInOverviewVO {
+  sessionId: number
+  totalTickets: number
+  checkedInCount: number
+  unusedCount: number
+  failedCount: number
+  duplicateCount: number
+}
+
+export interface CheckInRecordVO {
+  id: number
+  requestId: string
+  ticketId?: number | null
+  ticketNo?: string | null
+  orderId?: number | null
+  userId?: number | null
+  sessionId?: number | null
+  ticketTypeId?: number | null
+  deviceCode?: string | null
+  operatorUserId?: number | null
+  channel: string
+  result: 'SUCCESS' | 'DUPLICATE' | 'FAILED'
+  failureReason?: string | null
+  checkedInAt?: string | null
+  createTime?: string | null
+}
+
 export interface HotActivityVO {
   activityId: number
   activityName: string

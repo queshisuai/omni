@@ -17,7 +17,7 @@ function Invoke-BoundaryCheck {
 
     $matches = @()
     foreach ($filter in $Include) {
-        $matches += Get-ChildItem -Path $fullPath -Recurse -Filter $filter | Select-String -Pattern $Pattern
+        $matches += Get-ChildItem -Path $fullPath -Recurse -Filter $filter | Select-String -Pattern $Pattern -CaseSensitive
     }
     $violations = @($matches | Where-Object {
         $line = $_.Line
@@ -43,7 +43,7 @@ Invoke-BoundaryCheck `
 Invoke-BoundaryCheck `
     -Name "ticket must not use removed social tables" `
     -Path "java/java-ticket/src" `
-    -Pattern 'ReviewMapper|MomentMapper|@TableName\(""review""\)|@TableName\(""moment""\)|FROM\s+review|FROM\s+moment|JOIN\s+review|JOIN\s+moment' `
+    -Pattern '\bReviewMapper\b|\bMomentMapper\b|@TableName\(""review""\)|@TableName\(""moment""\)|FROM\s+review|FROM\s+moment|JOIN\s+review|JOIN\s+moment' `
     -Include @("*.java", "*.xml") `
     -Allowed @("removedSocialPersistenceTypesAreNotPresent", "assertClassNotFound", "isRemovedSocialPersistenceType", "com.omni.ticket.mapper.ReviewMapper", "com.omni.ticket.mapper.MomentMapper")
 

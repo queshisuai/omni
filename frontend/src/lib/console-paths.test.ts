@@ -7,6 +7,7 @@ test('allows organizer business paths but blocks admin-only console paths', () =
   assert.equal(isConsolePathAllowedForRole('organizer', '/console'), true)
   assert.equal(isConsolePathAllowedForRole('organizer', '/console/activities/1/marketing'), true)
   assert.equal(isConsolePathAllowedForRole('organizer', '/console/tours/2/stations/new'), true)
+  assert.equal(isConsolePathAllowedForRole('organizer', '/console/check-in'), true)
   assert.equal(isConsolePathAllowedForRole('organizer', '/console/venue'), true)
   assert.equal(isConsolePathAllowedForRole('organizer', '/console/venue/apply'), true)
   assert.equal(isConsolePathAllowedForRole('organizer', '/console/venue/applications'), false)
@@ -34,6 +35,7 @@ test('builds role-specific console quick actions', () => {
     '/console/venue',
     '/console/refunds',
     '/console/orders',
+    '/console/check-in',
   ])
   assert.deepEqual(getConsoleQuickActions('admin').map(item => item.href), [])
   assert.deepEqual(getConsoleQuickActions('admin', [

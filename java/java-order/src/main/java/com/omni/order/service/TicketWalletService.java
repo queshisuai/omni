@@ -24,14 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -47,7 +40,6 @@ public class TicketWalletService {
     public static final int TRANSFER_REVOKED = 3;
     public static final int TRANSFER_EXPIRED = 4;
 
-    private static final String CODE_VERSION = "v1";
     private static final int ENTRY_CODE_TTL_SECONDS = 60;
     private static final int TRANSFER_TTL_HOURS = 24;
 
@@ -56,7 +48,7 @@ public class TicketWalletService {
     private final OrderSeatMapper orderSeatMapper;
     private final TicketTransferMapper ticketTransferMapper;
     private final OrderSnapshotMapper orderSnapshotMapper;
-    private final String entryCodeSecret;
+    private final TicketEntryCodeCodec entryCodeCodec;
 
     public TicketWalletService(ElectronicTicketMapper electronicTicketMapper,
                                OrderAttendeeMapper orderAttendeeMapper,
@@ -69,7 +61,7 @@ public class TicketWalletService {
         this.orderSeatMapper = orderSeatMapper;
         this.ticketTransferMapper = ticketTransferMapper;
         this.orderSnapshotMapper = orderSnapshotMapper;
-        this.entryCodeSecret = entryCodeSecret;
+        this.entryCodeCodec = new TicketEntryCodeCodec(entryCodeSecret);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -162,13 +154,7 @@ public class TicketWalletService {
         if (!Integer.valueOf(STATUS_UNUSED).equals(ticket.getStatus())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "电子票状态不允许生成入场码");
         }
-        long expiresAt = Instant.now().plusSeconds(ENTRY_CODE_TTL_SECONDS).getEpochSecond();
-        String payload = CODE_VERSION + ":" + ticketId + ":" + userId + ":" + expiresAt;
-        TicketEntryCodeResponse response = new TicketEntryCodeResponse();
-        response.setTicketId(ticketId);
-        response.setExpiresAt(LocalDateTime.ofInstant(Instant.ofEpochSecond(expiresAt), ZoneId.systemDefault()));
-        response.setEntryCode(payload + ":" + sign(payload));
-        return response;
+        return entryCodeCodec.create(ticketId, userId, ENTRY_CODE_TTL_SECONDS);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -270,9 +256,9 @@ public class TicketWalletService {
 
     @Transactional(rollbackFor = Exception.class)
     public TicketCheckInResponse checkIn(String entryCode) {
-        CodePayload payload = parseAndVerify(entryCode);
-        ElectronicTicket ticket = electronicTicketMapper.selectByIdForUpdate(payload.ticketId);
-        if (ticket == null || !payload.userId.equals(ticket.getUserId())) {
+        TicketEntryCodeCodec.CodePayload payload = entryCodeCodec.parseAndVerify(entryCode);
+        ElectronicTicket ticket = electronicTicketMapper.selectByIdForUpdate(payload.getTicketId());
+        if (ticket == null || !payload.getUserId().equals(ticket.getUserId())) {
             throw new BusinessException(ResultCode.NOT_FOUND, "电子票不存在");
         }
         if (!Integer.valueOf(STATUS_UNUSED).equals(ticket.getStatus())) {
@@ -395,55 +381,4 @@ public class TicketWalletService {
         return "待领取";
     }
 
-    private CodePayload parseAndVerify(String entryCode) {
-        if (!StringUtils.hasText(entryCode)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "入场码无效");
-        }
-        String[] parts = entryCode.split(":");
-        if (parts.length != 5 || !CODE_VERSION.equals(parts[0])) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "入场码无效");
-        }
-        String payload = parts[0] + ":" + parts[1] + ":" + parts[2] + ":" + parts[3];
-        if (!sign(payload).equals(parts[4])) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "入场码无效");
-        }
-        long expiresAt;
-        try {
-            expiresAt = Long.parseLong(parts[3]);
-        } catch (NumberFormatException e) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "入场码无效");
-        }
-        if (Instant.now().getEpochSecond() > expiresAt) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "入场码已过期");
-        }
-        return new CodePayload(parseLong(parts[1]), parseLong(parts[2]));
-    }
-
-    private Long parseLong(String value) {
-        try {
-            return Long.valueOf(value);
-        } catch (NumberFormatException e) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "入场码无效");
-        }
-    }
-
-    private String sign(String payload) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(entryCodeSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
-        } catch (GeneralSecurityException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "入场码生成失败");
-        }
-    }
-
-    private static class CodePayload {
-        private final Long ticketId;
-        private final Long userId;
-
-        private CodePayload(Long ticketId, Long userId) {
-            this.ticketId = ticketId;
-            this.userId = userId;
-        }
-    }
 }

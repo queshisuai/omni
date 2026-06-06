@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, addSupportNote, closeSupportConversation, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getReconciliationBatchDetail, getTeamGrabProgress, joinTeamGrab, listActivities, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, rejectCloseSupportConversation, removeTeamGrabMember, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateOrganizerAdminAccount, updateRbacRolePermissions, updateSupportTags } from './api.ts'
+import { ApiError, addSupportNote, closeSupportConversation, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getReconciliationBatchDetail, getTeamGrabProgress, joinTeamGrab, listActivities, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, rejectCloseSupportConversation, removeTeamGrabMember, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateOrganizerAdminAccount, updateRbacRolePermissions, updateSupportTags } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -422,6 +422,28 @@ test('loads operation audit logs through user console endpoint', async () => {
 
     assert.equal(requestedUrl, '/api/user/console/audit-logs?operatorId=7&action=rbac.role_permission.update&targetType=rbac_role&success=true&traceId=trace-abc&limit=50')
     assert.equal(result[0].operatorRole, 'platform_super_admin')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads check-in overview and records through ticket admin endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: string[] = []
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requested.push(String(input))
+    const data = requested.length === 1
+      ? { sessionId: 910002, totalTickets: 10, checkedInCount: 6, unusedCount: 4, failedCount: 1, duplicateCount: 2 }
+      : [{ id: 1, requestId: 'REQ-1', result: 'SUCCESS', ticketNo: 'ET1' }]
+    return new Response(JSON.stringify({ code: 200, message: '成功', data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    await getCheckInOverview(910002)
+    await listCheckInRecords({ sessionId: 910002, result: 'SUCCESS', page: 1, size: 20 })
+
+    assert.equal(requested[0], '/api/ticket/admin/check-in/overview?sessionId=910002')
+    assert.equal(requested[1], '/api/ticket/admin/check-in/records?sessionId=910002&result=SUCCESS&page=1&size=20')
   } finally {
     globalThis.fetch = originalFetch
   }

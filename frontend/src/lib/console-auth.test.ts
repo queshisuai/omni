@@ -49,8 +49,14 @@ test('organizer admin default entry follows granted permissions', () => {
   assert.equal(getDefaultConsolePath('organizer_admin', ['activity.manage']), '/console/activities')
   assert.equal(getDefaultConsolePath('organizer_admin', ['tour.manage']), '/console/tours')
   assert.equal(getDefaultConsolePath('organizer_admin', ['order.view']), '/console/orders')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['checkin.view']), '/console/check-in')
   assert.equal(getDefaultConsolePath('organizer_admin', ['organizer.account.manage', 'activity.manage']), '/console/activities')
   assert.equal(getDefaultConsolePath('organizer_admin', []), '/console')
+})
+
+test('check-in console path requires dedicated permission', () => {
+  assert.equal(canAccessConsolePath('/console/check-in', ['checkin.view']), true)
+  assert.equal(canAccessConsolePath('/console/check-in', ['order.view']), false)
 })
 
 test('formats console role and brand labels without mixing platform and scoped admins', () => {

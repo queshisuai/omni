@@ -11,6 +11,7 @@ const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href:
   { permission: 'session.manage', label: '场次管理', href: '/console/sessions' },
   { permission: 'artist.manage', label: '艺人管理', href: '/console/artists' },
   { permission: 'order.view', label: '订单查看', href: '/console/orders' },
+  { permission: 'checkin.view', label: '入场核验', href: '/console/check-in' },
   { permission: 'refund.review', label: '退款审核', href: '/console/refunds' },
   { permission: 'venue.manage', label: '场馆记录', href: '/console/venue' },
   { permission: 'organizer.review', label: '主办方管理', href: '/console/organizer-applications' },
@@ -46,6 +47,7 @@ const ORGANIZER_ALLOWED_PREFIXES = [
   '/console/refunds',
   '/console/venue',
   '/console/orders',
+  '/console/check-in',
   '/console/profile',
   '/console/tours',
   '/console/stations',
@@ -80,6 +82,7 @@ export function getConsoleQuickActions(role: UserRole | string | null | undefine
       { label: '场馆记录', href: '/console/venue' },
       { label: '退款处理', href: '/console/refunds' },
       { label: '查看订单', href: '/console/orders' },
+      { label: '入场核验', href: '/console/check-in' },
     ]
   }
 

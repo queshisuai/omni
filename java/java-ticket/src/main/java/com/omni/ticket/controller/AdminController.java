@@ -26,6 +26,8 @@ import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSearchResponse;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.dto.ArtistUpdateRequest;
+import com.omni.ticket.dto.CheckInOverviewResponse;
+import com.omni.ticket.dto.CheckInRecordResponse;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
 import com.omni.ticket.dto.SeatLayoutTemplateCandidateResponse;
 import com.omni.ticket.dto.SeatCraftLayoutDtos;
@@ -56,6 +58,7 @@ import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivityRiskResponseService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
+import com.omni.ticket.service.CheckInAdminQueryService;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.service.VenueDefaultLayoutService;
 import com.omni.ticket.service.SeatTemplateService;
@@ -128,6 +131,7 @@ public class AdminController {
     private final SessionSeatLayoutService sessionSeatLayoutService;
     private final TourStationService tourStationService;
     private final OrderAdminQueryService orderAdminQueryService;
+    private CheckInAdminQueryService checkInAdminQueryService;
     private final SessionSeatProtectionService sessionSeatProtectionService;
     private final TicketTypeStockRecalculationService stockRecalculationService;
     private final ActivityArtistService activityArtistService;
@@ -157,7 +161,6 @@ public class AdminController {
                 adminSummaryService, sessionSeatService, venueDefaultLayoutService, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
-    @Autowired
     public AdminController(ActivityMapper activityMapper, ArtistMapper artistMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
                             UserAccessService userAccessService,
@@ -215,6 +218,46 @@ public class AdminController {
         this.activityDraftService = activityDraftService;
         this.stationConfigVersionService = stationConfigVersionService;
         this.activityMarketingService = activityMarketingService;
+    }
+
+    @Autowired
+    public AdminController(ActivityMapper activityMapper, ArtistMapper artistMapper, SessionMapper sessionMapper,
+                            TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
+                            UserAccessService userAccessService,
+                             ActivityAdminService activityAdminService,
+                             SessionAdminService sessionAdminService,
+                             VenueApplicationService venueApplicationService,
+                              SeatTemplateService seatTemplateService,
+                                TicketTypeAreaService ticketTypeAreaService,
+                                AdminSummaryService adminSummaryService,
+                                  SessionSeatService sessionSeatService,
+                                   VenueDefaultLayoutService venueDefaultLayoutService,
+                                   ActivitySeatLayoutService activitySeatLayoutService,
+                                   SessionSeatLayoutService sessionSeatLayoutService,
+                                    TourStationService tourStationService,
+                                    OrderAdminQueryService orderAdminQueryService,
+                                    CheckInAdminQueryService checkInAdminQueryService,
+                                     SessionSeatProtectionService sessionSeatProtectionService,
+                                     TicketTypeStockRecalculationService stockRecalculationService,
+                                      ActivityArtistService activityArtistService,
+                                       ArtistAdminService artistAdminService,
+                                        ArtistGovernanceService artistGovernanceService,
+                                         ActivityRiskResponseService activityRiskResponseService,
+                                         TicketAssetService ticketAssetService,
+                                         PrivateAssetService privateAssetService,
+                                         SeatCraftLayoutVersionService seatCraftLayoutVersionService,
+                                         ActivityDraftService activityDraftService,
+                                         StationConfigVersionService stationConfigVersionService,
+                                         ActivityMarketingService activityMarketingService) {
+        this(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService,
+                activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService,
+                ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService,
+                activitySeatLayoutService, sessionSeatLayoutService, tourStationService, orderAdminQueryService,
+                sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService,
+                artistGovernanceService, activityRiskResponseService, ticketAssetService, privateAssetService,
+                seatCraftLayoutVersionService, activityDraftService, stationConfigVersionService,
+                activityMarketingService);
+        this.checkInAdminQueryService = checkInAdminQueryService;
     }
 
     @GetMapping("/seatcraft/{ownerType}/{ownerId}/draft")
@@ -733,6 +776,31 @@ public class AdminController {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
         return Result.success(orderAdminQueryService.listOrders(operatorId, paidOnly));
+    }
+
+    @GetMapping("/check-in/overview")
+    public Result<CheckInOverviewResponse> getCheckInOverview(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam Long sessionId) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(checkInAdminQueryService.getOverview(operatorId, sessionId));
+    }
+
+    @GetMapping("/check-in/records")
+    public Result<List<CheckInRecordResponse>> listCheckInRecords(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam Long sessionId,
+            @RequestParam(required = false) String result,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "20") Integer size) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(checkInAdminQueryService.listRecords(operatorId, sessionId, result, page, size));
     }
 
     @PostMapping("/tours/draft")
