@@ -21,7 +21,8 @@
 
 - 项目是类大麦网票务平台，采用 **B 端主导、C 端参与** 模式。
 - B 端包含 admin 平台管理员和 organizer 主办方；C 端包含普通用户浏览、购票、订单查看。
-- 评价系统和动态系统已经移除；不要恢复 `ReviewSection`、`MomentSection`、`SocialController`、review/moment API 或相关持久化代码。
+- 评价系统已重新纳入 C 端活动详情、购后观演反馈和购前问答范围；允许维护活动评价、评价审核、评价举报和活动问答能力。
+- 动态系统仍然禁止恢复；不要恢复 `MomentSection`、`SocialController`、moment API 或旧 social/moment 持久化代码。新增评价能力应围绕 activity review / activity question 命名，不要混用旧社交动态边界。
 - 本机当前默认运行方式是 `prod-split`：五个业务服务分别连接五个 PostgreSQL database。
 - `omni_ticket` 现在只作为历史共享库、迁移源或 local-schema disposable 实验库，不再作为当前业务运行库。
 
@@ -305,5 +306,5 @@ psql -h localhost -p 5432 -U postgres -d postgres -t -A -c "SELECT datname, appl
 - 后端代码修改后必须重新编译并重启对应服务才会生效。
 - 进行边界相关改动后必须运行 `scripts/verify-microservice-boundaries.ps1`。
 - 不要提交本地备份、数据库 dump、运行 artifact 或 `backups/`。
-- 不要恢复已删除的评价/动态系统。
+- 评价系统当前允许作为活动详情、购后反馈和购前问答能力迭代；不要恢复动态系统、`SocialController`、`MomentSection`、moment API 或旧 social/moment 持久化代码。
 - 不要把默认 `application.yml` 改成 local-schema 或生产拆库专用配置；当前推荐运行入口是 `prod-split` profile 和 `start-project.ps1`。
