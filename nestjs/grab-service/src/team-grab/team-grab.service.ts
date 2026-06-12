@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { randomBytes, randomUUID } from 'crypto';
 import { GrabQueueService } from '../grab/grab-queue.service';
 import { GrabService } from '../grab/grab.service';
+import { PurchaseContextInfo, TicketClientService } from '../grab/ticket-client.service';
 import { isUniqueViolation, TeamGrabRepository } from './team-grab.repository';
 import { TeamPaymentSyncService } from './team-payment-sync.service';
 import type { GrabProgressResponse } from '../grab/grab.types';
@@ -34,6 +35,7 @@ export class TeamGrabService {
     private readonly grabService: GrabService,
     private readonly queueService: GrabQueueService,
     @Optional() private readonly paymentSyncService?: TeamPaymentSyncService,
+    @Optional() private readonly ticketClient?: TicketClientService,
   ) {}
 
   async createTeam(leaderUserId: number, dto: CreateTeamDto): Promise<TicketTeamRecord> {
@@ -138,8 +140,10 @@ export class TeamGrabService {
     const latestGrabRequest = await this.repository.findLatestTeamGrabRequestByTeamId(teamId);
     const latestOrderId = latestGrabRequest?.orderId ?? null;
 
+    const teamWithContext = await this.enrichTeamContext(team);
+
     return {
-      team,
+      team: teamWithContext,
       members,
       canTriggerGrab: TRIGGERABLE_TEAM_STATUSES.includes(team.status)
         && currentMember?.status === 'CONFIRMED'
@@ -233,6 +237,28 @@ export class TeamGrabService {
     const refreshed = await this.repository.refreshTeamReadiness(team.id);
     if (refreshed) return refreshed;
     return (await this.repository.findTeamById(team.id)) ?? team;
+  }
+
+  private async enrichTeamContext(team: TicketTeamRecord): Promise<TicketTeamRecord> {
+    const context = await this.loadPurchaseContext(team.sessionId, team.ticketTypeId);
+    if (!context) return team;
+    return {
+      ...team,
+      activityName: context.activityName,
+      activityPoster: context.activityPoster,
+      ticketTypeName: context.ticketTypeName,
+      venueName: context.venueName,
+      sessionTime: context.sessionTime,
+    };
+  }
+
+  private async loadPurchaseContext(sessionId: number, ticketTypeId: number): Promise<PurchaseContextInfo | null> {
+    if (!this.ticketClient) return null;
+    try {
+      return await this.ticketClient.getPurchaseContext(sessionId, ticketTypeId);
+    } catch {
+      return null;
+    }
   }
 
   private validateCreateTeamDto(dto: CreateTeamDto): void {

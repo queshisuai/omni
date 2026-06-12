@@ -78,6 +78,9 @@ test('arc block interpolates curved coordinates', () => {
   const seats = buildSeatsForBlock(block)
 
   assert.equal(seats.length, 3)
+  assertApproxSeat(seats[0], { x: 180, y: 200 })
+  assertApproxSeat(seats[1], { x: 156.57, y: 256.57 })
+  assertApproxSeat(seats[2], { x: 100, y: 280 })
   assert.notEqual(seats[0].x, seats[1].x)
   assert.notEqual(seats[0].y, seats[1].y)
 })
@@ -99,12 +102,12 @@ test('arc block uses theater fan geometry with rows expanding from center', () =
   const seats = buildSeatsForBlock(block)
 
   assert.equal(seats.length, 6)
-  assert.equal(seats[0].y, 400)
-  assert.equal(seats[1].x, 500)
-  assert.equal(seats[1].y, 400)
-  assert.equal(seats[2].y, 400)
-  assert.ok(seats[3].y > seats[0].y)
-  assert.ok(seats[4].y > seats[1].y)
+  assertApproxSeat(seats[0], { x: 550, y: 213.4 })
+  assertApproxSeat(seats[1], { x: 600, y: 300 })
+  assertApproxSeat(seats[2], { x: 550, y: 386.6 })
+  assertApproxSeat(seats[4], { x: 640, y: 300 })
+  assert.ok(Math.abs(seats[3].y - block.y) > Math.abs(seats[0].y - block.y))
+  assert.ok(Math.abs(seats[5].y - block.y) > Math.abs(seats[2].y - block.y))
 })
 
 test('standing block generates no individual seats', () => {
@@ -739,4 +742,9 @@ function apiBlock(updates: Record<string, unknown> = {}) {
 
 function pick<T extends object, K extends keyof T>(value: T, keys: K[]): Pick<T, K> {
   return keys.reduce((acc, key) => ({ ...acc, [key]: value[key] }), {} as Pick<T, K>)
+}
+
+function assertApproxSeat(seat: { x: number; y: number }, expected: { x: number; y: number }) {
+  assert.equal(Math.round(seat.x * 100) / 100, expected.x)
+  assert.equal(Math.round(seat.y * 100) / 100, expected.y)
 }

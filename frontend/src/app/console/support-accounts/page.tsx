@@ -18,7 +18,19 @@ const supportRoleOptions: Array<{ value: SupportRole; label: string }> = [
 ]
 
 function formatSupportRole(role: string | null | undefined) {
-  return supportRoleOptions.find(option => option.value === role)?.label || '普通客服'
+  return supportRoleOptions.find(option => option.value === role)?.label || '未知客服角色'
+}
+
+function formatSupportAccountStatus(status: number | null | undefined) {
+  if (status === 1) return '启用中'
+  if (status === 0) return '已停用'
+  return '未知账号状态'
+}
+
+function formatSupportAccountStatusAction(status: number | null | undefined) {
+  if (status === 1) return '停用'
+  if (status === 0) return '启用'
+  return '状态待核对'
 }
 
 export default function SupportAccountsPage() {
@@ -78,6 +90,10 @@ export default function SupportAccountsPage() {
   const toggleStatus = async (account: SupportAccountVO) => {
     setMessage('')
     setError('')
+    if (account.status !== 1 && account.status !== 0) {
+      setError('账号状态未知，请先核对后再操作')
+      return
+    }
     setSaving(true)
     try {
       if (account.status === 1) {
@@ -234,7 +250,7 @@ export default function SupportAccountsPage() {
                 ) : (
                   <div className="min-w-0">
                     <div className="truncate text-[14px] font-semibold text-[#111]">{account.nickname || '未命名客服'}</div>
-                    <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {formatSupportRole(account.supportRole)} · {account.status === 1 ? '启用中' : '已停用'}</div>
+                    <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {formatSupportRole(account.supportRole)} · {formatSupportAccountStatus(account.status)}</div>
                   </div>
                 )}
               </div>
@@ -269,11 +285,11 @@ export default function SupportAccountsPage() {
                   </button>
                   <button
                     onClick={() => toggleStatus(account)}
-                    disabled={saving}
+                    disabled={saving || (account.status !== 1 && account.status !== 0)}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {account.status === 1 ? <ShieldOff className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                    {account.status === 1 ? '停用' : '启用'}
+                    {formatSupportAccountStatusAction(account.status)}
                   </button>
                   <button
                     onClick={() => remove(account)}

@@ -1,4 +1,4 @@
-import { Activity } from "@/types/damai";
+import { Activity } from "@/types/omni";
 import { MapPin, Calendar } from "lucide-react";
 
 interface TicketCardProps {
@@ -22,6 +22,11 @@ export function TicketCard({ activity }: TicketCardProps) {
         {activity.status === "sold_out" && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
             <span className="text-white text-lg font-medium">售罄</span>
+          </div>
+        )}
+        {activity.status === "status_syncing" && (
+          <div className="absolute left-3 top-3 rounded-full bg-black/60 px-2.5 py-1 text-[12px] font-medium text-white">
+            状态同步中
           </div>
         )}
       </div>

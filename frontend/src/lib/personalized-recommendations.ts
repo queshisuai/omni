@@ -7,6 +7,7 @@ export interface ActivityViewSignal {
   city?: string | null
   title?: string | null
   poster?: string | null
+  status?: number | null
   viewedAt?: string | null
 }
 

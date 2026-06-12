@@ -1,22 +1,29 @@
 package com.omni.ticket.service;
 
+import com.omni.common.mq.message.NotificationEventMessage;
+import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.dto.InternalUserRefResponse;
+import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Venue;
+import com.omni.ticket.mq.NotificationMqProducer;
 import com.omni.ticket.service.SessionSeatLayoutService;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.VenueMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +39,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -57,12 +65,20 @@ class SessionAdminServiceTest {
     private SessionSeatService sessionSeatService;
     @Mock
     private SessionSeatLayoutService sessionSeatLayoutService;
+    @Mock
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
+    @Mock
+    private OrderInternalClient orderInternalClient;
+    @Mock
+    private NotificationMqProducer notificationProducer;
 
     private SessionAdminService service;
 
     @BeforeEach
     void setUp() {
-        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, sessionSeatService, sessionSeatLayoutService, sessionSeatMapper);
+        service = new SessionAdminService(activityMapper, sessionMapper, venueMapper, userAccessService,
+                ticketTypeMapper, sessionSeatService, sessionSeatLayoutService, sessionSeatMapper,
+                searchIndexEventPublisher, orderInternalClient, notificationProducer, "test-token");
     }
 
     @Test
@@ -81,6 +97,7 @@ class SessionAdminServiceTest {
 
         verify(sessionMapper).insert(session);
         verify(sessionSeatService).generateForSession(501L);
+        verify(searchIndexEventPublisher).publishUpsert(10L);
     }
 
     @Test
@@ -103,6 +120,74 @@ class SessionAdminServiceTest {
         verify(sessionSeatLayoutService).copyFromActivityLayout(2003L, 602L, 77L);
         verify(sessionSeatLayoutService).generateSessionSeats(602L);
         verify(sessionSeatService, never()).generateForSession(602L);
+        verify(searchIndexEventPublisher).publishUpsert(10L);
+    }
+
+    @Test
+    void updateSessionPublishesSearchIndexUpsert() {
+        allowSessionManager(2003L, "organizer");
+        Session session = new Session();
+        session.setId(50L);
+        session.setActivityId(10L);
+        session.setVenueId(101L);
+        session.setStartTime(LocalDateTime.of(2026, 6, 1, 20, 0));
+        session.setEndTime(LocalDateTime.of(2026, 6, 1, 22, 0));
+        session.setStatus(1);
+        when(sessionMapper.selectById(50L)).thenReturn(session);
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(venueMapper.selectById(101L)).thenReturn(venue(101L));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", 2003L);
+        body.put("startTime", "2026-06-01T20:30");
+
+        service.updateSession(50L, body);
+
+        verify(searchIndexEventPublisher).publishUpsert(10L);
+    }
+
+    @Test
+    void updateSessionSendsRescheduledEventToPaidOrderUsersWhenTimeChanged() {
+        allowSessionManager(2003L, "organizer");
+        Session session = new Session();
+        session.setId(50L);
+        session.setActivityId(10L);
+        session.setVenueId(101L);
+        session.setStartTime(LocalDateTime.of(2026, 6, 1, 20, 0));
+        session.setEndTime(LocalDateTime.of(2026, 6, 1, 22, 0));
+        session.setStatus(1);
+        OrderInfoResponse paidOrder = new OrderInfoResponse();
+        paidOrder.setId(5001L);
+        paidOrder.setUserId(2004L);
+        paidOrder.setSessionId(50L);
+
+        when(sessionMapper.selectById(50L)).thenReturn(session);
+        when(activityMapper.selectById(10L)).thenReturn(activity(10L, 2003L));
+        when(venueMapper.selectById(101L)).thenReturn(venue(101L));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(orderInternalClient.listPaidBySessions(any(), eq("test-token"))).thenReturn(Result.success(List.of(paidOrder)));
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", 2003L);
+        body.put("startTime", "2026-06-02T20:30");
+        body.put("endTime", "2026-06-02T22:30");
+
+        service.updateSession(50L, body);
+
+        ArgumentCaptor<NotificationEventMessage> captor = ArgumentCaptor.forClass(NotificationEventMessage.class);
+        verify(notificationProducer).sendNotificationEvent(captor.capture());
+        NotificationEventMessage event = captor.getValue();
+        assertEquals("ACTIVITY_RESCHEDULED", event.getEventType());
+        assertTrue(event.getAggregateKey().startsWith("ACTIVITY_RESCHEDULED:5001:"));
+        assertEquals(2004L, event.getUserId());
+        assertEquals(5001L, event.getOrderId());
+        assertEquals(10L, event.getActivityId());
+        assertEquals(List.of("IN_APP", "SMS"), event.getChannels());
+        assertEquals("/orders/5001", event.getActionHref());
+        assertEquals("查看订单", event.getActionLabel());
+        assertEquals("2026-06-01T20:00", event.getPayload().get("oldStartTime"));
+        assertEquals("2026-06-02T20:30", event.getPayload().get("newStartTime"));
     }
 
     @Test
@@ -164,6 +249,7 @@ class SessionAdminServiceTest {
         verify(sessionSeatService).deleteBySessionId(50L);
         verify(sessionSeatLayoutService).deleteBySessionId(50L);
         verify(sessionMapper).deleteById(50L);
+        verify(searchIndexEventPublisher).publishUpsert(10L);
     }
 
     @Test

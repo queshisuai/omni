@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Plus, RefreshCw, ShieldAlert } from 'lucide-react'
-import { createExceptionTask, listExceptionTasks } from '@/lib/api'
+import { AlertTriangle, CheckCircle2, Plus, RefreshCw, ShieldAlert, XCircle } from 'lucide-react'
+import { claimExceptionTask, closeExceptionTask, createExceptionTask, listExceptionTasks, resolveExceptionTask } from '@/lib/api'
 import { formatExceptionSeverity, formatExceptionStatus, formatExceptionTaskType } from '@/lib/operation-display'
 import type { ExceptionTaskCreatePayload, ExceptionTaskVO } from '@/types/api'
 
@@ -17,6 +17,7 @@ const statusOptions = [
   { value: 'pending', label: '待处理' },
   { value: 'processing', label: '处理中' },
   { value: 'resolved', label: '已处理' },
+  { value: 'closed', label: '已关闭' },
 ]
 
 const taskTypeOptions = [
@@ -49,8 +50,11 @@ export default function ExceptionTasksPage() {
   const [items, setItems] = useState<ExceptionTaskVO[]>([])
   const [statusFilter, setStatusFilter] = useState('')
   const [form, setForm] = useState<ExceptionTaskCreatePayload>(initialForm())
+  const [actionTarget, setActionTarget] = useState<{ taskId: number; action: 'resolve' | 'close' } | null>(null)
+  const [actionResult, setActionResult] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [actingId, setActingId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -76,8 +80,8 @@ export default function ExceptionTasksPage() {
     return items.filter(item => item.status === statusFilter)
   }, [items, statusFilter])
 
-  const pendingCount = items.filter(item => item.status !== 'resolved').length
-  const highCount = items.filter(item => item.severity === 'high' && item.status !== 'resolved').length
+  const pendingCount = items.filter(item => item.status !== 'resolved' && item.status !== 'closed').length
+  const highCount = items.filter(item => item.severity === 'high' && item.status !== 'resolved' && item.status !== 'closed').length
 
   const changeStatus = (status: string) => {
     setStatusFilter(status)
@@ -109,6 +113,56 @@ export default function ExceptionTasksPage() {
       setError(err instanceof Error ? err.message : '创建异常任务失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleClaim = async (taskId: number) => {
+    setError('')
+    setMessage('')
+    setActingId(taskId)
+    try {
+      await claimExceptionTask(taskId)
+      setMessage('异常任务已认领')
+      await load(statusFilter)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '认领异常任务失败')
+    } finally {
+      setActingId(null)
+    }
+  }
+
+  const startAction = (taskId: number, action: 'resolve' | 'close') => {
+    setError('')
+    setMessage('')
+    setActionTarget({ taskId, action })
+    setActionResult('')
+  }
+
+  const submitAction = async () => {
+    if (!actionTarget) return
+    const normalizedResult = actionResult.trim()
+    if (!normalizedResult) {
+      setError('请填写处理结果')
+      return
+    }
+    setError('')
+    setMessage('')
+    setActingId(actionTarget.taskId)
+    try {
+      if (actionTarget.action === 'resolve') {
+        await resolveExceptionTask(actionTarget.taskId, normalizedResult)
+        setMessage('异常任务已标记为已处理')
+      } else {
+        await closeExceptionTask(actionTarget.taskId, normalizedResult)
+        setMessage('异常任务已关闭')
+      }
+      setActionTarget(null)
+      setActionResult('')
+      await load(statusFilter)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '更新异常任务失败')
+    } finally {
+      setActingId(null)
     }
   }
 
@@ -204,8 +258,9 @@ export default function ExceptionTasksPage() {
                   <th className="px-4 py-3 font-medium">等级</th>
                   <th className="px-4 py-3 font-medium">状态</th>
                   <th className="px-4 py-3 font-medium">原因/结果</th>
-                  <th className="px-4 py-3 font-medium">TraceId</th>
+                  <th className="px-4 py-3 font-medium">追踪编号</th>
                   <th className="px-4 py-3 font-medium">创建时间</th>
+                  <th className="px-4 py-3 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -221,6 +276,49 @@ export default function ExceptionTasksPage() {
                     <td className="max-w-[320px] px-4 py-3 text-gray-600">{item.result || item.reason || '-'}</td>
                     <td className="px-4 py-3 font-mono text-[12px] text-gray-500">{item.traceId || '-'}</td>
                     <td className="whitespace-nowrap px-4 py-3">{formatTime(item.createTime)}</td>
+                    <td className="min-w-[260px] px-4 py-3">
+                      {item.status === 'pending' && (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleClaim(item.id)}
+                            disabled={actingId === item.id}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+                          >
+                            <ShieldAlert className="h-3.5 w-3.5" />
+                            认领
+                          </button>
+                          <button
+                            onClick={() => startAction(item.id, 'close')}
+                            disabled={actingId === item.id}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            关闭
+                          </button>
+                        </div>
+                      )}
+                      {item.status === 'processing' && (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => startAction(item.id, 'resolve')}
+                            disabled={actingId === item.id}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            标记已处理
+                          </button>
+                          <button
+                            onClick={() => startAction(item.id, 'close')}
+                            disabled={actingId === item.id}
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            关闭
+                          </button>
+                        </div>
+                      )}
+                      {(item.status === 'resolved' || item.status === 'closed') && <span className="text-[12px] text-gray-400">已结束</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -228,6 +326,29 @@ export default function ExceptionTasksPage() {
           </div>
         )}
       </section>
+
+      {actionTarget && (
+        <section className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div className="mb-3 text-[16px] font-bold text-[#111]">
+            {actionTarget.action === 'resolve' ? '填写处理结果' : '填写关闭原因'}
+          </div>
+          <textarea
+            value={actionResult}
+            onChange={event => setActionResult(event.target.value)}
+            rows={3}
+            placeholder={actionTarget.action === 'resolve' ? '例如：已核对渠道流水并补偿用户' : '例如：重复任务，已合并处理'}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-[#ff1268]"
+          />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button onClick={submitAction} disabled={actingId === actionTarget.taskId} className="h-9 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">
+              {actingId === actionTarget.taskId ? '提交中...' : '提交'}
+            </button>
+            <button onClick={() => { setActionTarget(null); setActionResult('') }} className="h-9 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
+              取消
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   )
 }

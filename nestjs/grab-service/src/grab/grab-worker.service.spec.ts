@@ -88,6 +88,53 @@ describe('GrabWorkerService', () => {
     expect(queue.ackProcessed).toHaveBeenCalledWith(101, 'GRAB1', 12);
   });
 
+  it('logs segmented latency for successful queue lock order and ack phases', async () => {
+    const record = queuedRecord({
+      attendeeIds: [501, 502],
+      createdAt: new Date(Date.now() - 5000),
+    });
+    const repository: any = {
+      findByRequestId: jest.fn().mockResolvedValue(record),
+      claimForProcessing: jest.fn().mockResolvedValue(record),
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn().mockResolvedValue({
+        ...record,
+        progressStatus: GRAB_STATUS.ORDER_CREATED,
+        orderId: 9001,
+        matchedTicketTypeId: 1,
+      }),
+      updateStatus: jest.fn(),
+    };
+    const admission: any = {
+      admit: jest.fn().mockResolvedValue({ outcome: 'ACCEPTED', existingRequestId: 'GRAB1' }),
+      release: jest.fn(),
+    };
+    const orderClient: any = {
+      createOrder: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'O1', amount: 1960 }),
+    };
+    const queue: any = {
+      ackProcessed: jest.fn(),
+    };
+    const service = new GrabWorkerService(repository, admission, orderClient, queue);
+    const logSpy = jest.spyOn((service as any).logger, 'log').mockImplementation(() => undefined);
+
+    await service.processRequest('GRAB1');
+
+    const message = logSpy.mock.calls
+      .map((call) => String(call[0]))
+      .find((line) => line.includes('抢票链路耗时'));
+    expect(message).toBeDefined();
+    expect(message).toEqual(expect.stringContaining('requestId=GRAB1'));
+    expect(message).toEqual(expect.stringContaining('outcome=ORDER_CREATED'));
+    expect(message).toEqual(expect.stringContaining('queueWaitMs='));
+    expect(message).toEqual(expect.stringContaining('claimMs='));
+    expect(message).toEqual(expect.stringContaining('lockMs='));
+    expect(message).toEqual(expect.stringContaining('orderMs='));
+    expect(message).toEqual(expect.stringContaining('confirmMs='));
+    expect(message).toEqual(expect.stringContaining('ackMs='));
+    expect(message).toEqual(expect.stringContaining('totalMs='));
+  });
+
   it('initializes missing grab stock from ticket stock and retries admission', async () => {
     const record = queuedRecord();
     const repository: any = {

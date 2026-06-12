@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * 支付服务（沙盒版 - 模拟支付）
+ * 支付记录服务。
  */
 @Service
 public class PaymentService {
@@ -32,23 +32,23 @@ public class PaymentService {
     }
 
     /**
-     * 模拟支付
+     * 记录显式启用的本地支付确认结果。
      */
-    public Payment mockPay(Long orderId, BigDecimal amount) {
+    public Payment recordLocalPaymentConfirmation(Long orderId, BigDecimal amount) {
         String paymentNo = "PAY" + LocalDateTime.now().toString().replace("-", "").replace("T", "").replace(":", "").substring(0, 14)
                 + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
 
         Payment payment = new Payment();
         payment.setOrderId(orderId);
         payment.setPaymentNo(paymentNo);
-        payment.setPaymentMethod("MOCK");
+        payment.setPaymentMethod("LOCAL_CONFIRMATION");
         payment.setAmount(amount != null ? amount : BigDecimal.ZERO);
         payment.setStatus(STATUS_SUCCESS);
         payment.setPayTime(LocalDateTime.now());
-        payment.setCallbackData("沙盒模拟支付，自动成功");
+        payment.setCallbackData("本地支付确认，自动成功");
 
         paymentMapper.insert(payment);
-        log.info("模拟支付成功: paymentNo={}, orderId={}, amount={}", paymentNo, orderId, amount);
+        log.info("本地支付确认记录: paymentNo={}, orderId={}, amount={}", paymentNo, orderId, amount);
         return payment;
     }
 

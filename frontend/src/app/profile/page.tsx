@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, Mail, CalendarDays, ShieldCheck, Ticket, Settings2, Loader2, Users, Clock3 } from 'lucide-react'
+import { User, Mail, CalendarDays, ShieldCheck, Ticket, Settings2, Loader2, Users, Clock3, Bell } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { getUserInfo } from '@/lib/api'
@@ -85,6 +85,13 @@ export default function ProfilePage() {
               >
                 <Users className="h-4 w-4" />
                 实名观演人
+              </button>
+              <button
+                onClick={() => router.push('/notifications/settings')}
+                className="inline-flex items-center gap-2 rounded-full border border-[#ff1268] px-4 py-2 text-sm font-medium text-[#ff1268] transition-colors hover:bg-[#fff0f5]"
+              >
+                <Bell className="h-4 w-4" />
+                通知偏好
               </button>
               <button
                 onClick={() => router.push('/profile/account')}

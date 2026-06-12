@@ -1,10 +1,19 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Download, Search } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { getCheckInOverview, listCheckInRecords } from '@/lib/api'
 import { hasConsolePermission } from '@/lib/console-auth'
+import {
+  buildConsoleCheckInExceptionExportCsv,
+  buildConsoleCheckInExceptionExportExcelHtml,
+  buildConsoleCheckInExportCsv,
+  buildConsoleCheckInExportExcelHtml,
+  formatConsoleCheckInResult,
+  getConsoleCheckInExceptionRecords,
+  getConsoleCheckInResultClassName,
+} from '@/lib/console-check-in'
 import type { CheckInOverviewVO, CheckInRecordVO } from '@/types/api'
 
 const RESULT_TABS: Array<{ label: string; value: '' | 'SUCCESS' | 'DUPLICATE' | 'FAILED' }> = [
@@ -13,18 +22,6 @@ const RESULT_TABS: Array<{ label: string; value: '' | 'SUCCESS' | 'DUPLICATE' | 
   { label: '重复', value: 'DUPLICATE' },
   { label: '失败', value: 'FAILED' },
 ]
-
-const RESULT_LABELS: Record<string, string> = {
-  SUCCESS: '成功',
-  DUPLICATE: '重复',
-  FAILED: '失败',
-}
-
-const RESULT_STYLES: Record<string, string> = {
-  SUCCESS: 'bg-[#f0fff4] text-[#16a34a]',
-  DUPLICATE: 'bg-[#fff7ed] text-[#f97316]',
-  FAILED: 'bg-[#fef2f2] text-[#dc2626]',
-}
 
 function formatDateTime(value?: string | null) {
   if (!value) return '-'
@@ -46,6 +43,7 @@ export default function ConsoleCheckInPage() {
   const [records, setRecords] = useState<CheckInRecordVO[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [exportMessage, setExportMessage] = useState('')
   const [queried, setQueried] = useState(false)
 
   const sessionId = useMemo(() => {
@@ -57,11 +55,13 @@ export default function ConsoleCheckInPage() {
 
   const loadCheckInData = async () => {
     if (!sessionId) {
-      setError('场次ID不正确')
+      setError('场次编号不正确')
+      setExportMessage('')
       return
     }
     setLoading(true)
     setError('')
+    setExportMessage('')
     setQueried(true)
     try {
       const [overviewData, recordData] = await Promise.all([
@@ -77,6 +77,56 @@ export default function ConsoleCheckInPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const downloadRecords = (content: string, filenamePrefix: string, type: string, extension: string) => {
+    const blob = new Blob([content], { type })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.${extension}`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportRecords = () => {
+    if (records.length === 0) {
+      setExportMessage('暂无可导出的核验记录')
+      return
+    }
+    downloadRecords(buildConsoleCheckInExportCsv(records), '核验记录', 'text/csv;charset=utf-8', 'csv')
+    setExportMessage(`已导出 ${records.length} 条核验记录`)
+  }
+
+  const exportRecordsExcel = () => {
+    if (records.length === 0) {
+      setExportMessage('暂无可导出的核验记录')
+      return
+    }
+    downloadRecords(buildConsoleCheckInExportExcelHtml(records), '核验记录', 'application/vnd.ms-excel;charset=utf-8', 'xls')
+    setExportMessage(`已导出 ${records.length} 条核验 Excel 明细`)
+  }
+
+  const exportExceptionRecords = () => {
+    const exceptionRecords = getConsoleCheckInExceptionRecords(records)
+    if (exceptionRecords.length === 0) {
+      setExportMessage('暂无可导出的异常核验记录')
+      return
+    }
+    downloadRecords(buildConsoleCheckInExceptionExportCsv(records), '异常核验记录', 'text/csv;charset=utf-8', 'csv')
+    setExportMessage(`已导出 ${exceptionRecords.length} 条异常核验记录`)
+  }
+
+  const exportExceptionRecordsExcel = () => {
+    const exceptionRecords = getConsoleCheckInExceptionRecords(records)
+    if (exceptionRecords.length === 0) {
+      setExportMessage('暂无可导出的异常核验记录')
+      return
+    }
+    downloadRecords(buildConsoleCheckInExceptionExportExcelHtml(records), '异常核验记录', 'application/vnd.ms-excel;charset=utf-8', 'xls')
+    setExportMessage(`已导出 ${exceptionRecords.length} 条异常核验 Excel 明细`)
   }
 
   if (!canView) {
@@ -105,11 +155,11 @@ export default function ConsoleCheckInPage() {
       <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-white p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <label className="block flex-1">
-            <span className="mb-1.5 block text-[13px] font-medium text-[#555]">场次 ID</span>
+            <span className="mb-1.5 block text-[13px] font-medium text-[#555]">场次编号</span>
             <input
               value={sessionIdInput}
               onChange={event => setSessionIdInput(event.target.value)}
-              placeholder="请输入场次 ID"
+              placeholder="请输入场次编号"
               className="h-10 w-full rounded-lg border border-[#d9d9d9] px-3 text-[14px] outline-none focus:border-[#ff1268]"
             />
           </label>
@@ -141,8 +191,45 @@ export default function ConsoleCheckInPage() {
             <Search className="h-4 w-4" />
             {loading ? '查询中' : '查询'}
           </button>
+          <button
+            type="button"
+            onClick={exportRecords}
+            disabled={loading || records.length === 0}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-4 text-[14px] font-medium text-[#333] transition hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            导出核验记录
+          </button>
+          <button
+            type="button"
+            onClick={exportRecordsExcel}
+            disabled={loading || records.length === 0}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#e5e5e5] bg-white px-4 text-[14px] font-medium text-[#333] transition hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            导出 Excel
+          </button>
+          <button
+            type="button"
+            onClick={exportExceptionRecords}
+            disabled={loading || records.length === 0}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#ffd591] bg-[#fffaf0] px-4 text-[14px] font-medium text-[#ad6800] transition hover:border-[#ffb84d] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            导出异常报表
+          </button>
+          <button
+            type="button"
+            onClick={exportExceptionRecordsExcel}
+            disabled={loading || records.length === 0}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#ffd591] bg-[#fffaf0] px-4 text-[14px] font-medium text-[#ad6800] transition hover:border-[#ffb84d] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            导出异常 Excel
+          </button>
         </div>
         {error ? <div className="mt-3 text-[13px] text-[#dc2626]">{error}</div> : null}
+        {exportMessage ? <div className="mt-3 text-[13px] text-[#16a34a]">{exportMessage}</div> : null}
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -164,7 +251,7 @@ export default function ConsoleCheckInPage() {
               <th className="p-3 text-left font-medium text-[#666]">渠道</th>
               <th className="p-3 text-left font-medium text-[#666]">结果</th>
               <th className="p-3 text-left font-medium text-[#666]">失败原因</th>
-              <th className="p-3 text-left font-medium text-[#666]">时间</th>
+              <th className="p-3 text-left font-medium text-[#666]">核验时间</th>
             </tr>
           </thead>
           <tbody>
@@ -175,8 +262,8 @@ export default function ConsoleCheckInPage() {
                 <td className="p-3 text-[#666]">{formatNullable(record.deviceCode)}</td>
                 <td className="p-3 text-[#666]">{formatNullable(record.channel)}</td>
                 <td className="p-3">
-                  <span className={`rounded-full px-2 py-0.5 text-[12px] ${RESULT_STYLES[record.result] || 'bg-[#f5f5f5] text-[#666]'}`}>
-                    {RESULT_LABELS[record.result] || record.result}
+                  <span className={`rounded-full px-2 py-0.5 text-[12px] ${getConsoleCheckInResultClassName(record.result)}`}>
+                    {formatConsoleCheckInResult(record.result)}
                   </span>
                 </td>
                 <td className="p-3 text-[#666]">{formatNullable(record.failureReason)}</td>

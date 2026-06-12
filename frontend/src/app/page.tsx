@@ -3,16 +3,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Header } from '@/components/Header'
 import { CategoryNav } from '@/components/CategoryNav'
-import { Banner } from '@/components/Banner'
+import { Banner, type BannerSlide } from '@/components/Banner'
 import { SectionRow } from '@/components/SectionRow'
 import { Footer } from '@/components/Footer'
 import { listActivities, listCategories } from '@/lib/api'
 import { ALL_CITY_VALUE, resolveActivityCityParam } from '@/lib/city-selection'
 import { createHomeResumeRefreshHandlers, createLatestRequestGate } from '@/lib/home-resume-refresh'
 import { ACTIVITY_VIEW_SIGNAL_KEY, buildPersonalizedActivities, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
-import { categories as mockCategories, sections as mockSections, banners } from '@/lib/mock-data'
+import { toActivitySaleStatus } from '@/lib/activity-sale-status'
 import type { CategoryVO, ActivityVO } from '@/types/api'
-import type { SectionData, Activity } from '@/types/damai'
+import type { SectionData, Activity } from '@/types/omni'
 
 function toActivity(vo: ActivityVO): Activity {
   return {
@@ -25,7 +25,7 @@ function toActivity(vo: ActivityVO): Activity {
     showTime: vo.startTime ? vo.startTime.slice(0, 10) : '待定',
     priceRange: vo.minPrice ? `¥${vo.minPrice}起` : '待定',
     price: vo.minPrice || 0,
-    status: vo.status === 1 ? 'on_sale' : vo.status === 2 ? 'coming_soon' : 'sold_out',
+    status: toActivitySaleStatus(vo.status),
   }
 }
 
@@ -45,9 +45,37 @@ function groupByCategory(activities: Activity[]): SectionData[] {
   }))
 }
 
+const HOME_BANNER_SLIDES: BannerSlide[] = [
+  {
+    id: 'home-concert',
+    title: '热门演唱会',
+    subtitle: '现场开唱，锁定近期热门场次',
+    imageUrl: '/images/banners/home-concert.jpg',
+    linkUrl: '/search?category=%E6%BC%94%E5%94%B1%E4%BC%9A',
+    bgColor: '#0b1730',
+  },
+  {
+    id: 'home-festival',
+    title: '音乐节与现场派对',
+    subtitle: '户外舞台、音乐节与周末现场',
+    imageUrl: '/images/banners/home-festival.jpg',
+    linkUrl: '/search?keyword=%E9%9F%B3%E4%B9%90%E8%8A%82',
+    bgColor: '#15241c',
+  },
+  {
+    id: 'home-theatre',
+    title: '剧场演出',
+    subtitle: '话剧、音乐剧、舞剧与剧院现场',
+    imageUrl: '/images/banners/home-theatre.jpg',
+    linkUrl: '/search?category=%E8%AF%9D%E5%89%A7%E6%AD%8C%E5%89%A7',
+    bgColor: '#2b0508',
+  },
+]
+
 export default function HomePage() {
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [sections, setSections] = useState<SectionData[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [viewSignals, setViewSignals] = useState<ActivityViewSignal[]>([])
   const [currentCity, setCurrentCity] = useState(ALL_CITY_VALUE)
@@ -65,6 +93,7 @@ export default function HomePage() {
         listActivities({ page: 1, size: 50, city: resolveActivityCityParam(currentCity) }),
       ])
       if (!requestGate.isCurrent(requestId)) return
+      setLoadError(null)
       setCategories(catData)
       const mappedActivities = actData.records.map(toActivity)
       const personalized = buildPersonalizedActivities(mappedActivities, viewSignals)
@@ -74,9 +103,9 @@ export default function HomePage() {
       ])
     } catch {
       if (!requestGate.isCurrent(requestId)) return
-      // 降级到 mock 数据
-      setCategories(mockCategories.map((c, i) => ({ id: i + 1, name: c.name, icon: null, sort: 0, status: 1 })) as CategoryVO[])
-      setSections(mockSections)
+      setLoadError('活动加载失败，请稍后重试')
+      setCategories([])
+      setSections([])
     } finally {
       if (requestGate.isCurrent(requestId)) {
         setLoading(false)
@@ -143,7 +172,7 @@ export default function HomePage() {
       {/* Hero Section with Banner and Nav */}
       <div className="relative bg-white pb-6 rounded-b-[40px] shadow-[0_10px_40px_-20px_rgba(0,0,0,0.05)] z-10">
         <CategoryNav categories={navCategories} />
-        <Banner slides={banners} />
+        <Banner slides={HOME_BANNER_SLIDES} />
       </div>
 
       <main className="flex-1 pb-20 -mt-6 pt-10">
@@ -159,7 +188,9 @@ export default function HomePage() {
         ) : sections.length === 0 ? (
           <section className="py-20">
             <div className="max-w-[1200px] mx-auto px-5">
-              <div className="text-center text-gray-400 py-20 text-sm font-medium tracking-wider">暂无演出活动</div>
+              <div className="text-center text-gray-400 py-20 text-sm font-medium tracking-wider">
+                {loadError || '暂无演出活动'}
+              </div>
             </div>
           </section>
         ) : (

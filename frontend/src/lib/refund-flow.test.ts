@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildRefundTimeline, getRefundSupportCopy } from './refund-flow.ts'
+import { buildRefundTimeline, getRefundStatusMeta, getRefundSupportCopy, isRefundActionBlockingStatus } from './refund-flow.ts'
 import type { RefundRequestVO } from '../types/api.ts'
 
 function refund(status: RefundRequestVO['status'], overrides: Partial<RefundRequestVO> = {}): RefundRequestVO {
@@ -43,5 +43,23 @@ test('builds refund timeline for completed refund', () => {
 test('shows support copy for failed and unknown refund states', () => {
   assert.equal(getRefundSupportCopy(refund(3)), '退款失败，可联系人工客服介入处理')
   assert.equal(getRefundSupportCopy(refund(4)), '退款处理中超过预期时，可联系人工客服查询')
+  assert.equal(getRefundSupportCopy(refund(99 as RefundRequestVO['status'])), '退款状态同步中，可联系人工客服查询')
   assert.equal(getRefundSupportCopy(refund(1)), null)
+})
+
+test('keeps unknown refund status as syncing instead of completed review', () => {
+  const unknownRefund = refund(99 as RefundRequestVO['status'])
+
+  assert.deepEqual(buildRefundTimeline(unknownRefund).map((step) => [step.label, step.state]), [
+    ['已提交申请', 'done'],
+    ['退款状态同步中', 'active'],
+    ['原路退回', 'pending'],
+  ])
+  assert.deepEqual(getRefundStatusMeta(unknownRefund.status), {
+    label: '退款状态同步中',
+    color: '#1677ff',
+  })
+  assert.equal(isRefundActionBlockingStatus(unknownRefund.status), true)
+  assert.equal(isRefundActionBlockingStatus(2), false)
+  assert.equal(isRefundActionBlockingStatus(3), false)
 })

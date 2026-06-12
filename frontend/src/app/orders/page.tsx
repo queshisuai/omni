@@ -6,13 +6,15 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { Pagination, DEFAULT_PAGE_SIZE } from '@/components/Pagination'
-import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayQrPay, syncAlipayPayment, listMyRefunds, applyRefund, getRefundOptions } from '@/lib/api'
+import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayPagePay, syncAlipayPayment, listMyRefunds, applyRefund, getRefundOptions, createActivityReview, startSupportConversation } from '@/lib/api'
+import { captureAnalyticsEvent } from '@/lib/analytics'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { formatOrderAttendees } from '@/lib/console-orders'
-import { buildRefundTimeline, getRefundSupportCopy } from '@/lib/refund-flow'
-import { ArrowLeft, Check, Ticket as TicketIcon, Search, PackageOpen, Trash2, RotateCcw, AlertCircle, RefreshCw, EyeOff, Loader2 } from 'lucide-react'
+import { formatOrderSeatLabel } from '@/lib/orders-experience'
+import { buildRefundTimeline, getRefundStatusMeta, getRefundSupportCopy, isRefundActionBlockingStatus } from '@/lib/refund-flow'
+import { ArrowLeft, Check, Ticket as TicketIcon, Search, PackageOpen, Trash2, RotateCcw, AlertCircle, RefreshCw, EyeOff, Loader2, Star } from 'lucide-react'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
-import type { OrderEntity, QrPayResponse, RefundOptionsVO, RefundRequestVO, RefundStatus } from '@/types/api'
+import type { OrderEntity, PagePayResponse, RefundOptionsVO, RefundRequestVO } from '@/types/api'
 
 type StatusTab = 'all' | 'unpaid' | 'paid' | 'cancelled' | 'trash'
 
@@ -23,21 +25,17 @@ const STATUS_MAP: Record<number, { label: string; color: string; bg: string }> =
   4: { label: '已退款', color: '#999', bg: '#f5f5f5' },
 }
 
-const REFUND_STATUS_MAP: Record<RefundStatus, { label: string; color: string }> = {
-  0: { label: '退款待审核', color: '#fa8c16' },
-  1: { label: '已退款', color: '#52c41a' },
-  2: { label: '退款已拒绝', color: '#ff4d4f' },
-  3: { label: '退款失败', color: '#ff4d4f' },
-  4: { label: '退款处理中', color: '#1677ff' },
-}
-
-const ACTIVE_REFUND_STATUSES = new Set<RefundStatus>([0, 1, 4])
+const UNKNOWN_ORDER_STATUS_META = { label: '订单状态更新中', color: '#777', bg: '#f5f5f5' }
 
 function refundTimelineStyle(state: string) {
   if (state === 'done') return 'bg-[#52c41a] text-white'
   if (state === 'active') return 'bg-[#1677ff] text-white'
   if (state === 'failed') return 'bg-[#ff4d4f] text-white'
   return 'bg-[#e5e5e5] text-[#777]'
+}
+
+function getOrderStatusMeta(status: number) {
+  return STATUS_MAP[status] || UNKNOWN_ORDER_STATUS_META
 }
 
 interface EnrichedOrder extends OrderEntity {
@@ -53,18 +51,16 @@ interface EnrichedOrder extends OrderEntity {
 
 function enrichOrders(orders: OrderEntity[]): EnrichedOrder[] {
   return orders.map((order) => {
-    const fallbackTicketTypeId = order.matchedTicketTypeId ?? order.ticketTypeId
-
     return {
       ...order,
-      activityName: order.activityName || '未知活动',
+      activityName: order.activityName || '活动信息待同步',
       activityPoster: order.activityPoster || '',
       activityId: order.activityId ?? null,
-      venueName: order.venueName || '未知场馆',
+      venueName: order.venueName || '场馆信息待同步',
       sessionTime: order.sessionTime || '',
-      ticketName: order.ticketName || `票档 ${fallbackTicketTypeId}`,
+      ticketName: order.ticketName || '票档信息待同步',
       unitPrice: order.unitPrice || order.amount / order.quantity,
-      seatLabels: order.seatLabels || '座位信息生成中',
+      seatLabels: formatOrderSeatLabel(order),
     }
   })
 }
@@ -79,7 +75,7 @@ function buildRefundMap(refunds: RefundRequestVO[]) {
   for (const refund of sorted) {
     const item = map[refund.orderId] || {}
     if (!item.latest) item.latest = refund
-    if (!item.active && ACTIVE_REFUND_STATUSES.has(refund.status)) item.active = refund
+    if (!item.active && isRefundActionBlockingStatus(refund.status)) item.active = refund
     map[refund.orderId] = item
   }
 
@@ -94,7 +90,7 @@ export default function OrdersPage() {
   const [activeTab, setActiveTab] = useState<StatusTab>('all')
   const [cancelling, setCancelling] = useState<number | null>(null)
   const [paying, setPaying] = useState<number | null>(null)
-  const [qrPay, setQrPay] = useState<QrPayResponse | null>(null)
+  const [pagePay, setPagePay] = useState<PagePayResponse | null>(null)
   const [refreshing, setRefreshing] = useState<number | null>(null)
   const [refunds, setRefunds] = useState<RefundRequestVO[]>([])
   const [refundTarget, setRefundTarget] = useState<EnrichedOrder | null>(null)
@@ -105,9 +101,15 @@ export default function OrdersPage() {
   const [selectedOrderSeatIds, setSelectedOrderSeatIds] = useState<number[]>([])
   const [refundOptionsLoading, setRefundOptionsLoading] = useState(false)
   const [refundSubmitting, setRefundSubmitting] = useState(false)
+  const [reviewTarget, setReviewTarget] = useState<EnrichedOrder | null>(null)
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewContent, setReviewContent] = useState('')
+  const [reviewImages, setReviewImages] = useState('')
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [trashOrders, setTrashOrders] = useState<EnrichedOrder[]>([])
   const [hiding, setHiding] = useState<number | null>(null)
   const [restoring, setRestoring] = useState<number | null>(null)
+  const [supportingRefund, setSupportingRefund] = useState<number | null>(null)
   const [page, setPage] = useState(1)
   const loadOrdersRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
@@ -194,8 +196,12 @@ export default function OrdersPage() {
   const handlePay = async (orderId: number) => {
     setPaying(orderId)
     try {
-      const pay = await createAlipayQrPay(orderId)
-      setQrPay(pay)
+      const pay = await createAlipayPagePay(orderId)
+      setPagePay(pay)
+      captureAnalyticsEvent('omni_payment_started', {
+        payment_channel: 'alipay',
+        source: 'orders',
+      })
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '支付失败')
     } finally {
@@ -241,13 +247,44 @@ export default function OrdersPage() {
     }
   }
 
+  const handleRefundSupport = async (order: EnrichedOrder, refund: RefundRequestVO) => {
+    setSupportingRefund(refund.id)
+    try {
+      const statusLabel = getRefundStatusMeta(refund.status).label
+      const message = [
+        '我需要人工客服协助处理退款问题。',
+        `订单号：${order.orderNo}`,
+        `退款单号：${refund.refundNo}`,
+        `活动：${order.activityName || refund.activityName || refund.orderName || '活动信息待同步'}`,
+        `退款状态：${statusLabel}`,
+        `退款金额：¥${refund.amount.toFixed(2)}`,
+        refund.reason ? `退款原因：${refund.reason}` : null,
+        refund.reviewNote ? `处理备注：${refund.reviewNote}` : null,
+      ].filter(Boolean).join('\n')
+      const conversation = await startSupportConversation({
+        subject: `退款人工客服介入：${order.orderNo}`,
+        initialMessage: message,
+        preferHuman: true,
+      })
+      router.push(`/help?conversationId=${conversation.id}`)
+    } catch (err: unknown) {
+      await globalAlert(err instanceof Error ? err.message : '联系人工客服失败')
+    } finally {
+      setSupportingRefund(null)
+    }
+  }
+
   const handleRefreshPayment = async (orderId: number) => {
     setRefreshing(orderId)
     try {
       const result = await syncAlipayPayment(orderId)
+      captureAnalyticsEvent('omni_payment_sync_result_seen', {
+        result: result.orderStatus === 2 || result.paymentStatus === 1 ? 'paid' : 'pending',
+        source: 'orders',
+      })
       if (result.orderStatus === 2 || result.paymentStatus === 1) {
         setOrders((prev) => prev.map((order) => (order.id === orderId ? { ...order, status: 2 } : order)))
-        setQrPay((current) => (current?.orderId === orderId ? null : current))
+        setPagePay((current) => (current?.orderId === orderId ? null : current))
       } else {
         await globalAlert(result.message || '支付结果确认中')
       }
@@ -308,6 +345,9 @@ export default function OrdersPage() {
       await globalAlert('请先登录后再申请退款')
       return
     }
+    captureAnalyticsEvent('omni_refund_entry_clicked', {
+      source: 'orders',
+    })
     const requestId = refundOptionsRequestIdRef.current + 1
     refundOptionsRequestIdRef.current = requestId
     refundTargetIdRef.current = order.id
@@ -345,6 +385,52 @@ export default function OrdersPage() {
     setSelectedOrderSeatIds([])
     setRefundReason('')
     setRefundReasonType('general')
+  }
+
+  const openReviewDialog = async (order: EnrichedOrder) => {
+    if (!order.activityId) {
+      await globalAlert('该订单缺少活动信息，暂不能评价')
+      return
+    }
+    setReviewTarget(order)
+    setReviewRating(5)
+    setReviewContent('')
+    setReviewImages('')
+  }
+
+  const closeReviewDialog = () => {
+    if (reviewSubmitting) return
+    setReviewTarget(null)
+    setReviewRating(5)
+    setReviewContent('')
+    setReviewImages('')
+  }
+
+  const handleSubmitReview = async () => {
+    if (!reviewTarget?.activityId) return
+    const content = reviewContent.trim()
+    if (!content) {
+      await globalAlert('请填写评价内容')
+      return
+    }
+    setReviewSubmitting(true)
+    try {
+      await createActivityReview(reviewTarget.activityId, {
+        orderId: reviewTarget.id,
+        rating: reviewRating,
+        content,
+        images: reviewImages.trim() || null,
+      })
+      setReviewTarget(null)
+      setReviewRating(5)
+      setReviewContent('')
+      setReviewImages('')
+      await globalAlert('评价已提交，等待平台审核')
+    } catch (err: unknown) {
+      await globalAlert(err instanceof Error ? err.message : '提交评价失败')
+    } finally {
+      setReviewSubmitting(false)
+    }
   }
 
   const refundMap = buildRefundMap(refunds)
@@ -424,6 +510,9 @@ export default function OrdersPage() {
               const latestRefund = refundInfo?.latest
               const lastRefundNote = latestRefund?.reviewNote || latestRefund?.reason
               const refundSupportCopy = getRefundSupportCopy(latestRefund)
+              const latestRefundMeta = latestRefund ? getRefundStatusMeta(latestRefund.status) : null
+              const activeRefundMeta = activeRefund ? getRefundStatusMeta(activeRefund.status) : null
+              const statusMeta = getOrderStatusMeta(order.status)
               return (
                 <div
                   key={order.id}
@@ -438,9 +527,9 @@ export default function OrdersPage() {
                     </div>
                     <span
                       className="inline-flex items-center px-3 py-1 rounded-full text-[12px] font-medium"
-                      style={{ color: (STATUS_MAP[order.status] || STATUS_MAP[3]).color, backgroundColor: (STATUS_MAP[order.status] || STATUS_MAP[3]).bg }}
+                      style={{ color: statusMeta.color, backgroundColor: statusMeta.bg }}
                     >
-                      {(STATUS_MAP[order.status] || STATUS_MAP[3]).label}
+                      {statusMeta.label}
                     </span>
                   </div>
 
@@ -473,7 +562,7 @@ export default function OrdersPage() {
                         <span>{order.venueName || '待定场馆'}</span>
                       </div>
                       <div className="text-[14px] text-gray-500 mt-1 flex items-center gap-3">
-                        <span className="font-medium text-gray-700">{order.ticketName || '未知票档'}</span>
+                        <span className="font-medium text-gray-700">{order.ticketName || '票档信息待同步'}</span>
                         {order.autoDowngraded && (
                           <span className="inline-flex items-center rounded border border-[#ffb3ca] bg-[#fff7fa] px-1.5 py-0.5 text-[11px] font-medium text-[#ff1268]">
                             降级成功
@@ -493,7 +582,7 @@ export default function OrdersPage() {
                         <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-[12px] text-gray-500">
                           <div className="mb-2 flex items-center justify-between gap-3">
                             <span className="font-medium text-gray-700">退款进度</span>
-                            <span style={{ color: REFUND_STATUS_MAP[latestRefund.status].color }}>{REFUND_STATUS_MAP[latestRefund.status].label}</span>
+                            <span style={{ color: latestRefundMeta?.color }}>{latestRefundMeta?.label}</span>
                           </div>
                           <div className="grid gap-2 sm:grid-cols-3">
                             {buildRefundTimeline(latestRefund).map((step) => (
@@ -509,10 +598,11 @@ export default function OrdersPage() {
                           {refundSupportCopy && (
                             <button
                               type="button"
-                              onClick={() => void globalAlert('已记录客服介入请求，客服会根据退款单号与支付流水继续跟进。')}
-                              className="mt-3 cursor-pointer rounded-full border border-[#ff1268] bg-white px-3 py-1.5 text-[12px] font-medium text-[#ff1268] outline-none"
+                              onClick={() => void handleRefundSupport(order, latestRefund)}
+                              disabled={supportingRefund === latestRefund.id}
+                              className="mt-3 cursor-pointer rounded-full border border-[#ff1268] bg-white px-3 py-1.5 text-[12px] font-medium text-[#ff1268] outline-none disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              {refundSupportCopy}
+                              {supportingRefund === latestRefund.id ? '正在联系人工客服...' : refundSupportCopy}
                             </button>
                           )}
                         </div>
@@ -565,12 +655,20 @@ export default function OrdersPage() {
                         </button>
                       ) : order.status === 2 && (
                         <>
+                          {order.activityId && (
+                            <button
+                              onClick={() => void openReviewDialog(order)}
+                              className="cursor-pointer border border-gray-200 bg-white text-gray-600 text-[14px] font-medium px-5 py-2.5 rounded-full outline-none transition-colors hover:border-[#ff1268] hover:text-[#ff1268]"
+                            >
+                              评价演出
+                            </button>
+                          )}
                           {activeRefund ? (
                             <span
                               className="text-[13px] text-center font-medium bg-gray-50 py-2 rounded-full border border-gray-100"
-                              style={{ color: REFUND_STATUS_MAP[activeRefund.status].color }}
+                              style={{ color: activeRefundMeta?.color }}
                             >
-                              {REFUND_STATUS_MAP[activeRefund.status].label}
+                              {activeRefundMeta?.label}
                             </span>
                           ) : (
                             <button
@@ -582,13 +680,21 @@ export default function OrdersPage() {
                           )}
                           {latestRefund && !activeRefund && (latestRefund.status === 2 || latestRefund.status === 3) && (
                             <span className="text-[12px] text-gray-400 leading-relaxed text-center mt-2 px-2">
-                              上次{REFUND_STATUS_MAP[latestRefund.status].label.replace('退款', '')}：<br/>{lastRefundNote || '暂无备注'}
+                              上次{latestRefundMeta?.label.replace('退款', '')}：<br/>{lastRefundNote || '暂无备注'}
                             </span>
                           )}
                         </>
                       )}
                       {activeTab !== 'trash' && (order.status === 3 || order.status === 4) && (
                         <>
+                          {order.status === 4 && order.activityId && (
+                            <button
+                              onClick={() => void openReviewDialog(order)}
+                              className="cursor-pointer border border-gray-200 bg-white text-gray-600 text-[14px] font-medium px-5 py-2.5 rounded-full outline-none transition-colors hover:border-[#ff1268] hover:text-[#ff1268]"
+                            >
+                              评价演出
+                            </button>
+                          )}
                           <button
                             onClick={() => handleHide(order.id)}
                             disabled={hiding === order.id}
@@ -616,14 +722,15 @@ export default function OrdersPage() {
           </div>
         )}
       </main>
-      {qrPay && (
+      {pagePay && (
         <AlipayQrPayModal
-          pay={qrPay}
-          productName={orders.find((order) => order.id === qrPay.orderId)?.activityName || '万象票务订单'}
-          onClose={() => setQrPay(null)}
+          pay={pagePay}
+          productName={orders.find((order) => order.id === pagePay.orderId)?.activityName || '万象票务订单'}
+          amount={orders.find((order) => order.id === pagePay.orderId)?.amount ?? null}
+          onClose={() => setPagePay(null)}
           onPaid={(result) => {
             setOrders((prev) => prev.map((order) => (order.id === result.orderId ? { ...order, status: 2 } : order)))
-            setQrPay(null)
+            setPagePay(null)
           }}
         />
       )}
@@ -761,6 +868,63 @@ export default function OrdersPage() {
                 style={{ opacity: refundSubmitting || refundOptionsLoading || !refundOptions || refundOptions.refundableQuantity <= 0 || (refundHasSeats && selectedOrderSeatIds.length === 0) ? 0.7 : 1 }}
               >
                 {refundSubmitting ? '提交中...' : '确认申请'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {reviewTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
+          <div className="w-full max-w-[460px] rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="mb-2 text-[18px] font-medium text-[#111]">评价演出</h2>
+            <p className="mb-4 text-[13px] leading-5 text-[#666]">
+              {reviewTarget.activityName}<br />
+              订单号：{reviewTarget.orderNo}
+            </p>
+            <div className="mb-4 flex items-center gap-2">
+              {Array.from({ length: 5 }).map((_, index) => {
+                const value = index + 1
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setReviewRating(value)}
+                    className="text-[#ff1268]"
+                    title={`${value}星`}
+                  >
+                    <Star className={`h-5 w-5 ${value <= reviewRating ? 'fill-[#ff1268]' : ''}`} />
+                  </button>
+                )
+              })}
+            </div>
+            <textarea
+              value={reviewContent}
+              onChange={event => setReviewContent(event.target.value)}
+              placeholder="写下观演体验、入场动线、座位视野等感受"
+              className="mb-3 h-24 w-full resize-none rounded-lg border border-[#e5e5e5] bg-white p-3 text-[13px] outline-none focus:border-[#ff1268]"
+            />
+            <input
+              value={reviewImages}
+              onChange={event => setReviewImages(event.target.value)}
+              placeholder="图片地址，可选，多个用英文逗号分隔"
+              className="mb-5 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[13px] outline-none focus:border-[#ff1268]"
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeReviewDialog}
+                disabled={reviewSubmitting}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] text-gray-600 disabled:opacity-60"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSubmitReview()}
+                disabled={reviewSubmitting}
+                className="rounded-lg border border-[#ff1268] bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-60"
+              >
+                {reviewSubmitting ? '提交中...' : '提交审核'}
               </button>
             </div>
           </div>

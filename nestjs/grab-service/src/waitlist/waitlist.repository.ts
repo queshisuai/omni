@@ -24,10 +24,15 @@ export class WaitlistRepository {
     return { entry, rank };
   }
 
-  async listByUser(userId: number): Promise<Array<WaitlistEntryRecord & { rank: number | null }>> {
+  async listByUser(userId: number, limit?: number): Promise<Array<WaitlistEntryRecord & { rank: number | null }>> {
+    const params: Array<number> = [userId];
+    const limitClause = Number.isInteger(limit) && limit >= 0 ? ' limit $2' : '';
+    if (limitClause) {
+      params.push(limit as number);
+    }
     const result = await this.database.query(
-      `select * from waitlist_entry where user_id = $1 order by create_time desc, id desc`,
-      [userId],
+      `select * from waitlist_entry where user_id = $1 order by create_time desc, id desc${limitClause}`,
+      params,
     );
     const entries = result.rows.map((row) => this.mapEntry(row));
     return Promise.all(entries.map(async (entry) => ({

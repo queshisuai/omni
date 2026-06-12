@@ -8,6 +8,7 @@ import com.alipay.api.request.AlipayTradeRefundRequest;
 import com.alipay.api.response.AlipayTradeRefundResponse;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.omni.common.dto.InternalAuthContextResponse;
+import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.payment.client.OrderClient;
@@ -27,6 +28,7 @@ import com.omni.payment.entity.Payment;
 import com.omni.payment.entity.RefundRequest;
 import com.omni.payment.mapper.PaymentMapper;
 import com.omni.payment.mapper.RefundRequestMapper;
+import com.omni.payment.mq.NotificationMqProducer;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.AfterEach;
@@ -50,6 +52,7 @@ class RefundServiceBoundaryTest {
     private UserInternalClient userInternalClient;
     private TicketRefundReviewInternalClient ticketRefundReviewInternalClient;
     private AlipayClient alipayClient;
+    private NotificationMqProducer notificationProducer;
     private RefundService service;
 
     @BeforeEach
@@ -61,9 +64,11 @@ class RefundServiceBoundaryTest {
         userInternalClient = mock(UserInternalClient.class);
         ticketRefundReviewInternalClient = mock(TicketRefundReviewInternalClient.class);
         alipayClient = mock(AlipayClient.class);
+        notificationProducer = mock(NotificationMqProducer.class);
         service = new RefundService(
                 alipayProperties(), orderClient, refundRequestMapper, paymentMapper,
-                userInternalClient, ticketRefundReviewInternalClient, "test-internal-token", () -> alipayClient);
+                userInternalClient, ticketRefundReviewInternalClient, notificationProducer,
+                "test-internal-token", () -> alipayClient);
     }
 
     @AfterEach
@@ -310,26 +315,170 @@ class RefundServiceBoundaryTest {
     }
 
     @Test
+    void rejectRefundPublishesRejectedNotificationEvent() {
+        Long refundId = 610L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("100.00"), 0);
+        pending.setUserId(2004L);
+        pending.setRefundNo("RF-REJECT-1");
+        pending.setRefundType("full");
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, rejectedRefund(refundId, 10L, 2004L, "RF-REJECT-1"));
+        OrderInfoResponse order = order(10L, "DM-TEST-610", new BigDecimal("100.00"), 2);
+        order.setUserId(2004L);
+        order.setActivityId(5001L);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+
+        service.reject(refundId, reviewerId, "材料不符合退款规则");
+
+        NotificationEventMessage event = captureRefundEvent();
+        assertRefundEvent(event, "REFUND_REJECTED", refundId, 10L, 2004L, 5001L);
+    }
+
+    @Test
+    void approveRefundPublishesApprovedNotificationEvent() throws Exception {
+        Long refundId = 611L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("100.00"), 0);
+        pending.setUserId(2004L);
+        pending.setPaymentId(90L);
+        pending.setRefundNo("RF-APPROVE-1");
+        pending.setRefundType("full");
+        RefundRequest processing = refund(refundId, 10L, new BigDecimal("100.00"), 4);
+        processing.setUserId(2004L);
+        processing.setPaymentId(90L);
+        processing.setRefundNo("RF-APPROVE-1");
+        processing.setRefundType("full");
+        RefundRequest succeeded = refund(refundId, 10L, new BigDecimal("100.00"), 1);
+        succeeded.setUserId(2004L);
+        succeeded.setPaymentId(90L);
+        succeeded.setRefundNo("RF-APPROVE-1");
+        succeeded.setRefundType("full");
+        succeeded.setAlipayRefundNo("ALI-REFUND-611");
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, processing, succeeded);
+        OrderInfoResponse order = order(10L, "DM-TEST-611", new BigDecimal("100.00"), 2);
+        order.setUserId(2004L);
+        order.setActivityId(5002L);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+        when(orderClient.markRefunded(10L, "test-internal-token")).thenReturn(Result.success(order));
+        AlipayTradeRefundResponse alipayResponse = mock(AlipayTradeRefundResponse.class);
+        when(alipayResponse.isSuccess()).thenReturn(true);
+        when(alipayResponse.getTradeNo()).thenReturn("ALI-REFUND-611");
+        when(alipayResponse.getBody()).thenReturn("{\"ok\":true}");
+        when(alipayClient.execute(any(AlipayTradeRefundRequest.class))).thenReturn(alipayResponse);
+
+        service.approve(refundId, reviewerId, "同意退款");
+
+        NotificationEventMessage event = captureRefundEvent();
+        assertRefundEvent(event, "REFUND_APPROVED", refundId, 10L, 2004L, 5002L);
+    }
+
+    @Test
+    void approveRefundPublishesUnknownNotificationEventWhenAlipayResponseIsNull() throws Exception {
+        Long refundId = 612L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("100.00"), 0);
+        pending.setUserId(2004L);
+        pending.setPaymentId(90L);
+        pending.setRefundNo("RF-UNKNOWN-1");
+        pending.setRefundType("full");
+        RefundRequest processing = refund(refundId, 10L, new BigDecimal("100.00"), 4);
+        processing.setUserId(2004L);
+        processing.setPaymentId(90L);
+        processing.setRefundNo("RF-UNKNOWN-1");
+        processing.setRefundType("full");
+        RefundRequest unknown = refund(refundId, 10L, new BigDecimal("100.00"), 4);
+        unknown.setUserId(2004L);
+        unknown.setPaymentId(90L);
+        unknown.setRefundNo("RF-UNKNOWN-1");
+        unknown.setRefundType("full");
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, processing, unknown);
+        OrderInfoResponse order = order(10L, "DM-TEST-612", new BigDecimal("100.00"), 2);
+        order.setUserId(2004L);
+        order.setActivityId(5003L);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+        when(alipayClient.execute(any(AlipayTradeRefundRequest.class))).thenReturn(null);
+
+        service.approve(refundId, reviewerId, "同意退款");
+
+        NotificationEventMessage event = captureRefundEvent();
+        assertRefundEvent(event, "REFUND_UNKNOWN", refundId, 10L, 2004L, 5003L);
+        verify(orderClient, never()).markRefunded(anyLong(), anyString());
+    }
+
+    @Test
+    void approveRefundPublishesCompensationRequiredNotificationEventWhenOrderUpdateFailsAfterAlipaySuccess() throws Exception {
+        Long refundId = 613L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("100.00"), 0);
+        pending.setUserId(2004L);
+        pending.setPaymentId(90L);
+        pending.setRefundNo("RF-COMP-1");
+        pending.setRefundType("full");
+        RefundRequest processing = refund(refundId, 10L, new BigDecimal("100.00"), 4);
+        processing.setUserId(2004L);
+        processing.setPaymentId(90L);
+        processing.setRefundNo("RF-COMP-1");
+        processing.setRefundType("full");
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, processing);
+        OrderInfoResponse order = order(10L, "DM-TEST-613", new BigDecimal("100.00"), 2);
+        order.setUserId(2004L);
+        order.setActivityId(5004L);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+        when(orderClient.markRefunded(10L, "test-internal-token")).thenReturn(Result.fail(500, "order failed"));
+        AlipayTradeRefundResponse alipayResponse = mock(AlipayTradeRefundResponse.class);
+        when(alipayResponse.isSuccess()).thenReturn(true);
+        when(alipayResponse.getTradeNo()).thenReturn("ALI-REFUND-613");
+        when(alipayResponse.getBody()).thenReturn("{\"ok\":true}");
+        when(alipayClient.execute(any(AlipayTradeRefundRequest.class))).thenReturn(alipayResponse);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.approve(refundId, reviewerId, "同意退款"));
+
+        assertTrue(error.getMessage().contains("人工"));
+        NotificationEventMessage event = captureRefundEvent();
+        assertRefundEvent(event, "COMPENSATION_REQUIRED", refundId, 10L, 2004L, 5004L);
+    }
+
+    @Test
     void approvePartialRefundMarksFailedWhenOrderUpdateFailsAfterAlipaySuccess() throws Exception {
         Long refundId = 501L;
         Long reviewerId = 2002L;
         RefundRequest pending = refund(refundId, 10L, new BigDecimal("380.00"), 0);
+        pending.setUserId(2004L);
         pending.setPaymentId(90L);
         pending.setRefundNo("RF-PARTIAL-2");
         pending.setRefundType("partial");
         pending.setQuantity(1);
         RefundRequest processing = refund(refundId, 10L, new BigDecimal("380.00"), 4);
+        processing.setUserId(2004L);
         processing.setPaymentId(90L);
         processing.setRefundNo("RF-PARTIAL-2");
         processing.setRefundType("partial");
         processing.setQuantity(1);
         RefundRequest failed = refund(refundId, 10L, new BigDecimal("380.00"), 3);
+        failed.setUserId(2004L);
         failed.setPaymentId(90L);
         failed.setRefundNo("RF-PARTIAL-2");
         failed.setRefundType("partial");
         failed.setQuantity(1);
         when(refundRequestMapper.selectById(refundId)).thenReturn(pending, processing, failed);
         OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("760.00"), 2);
+        order.setUserId(2004L);
         when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
         when(orderClient.getRefundOptions(10L, "test-internal-token"))
                 .thenReturn(Result.success(refundOptions(10L, 2, 0, 2, new BigDecimal("380.00"))));
@@ -415,9 +564,11 @@ class RefundServiceBoundaryTest {
         String reviewNote = "退款理由不充分";
 
         RefundRequest pending = refund(refundId, 10L, new BigDecimal("100.00"), 0);
+        pending.setUserId(2004L);
         when(refundRequestMapper.selectById(refundId)).thenReturn(pending);
 
         OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("100.00"), 2);
+        order.setUserId(2004L);
         when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
 
         InternalUserRefResponse adminUser = new InternalUserRefResponse();
@@ -429,6 +580,7 @@ class RefundServiceBoundaryTest {
         when(refundRequestMapper.update(any(), any())).thenReturn(1);
 
         RefundRequest rejected = refund(refundId, 10L, new BigDecimal("100.00"), 2);
+        rejected.setUserId(2004L);
         rejected.setReviewerId(reviewerId);
         rejected.setReviewNote(reviewNote);
         rejected.setReviewTime(LocalDateTime.now());
@@ -450,9 +602,11 @@ class RefundServiceBoundaryTest {
         String reviewNote = "同意退款";
 
         RefundRequest pending = refund(refundId, 10L, new BigDecimal("100.00"), 0);
+        pending.setUserId(2004L);
         when(refundRequestMapper.selectById(refundId)).thenReturn(pending);
 
         OrderInfoResponse order = order(10L, "DM-TEST-001", new BigDecimal("100.00"), 2);
+        order.setUserId(2004L);
         order.setSessionId(3001L);
         when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
 
@@ -473,6 +627,7 @@ class RefundServiceBoundaryTest {
         when(refundRequestMapper.update(any(), any())).thenReturn(1);
 
         RefundRequest rejected = refund(refundId, 10L, new BigDecimal("100.00"), 2);
+        rejected.setUserId(2004L);
         rejected.setReviewerId(reviewerId);
         rejected.setReviewNote(reviewNote);
         rejected.setReviewTime(LocalDateTime.now());
@@ -592,6 +747,37 @@ class RefundServiceBoundaryTest {
         r.setAmount(amount);
         r.setStatus(status);
         return r;
+    }
+
+    private RefundRequest rejectedRefund(Long id, Long orderId, Long userId, String refundNo) {
+        RefundRequest rejected = refund(id, orderId, new BigDecimal("100.00"), 2);
+        rejected.setUserId(userId);
+        rejected.setRefundNo(refundNo);
+        rejected.setRefundType("full");
+        return rejected;
+    }
+
+    private NotificationEventMessage captureRefundEvent() {
+        ArgumentCaptor<NotificationEventMessage> captor = ArgumentCaptor.forClass(NotificationEventMessage.class);
+        verify(notificationProducer).sendNotificationEvent(captor.capture());
+        return captor.getValue();
+    }
+
+    private void assertRefundEvent(NotificationEventMessage event, String eventType, Long refundId,
+                                   Long orderId, Long userId, Long activityId) {
+        assertNotNull(event.getEventId());
+        assertTrue(event.getEventId().contains(String.valueOf(refundId)));
+        assertEquals(eventType, event.getEventType());
+        assertEquals(eventType + ":" + refundId, event.getAggregateKey());
+        assertEquals(userId, event.getUserId());
+        assertEquals(orderId, event.getOrderId());
+        assertEquals(activityId, event.getActivityId());
+        assertEquals(List.of("IN_APP", "SMS"), event.getChannels());
+        assertEquals("/orders/" + orderId, event.getActionHref());
+        assertEquals("查看订单", event.getActionLabel());
+        assertNotNull(event.getContent());
+        assertEquals(refundId, event.getPayload().get("refundId"));
+        assertEquals(orderId, event.getPayload().get("orderId"));
     }
 
     private OrderInfoResponse order(Long id, String orderNo, BigDecimal amount, Integer status) {

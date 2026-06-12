@@ -35,7 +35,7 @@ export default function VenueSeatTemplatePage() {
 
   useEffect(() => {
     if (!Number.isInteger(venueId) || venueId <= 0) {
-      setError('场馆ID不正确')
+      setError('场馆编号不正确')
       setLoading(false)
       return
     }
@@ -56,7 +56,7 @@ export default function VenueSeatTemplatePage() {
     getVenueDefaultLayout(venueId)
       .then(response => {
         if (cancelled) return
-        setLayout(response ? toSeatCraftLayoutDraft(response) : createDefaultLayout(`场馆 #${venueId} SeatCraft 座位图`))
+        setLayout(response ? toSeatCraftLayoutDraft(response) : createDefaultLayout(`场馆编号：${venueId} SeatCraft 座位图`))
         setError('')
       })
       .catch(err => {

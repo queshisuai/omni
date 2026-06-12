@@ -1,10 +1,10 @@
 package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.common.mq.MqPublishSupport;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
-import com.omni.common.mq.message.NotificationMessage;
 import com.omni.user.mq.NotificationMqProducer;
 import com.omni.user.dto.SupportAuditResponse;
 import com.omni.user.dto.SupportCloseRejectRequest;
@@ -379,7 +379,7 @@ public class CustomerSupportService {
         touch(conversation);
         conversationMapper.updateById(conversation);
         if ("AGENT".equals(senderType)) {
-            notifySupportReply(conversation);
+            notifySupportReply(conversation, message);
         }
 
         if ("USER".equals(senderType) && SOURCE_AI.equals(conversation.getSourceType()) && conversation.getAssignedAgentId() == null) {
@@ -764,8 +764,16 @@ public class CustomerSupportService {
             }
 
             sendSseEvent(emitter, "thinking", eventPayload("message", "客服正在思考"));
-            String answer = supportAiService.answerStreaming(question, chunk ->
+            SupportAiService.AnswerDiagnostics diagnostics = supportAiService.answerStreamingWithDiagnostics(question, chunk ->
                     sendSseEvent(emitter, "delta", eventPayload("content", chunk)));
+            log.info("客服 AI 流式回复耗时: conversationId={}, source={}, modelAttempted={}, fallbackReason={}, firstChunkMs={}, totalMs={}",
+                    conversationId,
+                    diagnostics.getSource(),
+                    diagnostics.isModelAttempted(),
+                    diagnostics.getFallbackReason(),
+                    diagnostics.getFirstChunkMillis(),
+                    diagnostics.getTotalMillis());
+            String answer = diagnostics.getAnswer();
 
             SupportConversation conversation = conversationMapper.selectById(conversationId);
             SupportMessageResponse assistantMessage = null;
@@ -827,23 +835,36 @@ public class CustomerSupportService {
         conversation.setUpdateTime(now == null ? LocalDateTime.now() : now);
     }
 
-    private void notifySupportReply(SupportConversation conversation) {
+    private void notifySupportReply(SupportConversation conversation, SupportMessage replyMessage) {
         if (conversation == null || conversation.getUserId() == null || notificationProducer == null) {
             return;
         }
         if (isUserViewingHelp(conversation.getUserId(), LocalDateTime.now())) {
             return;
         }
+        if (replyMessage == null || replyMessage.getId() == null) {
+            log.warn("客服回复通知缺少消息ID，跳过事件发送: conversationId={}, userId={}",
+                    conversation.getId(), conversation.getUserId());
+            return;
+        }
         try {
-            NotificationMessage message = new NotificationMessage(
-                    conversation.getUserId(),
-                    null,
-                    "SUPPORT_REPLY",
-                    "人工客服回复了你的咨询，请查看客服会话。");
+            NotificationEventMessage message = new NotificationEventMessage();
+            message.setEventId("support-reply:" + conversation.getId() + ":" + replyMessage.getId());
+            message.setEventType("SUPPORT_REPLY");
+            message.setAggregateKey("SUPPORT_REPLY:" + conversation.getId());
+            message.setUserId(conversation.getUserId());
+            message.setChannels(List.of("IN_APP"));
+            message.setContent("人工客服回复了你的咨询，请查看客服会话。");
             message.setActionHref("/help");
             message.setActionLabel("查看客服会话");
-            message.setAggregateKey("SUPPORT_REPLY:" + conversation.getId());
-            notificationProducer.sendNotification(message);
+            LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+            payload.put("conversationId", conversation.getId());
+            payload.put("messageId", replyMessage.getId());
+            message.setPayload(payload);
+            if (replyMessage != null && replyMessage.getCreateTime() != null) {
+                message.setOccurredAt(replyMessage.getCreateTime());
+            }
+            notificationProducer.sendNotificationEvent(message);
         } catch (RuntimeException e) {
             log.warn("客服回复通知发送失败: conversationId={}, userId={}, message={}",
                     conversation.getId(), conversation.getUserId(), e.getMessage());

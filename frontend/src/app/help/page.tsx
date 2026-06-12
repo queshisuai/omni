@@ -18,12 +18,18 @@ import {
   startSupportConversation,
 } from '@/lib/api'
 import { getToken, getUser } from '@/lib/auth'
-import { buildSupportSubject, canRequestSupportHandoff, formatSupportConversationStatus, formatSupportMessageSender, isSupportHelpConversationPath, pickDefaultUserSupportConversation, shouldPollSupportConversation } from '@/lib/support-tools'
+import { buildSupportSubject, canRequestSupportHandoff, formatSupportConversationStatus, formatSupportHandoffActionLabel, formatSupportMessageSender, isSupportHelpConversationPath, pickDefaultUserSupportConversation, shouldPollSupportConversation } from '@/lib/support-tools'
 import type { HelpFaqVO, SupportConversationVO, SupportMessageVO } from '@/types/api'
 
 export default function HelpPage() {
   const pathname = usePathname()
   const inSupportWindow = isSupportHelpConversationPath(pathname)
+  const preferredConversationId = useMemo(() => {
+    if (typeof window === 'undefined') return null
+    const raw = new URLSearchParams(window.location.search).get('conversationId')
+    const id = raw ? Number(raw) : 0
+    return Number.isSafeInteger(id) && id > 0 ? id : null
+  }, [pathname])
   const [faqs, setFaqs] = useState<HelpFaqVO[]>([])
   const [conversation, setConversation] = useState<SupportConversationVO | null>(null)
   const [messages, setMessages] = useState<SupportMessageVO[]>([])
@@ -47,9 +53,9 @@ export default function HelpPage() {
       .then(setFaqs)
       .catch(() => setFaqs([]))
     if (hasToken) {
-      loadMyConversation(null, uid).catch(() => undefined)
+      loadMyConversation(preferredConversationId, uid).catch(() => undefined)
     }
-  }, [])
+  }, [preferredConversationId])
 
   const groupedFaqs = useMemo(() => {
     const map = new Map<string, HelpFaqVO[]>()
@@ -428,7 +434,7 @@ export default function HelpPage() {
                 disabled={loading || !canRequestSupportHandoff(conversation)}
                 className="mt-3 w-full rounded-xl border border-gray-200 py-2.5 text-[13px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {conversation?.status === 'WAITING_AGENT' ? '人工介入请等待' : conversation?.status === 'ASSIGNED' ? '人工客服处理中' : conversation?.status === 'CLOSE_REQUESTED' ? '等待你确认是否结束' : '转人工客服'}
+                {formatSupportHandoffActionLabel(conversation?.status)}
               </button>
               {conversation?.status === 'CLOSE_REQUESTED' && (
                 <button

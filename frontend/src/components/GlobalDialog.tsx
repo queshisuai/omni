@@ -17,39 +17,69 @@ type DialogOptions = {
   onCancel?: () => void
 }
 
-let dialogFn: ((options: DialogOptions) => void) | null = null
+type DialogPresenter = (options: DialogOptions) => void
+
+let dialogFn: DialogPresenter | null = null
+let dialogQueue: DialogOptions[] = []
+let isDialogActive = false
+
+function flushDialogQueue() {
+  if (!dialogFn || isDialogActive) return
+
+  const next = dialogQueue.shift()
+  if (!next) return
+
+  const { onConfirm, onCancel } = next
+  isDialogActive = true
+
+  dialogFn({
+    ...next,
+    onConfirm: (value) => {
+      try {
+        onConfirm?.(value)
+      } finally {
+        isDialogActive = false
+        flushDialogQueue()
+      }
+    },
+    onCancel: () => {
+      try {
+        onCancel?.()
+      } finally {
+        isDialogActive = false
+        flushDialogQueue()
+      }
+    },
+  })
+}
+
+function openGlobalDialog(options: DialogOptions) {
+  dialogQueue.push(options)
+  flushDialogQueue()
+}
 
 export const globalAlert = (contentOrOpts: string | DialogOptions, title = '提示') => {
   return new Promise<void>((resolve) => {
-    if (dialogFn) {
-      const opts = typeof contentOrOpts === 'string'
-        ? { type: 'alert' as const, title, content: contentOrOpts }
-        : { type: 'alert' as const, ...contentOrOpts }
-      dialogFn({
-        ...opts,
-        onConfirm: () => resolve(),
-      })
-    } else {
-      window.alert(typeof contentOrOpts === 'string' ? contentOrOpts : contentOrOpts.content)
-      resolve()
-    }
+    const opts = typeof contentOrOpts === 'string'
+      ? { type: 'alert' as const, title, content: contentOrOpts }
+      : { type: 'alert' as const, ...contentOrOpts }
+    openGlobalDialog({
+      ...opts,
+      onConfirm: () => resolve(),
+    })
   })
 }
 
 export const globalConfirm = (contentOrOpts: string | DialogOptions, title = '确认操作') => {
   return new Promise<boolean>((resolve) => {
-    if (dialogFn) {
-      const opts = typeof contentOrOpts === 'string'
-        ? { type: 'confirm' as const, title, content: contentOrOpts }
-        : { type: 'confirm' as const, ...contentOrOpts }
-      dialogFn({
-        ...opts,
-        onConfirm: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
-    } else {
-      resolve(window.confirm(typeof contentOrOpts === 'string' ? contentOrOpts : contentOrOpts.content))
-    }
+    const opts = typeof contentOrOpts === 'string'
+      ? { type: 'confirm' as const, title, content: contentOrOpts }
+      : { type: 'confirm' as const, ...contentOrOpts }
+    openGlobalDialog({
+      ...opts,
+      onConfirm: () => resolve(true),
+      onCancel: () => resolve(false),
+    })
   })
 }
 
@@ -60,19 +90,14 @@ export const globalPrompt = (
   defaultValue = ''
 ) => {
   return new Promise<string | null>((resolve) => {
-    if (dialogFn) {
-      const opts = typeof contentOrOpts === 'string'
-        ? { type: 'reason' as const, title, content: contentOrOpts, placeholder, defaultValue }
-        : { type: 'reason' as const, ...contentOrOpts }
-      dialogFn({
-        ...opts,
-        onConfirm: (val) => resolve(val || ''),
-        onCancel: () => resolve(null),
-      })
-    } else {
-      const text = typeof contentOrOpts === 'string' ? contentOrOpts : contentOrOpts.content
-      resolve(window.prompt(text, defaultValue))
-    }
+    const opts = typeof contentOrOpts === 'string'
+      ? { type: 'reason' as const, title, content: contentOrOpts, placeholder, defaultValue }
+      : { type: 'reason' as const, ...contentOrOpts }
+    openGlobalDialog({
+      ...opts,
+      onConfirm: (val) => resolve(val || ''),
+      onCancel: () => resolve(null),
+    })
   })
 }
 
@@ -87,8 +112,10 @@ export function GlobalDialog() {
       setInputValue(opts.defaultValue || '')
       setIsOpen(true)
     }
+    flushDialogQueue()
     return () => {
       dialogFn = null
+      isDialogActive = false
     }
   }, [])
 

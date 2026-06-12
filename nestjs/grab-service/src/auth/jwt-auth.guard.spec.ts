@@ -42,7 +42,7 @@ describe('JwtAuthGuard', () => {
     expect(() => guard.canActivate(context as any)).toThrow(UnauthorizedException);
   });
 
-  it('accepts the shared local default secret when JWT_SECRET is not set', () => {
+  it('rejects requests when JWT_SECRET is not set', () => {
     delete process.env.JWT_SECRET;
     const token = jwt.sign(
       { userId: 2002, phone: '13800000000', role: 'platform_super_admin' },
@@ -52,7 +52,7 @@ describe('JwtAuthGuard', () => {
     const context = contextWithAuthorization(`Bearer ${token}`);
     const guard = new JwtAuthGuard();
 
-    expect(guard.canActivate(context as any)).toBe(true);
-    expect(context.request.user.role).toBe('platform_super_admin');
+    expect(() => guard.canActivate(context as any)).toThrow(UnauthorizedException);
+    expect(context.request.user).toBeUndefined();
   });
 });

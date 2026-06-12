@@ -1,4 +1,4 @@
-import { Category } from "@/types/damai";
+import { Category } from "@/types/omni";
 
 interface CategoryNavProps {
   categories: Category[];

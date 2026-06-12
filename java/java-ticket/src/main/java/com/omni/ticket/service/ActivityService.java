@@ -10,6 +10,10 @@ import com.omni.ticket.dto.ActivityVO;
 import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
+import com.omni.ticket.search.ActivitySearchProvider;
+import com.omni.ticket.search.ActivitySearchRequest;
+import com.omni.ticket.search.DbActivitySearchProvider;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -39,6 +43,7 @@ public class ActivityService {
     private final TourMapper tourMapper;
     private final StationMapper stationMapper;
     private final SessionSeatMapper sessionSeatMapper;
+    private final ActivitySearchProvider activitySearchProvider;
 
     public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
                              ArtistMapper artistMapper, SessionMapper sessionMapper,
@@ -64,7 +69,6 @@ public class ActivityService {
                 activityArtistService, tourMapper, stationMapper, null);
     }
 
-    @Autowired
     public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
                             ArtistMapper artistMapper, SessionMapper sessionMapper,
                             VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
@@ -72,6 +76,18 @@ public class ActivityService {
                             TourMapper tourMapper,
                             StationMapper stationMapper,
                             SessionSeatMapper sessionSeatMapper) {
+        this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper,
+                activityArtistService, tourMapper, stationMapper, sessionSeatMapper, (ActivitySearchProvider) null);
+    }
+
+    public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
+                            ArtistMapper artistMapper, SessionMapper sessionMapper,
+                            VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
+                            ActivityArtistService activityArtistService,
+                            TourMapper tourMapper,
+                            StationMapper stationMapper,
+                            SessionSeatMapper sessionSeatMapper,
+                            ActivitySearchProvider activitySearchProvider) {
         this.activityMapper = activityMapper;
         this.categoryMapper = categoryMapper;
         this.artistMapper = artistMapper;
@@ -82,6 +98,23 @@ public class ActivityService {
         this.tourMapper = tourMapper;
         this.stationMapper = stationMapper;
         this.sessionSeatMapper = sessionSeatMapper;
+        this.activitySearchProvider = activitySearchProvider == null
+                ? new DbActivitySearchProvider(this::listActivities)
+                : activitySearchProvider;
+    }
+
+    @Autowired
+    public ActivityService(ActivityMapper activityMapper, CategoryMapper categoryMapper,
+                            ArtistMapper artistMapper, SessionMapper sessionMapper,
+                            VenueMapper venueMapper, TicketTypeMapper ticketTypeMapper,
+                            ActivityArtistService activityArtistService,
+                            TourMapper tourMapper,
+                            StationMapper stationMapper,
+                            SessionSeatMapper sessionSeatMapper,
+                            ObjectProvider<ActivitySearchProvider> activitySearchProvider) {
+        this(activityMapper, categoryMapper, artistMapper, sessionMapper, venueMapper, ticketTypeMapper,
+                activityArtistService, tourMapper, stationMapper, sessionSeatMapper,
+                activitySearchProvider == null ? null : activitySearchProvider.getIfAvailable());
     }
 
     /**
@@ -215,80 +248,21 @@ public class ActivityService {
                                              Boolean seatMapOnly,
                                              Boolean realNameRequired,
                                              String sort) {
-        int safePage = page == null || page <= 0 ? 1 : page;
-        int safeSize = size == null || size <= 0 ? 10 : size;
-        int fetchSize = Math.max(safeSize * safePage, safeSize);
-        Page<ActivityVO> source = listActivities(1, fetchSize, categoryId);
-        List<ActivityVO> filtered = source.getRecords().stream()
-                .filter(vo -> matchesKeyword(vo, keyword))
-                .filter(vo -> matchesCity(vo, city))
-                .filter(vo -> matchesDate(vo, dateFrom, dateTo))
-                .filter(vo -> matchesPrice(vo, minPrice, maxPrice))
-                .filter(vo -> matchesSaleStatus(vo, saleStatus))
-                .filter(vo -> !Boolean.TRUE.equals(seatMapOnly) || "published".equals(vo.getSeatMapVisibility()))
-                .filter(vo -> realNameRequired == null || Boolean.valueOf(realNameRequired).equals(Boolean.TRUE.equals(vo.getRealNameRequired())))
-                .collect(Collectors.toList());
-        filtered.sort(searchComparator(sort));
-        int from = Math.min((safePage - 1) * safeSize, filtered.size());
-        int to = Math.min(from + safeSize, filtered.size());
-        Page<ActivityVO> result = new Page<>(safePage, safeSize, filtered.size());
-        result.setRecords(new ArrayList<>(filtered.subList(from, to)));
-        result.setTotal(filtered.size());
-        result.setPages((filtered.size() + safeSize - 1L) / safeSize);
-        return result;
-    }
-
-    private boolean matchesKeyword(ActivityVO vo, String keyword) {
-        if (!StringUtils.hasText(keyword)) return true;
-        String normalized = keyword.trim().toLowerCase(Locale.ROOT);
-        return containsText(vo.getName(), normalized)
-                || containsText(vo.getArtistName(), normalized)
-                || containsText(vo.getVenueCity(), normalized)
-                || containsText(vo.getCategoryName(), normalized);
-    }
-
-    private boolean matchesCity(ActivityVO vo, String city) {
-        return !StringUtils.hasText(city) || containsText(vo.getVenueCity(), city.trim().toLowerCase(Locale.ROOT));
-    }
-
-    private boolean matchesDate(ActivityVO vo, LocalDate dateFrom, LocalDate dateTo) {
-        if (dateFrom == null && dateTo == null) return true;
-        if (vo.getStartTime() == null) return false;
-        LocalDate date = vo.getStartTime().toLocalDate();
-        if (dateFrom != null && date.isBefore(dateFrom)) return false;
-        return dateTo == null || !date.isAfter(dateTo);
-    }
-
-    private boolean matchesPrice(ActivityVO vo, BigDecimal minPrice, BigDecimal maxPrice) {
-        if (minPrice == null && maxPrice == null) return true;
-        if (vo.getMinPrice() == null) return false;
-        if (minPrice != null && vo.getMinPrice().compareTo(minPrice) < 0) return false;
-        return maxPrice == null || vo.getMinPrice().compareTo(maxPrice) <= 0;
-    }
-
-    private boolean matchesSaleStatus(ActivityVO vo, String saleStatus) {
-        if (!StringUtils.hasText(saleStatus)) return true;
-        String normalized = saleStatus.trim().toLowerCase(Locale.ROOT);
-        if ("on_sale".equals(normalized)) return Integer.valueOf(1).equals(vo.getStatus());
-        if ("coming_soon".equals(normalized)) return Integer.valueOf(2).equals(vo.getStatus()) || vo.getMinPrice() == null;
-        if ("sold_out".equals(normalized)) return Integer.valueOf(0).equals(vo.getStatus()) || Integer.valueOf(3).equals(vo.getStatus());
-        return true;
-    }
-
-    private Comparator<ActivityVO> searchComparator(String sort) {
-        String normalized = StringUtils.hasText(sort) ? sort.trim().toLowerCase(Locale.ROOT) : "";
-        Comparator<ActivityVO> byStart = Comparator.comparing(ActivityVO::getStartTime, Comparator.nullsLast(Comparator.naturalOrder()));
-        Comparator<ActivityVO> byPrice = Comparator.comparing(ActivityVO::getMinPrice, Comparator.nullsLast(Comparator.naturalOrder()));
-        if ("recent".equals(normalized)) return byStart;
-        if ("newest".equals(normalized)) return Comparator.comparing(ActivityVO::getId, Comparator.nullsLast(Comparator.reverseOrder()));
-        if ("price_asc".equals(normalized)) return byPrice;
-        if ("price_desc".equals(normalized)) return byPrice.reversed();
-        return Comparator.comparing((ActivityVO vo) -> Integer.valueOf(1).equals(vo.getStatus()) ? 0 : 1)
-                .thenComparing(byStart);
-    }
-
-    private boolean containsText(String value, String normalizedKeyword) {
-        return StringUtils.hasText(value) && value.toLowerCase(Locale.ROOT).contains(normalizedKeyword);
+        return activitySearchProvider.search(ActivitySearchRequest.builder()
+                .page(page)
+                .size(size)
+                .categoryId(categoryId)
+                .keyword(keyword)
+                .city(city)
+                .dateFrom(dateFrom)
+                .dateTo(dateTo)
+                .minPrice(minPrice)
+                .maxPrice(maxPrice)
+                .saleStatus(saleStatus)
+                .seatMapOnly(seatMapOnly)
+                .realNameRequired(realNameRequired)
+                .sort(sort)
+                .build());
     }
 
     private Page<Tour> selectAnnouncedTours(Integer page, Integer size, Long categoryId) {

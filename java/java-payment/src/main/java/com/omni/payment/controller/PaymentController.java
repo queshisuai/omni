@@ -10,6 +10,7 @@ import com.omni.payment.entity.Payment;
 import com.omni.payment.service.MockPaymentService;
 import com.omni.payment.service.PaymentService;
 import io.jsonwebtoken.Claims;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,6 +31,9 @@ public class PaymentController {
     private final PaymentService paymentService;
     private final MockPaymentService mockPaymentService;
 
+    @Value("${omni.payment.mock.enabled:false}")
+    private boolean mockPaymentEnabled;
+
     public PaymentController(PaymentService paymentService, MockPaymentService mockPaymentService) {
         this.paymentService = paymentService;
         this.mockPaymentService = mockPaymentService;
@@ -37,13 +41,16 @@ public class PaymentController {
 
     @PostMapping("/pay")
     public Result<Void> mockPay(@RequestBody Map<String, Object> body) {
-        return Result.fail(400, "请使用正式支付或演示模拟支付接口");
+        return Result.fail(400, "请使用支付宝支付页面支付");
     }
 
     @PostMapping("/mock/pay")
     public Result<MockPayResponse> mockPayForDemo(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestBody(required = false) MockPayRequest request) {
+        if (!mockPaymentEnabled) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "当前环境未启用本地支付确认");
+        }
         if (request == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "支付参数不能为空");
         }

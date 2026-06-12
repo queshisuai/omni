@@ -43,7 +43,7 @@ function formatPublishStatus(status: string) {
     deactivated: '已下架',
     cancelled: '已取消',
   }
-  return statusText[status] || status
+  return statusText[status] || '未知发布状态'
 }
 
 function formatStationStatus(item: StationPurchaseDetail) {
@@ -58,7 +58,7 @@ function formatConfigStatus(status?: string | null) {
     rejected: '配置已驳回',
     withdrawn: '配置已撤回',
   }
-  return status ? statusText[status] || status : '暂无配置版本'
+  return status ? statusText[status] || '未知配置状态' : '暂无配置版本'
 }
 
 function isCityPublishedStatus(status?: string | null) {
@@ -91,7 +91,7 @@ export default function TourDetailPage() {
       return
     }
     if (!Number.isInteger(tourId) || tourId <= 0) {
-      setError('巡演ID不正确')
+      setError('巡演编号不正确')
       setLoading(false)
       return
     }

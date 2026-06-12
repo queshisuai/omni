@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 import { OrderClientService } from '../grab/order-client.service';
+import { TicketClientService } from '../grab/ticket-client.service';
 import { WaitlistController } from './waitlist.controller';
 import { WaitlistAllocatorService } from './waitlist-allocator.service';
 import { WaitlistMqConsumer } from './waitlist-mq.consumer';
@@ -18,6 +19,7 @@ import { WaitlistService } from './waitlist.service';
     WaitlistAllocatorService,
     WaitlistNotificationService,
     OrderClientService,
+    TicketClientService,
     WaitlistMqConsumer,
   ],
 })

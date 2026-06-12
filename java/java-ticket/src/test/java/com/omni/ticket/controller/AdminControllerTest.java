@@ -12,6 +12,8 @@ import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
+import com.omni.ticket.dto.ActivityBuyerNotificationRequest;
+import com.omni.ticket.dto.ActivityBuyerNotificationResponse;
 import com.omni.ticket.dto.ActivityArtistDto;
 import com.omni.ticket.dto.ActivityDraftResponse;
 import com.omni.ticket.dto.ActivityMarketingOverviewResponse;
@@ -110,6 +112,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import com.omni.ticket.entity.Tour;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class AdminControllerTest {
@@ -174,6 +177,8 @@ class AdminControllerTest {
     private StationConfigVersionService stationConfigVersionService;
     @Mock
     private ActivityMarketingService activityMarketingService;
+    @Mock
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     private void allowActivityRole(Long userId, String role) {
         when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "activity.manage"))
@@ -561,6 +566,28 @@ class AdminControllerTest {
     }
 
     @Test
+    void updateVenuePublishesSearchIndexUpsertsForAffectedActivities() {
+        AdminController controller = controller();
+        allowVenueManageRole(2002L, "admin");
+        Venue venue = new Venue();
+        venue.setId(13L);
+        when(venueMapper.selectById(13L)).thenReturn(venue);
+        Session first = new Session();
+        first.setActivityId(10L);
+        Session second = new Session();
+        second.setActivityId(20L);
+        Session duplicate = new Session();
+        duplicate.setActivityId(10L);
+        when(sessionMapper.selectList(any())).thenReturn(List.of(first, second, duplicate));
+
+        Result<Venue> result = controller.updateVenue(13L, adminToken(), Map.of("city", "北京"));
+
+        assertEquals(200, result.getCode());
+        verify(searchIndexEventPublisher).publishUpsert(10L);
+        verify(searchIndexEventPublisher).publishUpsert(20L);
+    }
+
+    @Test
     void createVenueAreaUsesAuthorizationToken() {
         AdminController controller = controller();
         Map<String, Object> body = new HashMap<>();
@@ -801,6 +828,27 @@ class AdminControllerTest {
         assertEquals(10L, result.getData().getActivityId());
         assertEquals(2003L, request.getUserId());
         verify(activityAdminService).deactivateActivity(10L, request);
+    }
+
+    @Test
+    void notifyActivityBuyersUsesAuthorizationToken() {
+        AdminController controller = controller();
+        ActivityBuyerNotificationRequest request = new ActivityBuyerNotificationRequest();
+        request.setUserId(9999L);
+        request.setConfirmNotify(true);
+        request.setContent("演出入场时间有调整，请查看订单详情。");
+        ActivityBuyerNotificationResponse response = new ActivityBuyerNotificationResponse();
+        response.setActivityId(10L);
+        response.setNotificationCount(2);
+        when(activityAdminService.notifyActivityBuyers(10L, request)).thenReturn(response);
+
+        Result<ActivityBuyerNotificationResponse> result = controller.notifyActivityBuyers(10L, organizerToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(10L, result.getData().getActivityId());
+        assertEquals(2, result.getData().getNotificationCount());
+        assertEquals(2003L, request.getUserId());
+        verify(activityAdminService).notifyActivityBuyers(10L, request);
     }
 
     @Test
@@ -2243,7 +2291,9 @@ class AdminControllerTest {
     }
 
     private AdminController controller() {
-        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, orderAdminQueryService, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService, privateAssetService, seatCraftLayoutVersionService, activityDraftService, stationConfigVersionService, activityMarketingService);
+        AdminController controller = new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper, venueMapper, userAccessService, activityAdminService, sessionAdminService, venueApplicationService, seatTemplateService, ticketTypeAreaService, adminSummaryService, sessionSeatService, venueDefaultLayoutService, activitySeatLayoutService, sessionSeatLayoutService, tourStationService, orderAdminQueryService, sessionSeatProtectionService, stockRecalculationService, activityArtistService, artistAdminService, artistGovernanceService, activityRiskResponseService, ticketAssetService, privateAssetService, seatCraftLayoutVersionService, activityDraftService, stationConfigVersionService, activityMarketingService);
+        controller.setSearchIndexEventPublisher(searchIndexEventPublisher);
+        return controller;
     }
 
     private StationConfigVersionRequest stationConfigRequest(Long userId) {

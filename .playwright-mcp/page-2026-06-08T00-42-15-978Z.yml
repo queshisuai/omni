@@ -1,0 +1,116 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e32]
+  - generic [ref=e115]:
+    - complementary [ref=e116]:
+      - link "平台后台" [ref=e118] [cursor=pointer]:
+        - /url: /console
+      - navigation [ref=e119]:
+        - link "概览" [ref=e120] [cursor=pointer]:
+          - /url: /console
+          - img [ref=e121]
+          - text: 概览
+        - link "活动发布管理" [ref=e126] [cursor=pointer]:
+          - /url: /console/activities
+          - img [ref=e127]
+          - text: 活动发布管理
+        - link "巡演草稿管理" [ref=e129] [cursor=pointer]:
+          - /url: /console/tours
+          - img [ref=e130]
+          - text: 巡演草稿管理
+        - link "场次管理" [ref=e135] [cursor=pointer]:
+          - /url: /console/sessions
+          - img [ref=e136]
+          - text: 场次管理
+        - link "订单查看" [ref=e139] [cursor=pointer]:
+          - /url: /console/orders
+          - img [ref=e140]
+          - text: 订单查看
+        - link "入场核验" [ref=e144] [cursor=pointer]:
+          - /url: /console/check-in
+          - img [ref=e145]
+          - text: 入场核验
+        - link "退款审核" [ref=e148] [cursor=pointer]:
+          - /url: /console/refunds
+          - img [ref=e149]
+          - text: 退款审核
+        - link "艺人管理" [ref=e152] [cursor=pointer]:
+          - /url: /console/artists
+          - img [ref=e153]
+          - text: 艺人管理
+        - link "艺人档案审核" [ref=e158] [cursor=pointer]:
+          - /url: /console/artists/pending
+          - img [ref=e159]
+          - text: 艺人档案审核
+        - link "恢复售票审核" [ref=e162] [cursor=pointer]:
+          - /url: /console/risk-resolutions
+          - img [ref=e163]
+          - text: 恢复售票审核
+        - link "风险案例管理" [ref=e165] [cursor=pointer]:
+          - /url: /console/risk-cases
+          - img [ref=e166]
+          - text: 风险案例管理
+        - link "场馆记录" [ref=e168] [cursor=pointer]:
+          - /url: /console/venue
+          - img [ref=e169]
+          - text: 场馆记录
+        - link "场馆资料审核" [ref=e172] [cursor=pointer]:
+          - /url: /console/venue/applications
+          - img [ref=e173]
+          - text: 场馆资料审核
+        - link "站点变更审核" [ref=e176] [cursor=pointer]:
+          - /url: /console/station-config-reviews
+          - img [ref=e177]
+          - text: 站点变更审核
+        - link "运营工作台" [ref=e182] [cursor=pointer]:
+          - /url: /console/organizer-ops
+          - img [ref=e183]
+          - text: 运营工作台
+        - link "主办方管理" [ref=e186] [cursor=pointer]:
+          - /url: /console/organizer-applications
+          - img [ref=e187]
+          - text: 主办方管理
+        - button "账号管理" [ref=e191]:
+          - img [ref=e192]
+          - generic [ref=e197]: 账号管理
+          - img [ref=e198]
+        - link "客服会话记录" [ref=e200] [cursor=pointer]:
+          - /url: /console/support-conversations
+          - img [ref=e201]
+          - text: 客服会话记录
+        - link "角色权限" [ref=e203] [cursor=pointer]:
+          - /url: /console/roles
+          - img [ref=e204]
+          - text: 角色权限
+        - link "操作审计" [ref=e207] [cursor=pointer]:
+          - /url: /console/audit-logs
+          - img [ref=e208]
+          - text: 操作审计
+        - link "异常任务" [ref=e211] [cursor=pointer]:
+          - /url: /console/exception-tasks
+          - img [ref=e212]
+          - text: 异常任务
+        - link "日结对账" [ref=e214] [cursor=pointer]:
+          - /url: /console/reconciliation
+          - img [ref=e215]
+          - text: 日结对账
+        - link "个人中心" [ref=e220] [cursor=pointer]:
+          - /url: /console/profile
+          - img [ref=e221]
+          - text: 个人中心
+      - generic [ref=e225]:
+        - generic [ref=e226]:
+          - generic [ref=e227]: 平台超管
+          - generic [ref=e229]: 平台管理员
+        - generic [ref=e230]:
+          - link "个人中心" [ref=e231] [cursor=pointer]:
+            - /url: /console/profile
+            - img [ref=e232]
+            - text: 个人中心
+          - button "退出登录" [ref=e236]:
+            - img [ref=e237]
+            - text: 退出登录
+    - generic [ref=e240]:
+      - banner [ref=e241]:
+        - link "返回前台" [ref=e242] [cursor=pointer]:
+          - /url: /
+      - main [ref=e243]

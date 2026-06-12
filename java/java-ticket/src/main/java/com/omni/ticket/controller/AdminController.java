@@ -3,12 +3,15 @@ package com.omni.ticket.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.AdminSummaryResponse;
+import com.omni.ticket.dto.ActivityBuyerNotificationRequest;
+import com.omni.ticket.dto.ActivityBuyerNotificationResponse;
 import com.omni.ticket.dto.DeleteActivityRequest;
 import com.omni.ticket.dto.DeleteActivityResponse;
 import com.omni.ticket.dto.RefundImpactResponse;
@@ -49,6 +52,7 @@ import com.omni.ticket.dto.PrivateAssetResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
 import com.omni.ticket.service.ActivityDraftService;
@@ -109,6 +113,7 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/ticket/admin")
 public class AdminController {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AdminController.class);
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String SEAT_MAP_VISIBILITY_HIDDEN = "hidden";
     private static final String SEAT_MAP_VISIBILITY_PUBLISHED = "published";
@@ -144,6 +149,7 @@ public class AdminController {
     private final ActivityDraftService activityDraftService;
     private final StationConfigVersionService stationConfigVersionService;
     private final ActivityMarketingService activityMarketingService;
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
                             TicketTypeMapper ticketTypeMapper, VenueMapper venueMapper,
@@ -218,6 +224,11 @@ public class AdminController {
         this.activityDraftService = activityDraftService;
         this.stationConfigVersionService = stationConfigVersionService;
         this.activityMarketingService = activityMarketingService;
+    }
+
+    @Autowired(required = false)
+    public void setSearchIndexEventPublisher(ActivitySearchIndexEventPublisher searchIndexEventPublisher) {
+        this.searchIndexEventPublisher = searchIndexEventPublisher;
     }
 
     @Autowired
@@ -898,6 +909,25 @@ public class AdminController {
         return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "session.manage", "activity.manage", "tour.manage");
     }
 
+    private void writeTicketTypeAudit(Long operatorId, String operatorRole, String action, TicketType ticketType, String result) {
+        if (ticketType == null || ticketType.getId() == null) return;
+        try {
+            OperationAuditWriteRequest request = new OperationAuditWriteRequest();
+            request.setOperatorId(operatorId);
+            request.setOperatorRole(operatorRole);
+            request.setAction(action);
+            request.setTargetType("ticket_type");
+            request.setTargetId(ticketType.getId());
+            request.setTargetRef(ticketType.getName());
+            request.setReason("ticket_type.create".equals(action) ? "创建票档" : "更新票档");
+            request.setResult(result);
+            request.setSuccess(true);
+            userAccessService.writeOperationAudit(request);
+        } catch (RuntimeException e) {
+            log.warn("Failed to write ticket type audit action={} ticketTypeId={}: {}", action, ticketType.getId(), e.getMessage());
+        }
+    }
+
     private String checkArtistManageRole(Long userId) {
         return userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "artist.manage");
     }
@@ -1146,6 +1176,17 @@ public class AdminController {
         if (request == null) request = new DeactivateActivityRequest();
         request.setUserId(operatorId);
         return Result.success(activityAdminService.deactivateActivity(id, request));
+    }
+
+    @PostMapping("/activities/{id}/buyer-notifications")
+    public Result<ActivityBuyerNotificationResponse> notifyActivityBuyers(@PathVariable Long id,
+                                                                          @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                          @RequestBody ActivityBuyerNotificationRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        if (request == null) request = new ActivityBuyerNotificationRequest();
+        request.setUserId(operatorId);
+        return Result.success(activityAdminService.notifyActivityBuyers(id, request));
     }
 
     @GetMapping("/activities/{activityId}/seat-layout")
@@ -1491,6 +1532,9 @@ public class AdminController {
             tt.setRemainStock(Integer.valueOf(body.get("totalStock").toString()));
             ticketTypeMapper.insert(tt);
         }
+        publishSearchUpsert(session.getActivityId());
+        writeTicketTypeAudit(userId, role, "ticket_type.create", tt,
+                "创建票档，场次编号 " + sessionId + "，票价 " + tt.getPrice() + "，总库存 " + tt.getTotalStock());
         return Result.success(tt);
     }
 
@@ -1511,15 +1555,41 @@ public class AdminController {
         if ("organizer".equals(role) && !ownsActivity(session.getActivityId(), userId))
             return Result.fail(403, "只能管理自己主办的票档");
 
-        if (body.containsKey("name")) tt.setName(body.get("name").toString());
-        if (body.containsKey("price")) tt.setPrice(new java.math.BigDecimal(body.get("price").toString()));
-        if (body.containsKey("totalStock")) {
-            int diff = Integer.valueOf(body.get("totalStock").toString()) - tt.getTotalStock();
-            tt.setTotalStock(Integer.valueOf(body.get("totalStock").toString()));
-            tt.setRemainStock(tt.getRemainStock() + diff);
+        List<String> updatedFields = new ArrayList<>();
+        if (body.containsKey("name")) {
+            tt.setName(body.get("name").toString());
+            updatedFields.add("名称");
         }
-        if (body.containsKey("status")) tt.setStatus(Integer.valueOf(body.get("status").toString()));
+        if (body.containsKey("price")) {
+            tt.setPrice(new java.math.BigDecimal(body.get("price").toString()));
+            updatedFields.add("票价");
+        }
+        if (body.containsKey("totalStock")) {
+            int nextTotalStock = Integer.valueOf(body.get("totalStock").toString());
+            if (nextTotalStock < 0) {
+                return Result.fail(400, "目标总库存不能小于 0");
+            }
+            int currentTotalStock = tt.getTotalStock() == null ? 0 : tt.getTotalStock();
+            int currentRemainStock = tt.getRemainStock() == null ? 0 : tt.getRemainStock();
+            int soldStock = Math.max(0, currentTotalStock - currentRemainStock);
+            if (nextTotalStock < soldStock) {
+                return Result.fail(400, "目标总库存不能小于已售数量");
+            }
+            tt.setTotalStock(nextTotalStock);
+            tt.setRemainStock(nextTotalStock - soldStock);
+            updatedFields.add("总库存");
+        }
+        if (body.containsKey("status")) {
+            tt.setStatus(Integer.valueOf(body.get("status").toString()));
+            updatedFields.add("状态");
+        }
         ticketTypeMapper.updateById(tt);
+        if (session != null) {
+            publishSearchUpsert(session.getActivityId());
+        }
+        String changed = updatedFields.isEmpty() ? "无字段变化" : String.join("、", updatedFields);
+        writeTicketTypeAudit(userId, role, "ticket_type.update", tt,
+                "更新票档：" + changed + "；场次编号 " + tt.getSessionId() + "，票价 " + tt.getPrice() + "，总库存 " + tt.getTotalStock() + "，状态 " + tt.getStatus());
         return Result.success(tt);
     }
 
@@ -1555,7 +1625,32 @@ public class AdminController {
         });
         ticketTypeMapper.deleteById(id);
         stockRecalculationService.recalculateForSession(tt.getSessionId());
+        if (session != null) {
+            publishSearchUpsert(session.getActivityId());
+        }
         return Result.success();
+    }
+
+    private void publishSearchUpsert(Long activityId) {
+        if (searchIndexEventPublisher != null && activityId != null) {
+            searchIndexEventPublisher.publishUpsert(activityId);
+        }
+    }
+
+    private void publishVenueSearchUpserts(Long venueId) {
+        if (searchIndexEventPublisher == null || venueId == null) {
+            return;
+        }
+        List<Session> sessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>()
+                .eq(Session::getVenueId, venueId));
+        if (sessions == null || sessions.isEmpty()) {
+            return;
+        }
+        sessions.stream()
+                .map(Session::getActivityId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .forEach(this::publishSearchUpsert);
     }
 
     public static class TicketBindingUpdateRequest {
@@ -1615,6 +1710,9 @@ public class AdminController {
         if (body.containsKey("address")) venue.setAddress(body.get("address") != null ? body.get("address").toString() : null);
         if (body.containsKey("capacity")) venue.setCapacity(body.get("capacity") != null ? Integer.valueOf(body.get("capacity").toString()) : null);
         venueMapper.updateById(venue);
+        if (body.containsKey("name") || body.containsKey("city")) {
+            publishVenueSearchUpserts(id);
+        }
         return Result.success(venue);
     }
 

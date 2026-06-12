@@ -59,6 +59,8 @@ public class UserController {
     private final UserAttendeeService userAttendeeService;
     private final UserBrowseHistoryService userBrowseHistoryService;
     private final String internalApiToken;
+    @Value("${omni.sms.mock.enabled:false}")
+    private boolean mockSmsEnabled;
 
     public UserController(UserService userService, OrganizerApplicationService organizerApplicationService) {
         this(userService, organizerApplicationService, null, null, null, null, "");
@@ -68,6 +70,14 @@ public class UserController {
                           OrganizerApplicationService organizerApplicationService,
                           String internalApiToken) {
         this(userService, organizerApplicationService, null, null, null, null, internalApiToken);
+    }
+
+    public UserController(UserService userService,
+                          OrganizerApplicationService organizerApplicationService,
+                          String internalApiToken,
+                          boolean mockSmsEnabled) {
+        this(userService, organizerApplicationService, null, null, null, null, internalApiToken);
+        this.mockSmsEnabled = mockSmsEnabled;
     }
 
     @Autowired
@@ -85,6 +95,7 @@ public class UserController {
         this.userAttendeeService = userAttendeeService;
         this.userBrowseHistoryService = userBrowseHistoryService;
         this.internalApiToken = internalApiToken;
+        this.mockSmsEnabled = false;
     }
 
     public UserController(UserService userService,
@@ -331,11 +342,14 @@ public class UserController {
     }
 
     /**
-     * 发送短信验证码（沙盒版：固定验证码）
+     * 发送短信验证码（仅本地显式开启 mock 时返回固定验证码）
      */
     @PostMapping("/send-code")
     @SentinelResource(value = UserSentinelConfig.SEND_CODE, blockHandler = "sendCodeBlocked")
     public Result<String> sendCode(@RequestParam String phone) {
+        if (!mockSmsEnabled) {
+            return Result.fail(400, "当前环境未启用短信验证码");
+        }
         System.out.println("==========================================");
         System.out.println("  短信验证码 [" + phone + "]: " + MOCK_SMS_CODE);
         System.out.println("==========================================");

@@ -5,6 +5,8 @@ const PATH_PERMISSION_MAP: Record<string, string[]> = {
   '/console/venue/applications': ['venue.review'],
   '/console/risk-resolutions': ['risk.review'],
   '/console/risk-cases': ['risk.view'],
+  '/console/activity-engagement': ['activity.review.manage'],
+  '/console/organizer-ops': ['organizer.review', 'organizer.account.manage', 'organizer.follow.manage', 'organizer.assign.manage'],
   '/console/organizer-applications': ['organizer.review'],
   '/console/organizer-admins': ['organizer.account.manage'],
   '/console/roles': ['rbac.manage'],
@@ -51,10 +53,13 @@ const DEFAULT_PATH_BY_PERMISSION: Array<[string, string]> = [
   ['session.manage', '/console/sessions'],
   ['artist.manage', '/console/artists'],
   ['order.view', '/console/orders'],
+  ['activity.review.manage', '/console/activity-engagement'],
   ['checkin.view', '/console/check-in'],
   ['refund.review', '/console/refunds'],
   ['venue.manage', '/console/venue'],
   ['organizer.review', '/console/organizer-applications'],
+  ['organizer.follow.manage', '/console/organizer-ops'],
+  ['organizer.assign.manage', '/console/organizer-ops'],
   ['organizer.account.manage', '/console/organizer-admins'],
   ['venue.review', '/console/venue/applications'],
   ['station.review', '/console/station-config-reviews'],
@@ -112,7 +117,17 @@ export function shouldDefaultToConsoleAfterLogin(role: string | null | undefined
 }
 
 export function getDefaultConsolePath(role: string | null | undefined, permissionCodes: string[] = []): string {
-  if (role === 'organizer_admin') return getFirstPermissionPath(permissionCodes) || '/console'
+  if (role === 'organizer_admin') {
+    if (
+      permissionCodes.includes('organizer.review') ||
+      permissionCodes.includes('organizer.account.manage') ||
+      permissionCodes.includes('organizer.follow.manage') ||
+      permissionCodes.includes('organizer.assign.manage')
+    ) {
+      return '/console/organizer-ops'
+    }
+    return getFirstPermissionPath(permissionCodes) || '/console'
+  }
   if (role === 'support') {
     if (permissionCodes.includes('support.account.manage')) return '/console/support-accounts'
     if (permissionCodes.includes('audit.view')) return '/console/audit-logs'
@@ -132,7 +147,7 @@ export function getConsoleRoleLabel(role: string | null | undefined, permissionC
   if (role === 'platform_super_admin') return '平台超管'
   if (role === 'admin') return '平台管理员'
   if (role === 'organizer') return '活动主办方'
-  if (role === 'organizer_admin') return '主办方管理员'
+  if (role === 'organizer_admin') return '平台主办方运营员'
   if (role === 'support') {
     return SUPPORT_MANAGER_PERMISSIONS.some(permission => permissionCodes.includes(permission)) ? '客服主管' : '普通客服'
   }
@@ -142,7 +157,7 @@ export function getConsoleRoleLabel(role: string | null | undefined, permissionC
 export function getConsoleBrandLabel(role: string | null | undefined, permissionCodes: string[] = []): string {
   if (isPlatformAdminRole(role)) return '平台后台'
   if (role === 'organizer') return '主办方后台'
-  if (role === 'organizer_admin') return '主办方管理后台'
+  if (role === 'organizer_admin') return '平台主办方运营后台'
   if (role === 'support') {
     return SUPPORT_MANAGER_PERMISSIONS.some(permission => permissionCodes.includes(permission)) ? '客服管理后台' : '客服后台'
   }

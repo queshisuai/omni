@@ -1,6 +1,7 @@
 package com.omni.ticket.mq;
 
 import com.omni.common.mq.MqConstants;
+import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.common.mq.message.NotificationMessage;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -38,5 +39,25 @@ class NotificationMqProducerTest {
             TransactionSynchronizationManager.setActualTransactionActive(false);
             TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    @Test
+    void sendsNotificationEventToEventRoutingKey() {
+        NotificationEventMessage message = new NotificationEventMessage();
+        message.setEventId("activity-cancelled:10:5001");
+        message.setEventType("ACTIVITY_CANCELLED");
+        message.setUserId(2004L);
+        message.setOrderId(5001L);
+        message.setContent("你购买的活动已取消，请查看订单详情。");
+
+        producer.sendNotificationEvent(message);
+
+        ArgumentCaptor<NotificationEventMessage> captor = ArgumentCaptor.forClass(NotificationEventMessage.class);
+        verify(rabbitTemplate).convertAndSend(
+                eq(MqConstants.NOTIFICATION_EXCHANGE),
+                eq(MqConstants.RK_NOTIFICATION_EVENT),
+                captor.capture());
+        assertEquals("activity-cancelled:10:5001", captor.getValue().getEventId());
+        assertEquals("ACTIVITY_CANCELLED", captor.getValue().getEventType());
     }
 }

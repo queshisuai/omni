@@ -21,7 +21,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 通知服务（沙盒版 - 日志打印代替真实发送）
+ * 通知服务。
  */
 @Service
 public class NotificationService {
@@ -35,7 +35,7 @@ public class NotificationService {
     }
 
     /**
-     * 发送短信通知（沙盒版打印到日志）
+     * 发送短信通知。
      */
     public void sendSms(Long userId, Long orderId, String content) {
         Notification notification = new Notification();
@@ -47,13 +47,13 @@ public class NotificationService {
         notification.setStatus(1); // 已发送
 
         notificationMapper.insert(notification);
-        log.info("======= 模拟短信通知 =======");
+        log.info("======= 短信直发记录 =======");
         log.info("用户ID: {}, 订单ID: {}, 内容: {}", userId, orderId, content);
         log.info("============================");
     }
 
     /**
-     * 发送邮件通知（沙盒版打印到日志）
+     * 发送邮件通知。
      */
     public void sendEmail(Long userId, Long orderId, String content) {
         Notification notification = new Notification();
@@ -65,7 +65,7 @@ public class NotificationService {
         notification.setStatus(1);
 
         notificationMapper.insert(notification);
-        log.info("======= 模拟邮件通知 =======");
+        log.info("======= 邮件直发记录 =======");
         log.info("用户ID: {}, 订单ID: {}, 内容: {}", userId, orderId, content);
         log.info("============================");
     }

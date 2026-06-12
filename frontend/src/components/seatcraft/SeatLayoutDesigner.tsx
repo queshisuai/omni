@@ -470,7 +470,7 @@ function createBlock(blockType: SeatBlockType, id: string, blockKey: string, tic
     overrides: [],
   }
   if (blockType === 'arcBlock') {
-    return { ...base, name: `剧场扇形 ${index + 1}`, blockType, rows: 8, cols: null, seatsPerRow: null, innerRadius: 110, arcStartAngle: -60, arcEndAngle: 60, width: null, height: null, capacity: null }
+    return { ...base, name: `剧场扇形 ${index + 1}`, blockType, rows: 8, cols: null, seatsPerRow: 16, innerRadius: 110, arcStartAngle: -60, arcEndAngle: 60, width: null, height: null, capacity: null }
   }
   if (blockType === 'standingBlock') {
     return { ...base, name: `站区 ${index + 1}`, blockType, rows: null, cols: null, seatsPerRow: null, innerRadius: null, arcStartAngle: null, arcEndAngle: null, width: 180, height: 90, capacity: 500 }

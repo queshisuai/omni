@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
+import { requireEnv, requireIntegerEnv } from '../runtime-env';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
@@ -7,8 +8,8 @@ export class RedisService implements OnModuleDestroy {
 
   constructor() {
     this.client = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+      host: requireEnv('REDIS_HOST', 'Redis 地址未配置'),
+      port: requireIntegerEnv('REDIS_PORT', 'Redis 端口未配置', 'Redis 端口配置无效'),
       password: process.env.REDIS_PASSWORD,
     });
   }

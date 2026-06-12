@@ -1,0 +1,20 @@
+[
+  {
+    "id": 901002,
+    "name": "BY2",
+    "localPath": "/seed-artist-avatars-real/artist-901002.jpg",
+    "sourceUrl": "https://www.newton.com.tw/img/f/63e/fd02838d169c0043f392946c2849.jpg",
+    "sourcePage": "https://www.newton.com.tw/wiki/BY2",
+    "sourceKind": "public-page-archive",
+    "bytes": 8483
+  },
+  {
+    "id": 901003,
+    "name": "胡夏",
+    "localPath": "/seed-artist-avatars-real/artist-901003.jpg",
+    "sourceUrl": "https://www.newton.com.tw/img/3/7a4/1c2e00ada475e3c02d5419c74ffc.jpg",
+    "sourcePage": "https://www.newton.com.tw/wiki/%E8%83%A1%E5%A4%8F",
+    "sourceKind": "public-page-archive",
+    "bytes": 5985
+  }
+]

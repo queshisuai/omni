@@ -31,6 +31,25 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string }> 
   rejected: { label: '已驳回', color: '#b91c1c', bg: '#fef2f2' },
 }
 
+function getResolutionStatusMeta(status?: string | null) {
+  if (!status) return null
+  return STATUS_META[status] || { label: '未知审核状态', color: '#6b7280', bg: '#f3f4f6' }
+}
+
+function isKnownResolutionStatus(status?: string | null) {
+  return !status || Object.prototype.hasOwnProperty.call(STATUS_META, status)
+}
+
+function canSubmitRiskResolution(status?: string | null) {
+  return isKnownResolutionStatus(status) && status !== 'pending'
+}
+
+function formatRiskResolutionSubmitLabel(status?: string | null) {
+  if (status === 'pending') return '审核中'
+  if (!canSubmitRiskResolution(status)) return '状态待核对'
+  return '提交恢复申请'
+}
+
 function formatDate(value?: string | null): string {
   if (!value) return ''
   const date = new Date(value)
@@ -161,7 +180,8 @@ function RiskList({ suspended, latestResolutionByActivity, onOpenDialog }: { sus
     <div className="space-y-3">
       {suspended.map((activity) => {
         const latest = latestResolutionByActivity.get(activity.id)
-        const meta = latest?.status ? STATUS_META[latest.status] : null
+        const meta = getResolutionStatusMeta(latest?.status)
+        const canSubmitResolution = canSubmitRiskResolution(latest?.status)
         return (
           <div key={activity.id} className="rounded-xl border border-[#ffd9e6] bg-white p-5">
             <div className="flex flex-wrap items-start gap-3">
@@ -187,11 +207,14 @@ function RiskList({ suspended, latestResolutionByActivity, onOpenDialog }: { sus
               </div>
               <div className="flex flex-shrink-0 flex-col items-end gap-2">
                 <button
-                  onClick={() => onOpenDialog(activity)}
-                  disabled={latest?.status === 'pending'}
+                  onClick={() => {
+                    if (!canSubmitResolution) return
+                    onOpenDialog(activity)
+                  }}
+                  disabled={!canSubmitResolution}
                   className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] text-white disabled:bg-[#f7c6d6]"
                 >
-                  {latest?.status === 'pending' ? '审核中' : '提交恢复申请'}
+                  {formatRiskResolutionSubmitLabel(latest?.status)}
                 </button>
               </div>
             </div>

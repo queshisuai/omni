@@ -61,7 +61,7 @@ public class OrganizerAdminAccountService {
     public OrganizerAdminAccountResponse deactivate(Long id) {
         User user = requireOrganizerAdmin(id);
         if (user == null || !ROLE_ORGANIZER_ADMIN.equals(user.getRole())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "主办方管理员账号不存在");
+            throw new BusinessException(ResultCode.NOT_FOUND, "平台主办方运营员账号不存在");
         }
         user.setStatus(0);
         user.setUpdateTime(LocalDateTime.now());
@@ -72,7 +72,7 @@ public class OrganizerAdminAccountService {
     @Transactional
     public OrganizerAdminAccountResponse update(Long id, OrganizerAdminAccountRequest request) {
         if (request == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "主办方管理员账号参数不能为空");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "平台主办方运营员账号参数不能为空");
         }
         User user = requireOrganizerAdmin(id);
         String phone = requireText(request.getPhone(), "手机号不能为空");
@@ -87,7 +87,7 @@ public class OrganizerAdminAccountService {
         }
         Integer status = request.getStatus() == null ? user.getStatus() : request.getStatus();
         if (!Integer.valueOf(0).equals(status) && !Integer.valueOf(1).equals(status)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "主办方管理员账号状态不正确");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "平台主办方运营员账号状态不正确");
         }
         String password = trimToNull(request.getPassword());
         if (password != null) {
@@ -113,11 +113,11 @@ public class OrganizerAdminAccountService {
 
     private User requireOrganizerAdmin(Long id) {
         if (id == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "主办方管理员账号ID不能为空");
+            throw new BusinessException(ResultCode.BAD_REQUEST, "平台主办方运营员账号ID不能为空");
         }
         User user = userMapper.selectById(id);
         if (user == null || !ROLE_ORGANIZER_ADMIN.equals(user.getRole())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "主办方管理员账号不存在");
+            throw new BusinessException(ResultCode.NOT_FOUND, "平台主办方运营员账号不存在");
         }
         return user;
     }

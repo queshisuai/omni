@@ -56,7 +56,7 @@ export default function NewStationPage() {
       return
     }
     if (!Number.isInteger(tourId) || tourId <= 0) {
-      setError('巡演ID不正确')
+      setError('巡演编号不正确')
       return
     }
     if (!city.trim()) {

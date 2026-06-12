@@ -10,6 +10,10 @@ import type { PrivateAssetVO, VenueApplicationVO } from '@/types/api'
 
 const statusText: Record<number, string> = { 0: '待审核', 1: '已通过', 2: '已驳回' }
 
+function formatVenueApplicationStatus(status: number) {
+  return statusText[status] || '未知场馆审核状态'
+}
+
 function createDefaultLayout(name: string): SeatCraftLayoutDraft {
   return {
     name: `${name} 座位图`,
@@ -227,7 +231,7 @@ export default function VenueApplyPage() {
               <div key={item.id} className="rounded-lg border border-[#f0f0f0] p-3 text-[14px]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="font-medium text-[#333]">{item.venueName}</div>
-                  <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{statusText[item.status]}</span>
+                  <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{formatVenueApplicationStatus(item.status)}</span>
                 </div>
                 <div className="mt-1 text-[#666]">{item.city} · {item.address}</div>
                 {item.reviewNote && <div className="mt-1 text-[13px] text-[#999]">审核备注：{item.reviewNote}</div>}

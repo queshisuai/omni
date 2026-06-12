@@ -6,9 +6,12 @@ import com.omni.common.result.Result;
 import com.omni.order.dto.CreateOrderRequest;
 import com.omni.order.dto.CreateTeamOrderRequest;
 import com.omni.order.dto.LockSeatsRequest;
+import com.omni.order.dto.OrderListItemResponse;
 import com.omni.order.dto.OrderSeatItemResponse;
+import com.omni.order.dto.TicketWalletItemResponse;
 import com.omni.order.entity.Order;
 import com.omni.order.service.OrderService;
+import com.omni.order.service.TicketWalletService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -26,12 +29,14 @@ import static org.mockito.Mockito.when;
 class OrderControllerInternalCreateTest {
 
     private OrderService orderService;
+    private TicketWalletService ticketWalletService;
     private OrderController controller;
 
     @BeforeEach
     void setUp() {
         orderService = mock(OrderService.class);
-        controller = new OrderController(orderService, "test-internal-token", "omni-jwt-secretomni-jwt-secretomni-jwt-secret");
+        ticketWalletService = mock(TicketWalletService.class);
+        controller = new OrderController(orderService, ticketWalletService, "test-internal-token", "omni-jwt-secretomni-jwt-secretomni-jwt-secret");
     }
 
     @Test
@@ -146,6 +151,54 @@ class OrderControllerInternalCreateTest {
         assertEquals(200, result.getCode());
         assertEquals(List.of(locked, sold), result.getData());
         verify(orderService).listInternalOrderSeats(16L);
+    }
+
+    @Test
+    void internalListUserOrdersRequiresToken() {
+        Result<List<OrderListItemResponse>> result = controller.listInternalUserOrders(2004L, 5, null);
+
+        assertEquals(403, result.getCode());
+        assertNull(result.getData());
+        verify(orderService, never()).listOrderItems(any());
+    }
+
+    @Test
+    void internalListUserOrdersReturnsLimitedUserOrders() {
+        OrderListItemResponse first = new OrderListItemResponse();
+        first.setId(101L);
+        OrderListItemResponse second = new OrderListItemResponse();
+        second.setId(102L);
+        when(orderService.listOrderItems(2004L)).thenReturn(List.of(first, second));
+
+        Result<List<OrderListItemResponse>> result = controller.listInternalUserOrders(2004L, 1, "test-internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals(List.of(first), result.getData());
+        verify(orderService).listOrderItems(2004L);
+    }
+
+    @Test
+    void internalListUserTicketsRequiresToken() {
+        Result<List<TicketWalletItemResponse>> result = controller.listInternalUserTickets(2004L, 5, null);
+
+        assertEquals(403, result.getCode());
+        assertNull(result.getData());
+        verify(ticketWalletService, never()).listMyTickets(any());
+    }
+
+    @Test
+    void internalListUserTicketsReturnsLimitedUserTickets() {
+        TicketWalletItemResponse first = new TicketWalletItemResponse();
+        first.setTicketId(301L);
+        TicketWalletItemResponse second = new TicketWalletItemResponse();
+        second.setTicketId(302L);
+        when(ticketWalletService.listMyTickets(2004L)).thenReturn(List.of(first, second));
+
+        Result<List<TicketWalletItemResponse>> result = controller.listInternalUserTickets(2004L, 1, "test-internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals(List.of(first), result.getData());
+        verify(ticketWalletService).listMyTickets(2004L);
     }
 
     @Test

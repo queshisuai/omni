@@ -1,4 +1,9 @@
 import { WaitlistMqConsumer } from './waitlist-mq.consumer';
+import * as amqp from 'amqp-connection-manager';
+
+jest.mock('amqp-connection-manager', () => ({
+  connect: jest.fn(),
+}));
 
 function message(content: unknown, headers: Record<string, unknown> = {}) {
   return {
@@ -8,6 +13,38 @@ function message(content: unknown, headers: Record<string, unknown> = {}) {
 }
 
 describe('WaitlistMqConsumer', () => {
+  const originalEnv = process.env;
+  const amqpConnect = amqp.connect as jest.Mock;
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      RABBITMQ_HOST: 'rabbit.local',
+      RABBITMQ_PORT: '5672',
+      RABBITMQ_USER: 'grab',
+      RABBITMQ_PASSWORD: 'grab-password',
+    };
+    amqpConnect.mockReset();
+    amqpConnect.mockReturnValue({
+      on: jest.fn(),
+      createChannel: jest.fn().mockReturnValue({ close: jest.fn() }),
+      close: jest.fn(),
+    });
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('fails before connecting when RabbitMQ environment is missing', async () => {
+    delete process.env.RABBITMQ_HOST;
+    const allocator = { allocate: jest.fn(), markPaidByOrder: jest.fn() };
+    const consumer = new WaitlistMqConsumer(allocator as any);
+
+    await expect(consumer.onModuleInit()).rejects.toThrow('RabbitMQ 地址未配置');
+    expect(amqpConnect).not.toHaveBeenCalled();
+  });
+
   it('rejects a transient waitlist release failure into the retry topology', async () => {
     const allocator = { allocate: jest.fn().mockRejectedValue(new Error('temporary database outage')) };
     const consumer = new WaitlistMqConsumer(allocator as any);

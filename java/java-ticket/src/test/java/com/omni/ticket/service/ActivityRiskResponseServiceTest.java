@@ -13,6 +13,7 @@ import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ActivityRiskResolutionMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.mq.NotificationMqProducer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +26,9 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,13 +43,14 @@ class ActivityRiskResponseServiceTest {
     @Mock private ActivityRiskResolutionMapper resolutionMapper;
     @Mock private UserAccessService userAccessService;
     @Mock private ActivityAdminService activityAdminService;
+    @Mock private NotificationMqProducer notificationProducer;
 
     private ActivityRiskResponseService service;
 
     @BeforeEach
     void setUp() {
         service = new ActivityRiskResponseService(activityMapper, activityArtistMapper, sessionMapper, ticketTypeMapper,
-                resolutionMapper, userAccessService, null, activityAdminService, "test-token");
+                resolutionMapper, userAccessService, notificationProducer, activityAdminService, "test-token");
     }
 
     @Test
@@ -82,6 +87,19 @@ class ActivityRiskResponseServiceTest {
         verify(resolutionMapper).insert(captor.capture());
         assertEquals("awaiting_response", captor.getValue().getStatus());
         assertEquals("系统因风险艺人自动停止售票，等待主办方处理", captor.getValue().getResolutionNote());
+    }
+
+    @Test
+    void adminSuspendActivitySendsInAppNotificationToOrganizer() {
+        Activity activity = activity(6L, 2003L, "published");
+        activity.setName("risk-activity");
+
+        when(activityMapper.selectById(6L)).thenReturn(activity);
+
+        service.adminSuspendActivity(6L, 2002L, "artist risk");
+
+        verify(notificationProducer).sendNotification(eq(2003L), isNull(), eq("IN_APP"), contains("risk-activity"));
+        verify(notificationProducer, never()).sendNotification(eq(2003L), isNull(), eq("TODO"), any());
     }
 
     @Test
@@ -140,6 +158,25 @@ class ActivityRiskResponseServiceTest {
         verify(resolutionMapper).insert(captor.capture());
         assertEquals(2002L, captor.getValue().getOrganizerId());
         assertEquals(2004L, captor.getValue().getSubmittedBy());
+    }
+
+    @Test
+    void submitResolutionSendsInAppNotificationToReviewer() {
+        Activity activity = activity(7L, 2003L, "risk_suspended");
+        activity.setName("restore-activity");
+        ActivityRiskResolutionRequest request = new ActivityRiskResolutionRequest();
+        request.setUserId(2003L);
+        request.setResolutionNote("handled");
+
+        when(activityMapper.selectById(7L)).thenReturn(activity);
+        when(userAccessService.requireAdminOrOrganizerRole(2003L)).thenReturn("organizer");
+        when(userAccessService.requireUser(2003L)).thenReturn(user(2003L, "organizer"));
+        when(resolutionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+
+        service.submitResolution(7L, request);
+
+        verify(notificationProducer).sendNotification(eq(2002L), isNull(), eq("IN_APP"), contains("restore-activity"));
+        verify(notificationProducer, never()).sendNotification(eq(2002L), isNull(), eq("TODO"), any());
     }
 
     @Test

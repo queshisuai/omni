@@ -2,9 +2,14 @@ package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.omni.common.mq.message.NotificationEventMessage;
+import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
+import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.dto.SessionAdminResponse;
 import com.omni.ticket.dto.InternalUserRefResponse;
+import com.omni.ticket.dto.OrderInfoResponse;
+import com.omni.ticket.dto.PaidOrdersBySessionsRequest;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.SessionSeat;
@@ -15,10 +20,16 @@ import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.SessionSeatMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueMapper;
+import com.omni.ticket.mq.NotificationMqProducer;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -31,6 +42,8 @@ import java.util.stream.Collectors;
 @Service
 public class SessionAdminService {
 
+    private static final Logger log = LoggerFactory.getLogger(SessionAdminService.class);
+
     private final ActivityMapper activityMapper;
     private final SessionMapper sessionMapper;
     private final VenueMapper venueMapper;
@@ -39,12 +52,16 @@ public class SessionAdminService {
     private final SessionSeatService sessionSeatService;
     private final SessionSeatLayoutService sessionSeatLayoutService;
     private final SessionSeatMapper sessionSeatMapper;
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
+    private OrderInternalClient orderInternalClient;
+    private NotificationMqProducer notificationProducer;
+    private String internalToken;
 
     public SessionAdminService(ActivityMapper activityMapper,
                                  SessionMapper sessionMapper,
                                  VenueMapper venueMapper,
                                  UserAccessService userAccessService) {
-        this(activityMapper, sessionMapper, venueMapper, userAccessService, null, null, null, null);
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, null, null, null, null, null);
     }
 
     public SessionAdminService(ActivityMapper activityMapper,
@@ -52,7 +69,7 @@ public class SessionAdminService {
                                VenueMapper venueMapper,
                                UserAccessService userAccessService,
                                TicketTypeMapper ticketTypeMapper) {
-        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, null, null, null);
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper, null, null, null, null);
     }
 
     public SessionAdminService(ActivityMapper activityMapper,
@@ -63,7 +80,7 @@ public class SessionAdminService {
                                SessionSeatService sessionSeatService,
                                SessionSeatLayoutService sessionSeatLayoutService) {
         this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper,
-                sessionSeatService, sessionSeatLayoutService, null);
+                sessionSeatService, sessionSeatLayoutService, null, null);
     }
 
     @Autowired
@@ -75,6 +92,36 @@ public class SessionAdminService {
                                SessionSeatService sessionSeatService,
                                SessionSeatLayoutService sessionSeatLayoutService,
                                SessionSeatMapper sessionSeatMapper) {
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper,
+                sessionSeatService, sessionSeatLayoutService, sessionSeatMapper, null);
+    }
+
+    public SessionAdminService(ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               VenueMapper venueMapper,
+                               UserAccessService userAccessService,
+                               TicketTypeMapper ticketTypeMapper,
+                               SessionSeatService sessionSeatService,
+                               SessionSeatLayoutService sessionSeatLayoutService,
+                               SessionSeatMapper sessionSeatMapper,
+                               ActivitySearchIndexEventPublisher searchIndexEventPublisher) {
+        this(activityMapper, sessionMapper, venueMapper, userAccessService, ticketTypeMapper,
+                sessionSeatService, sessionSeatLayoutService, sessionSeatMapper, searchIndexEventPublisher,
+                null, null, null);
+    }
+
+    public SessionAdminService(ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               VenueMapper venueMapper,
+                               UserAccessService userAccessService,
+                               TicketTypeMapper ticketTypeMapper,
+                               SessionSeatService sessionSeatService,
+                               SessionSeatLayoutService sessionSeatLayoutService,
+                               SessionSeatMapper sessionSeatMapper,
+                               ActivitySearchIndexEventPublisher searchIndexEventPublisher,
+                               OrderInternalClient orderInternalClient,
+                               NotificationMqProducer notificationProducer,
+                               String internalToken) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
         this.venueMapper = venueMapper;
@@ -83,6 +130,24 @@ public class SessionAdminService {
         this.sessionSeatService = sessionSeatService;
         this.sessionSeatLayoutService = sessionSeatLayoutService;
         this.sessionSeatMapper = sessionSeatMapper;
+        this.searchIndexEventPublisher = searchIndexEventPublisher;
+        this.orderInternalClient = orderInternalClient;
+        this.notificationProducer = notificationProducer;
+        this.internalToken = internalToken;
+    }
+
+    @Autowired(required = false)
+    public void setSearchIndexEventPublisher(ActivitySearchIndexEventPublisher searchIndexEventPublisher) {
+        this.searchIndexEventPublisher = searchIndexEventPublisher;
+    }
+
+    @Autowired(required = false)
+    public void setNotificationDependencies(OrderInternalClient orderInternalClient,
+                                            NotificationMqProducer notificationProducer,
+                                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalToken) {
+        this.orderInternalClient = orderInternalClient;
+        this.notificationProducer = notificationProducer;
+        this.internalToken = internalToken;
     }
 
     @Transactional
@@ -122,6 +187,7 @@ public class SessionAdminService {
         } else if (sessionSeatService != null) {
             sessionSeatService.generateForSession(session.getId());
         }
+        publishSearchUpsert(activity.getId());
         return session;
     }
 
@@ -136,10 +202,16 @@ public class SessionAdminService {
             throw new BusinessException(404, "场次不存在");
         }
         requireManageableActivity(session.getActivityId(), userId, user);
+        LocalDateTime oldStartTime = session.getStartTime();
+        LocalDateTime oldEndTime = session.getEndTime();
+        Long oldVenueId = session.getVenueId();
 
         Long venueId = body.containsKey("venueId") ? toPositiveLong(body.get("venueId"), "场馆ID不正确") : session.getVenueId();
         LocalDateTime startTime = body.containsKey("startTime") ? parseTime(body.get("startTime")) : session.getStartTime();
         LocalDateTime endTime = body.containsKey("endTime") ? parseOptionalTime(body.get("endTime")) : session.getEndTime();
+        boolean rescheduled = !Objects.equals(oldVenueId, venueId)
+                || !Objects.equals(oldStartTime, startTime)
+                || !Objects.equals(oldEndTime, endTime);
         Venue venue = venueMapper.selectById(venueId);
         if (venue == null || !Integer.valueOf(1).equals(venue.getStatus())) {
             throw new BusinessException(400, "场馆不存在或已停用");
@@ -154,6 +226,10 @@ public class SessionAdminService {
             session.setStatus(Integer.valueOf(body.get("status").toString()));
         }
         sessionMapper.updateById(session);
+        publishSearchUpsert(session.getActivityId());
+        if (rescheduled) {
+            publishActivityRescheduledEvents(session, oldStartTime, oldEndTime, oldVenueId);
+        }
         return session;
     }
 
@@ -180,6 +256,7 @@ public class SessionAdminService {
                     .eq(TicketType::getSessionId, id));
         }
         sessionMapper.deleteById(id);
+        publishSearchUpsert(session.getActivityId());
     }
 
     public Page<SessionAdminResponse> listSessions(Long userId, Integer page, Integer size, Long activityId, Long venueId, Integer status) {
@@ -374,5 +451,64 @@ public class SessionAdminService {
 
     private LocalDateTime parseOptionalTime(Object value) {
         return parseTime(value);
+    }
+
+    private void publishSearchUpsert(Long activityId) {
+        if (searchIndexEventPublisher != null && activityId != null) {
+            searchIndexEventPublisher.publishUpsert(activityId);
+        }
+    }
+
+    private void publishActivityRescheduledEvents(Session session,
+                                                  LocalDateTime oldStartTime,
+                                                  LocalDateTime oldEndTime,
+                                                  Long oldVenueId) {
+        if (session == null
+                || session.getId() == null
+                || orderInternalClient == null
+                || notificationProducer == null
+                || !StringUtils.hasText(internalToken)) {
+            return;
+        }
+        try {
+            Result<List<OrderInfoResponse>> result = orderInternalClient.listPaidBySessions(
+                    new PaidOrdersBySessionsRequest(List.of(session.getId())), internalToken);
+            if (result == null || result.getCode() != 200 || result.getData() == null) {
+                return;
+            }
+            String eventMarker = Integer.toHexString(Objects.hash(
+                    session.getVenueId(), session.getStartTime(), session.getEndTime()));
+            for (OrderInfoResponse order : result.getData()) {
+                if (order == null || order.getId() == null || order.getUserId() == null) {
+                    continue;
+                }
+                NotificationEventMessage event = new NotificationEventMessage();
+                event.setEventId("activity-rescheduled:" + session.getActivityId() + ":" + session.getId()
+                        + ":" + order.getId() + ":" + eventMarker);
+                event.setEventType("ACTIVITY_RESCHEDULED");
+                event.setAggregateKey("ACTIVITY_RESCHEDULED:" + order.getId() + ":" + eventMarker);
+                event.setUserId(order.getUserId());
+                event.setOrderId(order.getId());
+                event.setActivityId(session.getActivityId());
+                event.setChannels(List.of(NotificationEventMessage.CHANNEL_IN_APP, NotificationEventMessage.CHANNEL_SMS));
+                event.setContent("你购买的活动场次已改期，请查看订单详情。");
+                event.setActionHref("/orders/" + order.getId());
+                event.setActionLabel("查看订单");
+                event.setPayload(Map.of(
+                        "source", "java-ticket",
+                        "phase", "SESSION_RESCHEDULED",
+                        "sessionId", String.valueOf(session.getId()),
+                        "oldVenueId", String.valueOf(oldVenueId),
+                        "newVenueId", String.valueOf(session.getVenueId()),
+                        "oldStartTime", oldStartTime != null ? oldStartTime.toString() : "",
+                        "newStartTime", session.getStartTime() != null ? session.getStartTime().toString() : "",
+                        "oldEndTime", oldEndTime != null ? oldEndTime.toString() : "",
+                        "newEndTime", session.getEndTime() != null ? session.getEndTime().toString() : ""
+                ));
+                notificationProducer.sendNotificationEvent(event);
+            }
+        } catch (RuntimeException e) {
+            log.warn("活动改期通知发送失败: sessionId={}, message={}", session.getId(), e.getMessage());
+        }
     }
 }

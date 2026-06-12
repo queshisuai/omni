@@ -11,11 +11,13 @@ import com.omni.ticket.dto.PaidOrderCountResponse;
 import com.omni.ticket.dto.PaidOrdersBySessionsRequest;
 import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.PerformanceSubscription;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Tour;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.PerformanceSubscriptionMapper;
 import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.mapper.SessionMapper;
@@ -39,6 +41,7 @@ public class AdminSummaryService {
     private final UserAccessService userAccessService;
     private final OrderInternalClient orderInternalClient;
     private final TourMapper tourMapper;
+    private final PerformanceSubscriptionMapper performanceSubscriptionMapper;
     private final String internalApiToken;
 
     public AdminSummaryService(ActivityMapper activityMapper,
@@ -47,6 +50,7 @@ public class AdminSummaryService {
                                  UserAccessService userAccessService,
                                  OrderInternalClient orderInternalClient,
                                  TourMapper tourMapper,
+                                 PerformanceSubscriptionMapper performanceSubscriptionMapper,
                                  @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this.activityMapper = activityMapper;
         this.sessionMapper = sessionMapper;
@@ -54,6 +58,7 @@ public class AdminSummaryService {
         this.userAccessService = userAccessService;
         this.orderInternalClient = orderInternalClient;
         this.tourMapper = tourMapper;
+        this.performanceSubscriptionMapper = performanceSubscriptionMapper;
         this.internalApiToken = internalApiToken;
     }
 
@@ -150,6 +155,12 @@ public class AdminSummaryService {
         response.setRiskHitCount(activities.stream()
                 .filter(this::isRiskHit)
                 .count());
+        List<Long> activityIds = activities.stream()
+                .map(Activity::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        response.setInterestCount(countSubscriptions(activityIds, List.of("ACTIVITY_WANT", "WAITLIST_REMINDER")));
+        response.setReminderCount(countSubscriptions(activityIds, List.of("SALE_REMINDER", "WAITLIST_REMINDER")));
 
         Map<Long, List<OrderInfoResponse>> ordersByActivity = orders.stream()
                 .map(order -> new OrderActivityPair(order, activityIdBySessionId.get(order.getSessionId())))
@@ -177,6 +188,17 @@ public class AdminSummaryService {
     private boolean isRiskHit(Activity activity) {
         return activity != null
                 && ("risk_suspended".equals(activity.getPublishStatus()) || activity.getRiskSuspendedAt() != null);
+    }
+
+    private Long countSubscriptions(List<Long> activityIds, List<String> targetTypes) {
+        if (activityIds == null || activityIds.isEmpty()) {
+            return 0L;
+        }
+        Long count = performanceSubscriptionMapper.selectCount(new LambdaQueryWrapper<PerformanceSubscription>()
+                .in(PerformanceSubscription::getActivityId, activityIds)
+                .eq(PerformanceSubscription::getStatus, 1)
+                .in(PerformanceSubscription::getTargetType, targetTypes));
+        return count == null ? 0L : count;
     }
 
     private static class OrderActivityPair {

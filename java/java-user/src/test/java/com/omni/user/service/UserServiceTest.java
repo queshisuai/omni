@@ -30,6 +30,7 @@ class UserServiceTest {
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final RbacService rbacService = mock(RbacService.class);
     private final UserService userService = new UserService(userMapper, passwordEncoder, rbacService);
+    private final UserService mockSmsUserService = new UserService(userMapper, passwordEncoder, rbacService, true);
 
     @Test
     void smsLoginRejectsWrongCode() {
@@ -46,7 +47,7 @@ class UserServiceTest {
         when(userMapper.selectOne(any())).thenReturn(existingUser());
         when(rbacService.getInternalAuthContext(2004L)).thenReturn(authContextWithNoPermissions());
 
-        LoginResponse response = userService.login(smsLoginRequest("666666"));
+        LoginResponse response = mockSmsUserService.login(smsLoginRequest("666666"));
 
         assertEquals(2004L, response.getUserId());
         assertEquals("13900000001", response.getPhone());
@@ -56,13 +57,22 @@ class UserServiceTest {
     }
 
     @Test
+    void smsLoginRejectsMockCodeWhenMockSmsDisabled() {
+        when(userMapper.selectOne(any())).thenReturn(existingUser());
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> userService.login(smsLoginRequest("666666")));
+
+        assertEquals("验证码错误", exception.getMessage());
+    }
+
+    @Test
     void loginExposesPlatformSuperAdminEffectiveRoleForFrontend() {
         User user = existingUser();
         user.setRole("admin");
         when(userMapper.selectOne(any())).thenReturn(user);
         when(rbacService.getInternalAuthContext(2004L)).thenReturn(authContext("platform_super_admin", List.of("rbac.manage")));
 
-        LoginResponse response = userService.login(smsLoginRequest("666666"));
+        LoginResponse response = mockSmsUserService.login(smsLoginRequest("666666"));
 
         assertEquals("platform_super_admin", response.getRole());
         assertEquals(List.of("rbac.manage"), response.getPermissionCodes());
@@ -112,7 +122,7 @@ class UserServiceTest {
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> userService.resetPassword(resetPasswordRequest("666666", "newpass1", "newpass1"))
+                () -> mockSmsUserService.resetPassword(resetPasswordRequest("666666", "newpass1", "newpass1"))
         );
 
         assertEquals("手机号或验证码错误", exception.getMessage());
@@ -125,7 +135,7 @@ class UserServiceTest {
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> userService.resetPassword(resetPasswordRequest("666666", "newpass1", "newpass2"))
+                () -> mockSmsUserService.resetPassword(resetPasswordRequest("666666", "newpass1", "newpass2"))
         );
 
         assertEquals("两次密码输入不一致", exception.getMessage());
@@ -136,7 +146,7 @@ class UserServiceTest {
     void resetPasswordRejectsShortPasswordForExistingPhoneWithoutUpdatingPassword() {
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> userService.resetPassword(resetPasswordRequest("666666", "12345", "12345"))
+                () -> mockSmsUserService.resetPassword(resetPasswordRequest("666666", "12345", "12345"))
         );
 
         assertEquals("新密码长度不能少于6位", exception.getMessage());
@@ -148,7 +158,7 @@ class UserServiceTest {
     void resetPasswordRejectsShortPasswordForUnknownPhoneWithSameMessage() {
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> userService.resetPassword(resetPasswordRequest("18800000000", "666666", "12345", "12345"))
+                () -> mockSmsUserService.resetPassword(resetPasswordRequest("18800000000", "666666", "12345", "12345"))
         );
 
         assertEquals("新密码长度不能少于6位", exception.getMessage());
@@ -160,7 +170,7 @@ class UserServiceTest {
     void resetPasswordRejectsMismatchedPasswordsForExistingPhoneBeforeQueryingUser() {
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> userService.resetPassword(resetPasswordRequest("666666", "newpass1", "newpass2"))
+                () -> mockSmsUserService.resetPassword(resetPasswordRequest("666666", "newpass1", "newpass2"))
         );
 
         assertEquals("两次密码输入不一致", exception.getMessage());
@@ -172,7 +182,7 @@ class UserServiceTest {
     void resetPasswordRejectsMismatchedPasswordsForUnknownPhoneWithSameMessage() {
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> userService.resetPassword(resetPasswordRequest("18800000000", "666666", "newpass1", "newpass2"))
+                () -> mockSmsUserService.resetPassword(resetPasswordRequest("18800000000", "666666", "newpass1", "newpass2"))
         );
 
         assertEquals("两次密码输入不一致", exception.getMessage());
@@ -186,7 +196,7 @@ class UserServiceTest {
         when(userMapper.selectOne(any())).thenReturn(user);
         when(passwordEncoder.encode("newpass1")).thenReturn("encoded-newpass1");
 
-        userService.resetPassword(resetPasswordRequest(" 666666 ", " newpass1 ", " newpass1 "));
+        mockSmsUserService.resetPassword(resetPasswordRequest(" 666666 ", " newpass1 ", " newpass1 "));
 
         assertEquals("encoded-newpass1", user.getPassword());
         verify(userMapper).updateById(user);
@@ -252,7 +262,7 @@ class UserServiceTest {
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> userService.changePassword(changePasswordRequest("oldpass", "666666", "  ", "newpass1"))
+                () -> mockSmsUserService.changePassword(changePasswordRequest("oldpass", "666666", "  ", "newpass1"))
         );
 
         assertEquals("新密码不能为空", exception.getMessage());
@@ -269,7 +279,7 @@ class UserServiceTest {
 
         BusinessException exception = assertThrows(
                 BusinessException.class,
-                () -> userService.changePassword(changePasswordRequest("oldpass", "666666", "newpass1", "  "))
+                () -> mockSmsUserService.changePassword(changePasswordRequest("oldpass", "666666", "newpass1", "  "))
         );
 
         assertEquals("确认密码不能为空", exception.getMessage());
@@ -285,7 +295,7 @@ class UserServiceTest {
         when(passwordEncoder.matches("oldpass", "encoded-oldpass")).thenReturn(true);
         when(passwordEncoder.encode("newpass1")).thenReturn("encoded-newpass1");
 
-        userService.changePassword(changePasswordRequest("oldpass", "666666", "newpass1", "newpass1"));
+        mockSmsUserService.changePassword(changePasswordRequest("oldpass", "666666", "newpass1", "newpass1"));
 
         assertEquals("encoded-newpass1", user.getPassword());
         verify(userMapper).updateById(user);

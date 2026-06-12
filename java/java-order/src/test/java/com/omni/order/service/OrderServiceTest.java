@@ -1,5 +1,8 @@
 package com.omni.order.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
@@ -34,6 +37,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -1909,6 +1913,44 @@ class OrderServiceTest {
         assertEquals(OrderService.STATUS_PAID, result.getStatus());
         verify(ticketSalesInternalClient, never()).confirmSold(any(), anyString());
         verify(orderSeatMapper, never()).updateById(any());
+    }
+
+    @Test
+    void markPaidLogsSegmentedLatencyForOrderFulfillment() {
+        Order order = pendingOrder(2105L, 101L, 1L);
+        order.setOrderNo("ORDER-2105");
+        when(orderMapper.selectById(2105L)).thenReturn(order);
+        when(orderMapper.updateStatusIfCurrent(2105L, OrderService.STATUS_PENDING, OrderService.STATUS_PAID))
+                .thenReturn(1);
+        when(orderSeatMapper.selectList(any())).thenReturn(null);
+        when(ticketSalesInternalClient.confirmSold(any(TicketSalesOrderRequest.class), eq("test-internal-token")))
+                .thenReturn(Result.success());
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(OrderService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.INFO);
+        try {
+            service.markPaid(2105L);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        String message = appender.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(line -> line.contains("订单支付履约链路耗时"))
+                .findFirst()
+                .orElse("");
+
+        assertTrue(message.contains("orderId=2105"));
+        assertTrue(message.contains("orderNo=ORDER-2105"));
+        assertTrue(message.contains("outcome=PAID"));
+        assertTrue(message.contains("orderLoadMs="));
+        assertTrue(message.contains("statusUpdateMs="));
+        assertTrue(message.contains("ticketConfirmMs="));
+        assertTrue(message.contains("ticketIssueMs="));
+        assertTrue(message.contains("waitlistNotifyMs="));
+        assertTrue(message.contains("totalMs="));
     }
 
     @Test

@@ -42,7 +42,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 订单接口
@@ -59,14 +61,14 @@ public class OrderController {
 
     public OrderController(OrderService orderService,
                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
-                           @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
+                           @Value("${jwt.secret:${JWT_SECRET:}}") String jwtSecret) {
         this(orderService, null, null, internalApiToken, jwtSecret);
     }
 
     public OrderController(OrderService orderService,
                            TicketWalletService ticketWalletService,
                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
-                           @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
+                           @Value("${jwt.secret:${JWT_SECRET:}}") String jwtSecret) {
         this(orderService, ticketWalletService, null, internalApiToken, jwtSecret);
     }
 
@@ -75,7 +77,7 @@ public class OrderController {
                            TicketWalletService ticketWalletService,
                            TicketCheckInService ticketCheckInService,
                            @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
-                           @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
+                           @Value("${jwt.secret:${JWT_SECRET:}}") String jwtSecret) {
         this.orderService = orderService;
         this.ticketWalletService = ticketWalletService;
         this.ticketCheckInService = ticketCheckInService;
@@ -309,6 +311,28 @@ public class OrderController {
         return Result.success(orderService.findOrderByGrabRequestId(grabRequestId));
     }
 
+    @GetMapping("/internal/users/{userId}/orders")
+    public Result<List<OrderListItemResponse>> listInternalUserOrders(
+            @PathVariable Long userId,
+            @RequestParam(defaultValue = "5") Integer limit,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(limitList(orderService.listOrderItems(userId), limit));
+    }
+
+    @GetMapping("/internal/users/{userId}/tickets")
+    public Result<List<TicketWalletItemResponse>> listInternalUserTickets(
+            @PathVariable Long userId,
+            @RequestParam(defaultValue = "5") Integer limit,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(limitList(ticketWalletService.listMyTickets(userId), limit));
+    }
+
     @GetMapping("/internal/{id}/refund-options")
     public Result<RefundOptionsResponse> getInternalRefundOptions(@PathVariable Long id,
             @RequestHeader(value = "X-Internal-Token", required = false) String token) {
@@ -468,6 +492,9 @@ public class OrderController {
         if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
             return null;
         }
+        if (!StringUtils.hasText(jwtSecret)) {
+            return null;
+        }
         try {
             Claims claims = Jwts.parserBuilder()
                     .setSigningKey(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
@@ -493,5 +520,13 @@ public class OrderController {
 
     private boolean isValidInternalToken(String token) {
         return StringUtils.hasText(internalApiToken) && internalApiToken.equals(token);
+    }
+
+    private <T> List<T> limitList(List<T> items, Integer limit) {
+        if (items == null || items.isEmpty()) {
+            return Collections.emptyList();
+        }
+        int size = limit == null ? 5 : Math.max(0, Math.min(limit, 20));
+        return items.stream().limit(size).collect(Collectors.toList());
     }
 }

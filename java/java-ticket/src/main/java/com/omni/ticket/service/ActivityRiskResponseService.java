@@ -154,7 +154,7 @@ public class ActivityRiskResponseService {
         resolution.setSubmittedBy(request.getUserId());
         resolution.setCreateTime(LocalDateTime.now());
         resolutionMapper.insert(resolution);
-        notifyUser(2002L, "TODO", "活动恢复售票申请待审核：" + activity.getName());
+        notifyUser(2002L, "IN_APP", "活动恢复售票申请待审核：" + activity.getName());
         return toResponse(resolution);
     }
 
@@ -230,7 +230,7 @@ public class ActivityRiskResponseService {
         resolution.setResolutionNote("系统因风险艺人自动停止售票，等待主办方处理");
         resolution.setCreateTime(LocalDateTime.now());
         resolutionMapper.insert(resolution);
-        notifyUser(activity.getOrganizerId(), "TODO", "活动暂时停止售票，请处理阵容风险：" + activity.getName());
+        notifyUser(activity.getOrganizerId(), "IN_APP", "活动暂时停止售票，请处理阵容风险：" + activity.getName());
     }
 
     private void restoreActivity(Activity activity) {

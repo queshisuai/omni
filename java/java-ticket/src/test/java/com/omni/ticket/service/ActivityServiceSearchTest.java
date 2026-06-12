@@ -7,11 +7,14 @@ import com.omni.ticket.dto.ActivityVO;
 import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
+import com.omni.ticket.search.ActivitySearchProvider;
+import com.omni.ticket.search.ActivitySearchRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -23,6 +26,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -438,6 +443,32 @@ class ActivityServiceSearchTest {
 
             assertEquals(0, result.getTotal());
             assertTrue(result.getRecords().isEmpty());
+        }
+
+        @Test
+        void searchUsesInjectedProviderWhenConfigured() {
+            ActivitySearchProvider searchProvider = mock(ActivitySearchProvider.class);
+            Page<ActivityVO> expected = new Page<>(2, 20, 0);
+            when(searchProvider.search(any(ActivitySearchRequest.class))).thenReturn(expected);
+            ActivityService service = new ActivityService(activityMapper, categoryMapper, artistMapper,
+                    sessionMapper, venueMapper, ticketTypeMapper, null, tourMapper, stationMapper,
+                    sessionSeatMapper, searchProvider);
+
+            Page<ActivityVO> result = service.searchActivities(2, 20, 1001L, "jay", "Beijing",
+                    LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30),
+                    new BigDecimal("100"), new BigDecimal("800"), "on_sale",
+                    true, true, "price_desc");
+
+            assertSame(expected, result);
+            ArgumentCaptor<ActivitySearchRequest> requestCaptor = ArgumentCaptor.forClass(ActivitySearchRequest.class);
+            verify(searchProvider).search(requestCaptor.capture());
+            ActivitySearchRequest request = requestCaptor.getValue();
+            assertEquals(2, request.getPage());
+            assertEquals(20, request.getSize());
+            assertEquals(1001L, request.getCategoryId());
+            assertEquals("jay", request.getKeyword());
+            assertEquals("Beijing", request.getCity());
+            assertEquals("price_desc", request.getSort());
         }
     }
 

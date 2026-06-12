@@ -39,8 +39,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --color-damai: var(--damai);
-  --color-damai-foreground: var(--damai-foreground);
+  --color-omni-brand: var(--omni-brand);
+  --color-omni-brand-foreground: var(--omni-brand-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -69,8 +69,8 @@
   --border: #e5e5e5;
   --input: #e5e5e5;
   --ring: #ff1268;
-  --damai: #ff1268;
-  --damai-foreground: #ffffff;
+  --omni-brand: #ff1268;
+  --omni-brand-foreground: #ffffff;
   --chart-1: #ff1268;
   --chart-2: #ff6b8a;
   --chart-3: #ff9eb5;
@@ -106,8 +106,8 @@
   --border: rgba(255, 255, 255, 0.1);
   --input: rgba(255, 255, 255, 0.15);
   --ring: #ff1268;
-  --damai: #ff1268;
-  --damai-foreground: #ffffff;
+  --omni-brand: #ff1268;
+  --omni-brand-foreground: #ffffff;
   --chart-1: #ff1268;
   --chart-2: #ff6b8a;
   --chart-3: #ff9eb5;

@@ -147,7 +147,7 @@ export function SeatLayoutControls({
             </div>
           </div>
 
-          {/* Mini map (placeholder for visual match) */}
+          {/* Mini map */}
           <div className="mt-8 pt-4 border-t border-white/5">
             <div className="mb-2 text-[10px] text-zinc-500">缩略图</div>
             <div className="h-32 w-full rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-center overflow-hidden">
@@ -172,7 +172,7 @@ function BlockSpecificFields({ block, onUpdate }: { block: SeatBlockDraft; onUpd
     return <>{row('容量', block.capacity, 'capacity')}{row('宽', block.width, 'width')}{row('高', block.height, 'height')}</>
   }
   if (block.blockType === 'arcBlock') {
-    return <>{row('排数', block.rows, 'rows')}{row('排距', block.rowSpacing, 'rowSpacing')}{row('座距', block.seatSpacing, 'seatSpacing')}{row('内半径', block.innerRadius, 'innerRadius')}{row('起始角', block.arcStartAngle, 'arcStartAngle')}{row('结束角', block.arcEndAngle, 'arcEndAngle')}</>
+    return <>{row('排数', block.rows, 'rows')}{row('每排座数', block.seatsPerRow, 'seatsPerRow')}{row('排距', block.rowSpacing, 'rowSpacing')}{row('座距', block.seatSpacing, 'seatSpacing')}{row('内半径', block.innerRadius, 'innerRadius')}{row('起始角', block.arcStartAngle, 'arcStartAngle')}{row('结束角', block.arcEndAngle, 'arcEndAngle')}</>
   }
   if (block.blockType === 'polygonBlock') {
     return <>{row('排距', block.rowSpacing, 'rowSpacing')}{row('座距', block.seatSpacing, 'seatSpacing')}<ReadonlyRow label="顶点数" value={`${block.polygonPoints?.length ?? 0}`} /></>
@@ -218,7 +218,7 @@ function SeatPositionEditor({
         <button type="button" onClick={onClear} className="text-[10px] text-zinc-500 hover:text-white">取消</button>
       </div>
       <div className="space-y-2 text-[11px] text-zinc-400">
-        <div className="flex justify-between"><span>状态</span><span className="text-zinc-200">{seat.status}</span></div>
+        <div className="flex justify-between"><span>状态</span><span className="text-zinc-200">{formatSeatStatus(seat.status)}</span></div>
         <div className="grid grid-cols-2 gap-2">
           <NumberField label="X坐标" value={Math.round(seat.x)} disabled={!editable} onChange={updateX} />
           <NumberField label="Y坐标" value={Math.round(seat.y)} disabled={!editable} onChange={updateY} />
@@ -256,6 +256,15 @@ function labelForType(type: SeatBlockType) {
   if (type === 'standingBlock') return '站区'
   if (type === 'polygonBlock') return '多边形区'
   return '方阵'
+}
+
+function formatSeatStatus(status: string | null | undefined) {
+  if (status === 'available') return '可售'
+  if (status === 'reserved') return '已锁定'
+  if (status === 'selected') return '已选中'
+  if (status === 'occupied') return '已占用'
+  if (status === 'deleted') return '已删除'
+  return '未知座位状态'
 }
 
 function estimatedCapacity(block: SeatBlockDraft) {

@@ -12,6 +12,51 @@ import { OrderClientService } from './order-client.service';
 type AttemptOutcome = 'ORDER_CREATED' | 'SOLD_OUT' | 'LIMITED' | 'FAILED' | 'CANCELLED' | 'PENDING_RECOVERY' | 'STALE_LEASE';
 type IdempotentAdmissionOutcome = AttemptOutcome | 'CONTINUE';
 type OrderLookupRecovery = 'RECOVERED' | 'MISSING' | 'UNKNOWN';
+type LatencyPhase = 'claim' | 'lock' | 'order' | 'confirm' | 'ack';
+
+class GrabWorkerLatencyTrace {
+  private readonly startedAt = Date.now();
+  private readonly phases: Record<LatencyPhase, number> = {
+    claim: 0,
+    lock: 0,
+    order: 0,
+    confirm: 0,
+    ack: 0,
+  };
+  private queueWaitMillis = 0;
+
+  setRecord(record: Pick<GrabRequestRecord, 'createdAt'>): void {
+    const createdAt = record.createdAt instanceof Date ? record.createdAt.getTime() : new Date(record.createdAt).getTime();
+    this.queueWaitMillis = Number.isFinite(createdAt) ? Math.max(0, Date.now() - createdAt) : 0;
+  }
+
+  async measure<T>(phase: LatencyPhase, action: () => Promise<T>): Promise<T> {
+    const startedAt = Date.now();
+    try {
+      return await action();
+    } finally {
+      this.phases[phase] += Math.max(0, Date.now() - startedAt);
+    }
+  }
+
+  format(record: Pick<GrabRequestRecord, 'requestId' | 'sessionId' | 'ticketTypeId' | 'queueSeq'>, outcome: string): string {
+    return [
+      '抢票链路耗时:',
+      `requestId=${record.requestId}`,
+      `sessionId=${record.sessionId}`,
+      `ticketTypeId=${record.ticketTypeId}`,
+      `queueSeq=${record.queueSeq ?? ''}`,
+      `outcome=${outcome}`,
+      `queueWaitMs=${this.queueWaitMillis}`,
+      `claimMs=${this.phases.claim}`,
+      `lockMs=${this.phases.lock}`,
+      `orderMs=${this.phases.order}`,
+      `confirmMs=${this.phases.confirm}`,
+      `ackMs=${this.phases.ack}`,
+      `totalMs=${Math.max(0, Date.now() - this.startedAt)}`,
+    ].join(' ');
+  }
+}
 
 @Injectable()
 export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -58,13 +103,14 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async processRequest(requestId: string, sessionId?: number): Promise<void> {
+    const latencyTrace = new GrabWorkerLatencyTrace();
     const existing = await this.repository.findByRequestId(requestId);
     if (!existing) {
       if (sessionId != null) await this.queueService.ackOrphanInflight(sessionId, requestId);
       return;
     }
 
-    const record = await this.repository.claimForProcessing(requestId, this.workerId);
+    const record = await latencyTrace.measure('claim', () => this.repository.claimForProcessing(requestId, this.workerId));
     if (!record) {
       if (existing.expireTime <= new Date()) {
         await this.repository.expireActiveRequest(requestId, '抢票请求处理前已过期', [existing.progressStatus]);
@@ -77,18 +123,26 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       }
       return;
     }
+    latencyTrace.setRecord(record);
 
     let shouldAck = true;
+    let outcome: string = 'FAILED';
     try {
-      shouldAck = record.requestType === 'TEAM_GRAB'
-        ? await this.processTeamGrab(record)
-        : await this.processAttempts(record);
+      if (record.requestType === 'TEAM_GRAB') {
+        shouldAck = await this.processTeamGrab(record);
+        outcome = shouldAck ? 'TEAM_GRAB_PROCESSED' : 'TEAM_GRAB_RETRY';
+      } else {
+        outcome = await this.processAttempts(record, latencyTrace);
+        shouldAck = outcome !== 'STALE_LEASE';
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '抢票处理失败';
       await this.repository.updateStatus(record.requestId, GRAB_STATUS.FAILED, message);
+      outcome = 'FAILED';
       this.logger.error(error);
     } finally {
-      if (shouldAck) await this.ackIfQueued(record);
+      if (shouldAck) await latencyTrace.measure('ack', () => this.ackIfQueued(record));
+      this.logger.log(latencyTrace.format(record, outcome));
     }
   }
 
@@ -97,7 +151,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     return this.teamGrabProcessor.process(record);
   }
 
-  private async processAttempts(record: GrabRequestRecord): Promise<boolean> {
+  private async processAttempts(record: GrabRequestRecord, latencyTrace: GrabWorkerLatencyTrace): Promise<AttemptOutcome> {
     const preferences = this.preferencesFor(record);
     const effectivePreferences = preferences.length ? preferences : [{
       ticketTypeId: record.ticketTypeId,
@@ -118,19 +172,21 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
           attempts,
           workerId: this.workerId,
         });
-        if (!downgraded) return await this.isStillLeaseOwner(record.requestId);
+        if (!downgraded) return await this.isStillLeaseOwner(record.requestId) ? 'CANCELLED' : 'STALE_LEASE';
       }
 
-      const outcome = await this.tryTicketType(record, preference, index, attempts);
-      if (outcome === 'STALE_LEASE') return false;
-      if (outcome !== 'SOLD_OUT') return true;
+      const outcome = await this.tryTicketType(record, preference, index, attempts, latencyTrace);
+      if (outcome === 'STALE_LEASE') return 'STALE_LEASE';
+      if (outcome !== 'SOLD_OUT') return outcome;
 
       attempts = this.markAttempt(attempts, index, 'SOLD_OUT', '当前票档已售罄');
       if (index === effectivePreferences.length - 1) {
-        return await this.finishTerminalAttempt(record, GRAB_STATUS.SOLD_OUT, '当前票档已售罄', preference, index, attempts, 'SOLD_OUT');
+        return await this.finishTerminalAttempt(record, GRAB_STATUS.SOLD_OUT, '当前票档已售罄', preference, index, attempts, 'SOLD_OUT')
+          ? 'SOLD_OUT'
+          : 'STALE_LEASE';
       }
     }
-    return true;
+    return 'FAILED';
   }
 
   private async tryTicketType(
@@ -138,6 +194,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     preference: GrabTicketPreference,
     index: number,
     attempts: GrabAttemptSnapshot[],
+    latencyTrace: GrabWorkerLatencyTrace,
   ): Promise<AttemptOutcome> {
     const tryingAttempts = this.markAttempt(attempts, index, 'TRYING', `正在尝试${this.ticketLabel(preference)}`);
     const tryingRecord = await this.repository.updateProgress(record.requestId, {
@@ -161,7 +218,7 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     });
     if (!lockingRecord) return await this.missingProgressOutcome(record.requestId);
 
-    let admission = await this.admissionService.admit({
+    const admitInput = {
       requestId: record.requestId,
       userId: record.userId,
       sessionId: record.sessionId,
@@ -170,36 +227,23 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
       seatIds: record.seatIds,
       idempotencyKey: record.idempotencyKey,
       ttlSeconds: this.requestTtlSeconds,
-    });
+    };
+    let admission = await latencyTrace.measure('lock', () => this.admissionService.admit(admitInput));
     if (admission.outcome === 'STOCK_UNINITIALIZED') {
-      const initializedStock = await this.stockService?.ensureInitialized(record.sessionId, preference.ticketTypeId);
+      const initializedStock = await latencyTrace.measure('lock', async () =>
+        this.stockService?.ensureInitialized(record.sessionId, preference.ticketTypeId),
+      );
       if (initializedStock != null) {
-        admission = await this.admissionService.admit({
-          requestId: record.requestId,
-          userId: record.userId,
-          sessionId: record.sessionId,
-          ticketTypeId: preference.ticketTypeId,
-          quantity: record.quantity,
-          seatIds: record.seatIds,
-          idempotencyKey: record.idempotencyKey,
-          ttlSeconds: this.requestTtlSeconds,
-        });
+        admission = await latencyTrace.measure('lock', () => this.admissionService.admit(admitInput));
       }
     }
 
     if (admission.outcome === 'SOLD_OUT') {
-      const refreshedStock = await this.stockService?.syncFromTicketType?.(record.sessionId, preference.ticketTypeId);
+      const refreshedStock = await latencyTrace.measure('lock', async () =>
+        this.stockService?.syncFromTicketType?.(record.sessionId, preference.ticketTypeId),
+      );
       if (refreshedStock != null && refreshedStock >= record.quantity) {
-        admission = await this.admissionService.admit({
-          requestId: record.requestId,
-          userId: record.userId,
-          sessionId: record.sessionId,
-          ticketTypeId: preference.ticketTypeId,
-          quantity: record.quantity,
-          seatIds: record.seatIds,
-          idempotencyKey: record.idempotencyKey,
-          ttlSeconds: this.requestTtlSeconds,
-        });
+        admission = await latencyTrace.measure('lock', () => this.admissionService.admit(admitInput));
       }
     }
 
@@ -273,9 +317,13 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
     };
 
     try {
-      const order = await this.orderClient.createOrder(orderInput);
-      const persisted = await this.markOrderCreated(record, preference, index, lockingAttempts, order.id);
-      return persisted ? 'ORDER_CREATED' : await this.markPendingRecovery(record, preference, index, lockingAttempts);
+      const order = await latencyTrace.measure('order', () => this.orderClient.createOrder(orderInput));
+      const persisted = await latencyTrace.measure('confirm', () =>
+        this.markOrderCreated(record, preference, index, lockingAttempts, order.id),
+      );
+      return persisted ? 'ORDER_CREATED' : await latencyTrace.measure('confirm', () =>
+        this.markPendingRecovery(record, preference, index, lockingAttempts),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : '订单创建失败';
       if (this.isStockError(message)) {
@@ -288,9 +336,13 @@ export class GrabWorkerService implements OnModuleInit, OnModuleDestroy {
         return finished ? 'LIMITED' : 'STALE_LEASE';
       }
 
-      const recovery = await this.recoverOrderByLookup(record, preference, index, lockingAttempts);
+      const recovery = await latencyTrace.measure('confirm', () =>
+        this.recoverOrderByLookup(record, preference, index, lockingAttempts),
+      );
       if (recovery === 'RECOVERED') return 'ORDER_CREATED';
-      if (recovery === 'UNKNOWN') return await this.markPendingRecovery(record, preference, index, lockingAttempts);
+      if (recovery === 'UNKNOWN') return await latencyTrace.measure('confirm', () =>
+        this.markPendingRecovery(record, preference, index, lockingAttempts),
+      );
 
       await this.releaseAdmission(record, preference);
       const finished = await this.finishTerminalAttempt(record, GRAB_STATUS.FAILED, message, preference, index, lockingAttempts, 'FAILED');

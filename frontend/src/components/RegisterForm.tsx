@@ -109,9 +109,9 @@ export function RegisterForm() {
           />
           <label htmlFor="agreement" className="ml-2 text-xs text-gray-500 leading-relaxed cursor-pointer select-none">
             我已阅读并接受
-            <a href="https://help.damai.cn/helpPageH5Context.htm?pageId=38" target="_blank" className="text-[#2192D9] hover:text-[#ff1268] hover:underline mx-1 transition-colors">《万象会员服务协议》</a>
-            <a href="https://help.damai.cn/helpPageH5Context.htm?pageId=40" target="_blank" className="text-[#2192D9] hover:text-[#ff1268] hover:underline mx-1 transition-colors">《隐私权政策》</a>
-            <a href="https://help.damai.cn/helpPageH5Context.htm?pageId=92" target="_blank" className="text-[#2192D9] hover:text-[#ff1268] hover:underline mx-1 transition-colors">《订票服务条款》</a>
+            <span className="mx-1 text-[#2192D9]">《万象会员服务协议》</span>
+            <span className="mx-1 text-[#2192D9]">《隐私权政策》</span>
+            <span className="mx-1 text-[#2192D9]">《订票服务条款》</span>
             并同意自动注册成为会员
           </label>
         </div>

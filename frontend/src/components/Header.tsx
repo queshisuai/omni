@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Search, MapPin, ChevronDown, User, Menu } from "lucide-react";
-import { getUser, isAuthenticated, logout } from "@/lib/auth";
+import { AUTH_UPDATED_EVENT, getUser, isAuthenticated, logout } from "@/lib/auth";
 import { CITY_KEY, filterCityOptions, formatCityDisplay, resolveRouteCity, resolveStoredCity, ALL_CITY_VALUE } from "@/lib/city-selection";
 import { canEnterConsole, getDefaultConsolePath } from "@/lib/console-auth";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -89,11 +89,11 @@ export function Header() {
     checkAuth()
     // 监听路由变化重新检查
     window.addEventListener("focus", checkAuth)
-    window.addEventListener('damai-user-updated', checkAuth)
+    window.addEventListener(AUTH_UPDATED_EVENT, checkAuth)
     window.addEventListener('omni-city-updated', handleCityUpdate)
     return () => {
       window.removeEventListener("focus", checkAuth)
-      window.removeEventListener('damai-user-updated', checkAuth)
+      window.removeEventListener(AUTH_UPDATED_EVENT, checkAuth)
       window.removeEventListener('omni-city-updated', handleCityUpdate)
     }
   }, [pathname])

@@ -28,7 +28,7 @@ export default function StationSeatCraftPage() {
 
   useEffect(() => {
     if (!Number.isInteger(stationId) || stationId <= 0) {
-      setError('站点ID不正确')
+      setError('站点编号不正确')
       setLoading(false)
       return
     }

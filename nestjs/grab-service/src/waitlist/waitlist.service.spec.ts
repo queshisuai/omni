@@ -37,6 +37,76 @@ describe('WaitlistService', () => {
     });
   });
 
+  it('lists user waitlist entries with a bounded repository limit', async () => {
+    const repository = {
+      listByUser: jest.fn().mockResolvedValue([{ ...entry, rank: 3 }]),
+    };
+    const service = new WaitlistService(repository as any);
+
+    const result = await service.listByUser(2004, 50);
+
+    expect(repository.listByUser).toHaveBeenCalledWith(2004, 20);
+    expect(result).toMatchObject([
+      {
+        id: 1,
+        status: 'WAITING',
+        rank: 3,
+        estimatedChance: 'HIGH',
+      },
+    ]);
+  });
+
+  it('adds readable ticket context to user waitlist entries', async () => {
+    const repository = {
+      listByUser: jest.fn().mockResolvedValue([{ ...entry, rank: 3 }]),
+    };
+    const ticketClient = {
+      getPurchaseContext: jest.fn().mockResolvedValue({
+        sessionId: 101,
+        ticketTypeId: 202,
+        activityId: 303,
+        activityName: '周末演唱会',
+        activityPoster: '/poster.jpg',
+        ticketTypeName: '看台 A',
+        venueName: '万象体育馆',
+        sessionTime: '2026-07-18T19:30:00',
+      }),
+    };
+    const service = new (WaitlistService as any)(repository, ticketClient);
+
+    const result = await service.listByUser(2004, 5);
+
+    expect(ticketClient.getPurchaseContext).toHaveBeenCalledWith(101, 202);
+    expect(result[0]).toMatchObject({
+      activityId: 303,
+      activityName: '周末演唱会',
+      activityPoster: '/poster.jpg',
+      ticketTypeName: '看台 A',
+      venueName: '万象体育馆',
+      sessionTime: '2026-07-18T19:30:00',
+    });
+  });
+
+  it('keeps waitlist entries visible when ticket context enrichment fails', async () => {
+    const repository = {
+      listByUser: jest.fn().mockResolvedValue([{ ...entry, rank: 3 }]),
+    };
+    const ticketClient = {
+      getPurchaseContext: jest.fn().mockRejectedValue(new Error('ticket unavailable')),
+    };
+    const service = new (WaitlistService as any)(repository, ticketClient);
+
+    const result = await service.listByUser(2004, 5);
+
+    expect(result[0]).toMatchObject({
+      id: 1,
+      sessionId: 101,
+      ticketTypeId: 202,
+      rank: 3,
+    });
+    expect(result[0].activityName).toBeUndefined();
+  });
+
   it('rejects invalid quantity', async () => {
     const service = new WaitlistService({ createEntry: jest.fn() } as any);
 

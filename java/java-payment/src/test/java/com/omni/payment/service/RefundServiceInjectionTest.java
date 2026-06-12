@@ -6,6 +6,7 @@ import com.omni.payment.client.UserInternalClient;
 import com.omni.payment.config.AlipayProperties;
 import com.omni.payment.mapper.PaymentMapper;
 import com.omni.payment.mapper.RefundRequestMapper;
+import com.omni.payment.mq.NotificationMqProducer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -25,6 +26,7 @@ class RefundServiceInjectionTest {
             context.registerBean(PaymentMapper.class, () -> mock(PaymentMapper.class));
             context.registerBean(UserInternalClient.class, () -> mock(UserInternalClient.class));
             context.registerBean(TicketRefundReviewInternalClient.class, () -> mock(TicketRefundReviewInternalClient.class));
+            context.registerBean(NotificationMqProducer.class, () -> mock(NotificationMqProducer.class));
             context.registerBean(RefundService.class);
 
             context.refresh();

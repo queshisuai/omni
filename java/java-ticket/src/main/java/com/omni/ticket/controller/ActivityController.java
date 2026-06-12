@@ -6,11 +6,13 @@ import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.ticket.dto.ActivityQuestionRequest;
 import com.omni.ticket.dto.ActivityReviewListResponse;
+import com.omni.ticket.dto.ActivityReviewReportRequest;
 import com.omni.ticket.dto.ActivityReviewRequest;
 import com.omni.ticket.dto.ActivityDetailVO;
 import com.omni.ticket.dto.ActivityVO;
 import com.omni.ticket.entity.ActivityQuestion;
 import com.omni.ticket.entity.ActivityReview;
+import com.omni.ticket.entity.ActivityReviewReport;
 import com.omni.ticket.entity.Category;
 import com.omni.ticket.service.ActivityEngagementService;
 import com.omni.ticket.service.ActivityService;
@@ -99,6 +101,17 @@ public class ActivityController {
         Long userId = parseUserId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(engagementService.createReview(id, userId, request));
+    }
+
+    @PostMapping("/activities/{id}/reviews/{reviewId}/reports")
+    public Result<ActivityReviewReport> reportActivityReview(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @PathVariable Long reviewId,
+            @RequestBody(required = false) ActivityReviewReportRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(engagementService.reportReview(id, reviewId, userId, request));
     }
 
     @GetMapping("/activities/{id}/questions")

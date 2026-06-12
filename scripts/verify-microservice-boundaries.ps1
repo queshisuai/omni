@@ -47,6 +47,10 @@ Invoke-Step -Name "Production split SQL safety" -Command {
     powershell -ExecutionPolicy Bypass -File (Join-Path -Path $repoRoot -ChildPath "scripts/check-production-split-sql.ps1")
 }
 
+Invoke-Step -Name "Production runtime default guard" -Command {
+    powershell -ExecutionPolicy Bypass -File (Join-Path -Path $repoRoot -ChildPath "scripts/check-production-runtime-defaults.ps1")
+}
+
 Invoke-Step -Name "Java boundary tests" -Command {
     Push-Location -LiteralPath $javaRoot
     $previousJwtSecret = $env:JWT_SECRET

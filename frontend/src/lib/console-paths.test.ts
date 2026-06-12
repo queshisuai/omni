@@ -44,6 +44,7 @@ test('builds role-specific console quick actions', () => {
     'organizer.review',
     'rbac.manage',
     'organizer.account.manage',
+    'activity.review.manage',
     'support.account.manage',
     'support.conversation.view',
     'audit.view',
@@ -51,9 +52,11 @@ test('builds role-specific console quick actions', () => {
     'reconcile.view',
     'order.view',
   ]).map(item => item.href), [
+    '/console/organizer-ops',
     '/console/activities',
     '/console/tours',
     '/console/orders',
+    '/console/activity-engagement',
     '/console/organizer-applications',
     '/console/organizer-admins',
     '/console/support-accounts',
@@ -67,7 +70,26 @@ test('builds role-specific console quick actions', () => {
     '/console/profile',
   ])
   assert.deepEqual(getConsoleQuickActions('organizer_admin', ['organizer.account.manage']).map(item => item.href), [
+    '/console/organizer-ops',
     '/console/organizer-admins',
+    '/console/profile',
+  ])
+  assert.deepEqual(getConsoleQuickActions('organizer_admin', ['organizer.account.manage']).map(item => item.label), [
+    '运营工作台',
+    '平台主办方运营员账号管理',
+    '个人中心',
+  ])
+  assert.deepEqual(getConsoleQuickActions('organizer_admin', ['organizer.review']).map(item => item.href), [
+    '/console/organizer-ops',
+    '/console/organizer-applications',
+    '/console/profile',
+  ])
+  assert.deepEqual(getConsoleQuickActions('organizer_admin', ['activity.review.manage']).map(item => item.href), [
+    '/console/activity-engagement',
+    '/console/profile',
+  ])
+  assert.deepEqual(getConsoleQuickActions('organizer_admin', ['organizer.follow.manage', 'organizer.assign.manage']).map(item => item.href), [
+    '/console/organizer-ops',
     '/console/profile',
   ])
   assert.deepEqual(getConsoleQuickActions('organizer_admin', ['activity.manage', 'tour.manage', 'order.view']).map(item => item.href), [

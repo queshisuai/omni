@@ -1,9 +1,21 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { CheckSquare, Download, XCircle } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { approveRefund, listAdminRefunds, rejectRefund } from '@/lib/api'
 import { isPlatformAdminRole } from '@/lib/console-auth'
+import {
+  buildConsoleRefundExportCsv,
+  buildConsoleRefundExportExcelHtml,
+  canReviewConsoleRefund,
+  formatConsoleRefundActionLabel,
+  formatConsoleRefundStatus,
+  getBatchRefundApproveTargets,
+  getBatchRefundRejectTargets,
+  getConsoleRefundActivityLabel,
+  getConsoleRefundStatusClassName,
+} from '@/lib/console-refunds'
 import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
 import type { RefundRequestVO, RefundStatus, UserRole } from '@/types/api'
 
@@ -15,16 +27,6 @@ const STATUS_OPTIONS: Array<{ label: string; value?: RefundStatus }> = [
   { label: '已拒绝', value: 2 },
   { label: '退款失败', value: 3 },
 ]
-
-const STATUS_META: Record<RefundStatus, { label: string; className: string }> = {
-  0: { label: '待审核', className: 'bg-[#fff8e1] text-[#f59e0b]' },
-  1: { label: '已退款', className: 'bg-[#f0fff4] text-[#22c55e]' },
-  2: { label: '已拒绝', className: 'bg-[#f5f5f5] text-[#777]' },
-  3: { label: '退款失败', className: 'bg-[#fff1f2] text-[#e11d48]' },
-  4: { label: '处理中', className: 'bg-[#e3f2fd] text-[#2563eb]' },
-}
-
-const UNKNOWN_STATUS_META = { label: '未知状态', className: 'bg-[#f5f5f5] text-[#777]' }
 
 type ReviewAction = 'approve' | 'reject'
 
@@ -53,8 +55,20 @@ export default function ConsoleRefundsPage() {
   const [role, setRole] = useState<UserRole | ''>('')
   const [checkingRole, setCheckingRole] = useState(true)
   const [page, setPage] = useState(1)
+  const [exportMessage, setExportMessage] = useState('')
+  const [selectedRefundIds, setSelectedRefundIds] = useState<number[]>([])
+  const [batchSubmitting, setBatchSubmitting] = useState(false)
   const isAdmin = isPlatformAdminRole(role)
   const pageRefunds = useMemo(() => refunds.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [refunds, page])
+  const pageReviewableRefunds = useMemo(() => getBatchRefundApproveTargets(pageRefunds), [pageRefunds])
+  const selectedRefunds = useMemo(
+    () => refunds.filter(refund => selectedRefundIds.includes(refund.id)),
+    [refunds, selectedRefundIds],
+  )
+  const batchApproveTargets = useMemo(() => getBatchRefundApproveTargets(selectedRefunds), [selectedRefunds])
+  const batchRejectTargets = useMemo(() => getBatchRefundRejectTargets(selectedRefunds), [selectedRefunds])
+  const allPageReviewableSelected = pageReviewableRefunds.length > 0
+    && pageReviewableRefunds.every(refund => selectedRefundIds.includes(refund.id))
 
   useEffect(() => {
     let ignore = false
@@ -71,6 +85,7 @@ export default function ConsoleRefundsPage() {
         if (!ignore) {
           setRefunds(data)
           setPage(1)
+          setSelectedRefundIds([])
         }
       })
       .catch(() => {
@@ -87,9 +102,11 @@ export default function ConsoleRefundsPage() {
 
   const refresh = async () => {
     setError('')
+    setExportMessage('')
     const data = await listAdminRefunds(status)
     setRefunds(data)
     setPage(1)
+    setSelectedRefundIds([])
   }
 
   const startReview = (id: number, action: ReviewAction) => {
@@ -116,6 +133,95 @@ export default function ConsoleRefundsPage() {
     }
   }
 
+  const toggleRefundSelection = (refund: RefundRequestVO) => {
+    if (!canReviewConsoleRefund(refund.status) || batchSubmitting) return
+    setSelectedRefundIds(previous => previous.includes(refund.id)
+      ? previous.filter(id => id !== refund.id)
+      : [...previous, refund.id])
+  }
+
+  const togglePageSelection = () => {
+    if (batchSubmitting) return
+    const pageIds = pageReviewableRefunds.map(refund => refund.id)
+    setSelectedRefundIds(previous => {
+      if (allPageReviewableSelected) {
+        return previous.filter(id => !pageIds.includes(id))
+      }
+      return Array.from(new Set([...previous, ...pageIds]))
+    })
+  }
+
+  const handleBatchRefundReview = async (action: ReviewAction) => {
+    const targets = action === 'approve' ? batchApproveTargets : batchRejectTargets
+    if (targets.length === 0) {
+      setError(action === 'approve' ? '请先选择可同意或重试的退款申请' : '请先选择待审核的退款申请')
+      return
+    }
+
+    const actionName = action === 'approve' ? '批量同意/重试退款' : '批量拒绝退款'
+    const confirmed = window.confirm(`确认${actionName} ${targets.length} 条退款申请？该操作会逐条调用现有审核链路并写入对应审计。`)
+    if (!confirmed) return
+
+    setBatchSubmitting(true)
+    setError('')
+    setExportMessage('')
+    let successCount = 0
+    let failedCount = 0
+
+    for (const refund of targets) {
+      try {
+        if (action === 'approve') {
+          await approveRefund(refund.id, '批量同意/重试退款')
+        } else {
+          await rejectRefund(refund.id, '批量拒绝退款')
+        }
+        successCount += 1
+      } catch {
+        failedCount += 1
+      }
+    }
+
+    try {
+      await refresh()
+      setExportMessage(`批量处理结果：成功 ${successCount} 条，失败 ${failedCount} 条`)
+      if (failedCount > 0) {
+        setError(`批量处理有 ${failedCount} 条失败，请刷新后核对退款状态`)
+      }
+    } catch {
+      setError('批量处理已提交，但刷新列表失败，请手动刷新核对')
+    } finally {
+      setBatchSubmitting(false)
+    }
+  }
+
+  const downloadRefunds = (content: string, type: string, extension: string) => {
+    const blob = new Blob([content], { type })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `退款明细-${new Date().toISOString().slice(0, 10)}.${extension}`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportRefunds = () => {
+    if (refunds.length === 0) {
+      setExportMessage('暂无可导出的退款申请')
+      return
+    }
+    downloadRefunds(buildConsoleRefundExportCsv(refunds), 'text/csv;charset=utf-8', 'csv')
+    setExportMessage(`已导出 ${refunds.length} 条退款申请`)
+  }
+
+  const exportRefundsExcel = () => {
+    if (refunds.length === 0) {
+      setExportMessage('暂无可导出的退款申请')
+      return
+    }
+    downloadRefunds(buildConsoleRefundExportExcelHtml(refunds), 'application/vnd.ms-excel;charset=utf-8', 'xls')
+    setExportMessage(`已导出 ${refunds.length} 条退款 Excel 明细`)
+  }
+
   if (checkingRole || !role) {
     return <div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>
   }
@@ -127,14 +233,34 @@ export default function ConsoleRefundsPage() {
           <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '退款审核' : '主办方退款处理'}</h1>
           <div className="text-[13px] text-[#999] mt-1">{isAdmin ? '审核可见范围内的退款申请，处理中记录可重试退款' : '处理自己活动相关的退款申请，处理中记录可重试退款'}</div>
         </div>
-        <button
-          onClick={refresh}
-          disabled={loading}
-          className="self-start sm:self-auto text-[14px] text-[#ff1268] bg-white border border-[#ffd1e0] px-4 py-2 rounded-lg cursor-pointer hover:bg-[#fff5f8] disabled:text-[#bbb] disabled:cursor-not-allowed"
-        >
-          刷新列表
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={exportRefunds}
+            disabled={loading || refunds.length === 0}
+            className="inline-flex items-center gap-2 self-start rounded-lg border border-[#ff1268] bg-white px-4 py-2 text-[14px] font-medium text-[#ff1268] hover:bg-[#fff5f8] disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+          >
+            <Download className="h-4 w-4" />
+            导出退款明细
+          </button>
+          <button
+            onClick={exportRefundsExcel}
+            disabled={loading || refunds.length === 0}
+            className="inline-flex items-center gap-2 self-start rounded-lg border border-[#ff1268] bg-white px-4 py-2 text-[14px] font-medium text-[#ff1268] hover:bg-[#fff5f8] disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+          >
+            <Download className="h-4 w-4" />
+            导出 Excel
+          </button>
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="self-start sm:self-auto text-[14px] text-[#ff1268] bg-white border border-[#ffd1e0] px-4 py-2 rounded-lg cursor-pointer hover:bg-[#fff5f8] disabled:text-[#bbb] disabled:cursor-not-allowed"
+          >
+            刷新列表
+          </button>
+        </div>
       </div>
+
+      {exportMessage && <div className="mb-4 rounded-lg bg-[#f0fff4] px-3 py-2 text-[13px] text-[#16a34a]">{exportMessage}</div>}
 
       <div className="bg-white rounded-xl border border-[#e5e5e5] p-3 mb-4 overflow-x-auto">
         <div className="flex gap-2 min-w-max">
@@ -157,6 +283,32 @@ export default function ConsoleRefundsPage() {
         </div>
       </div>
 
+      {refunds.length > 0 && (
+        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-[#e5e5e5] bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-[13px] text-[#666]">
+            已选择 {selectedRefundIds.length} 条，可批量处理 {batchApproveTargets.length} 条；处理中退款仅支持同意/重试，不支持批量拒绝。
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handleBatchRefundReview('approve')}
+              disabled={batchSubmitting || batchApproveTargets.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white hover:bg-[#e0105a] disabled:cursor-not-allowed disabled:bg-[#f8a9c6]"
+            >
+              <CheckSquare className="h-4 w-4" />
+              {batchSubmitting ? '批量处理中...' : '批量同意退款'}
+            </button>
+            <button
+              onClick={() => handleBatchRefundReview('reject')}
+              disabled={batchSubmitting || batchRejectTargets.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg border border-[#ddd] bg-white px-4 py-2 text-[14px] font-medium text-[#666] hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <XCircle className="h-4 w-4" />
+              批量拒绝退款
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="text-[13px] text-[#e11d48] bg-[#fff1f2] border border-[#fecdd3] rounded-lg p-3 mb-4">
           {error}
@@ -175,9 +327,19 @@ export default function ConsoleRefundsPage() {
             <table className="w-full min-w-[1120px] text-[14px]">
               <thead>
                 <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
+                  <th className="w-[52px] p-3 text-left font-medium text-[#666]">
+                    <input
+                      type="checkbox"
+                      aria-label="选择本页可处理退款"
+                      checked={allPageReviewableSelected}
+                      disabled={batchSubmitting || pageReviewableRefunds.length === 0}
+                      onChange={togglePageSelection}
+                      className="h-4 w-4 accent-[#ff1268]"
+                    />
+                  </th>
                   <th className="text-left p-3 font-medium text-[#666]">退款号</th>
                   <th className="text-left p-3 font-medium text-[#666]">订单/活动</th>
-                  <th className="text-left p-3 font-medium text-[#666]">用户ID</th>
+                  <th className="text-left p-3 font-medium text-[#666]">用户编号</th>
                   <th className="text-left p-3 font-medium text-[#666]">金额</th>
                   <th className="text-left p-3 font-medium text-[#666]">原因</th>
                   <th className="text-left p-3 font-medium text-[#666]">状态</th>
@@ -188,22 +350,36 @@ export default function ConsoleRefundsPage() {
               </thead>
               <tbody>
                 {pageRefunds.map(refund => {
-                  const meta = STATUS_META[refund.status] || UNKNOWN_STATUS_META
+                  const statusLabel = formatConsoleRefundStatus(refund.status)
+                  const statusClassName = getConsoleRefundStatusClassName(refund.status)
+                  const canReview = canReviewConsoleRefund(refund.status)
+                  const actionLabel = formatConsoleRefundActionLabel(refund.status)
                   const reviewing = draft?.id === refund.id
                   const submitting = submittingId === refund.id
+                  const selected = selectedRefundIds.includes(refund.id)
                   return (
                     <tr key={refund.id} className="border-b border-[#f0f0f0] align-top hover:bg-[#fafafa]">
+                      <td className="p-3">
+                        <input
+                          type="checkbox"
+                          aria-label={`选择退款 ${refund.refundNo || refund.id}`}
+                          checked={selected}
+                          disabled={!canReview || batchSubmitting}
+                          onChange={() => toggleRefundSelection(refund)}
+                          className="h-4 w-4 accent-[#ff1268] disabled:cursor-not-allowed"
+                        />
+                      </td>
                       <td className="p-3 font-medium text-[#333]">{refund.refundNo || refund.id}</td>
                       <td className="p-3 text-[#666]">
-                        <div className="font-medium text-[#333]">{refund.orderName || refund.activityName || '未知活动'}</div>
+                        <div className="font-medium text-[#333]">{getConsoleRefundActivityLabel(refund)}</div>
                         <div className="text-[12px] text-[#666]">订单号：{refund.orderNo || '-'}</div>
-                        <div className="text-[12px] text-[#999]">ID: {refund.orderId}</div>
+                        <div className="text-[12px] text-[#999]">订单编号：{refund.orderId}</div>
                       </td>
                       <td className="p-3 text-[#666]">{refund.userId}</td>
                       <td className="p-3 text-[#ff1268] font-medium">{formatMoney(refund.amount)}</td>
                       <td className="p-3 text-[#666] max-w-[180px] whitespace-pre-wrap break-words">{refund.reason || '-'}</td>
                       <td className="p-3">
-                        <span className={`text-[12px] px-2 py-0.5 rounded-full ${meta.className}`}>{meta.label}</span>
+                        <span className={`text-[12px] px-2 py-0.5 rounded-full ${statusClassName}`}>{statusLabel}</span>
                       </td>
                       <td className="p-3 text-[#999] whitespace-nowrap">{formatTime(refund.createTime)}</td>
                       <td className="p-3 text-[#666] max-w-[220px]">
@@ -211,7 +387,7 @@ export default function ConsoleRefundsPage() {
                         <div className="text-[12px] text-[#999] mt-1">{formatTime(refund.reviewTime)}</div>
                       </td>
                       <td className="p-3 min-w-[210px]">
-                        {(refund.status === 0 || refund.status === 4) && !reviewing && (
+                        {canReview && !reviewing && (
                           <div className="flex flex-wrap gap-2">
                             <button
                               onClick={() => startReview(refund.id, 'approve')}
@@ -229,7 +405,7 @@ export default function ConsoleRefundsPage() {
                             )}
                           </div>
                         )}
-                        {(refund.status === 0 || refund.status === 4) && reviewing && (
+                        {canReview && reviewing && (
                           <div className="w-[260px] max-w-full">
                             <textarea
                               value={draft.note}
@@ -256,8 +432,8 @@ export default function ConsoleRefundsPage() {
                             </div>
                           </div>
                         )}
-                        {refund.status !== 0 && refund.status !== 4 && (
-                          <div className="text-[13px] text-[#999]">无需操作</div>
+                        {!canReview && (
+                          <div className="text-[13px] text-[#999]">{actionLabel}</div>
                         )}
                       </td>
                     </tr>

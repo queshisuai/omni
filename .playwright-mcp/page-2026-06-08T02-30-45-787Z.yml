@@ -1,0 +1,284 @@
+- generic [active] [ref=e1]:
+  - alert [ref=e84]
+  - generic [ref=e85]:
+    - complementary [ref=e86]:
+      - link "平台后台" [ref=e88] [cursor=pointer]:
+        - /url: /console
+      - navigation [ref=e89]:
+        - link "概览" [ref=e90] [cursor=pointer]:
+          - /url: /console
+          - img [ref=e91]
+          - text: 概览
+        - link "活动发布管理" [ref=e96] [cursor=pointer]:
+          - /url: /console/activities
+          - img [ref=e97]
+          - text: 活动发布管理
+        - link "巡演草稿管理" [ref=e99] [cursor=pointer]:
+          - /url: /console/tours
+          - img [ref=e100]
+          - text: 巡演草稿管理
+        - link "场次管理" [ref=e105] [cursor=pointer]:
+          - /url: /console/sessions
+          - img [ref=e106]
+          - text: 场次管理
+        - link "订单查看" [ref=e109] [cursor=pointer]:
+          - /url: /console/orders
+          - img [ref=e110]
+          - text: 订单查看
+        - link "入场核验" [ref=e114] [cursor=pointer]:
+          - /url: /console/check-in
+          - img [ref=e115]
+          - text: 入场核验
+        - link "退款审核" [ref=e118] [cursor=pointer]:
+          - /url: /console/refunds
+          - img [ref=e119]
+          - text: 退款审核
+        - link "艺人管理" [ref=e122] [cursor=pointer]:
+          - /url: /console/artists
+          - img [ref=e123]
+          - text: 艺人管理
+        - link "艺人档案审核" [ref=e128] [cursor=pointer]:
+          - /url: /console/artists/pending
+          - img [ref=e129]
+          - text: 艺人档案审核
+        - link "恢复售票审核" [ref=e132] [cursor=pointer]:
+          - /url: /console/risk-resolutions
+          - img [ref=e133]
+          - text: 恢复售票审核
+        - link "风险案例管理" [ref=e135] [cursor=pointer]:
+          - /url: /console/risk-cases
+          - img [ref=e136]
+          - text: 风险案例管理
+        - link "场馆记录" [ref=e138] [cursor=pointer]:
+          - /url: /console/venue
+          - img [ref=e139]
+          - text: 场馆记录
+        - link "场馆资料审核" [ref=e142] [cursor=pointer]:
+          - /url: /console/venue/applications
+          - img [ref=e143]
+          - text: 场馆资料审核
+        - link "站点变更审核" [ref=e146] [cursor=pointer]:
+          - /url: /console/station-config-reviews
+          - img [ref=e147]
+          - text: 站点变更审核
+        - link "运营工作台" [ref=e152] [cursor=pointer]:
+          - /url: /console/organizer-ops
+          - img [ref=e153]
+          - text: 运营工作台
+        - link "主办方管理" [ref=e156] [cursor=pointer]:
+          - /url: /console/organizer-applications
+          - img [ref=e157]
+          - text: 主办方管理
+        - button "账号管理" [ref=e161]:
+          - img [ref=e162]
+          - generic [ref=e167]: 账号管理
+          - img [ref=e168]
+        - link "客服会话记录" [ref=e170] [cursor=pointer]:
+          - /url: /console/support-conversations
+          - img [ref=e171]
+          - text: 客服会话记录
+        - link "角色权限" [ref=e173] [cursor=pointer]:
+          - /url: /console/roles
+          - img [ref=e174]
+          - text: 角色权限
+        - link "操作审计" [ref=e177] [cursor=pointer]:
+          - /url: /console/audit-logs
+          - img [ref=e178]
+          - text: 操作审计
+        - link "异常任务" [ref=e181] [cursor=pointer]:
+          - /url: /console/exception-tasks
+          - img [ref=e182]
+          - text: 异常任务
+        - link "日结对账" [ref=e184] [cursor=pointer]:
+          - /url: /console/reconciliation
+          - img [ref=e185]
+          - text: 日结对账
+        - link "个人中心" [ref=e190] [cursor=pointer]:
+          - /url: /console/profile
+          - img [ref=e191]
+          - text: 个人中心
+      - generic [ref=e195]:
+        - generic [ref=e196]:
+          - generic [ref=e197]: 平台超管
+          - generic [ref=e199]: 平台管理员
+        - generic [ref=e200]:
+          - link "个人中心" [ref=e201] [cursor=pointer]:
+            - /url: /console/profile
+            - img [ref=e202]
+            - text: 个人中心
+          - button "退出登录" [ref=e206]:
+            - img [ref=e207]
+            - text: 退出登录
+    - generic [ref=e210]:
+      - banner [ref=e211]:
+        - link "返回前台" [ref=e212] [cursor=pointer]:
+          - /url: /
+      - main [ref=e213]:
+        - generic [ref=e215]:
+          - generic [ref=e216]:
+            - heading "平台后台" [level=1] [ref=e217]
+            - paragraph [ref=e218]: 欢迎回来，这是您的业务数据概览。
+          - generic [ref=e219]:
+            - generic [ref=e220]:
+              - generic [ref=e221]:
+                - img [ref=e223]
+                - generic [ref=e225]: 我的活动
+              - generic [ref=e226]:
+                - generic [ref=e227]: 加载失败
+                - generic [ref=e228]: 统计加载失败
+            - generic [ref=e229]:
+              - generic [ref=e230]:
+                - img [ref=e232]
+                - generic [ref=e234]: 总票档数
+              - generic [ref=e235]:
+                - generic [ref=e236]: 加载失败
+                - generic [ref=e237]: 统计加载失败
+            - generic [ref=e238]:
+              - generic [ref=e239]:
+                - img [ref=e241]
+                - generic [ref=e245]: 已支付订单数
+              - generic [ref=e246]:
+                - generic [ref=e247]: 加载失败
+                - generic [ref=e248]: 统计加载失败
+          - generic [ref=e249]:
+            - generic [ref=e250]:
+              - heading "运营驾驶舱" [level=2] [ref=e251]
+              - generic [ref=e252]:
+                - link "待处理异常 - 支付、退款、出票、库存等异常任务" [ref=e253] [cursor=pointer]:
+                  - /url: /console/exception-tasks
+                  - generic [ref=e254]:
+                    - img [ref=e255]
+                    - text: 待处理异常
+                  - generic [ref=e257]: "-"
+                  - generic [ref=e258]: 支付、退款、出票、库存等异常任务
+                - link "最近对账批次 暂无批次 -" [ref=e259] [cursor=pointer]:
+                  - /url: /console/reconciliation
+                  - generic [ref=e260]:
+                    - img [ref=e261]
+                    - text: 最近对账批次
+                  - generic [ref=e266]: 暂无批次
+                  - generic [ref=e267]: "-"
+                - link "最新人工操作 暂无记录 -" [ref=e268] [cursor=pointer]:
+                  - /url: /console/audit-logs
+                  - generic [ref=e269]:
+                    - img [ref=e270]
+                    - text: 最新人工操作
+                  - generic [ref=e273]: 暂无记录
+                  - generic [ref=e274]: "-"
+              - generic [ref=e275]:
+                - generic [ref=e276]:
+                  - generic [ref=e277]:
+                    - img [ref=e278]
+                    - text: 热门活动实时流量
+                  - generic [ref=e281]: 暂无数据
+                - generic [ref=e282]:
+                  - generic [ref=e283]:
+                    - img [ref=e284]
+                    - text: 抢票失败原因分布
+                  - generic [ref=e286]: 暂无数据
+                - generic [ref=e287]:
+                  - generic [ref=e288]:
+                    - img [ref=e289]
+                    - text: 候补转化率
+                  - generic [ref=e294]: 暂无数据
+                - generic [ref=e295]:
+                  - generic [ref=e296]:
+                    - img [ref=e297]
+                    - text: 支付超时率
+                  - generic [ref=e300]: 暂无数据
+                - generic [ref=e301]:
+                  - generic [ref=e302]:
+                    - img [ref=e303]
+                    - text: 退款异常率
+                  - generic [ref=e306]: 暂无数据
+                - generic [ref=e307]:
+                  - generic [ref=e308]:
+                    - img [ref=e309]
+                    - text: 风控命中率
+                  - generic [ref=e311]: 暂无数据
+            - heading "快捷操作" [level=2] [ref=e312]
+            - generic [ref=e313]:
+              - link "运营工作台" [ref=e314] [cursor=pointer]:
+                - /url: /console/organizer-ops
+                - generic [ref=e315]: 运营工作台
+                - img [ref=e316]
+              - link "活动管理" [ref=e318] [cursor=pointer]:
+                - /url: /console/activities
+                - generic [ref=e319]: 活动管理
+                - img [ref=e320]
+              - link "巡演草稿" [ref=e322] [cursor=pointer]:
+                - /url: /console/tours
+                - generic [ref=e323]: 巡演草稿
+                - img [ref=e324]
+              - link "场次管理" [ref=e326] [cursor=pointer]:
+                - /url: /console/sessions
+                - generic [ref=e327]: 场次管理
+                - img [ref=e328]
+              - link "艺人管理" [ref=e330] [cursor=pointer]:
+                - /url: /console/artists
+                - generic [ref=e331]: 艺人管理
+                - img [ref=e332]
+              - link "订单查看" [ref=e334] [cursor=pointer]:
+                - /url: /console/orders
+                - generic [ref=e335]: 订单查看
+                - img [ref=e336]
+              - link "入场核验" [ref=e338] [cursor=pointer]:
+                - /url: /console/check-in
+                - generic [ref=e339]: 入场核验
+                - img [ref=e340]
+              - link "退款审核" [ref=e342] [cursor=pointer]:
+                - /url: /console/refunds
+                - generic [ref=e343]: 退款审核
+                - img [ref=e344]
+              - link "场馆记录" [ref=e346] [cursor=pointer]:
+                - /url: /console/venue
+                - generic [ref=e347]: 场馆记录
+                - img [ref=e348]
+              - link "主办方管理" [ref=e350] [cursor=pointer]:
+                - /url: /console/organizer-applications
+                - generic [ref=e351]: 主办方管理
+                - img [ref=e352]
+              - link "平台主办方运营员账号管理" [ref=e354] [cursor=pointer]:
+                - /url: /console/organizer-admins
+                - generic [ref=e355]: 平台主办方运营员账号管理
+                - img [ref=e356]
+              - link "场馆资料审核" [ref=e358] [cursor=pointer]:
+                - /url: /console/venue/applications
+                - generic [ref=e359]: 场馆资料审核
+                - img [ref=e360]
+              - link "站点变更审核" [ref=e362] [cursor=pointer]:
+                - /url: /console/station-config-reviews
+                - generic [ref=e363]: 站点变更审核
+                - img [ref=e364]
+              - link "恢复售票审核" [ref=e366] [cursor=pointer]:
+                - /url: /console/risk-resolutions
+                - generic [ref=e367]: 恢复售票审核
+                - img [ref=e368]
+              - link "风险案例管理" [ref=e370] [cursor=pointer]:
+                - /url: /console/risk-cases
+                - generic [ref=e371]: 风险案例管理
+                - img [ref=e372]
+              - link "客服账号管理" [ref=e374] [cursor=pointer]:
+                - /url: /console/support-accounts
+                - generic [ref=e375]: 客服账号管理
+                - img [ref=e376]
+              - link "客服会话查询" [ref=e378] [cursor=pointer]:
+                - /url: /console/support-conversations
+                - generic [ref=e379]: 客服会话查询
+                - img [ref=e380]
+              - link "操作审计" [ref=e382] [cursor=pointer]:
+                - /url: /console/audit-logs
+                - generic [ref=e383]: 操作审计
+                - img [ref=e384]
+              - link "异常任务" [ref=e386] [cursor=pointer]:
+                - /url: /console/exception-tasks
+                - generic [ref=e387]: 异常任务
+                - img [ref=e388]
+              - link "日结对账" [ref=e390] [cursor=pointer]:
+                - /url: /console/reconciliation
+                - generic [ref=e391]: 日结对账
+                - img [ref=e392]
+              - link "角色权限" [ref=e394] [cursor=pointer]:
+                - /url: /console/roles
+                - generic [ref=e395]: 角色权限
+                - img [ref=e396]

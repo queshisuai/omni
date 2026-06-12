@@ -28,6 +28,19 @@ const TYPE_META: Record<string, NotificationTypeMeta> = {
   WAITLIST_OFFERED: { key: 'WAITLIST_OFFERED', label: '候补通知', color: '#ff1268', bg: '#fff0f5' },
   WAITLIST_EXPIRED: { key: 'WAITLIST_EXPIRED', label: '候补通知', color: '#ff1268', bg: '#fff0f5' },
   WAITLIST_PAID: { key: 'WAITLIST_PAID', label: '候补通知', color: '#ff1268', bg: '#fff0f5' },
+  WAITLIST_MATCHED: { key: 'WAITLIST_MATCHED', label: '候补通知', color: '#ff1268', bg: '#fff0f5' },
+  GRAB_SUCCESS: { key: 'GRAB_SUCCESS', label: '抢票通知', color: '#16a34a', bg: '#f0fdf4' },
+  GRAB_FAILED: { key: 'GRAB_FAILED', label: '抢票通知', color: '#b91c1c', bg: '#fef2f2' },
+  ORDER_PAYMENT_TIMEOUT: { key: 'ORDER_PAYMENT_TIMEOUT', label: '订单提醒', color: '#b45309', bg: '#fffbeb' },
+  ACTIVITY_BUYER_NOTICE: { key: 'ACTIVITY_BUYER_NOTICE', label: '活动通知', color: '#2563eb', bg: '#eff6ff' },
+  ACTIVITY_RESCHEDULED: { key: 'ACTIVITY_RESCHEDULED', label: '活动变更', color: '#b45309', bg: '#fffbeb' },
+  ACTIVITY_CANCELLED: { key: 'ACTIVITY_CANCELLED', label: '活动变更', color: '#b91c1c', bg: '#fef2f2' },
+  REFUND_REQUESTED: { key: 'REFUND_REQUESTED', label: '退款通知', color: '#2563eb', bg: '#eff6ff' },
+  REFUND_APPROVED: { key: 'REFUND_APPROVED', label: '退款通知', color: '#16a34a', bg: '#f0fdf4' },
+  REFUND_REJECTED: { key: 'REFUND_REJECTED', label: '退款通知', color: '#b91c1c', bg: '#fef2f2' },
+  REFUND_PROCESSING: { key: 'REFUND_PROCESSING', label: '退款通知', color: '#2563eb', bg: '#eff6ff' },
+  REFUND_FAILED: { key: 'REFUND_FAILED', label: '退款通知', color: '#b91c1c', bg: '#fef2f2' },
+  REFUND_COMPLETED: { key: 'REFUND_COMPLETED', label: '退款通知', color: '#16a34a', bg: '#f0fdf4' },
   TEAM_LOCKED: { key: 'TEAM_LOCKED', label: '小队通知', color: '#7c3aed', bg: '#f5f3ff' },
   TEAM_PAID: { key: 'TEAM_PAID', label: '小队通知', color: '#16a34a', bg: '#f0fdf4' },
   TEAM_FAILED: { key: 'TEAM_FAILED', label: '小队通知', color: '#b91c1c', bg: '#fef2f2' },
@@ -51,7 +64,7 @@ function detectNotificationType(notification: NotificationVO): string {
 
 export function getNotificationTypeMeta(notification: NotificationVO): NotificationTypeMeta {
   const key = detectNotificationType(notification)
-  return TYPE_META[key] || TYPE_META.IN_APP
+  return TYPE_META[key] || { key, label: '未知消息', color: '#64748b', bg: '#f8fafc' }
 }
 
 function orderHref(notification: NotificationVO) {
@@ -72,14 +85,39 @@ export function getNotificationAction(
 
   const key = getNotificationTypeMeta(notification).key
 
+  if (key.startsWith('GRAB_')) {
+    return {
+      href: orderHref(notification),
+      buttonLabel: key === 'GRAB_SUCCESS' && notification.orderId ? '查看抢票订单' : '查看订单',
+    }
+  }
+
   if (key.startsWith('WAITLIST_')) {
     if (notification.orderId) {
       return {
         href: `/orders/${notification.orderId}`,
-        buttonLabel: key === 'WAITLIST_OFFERED' ? '处理候补订单' : '查看候补订单',
+        buttonLabel: key === 'WAITLIST_OFFERED' || key === 'WAITLIST_MATCHED' ? '处理候补订单' : '查看候补订单',
       }
     }
     return { href: '/waitlist', buttonLabel: '查看候补' }
+  }
+
+  if (key === 'ORDER_PAYMENT_TIMEOUT') {
+    return {
+      href: orderHref(notification),
+      buttonLabel: notification.orderId ? '查看待支付订单' : '查看订单',
+    }
+  }
+
+  if (key.startsWith('ACTIVITY_')) {
+    return { href: orderHref(notification), buttonLabel: '查看相关订单' }
+  }
+
+  if (key.startsWith('REFUND_')) {
+    return {
+      href: orderHref(notification),
+      buttonLabel: notification.orderId ? '查看退款进度' : '查看退款订单',
+    }
   }
 
   if (key.startsWith('TEAM_')) {

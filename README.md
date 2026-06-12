@@ -40,6 +40,9 @@
 | 支付宝支付 | 支付宝沙盒环境扫码支付 |
 | 订单管理 | 查看历史订单、待支付订单及订单状态 |
 | 个人信息 | 修改密码、更新个人资料 |
+| AI 客服 | 基于本地 FAQ 索引 + Ollama Qwen2.5:7b 的智能问答 |
+| 评价与问答 | 购后对活动评分评价、购前向主办方提问 |
+| 电子票与验票 | 查看电子票详情、入场验票码、转票操作 |
 
 ### 🏢 管理端（B 端）
 
@@ -49,12 +52,19 @@
 | 活动管理 | 创建/编辑/上架/下架/删除活动 |
 | 场次管理 | 为活动创建多个演出场次 |
 | 票档管理 | 设定票价、库存及区域绑定 |
-| 座位图设计 | SeatCraft 可视化座位布局编辑器 |
+| 座位图设计 | SeatCraft 可视化座位布局编辑器（模板/布局/版本/发布/回滚） |
 | 场馆管理 | 场馆创建、座位模板管理、区域划分 |
 | 订单查看 | 查看订单、支付状态、座位信息和实名观演人快照 |
 | 退款审核 | 处理用户退款申请 |
 | 主办方申请 | 用户可申请成为主办方，管理员审批 |
 | 场馆申请 | 主办方可申请新场馆，管理员审批 |
+| 艺人管理 | 艺人信息维护与巡演关联 |
+| 风险管控 | 活动风险等级评估与处置 |
+| 站点配置 | 巡演站点管理 |
+| 客服工作台 | 异常任务处理、对账工单、审计日志、FAQ 管理 |
+| RBAC 权限 | 角色-用户-权限三级管理，支持细粒度接口权限 |
+| 评价审核 | 审核用户评价，处理评价举报 |
+| 验票入场 | 验票设备管理、验票记录查询 |
 
 ### 🔔 通知系统
 
@@ -126,6 +136,18 @@ Omni/
 │
 ├── scripts/                       # 🔧 运维脚本（边界检查、拆库导出导入、运行时验证）
 ├── docs/                          # 📚 设计文档与运维手册
+│   ├── microservices/             #   微服务边界与表所有权文档
+│   ├── operations/                #   运维手册、拆库设计、SLA、RBAC 等
+│   ├── specs/                     #   总体设计规格
+│   ├── production-readiness/      #   生产就绪审计
+│   ├── runbooks/                  #   运行时验证手册
+│   └── project-defense-responsibility-and-qna.md  # 项目答辩问答
+├── docker/                        # 🐳 Docker 基础设施配置
+│   └── seata/                     #   Seata Server 配置与 Nacos 导入脚本
+├── runtime/                       # 📁 运行时目录
+│   ├── uploads/                   #   本地公开上传文件
+│   ├── logs/                      #   运行时日志
+│   └── private-uploads/           #   私有上传文件
 ├── start-project.ps1              # 🚀 一键启动脚本
 └── CLAUDE.md                      #   开发者运行手册
 ```
@@ -140,7 +162,7 @@ Omni/
 |:---|:---|:---|
 | **JDK** | 11+ | 后端 Java 运行环境 |
 | **Maven** | 3.8+ | Java 项目构建工具 |
-| **Node.js** | 24+ | 前端运行环境 |
+| **Node.js** | >=24 | 前端运行环境 |
 | **pnpm** | 最新版 | 前端包管理器 |
 | **PostgreSQL** | 17 | 主数据库 |
 | **Redis** | 7+ | 抢票库存、幂等、用户 hold、座位 hold |
@@ -379,9 +401,17 @@ X-Internal-Token: omni-local-internal-token
 
 配置项 `internal.api.token` 或环境变量 `INTERNAL_API_TOKEN` 控制该值。
 
-### 前端 API 超时
+### 前端代理与 API 超时
 
-前端统一请求封装 `request<T>()` 的超时时间在 `frontend/src/lib/api.ts` 中配置，当前默认值为 **5000ms**；支付宝二维码支付创建接口单独使用 **15000ms**。
+前端通过 Next.js 路由代理解决跨域问题：浏览器请求先打到 Next.js `/api/**`，由 `frontend/src/app/api/[...path]/route.ts` 转发到后端网关（默认 `http://localhost:8088`，可用 `API_PROXY_TARGET` 环境变量覆盖）。代理会自动转发 `authorization` 请求头。
+
+统一请求封装 `request<T>()` 的超时时间在 `frontend/src/lib/api.ts` 中配置：
+
+| 场景 | 超时时间 |
+|:---|:---|
+| 普通 API | 5000ms |
+| 支付宝 QR 支付创建 | 15000ms |
+| 客服 SSE | 70000ms |
 
 ### Profile 说明
 
@@ -390,6 +420,54 @@ X-Internal-Token: omni-local-internal-token
 | `prod-split`（推荐） | Java 业务库物理隔离，抢票服务独立使用 `omni_grab` | 日常开发联调 |
 | `local-schema` | 本地 disposable 数据库 | 快速实验，禁止用于生产 |
 | 默认（无 profile） | 历史共享库 `omni_ticket` | 仅兼容旧阶段，不推荐使用 |
+
+### 分布式限流（Sentinel）
+
+Sentinel 已在网关和核心业务服务中接入限流、熔断或降级保护：
+
+| 服务 | 保护范围 |
+|:---|:---|
+| `java-gateway` | `/api/grab/**`、下单、支付关键接口、登录/验证码、票务热点读接口 |
+| `java-user` | 密码登录、发送验证码 |
+| `java-ticket` | 库存锁定、座位锁定、确认售出、座位图读取 |
+| `java-order` | 订单创建（普通/带座）、标记已支付；user/ticket Feign 调用熔断 |
+| `java-payment` | 支付同步、异步通知、退款申请；order/支付宝渠道熔断 |
+
+Gateway 限流触发时返回 `429` JSON：
+```json
+{"code":429,"message":"系统繁忙，请稍后重试","data":null}
+```
+
+### 分布式事务（Seata）
+
+Seata AT 模式覆盖订单-票务-支付核心写链路：
+
+- 事务组：`omni_tx_group`，vgroup 映射 `service.vgroupMapping.omni_tx_group=default`
+- 已接入服务：`java-order`、`java-ticket`、`java-payment`
+- 全局事务覆盖：创建订单、带座创建订单、取消订单、全额/部分退款标记、支付确认
+- 注意事项：
+  - `omni_order`、`omni_ticket_split`、`omni_payment` 必须存在 `undo_log` 表
+  - 支付宝真实退款、Redis、通知等外部副作用不由 Seata AT 回滚
+  - 外部副作用成功但内部落库失败时，继续走补偿或人工处理
+
+### 抢票服务配置
+
+抢票服务运行在端口 3001，通过 Gateway 路由 `/api/grab/**` 和 `/api/waitlist/**` 接入：
+
+| 环境变量 | 说明 |
+|:---|:---|
+| `GRAB_DB_HOST` | 数据库主机；必须显式配置 |
+| `GRAB_DB_PORT` | 数据库端口；必须显式配置 |
+| `GRAB_DB_NAME` | 数据库名；必须显式配置 |
+| `GRAB_DB_USER` | 数据库用户；必须显式配置 |
+| `GRAB_DB_PASSWORD` | 数据库密码；必须显式配置 |
+| `REDIS_HOST` | Redis 主机；必须显式配置 |
+| `REDIS_PORT` | Redis 端口；必须显式配置 |
+| `ORDER_SERVICE_URL` | 订单服务网关地址；必须显式配置 |
+| `TICKET_SERVICE_URL` | 票务服务网关地址；必须显式配置 |
+| `NOTIFICATION_SERVICE_URL` | 通知服务网关地址；必须显式配置 |
+| `INTERNAL_API_TOKEN` | 内部服务认证 Token |
+| `JWT_SECRET` | JWT 密钥（需与 Java 服务一致） |
 
 > ⚠️ **重要**：不要将默认 `application.yml` 修改为 local-schema 或生产专用配置，推荐统一使用 `prod-split` profile。
 
@@ -459,6 +537,30 @@ X-Internal-Token: omni-local-internal-token
 **原因**：`java-order` 创建订单前会通过 `java-user` 的 internal API 校验用户是否存在。
 
 **解决**：确保使用的下单用户是测试账号中已存在的用户（如 `13900000001`）。
+</details>
+
+<details>
+<summary><strong>Q: 抢票返回 401 或 "JWT 未配置"？</strong></summary>
+
+**原因**：`grab-service` 缺少 `JWT_SECRET` 环境变量，或前端请求未携带 token。
+
+**解决**：确保 `grab-service` 设置了 `JWT_SECRET`（与 Java 服务一致），并重新登录获取有效 token。
+</details>
+
+<details>
+<summary><strong>Q: 座位一直显示"生成中"？</strong></summary>
+
+**原因**：场次 SeatCraft 布局未发布，或支付后确认售出未更新 `session_seat` 状态。
+
+**解决**：检查场次 SeatCraft 版本状态、票档区域绑定、`session_seat` 和 `order_seat` 数据一致性。
+</details>
+
+<details>
+<summary><strong>Q: Druid 报 url 为占位符 ${SPRING_DATASOURCE_URL}？</strong></summary>
+
+**原因**：启动参数未注入，配置占位符原样进入运行时。
+
+**解决**：使用 `start-project.ps1` 启动，或手动传入 `--spring.datasource.url=jdbc:postgresql://localhost:5432/<db>`。
 </details>
 
 <details>

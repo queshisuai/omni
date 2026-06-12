@@ -7,3 +7,22 @@ spring:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT}
+    username: ${RABBITMQ_USER}
+    password: ${RABBITMQ_PASSWORD}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_HOST}:${NACOS_PORT}
+      config:
+        server-addr: ${NACOS_HOST}:${NACOS_PORT}
+
+internal:
+  api:
+    token: ${INTERNAL_API_TOKEN}
+
+omni:
+  grab-service:
+    url: ${GRAB_SERVICE_URL}

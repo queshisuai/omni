@@ -79,6 +79,14 @@ test('describes auto downgrade state and matched ticket type', () => {
   }), '已自动降档至 B档')
   assert.equal(getAutoDowngradeDisplay({
     allowAutoDowngrade: true,
+    matchedTicketTypeId: 203,
+    requestedTicketTypes: [
+      { ticketTypeId: 202, name: 'A档' },
+      { ticketTypeId: 203, name: null },
+    ],
+  }), '已自动降档，票档信息待同步')
+  assert.equal(getAutoDowngradeDisplay({
+    allowAutoDowngrade: true,
     matchedTicketTypeId: null,
     requestedTicketTypes: [{ ticketTypeId: 202, name: 'A档' }],
   }), '已开启，按票档顺序尝试')

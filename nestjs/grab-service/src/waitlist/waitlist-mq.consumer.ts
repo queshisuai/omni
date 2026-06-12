@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import * as amqp from 'amqp-connection-manager';
 import { ConfirmChannel } from 'amqplib';
+import { requireEnv, requireIntegerEnv } from '../runtime-env';
 import { WaitlistAllocatorService } from './waitlist-allocator.service';
 import { TicketReleasedEventDto } from './waitlist.types';
 
@@ -33,10 +34,10 @@ export class WaitlistMqConsumer implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly allocator: WaitlistAllocatorService) {}
 
   async onModuleInit() {
-    const host = process.env.RABBITMQ_HOST || 'localhost';
-    const port = process.env.RABBITMQ_PORT || 5672;
-    const user = process.env.RABBITMQ_USER || 'admin';
-    const pass = process.env.RABBITMQ_PASSWORD || '123456';
+    const host = requireEnv('RABBITMQ_HOST', 'RabbitMQ 地址未配置');
+    const port = requireIntegerEnv('RABBITMQ_PORT', 'RabbitMQ 端口未配置', 'RabbitMQ 端口配置无效');
+    const user = requireEnv('RABBITMQ_USER', 'RabbitMQ 用户未配置');
+    const pass = requireEnv('RABBITMQ_PASSWORD', 'RabbitMQ 密码未配置');
     const url = `amqp://${user}:${pass}@${host}:${port}`;
 
     this.connection = amqp.connect([url]);

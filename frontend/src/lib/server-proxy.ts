@@ -1,5 +1,3 @@
-const DEFAULT_PROXY_TARGET = 'http://localhost:8088';
-
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'content-length',
@@ -12,13 +10,14 @@ const HOP_BY_HOP_HEADERS = new Set([
   'upgrade',
 ]);
 
-function backendBaseUrl(): string {
-  return (process.env.API_PROXY_TARGET || DEFAULT_PROXY_TARGET).replace(/\/+$/, '');
+function backendBaseUrl(): string | null {
+  const configuredTarget = process.env.API_PROXY_TARGET?.trim();
+  return configuredTarget ? configuredTarget.replace(/\/+$/, '') : null;
 }
 
-function backendUrl(prefix: string, path: string[], search: string): string {
+function backendUrl(baseUrl: string, prefix: string, path: string[], search: string): string {
   const encodedPath = path.map((segment) => encodeURIComponent(segment)).join('/');
-  return `${backendBaseUrl()}/${prefix}${encodedPath ? `/${encodedPath}` : ''}${search}`;
+  return `${baseUrl}/${prefix}${encodedPath ? `/${encodedPath}` : ''}${search}`;
 }
 
 function forwardHeaders(request: Request): Headers {
@@ -44,8 +43,16 @@ function responseHeaders(upstreamHeaders: Headers): Headers {
 export async function proxyToBackend(request: Request, prefix: string, path: string[] = []): Promise<Response> {
   const sourceUrl = new URL(request.url);
   const method = request.method.toUpperCase();
+  const baseUrl = backendBaseUrl();
+  if (!baseUrl) {
+    return new Response(JSON.stringify({ code: 503, message: '后端代理目标未配置', data: null }), {
+      status: 503,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
+  }
+
   const body = method === 'GET' || method === 'HEAD' ? undefined : await request.arrayBuffer();
-  const targetUrl = backendUrl(prefix, path, sourceUrl.search);
+  const targetUrl = backendUrl(baseUrl, prefix, path, sourceUrl.search);
 
   try {
     const upstream = await fetch(targetUrl, {

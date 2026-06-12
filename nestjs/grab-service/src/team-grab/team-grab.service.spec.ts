@@ -64,11 +64,12 @@ function teamGrabRequest(overrides: Partial<TeamGrabRequestRecord> = {}): TeamGr
 }
 
 function createService(repository: any, overrides: any = {}): TeamGrabService {
-  return new TeamGrabService(
+  return new (TeamGrabService as any)(
     repository,
     overrides.grabService ?? {},
     overrides.queueService ?? {},
     overrides.paymentSyncService,
+    overrides.ticketClient,
   );
 }
 
@@ -279,6 +280,43 @@ describe('TeamGrabService', () => {
       canTriggerGrab: false,
       latestGrabRequestId: 'GRAB-QUEUED-9',
       latestOrderId: 9001,
+    });
+  });
+
+  it('adds readable ticket context to team detail', async () => {
+    const lockedTeam = team({ leaderUserId: 100, status: 'LOCKED' });
+    const members = [
+      member({ userId: 100, role: 'LEADER', status: 'CONFIRMED' }),
+      member({ userId: 200, role: 'MEMBER', status: 'CONFIRMED' }),
+    ];
+    const repository: any = {
+      findTeamById: jest.fn().mockResolvedValue(lockedTeam),
+      listMembers: jest.fn().mockResolvedValue(members),
+      findLatestTeamGrabRequestByTeamId: jest.fn().mockResolvedValue(null),
+    };
+    const ticketClient = {
+      getPurchaseContext: jest.fn().mockResolvedValue({
+        sessionId: 20,
+        ticketTypeId: 30,
+        activityId: 10,
+        activityName: '周末演唱会',
+        activityPoster: '/poster.jpg',
+        ticketTypeName: '看台 A',
+        venueName: '万象体育馆',
+        sessionTime: '2026-07-18T19:30:00',
+      }),
+    };
+    const service = createService(repository, { ticketClient });
+
+    const result = await service.getTeamDetail(1, 100);
+
+    expect(ticketClient.getPurchaseContext).toHaveBeenCalledWith(20, 30);
+    expect(result.team).toMatchObject({
+      activityName: '周末演唱会',
+      activityPoster: '/poster.jpg',
+      ticketTypeName: '看台 A',
+      venueName: '万象体育馆',
+      sessionTime: '2026-07-18T19:30:00',
     });
   });
 

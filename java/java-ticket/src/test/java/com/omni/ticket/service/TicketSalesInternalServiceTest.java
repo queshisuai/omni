@@ -8,6 +8,8 @@ import com.omni.ticket.dto.TeamSeatLockValidationRequest;
 import com.omni.ticket.dto.TeamSeatLockValidationResponse;
 import com.omni.ticket.dto.TicketSalesLockRequest;
 import com.omni.ticket.dto.TicketSalesOrderRequest;
+import com.omni.ticket.dto.TicketPurchaseContextRequest;
+import com.omni.ticket.dto.TicketPurchaseContextResponse;
 import com.omni.ticket.dto.TicketSalesQuoteRequest;
 import com.omni.ticket.dto.TicketSalesQuoteResponse;
 import com.omni.ticket.dto.TicketSalesReleaseResponse;
@@ -127,6 +129,59 @@ class TicketSalesInternalServiceTest {
 
         assertEquals("当前场次不可售", exception.getMessage());
         verify(sessionMapper, never()).selectById(3001L);
+    }
+
+    @Test
+    void purchaseContextReturnsReadableSnapshotForUnsellableTicketType() {
+        TicketTypeMapper ticketTypeMapper = mock(TicketTypeMapper.class);
+        SessionMapper sessionMapper = mock(SessionMapper.class);
+        ActivityMapper activityMapper = mock(ActivityMapper.class);
+        VenueMapper venueMapper = mock(VenueMapper.class);
+        SessionSeatMapper sessionSeatMapper = mock(SessionSeatMapper.class);
+        TicketSalesInternalService service = new TicketSalesInternalService(
+                ticketTypeMapper, sessionMapper, activityMapper, venueMapper, sessionSeatMapper);
+
+        TicketType ticketType = new TicketType();
+        ticketType.setId(4001L);
+        ticketType.setSessionId(3001L);
+        ticketType.setName("看台 A");
+        ticketType.setPrice(new BigDecimal("380.00"));
+        ticketType.setStatus(0);
+        when(ticketTypeMapper.selectById(4001L)).thenReturn(ticketType);
+
+        Session session = new Session();
+        session.setId(3001L);
+        session.setActivityId(2001L);
+        session.setVenueId(1001L);
+        session.setStartTime(LocalDateTime.of(2026, 7, 18, 19, 30));
+        when(sessionMapper.selectById(3001L)).thenReturn(session);
+
+        Activity activity = new Activity();
+        activity.setId(2001L);
+        activity.setName("周末演唱会");
+        activity.setPoster("/poster.jpg");
+        when(activityMapper.selectById(2001L)).thenReturn(activity);
+
+        Venue venue = new Venue();
+        venue.setId(1001L);
+        venue.setName("万象体育馆");
+        when(venueMapper.selectById(1001L)).thenReturn(venue);
+
+        TicketPurchaseContextRequest request = new TicketPurchaseContextRequest();
+        request.setSessionId(3001L);
+        request.setTicketTypeId(4001L);
+
+        TicketPurchaseContextResponse response = service.getPurchaseContext(request);
+
+        assertEquals(3001L, response.getSessionId());
+        assertEquals(4001L, response.getTicketTypeId());
+        assertEquals(2001L, response.getActivityId());
+        assertEquals("周末演唱会", response.getActivityName());
+        assertEquals("/poster.jpg", response.getActivityPoster());
+        assertEquals("看台 A", response.getTicketTypeName());
+        assertEquals("万象体育馆", response.getVenueName());
+        assertEquals(LocalDateTime.of(2026, 7, 18, 19, 30), response.getSessionTime());
+        verify(sessionSeatMapper, never()).selectSessionSellable(3001L);
     }
 
     @Test

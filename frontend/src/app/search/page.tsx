@@ -7,11 +7,13 @@ import { Footer } from '@/components/Footer'
 import { TicketCard } from '@/components/TicketCard'
 import { SearchResultsSkeleton } from '@/components/Skeleton'
 import { listActivities, listCategories } from '@/lib/api'
+import { captureAnalyticsEvent } from '@/lib/analytics'
 import { resolveActivityCityParam, resolveInitialCity } from '@/lib/city-selection'
-import { DEFAULT_POPULAR_SEARCHES, SEARCH_HISTORY_KEY, addSearchHistoryTerm, buildEmptySearchRecommendations, buildSearchSuggestions, parseSearchHistory } from '@/lib/search-experience'
-import { categories as mockCategories, sections as mockSections } from '@/lib/mock-data'
+import { ACTIVITY_VIEW_SIGNAL_KEY, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
+import { toActivitySaleStatus } from '@/lib/activity-sale-status'
+import { DEFAULT_POPULAR_SEARCHES, SEARCH_HISTORY_KEY, addSearchHistoryTerm, buildEmptySearchRecommendations, buildSearchSidebarRecommendations, buildSearchSuggestions, formatSearchLoadFailure, parseSearchHistory } from '@/lib/search-experience'
 import type { CategoryVO, ActivityVO } from '@/types/api'
-import type { Activity } from '@/types/damai'
+import type { Activity } from '@/types/omni'
 
 type SortType = 'recommend' | 'relevance' | 'recent' | 'newest' | 'price_asc' | 'price_desc'
 type TimeFilter = 'all' | 'today' | 'tomorrow' | 'weekend' | 'month' | 'custom'
@@ -46,7 +48,7 @@ function toActivity(vo: ActivityVO): Activity {
     showTime: vo.startTime ? vo.startTime.slice(0, 10) : '待定',
     priceRange: vo.minPrice ? `¥${vo.minPrice}起` : '待定',
     price: vo.minPrice || 0,
-    status: vo.status === 1 ? 'on_sale' : vo.status === 2 ? 'coming_soon' : 'sold_out',
+    status: toActivitySaleStatus(vo.status),
   }
 }
 
@@ -171,6 +173,7 @@ function SearchContent() {
   const [categories, setCategories] = useState<CategoryVO[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
   const [fallbackActivities, setFallbackActivities] = useState<Activity[]>([])
+  const [errorMessage, setErrorMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -180,6 +183,7 @@ function SearchContent() {
   const [sort, setSort] = useState<SortType>('recommend')
   const [activeCity, setActiveCity] = useState(() => resolveInitialCity(initialCity))
   const [searchHistory, setSearchHistory] = useState<string[]>([])
+  const [viewSignals, setViewSignals] = useState<ActivityViewSignal[]>([])
   const [showAllCities, setShowAllCities] = useState(false)
   const [citySearchKeyword, setCitySearchKeyword] = useState('')
   const [customDate, setCustomDate] = useState('')
@@ -188,8 +192,6 @@ function SearchContent() {
   const [saleStatus, setSaleStatus] = useState<SaleStatusFilter>('')
   const [seatMapOnly, setSeatMapOnly] = useState(false)
   const [realNameFilter, setRealNameFilter] = useState<BooleanFilter>('')
-  const usingMock = useRef(false)
-  const mockAllActivities = useRef<Activity[]>([])
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   const toLocalDateStr = (d: Date) => {
@@ -225,6 +227,7 @@ function SearchContent() {
 
   const fetchActivities = async (cat: string, p: number) => {
     setLoading(true)
+    setErrorMessage('')
     try {
       const loadFallbackActivities = async () => {
         try {
@@ -265,9 +268,15 @@ function SearchContent() {
           setActivities(actData.records.map(toActivity))
           setTotal(actData.total)
           setTotalPages(actData.pages)
-          if (actData.total === 0) await loadFallbackActivities()
-          else setFallbackActivities([])
-          usingMock.current = false
+          if (actData.total === 0) {
+            captureAnalyticsEvent('omni_search_empty_result_seen', {
+              city: activeCity,
+              result_count_bucket: '0',
+            })
+            await loadFallbackActivities()
+          } else {
+            setFallbackActivities([])
+          }
           setLoading(false)
           return
         } else {
@@ -300,31 +309,23 @@ function SearchContent() {
       setActivities(data.records.map(toActivity))
       setTotal(data.total)
       setTotalPages(data.pages)
-      if (data.total === 0) await loadFallbackActivities()
-      else setFallbackActivities([])
-      usingMock.current = false
-    } catch {
-      // 降级到 mock 数据 —— 只在首次加载时拉取全量
-      const mapped = mockCategories.map((c, i) => ({ id: i + 1, name: c.name, icon: null, sort: 0, status: 1 }))
-      setCategories(mapped as CategoryVO[])
-
-      if (mockAllActivities.current.length === 0) {
-        let all: Activity[] = []
-        if (cat) {
-          const section = mockSections.find((s) => s.title === cat)
-          if (section) all = section.items
-        } else {
-          all = mockSections.flatMap((s) => s.items)
-        }
-        mockAllActivities.current = all
+      if (data.total === 0) {
+        captureAnalyticsEvent('omni_search_empty_result_seen', {
+          city: activeCity,
+          category_id: categoryId,
+          result_count_bucket: '0',
+        })
+        await loadFallbackActivities()
+      } else {
+        setFallbackActivities([])
       }
-
-      const all = mockAllActivities.current
-      setActivities(all)
-      setFallbackActivities(all.slice(0, 6))
-      setTotal(all.length)
-      setTotalPages(Math.ceil(all.length / 20) || 1)
-      usingMock.current = true
+    } catch (error) {
+      const failure = formatSearchLoadFailure(error)
+      setActivities([])
+      setFallbackActivities([])
+      setTotal(0)
+      setTotalPages(1)
+      setErrorMessage(failure.description)
     } finally {
       setLoading(false)
     }
@@ -333,6 +334,7 @@ function SearchContent() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setSearchHistory(parseSearchHistory(localStorage.getItem(SEARCH_HISTORY_KEY)))
+      setViewSignals(parseActivityViewSignals(localStorage.getItem(ACTIVITY_VIEW_SIGNAL_KEY)))
     }
   }, [])
 
@@ -390,39 +392,32 @@ function SearchContent() {
     return true
   }
 
-  // 当前页数据：mock 模式客户端切片，API 模式服务端已分页
-  const pageSize = 20
   const keyword = searchParams.get('keyword') || ''
-  const allFiltered = usingMock.current ? activities.filter((a) => {
-    const matchKeyword = keyword ? a.title.toLowerCase().includes(keyword.toLowerCase()) : true
-    const matchCity = activeCity === '全部' || a.venue.includes(activeCity) || a.title.includes(activeCity)
-    const matchTimeFilter = matchTime(a.showTime)
-    const matchPrice = (!minPrice || a.price >= Number(minPrice)) && (!maxPrice || a.price <= Number(maxPrice))
-    const matchSaleStatus = !saleStatus || a.status === saleStatus
-    return matchKeyword && matchCity && matchTimeFilter && matchPrice && matchSaleStatus
-  }) : activities
-  
-  const displayTotal = usingMock.current ? allFiltered.length : total
-  const pageData = usingMock.current
-    ? allFiltered.slice((page - 1) * pageSize, page * pageSize)
-    : activities
-  const displayTotalPages = usingMock.current
-    ? Math.ceil(allFiltered.length / pageSize) || 1
-    : totalPages
+  const displayTotal = total
+  const pageData = activities
+  const displayTotalPages = totalPages
+  const searchLoadFailure = errorMessage ? formatSearchLoadFailure(new Error(errorMessage)) : null
   const resultTerms = Array.from(new Set(activities.flatMap(item => [item.title, item.venue].filter(Boolean) as string[])))
   const suggestions = buildSearchSuggestions({
     keyword,
     history: searchHistory,
     popular: DEFAULT_POPULAR_SEARCHES,
     resultTerms,
+    viewSignals,
     limit: 8,
   })
   const emptyRecommendations = buildEmptySearchRecommendations({
     keyword,
     activeCity,
     activities: fallbackActivities,
+    viewSignals,
     cities: [...HOT_CITIES, ...OTHER_CITIES],
     limit: 6,
+  })
+  const sidebarRecommendations = buildSearchSidebarRecommendations({
+    activities,
+    viewSignals,
+    limit: 4,
   })
 
   const handlePageChange = (p: number) => {
@@ -432,7 +427,6 @@ function SearchContent() {
 
   const handleCategoryChange = (catName: string) => {
     const newCat = activeCategory === catName ? '' : catName
-    mockAllActivities.current = []
     setActiveCategory(newCat)
     setPage(1)
     const params = new URLSearchParams()
@@ -443,6 +437,12 @@ function SearchContent() {
   }
 
   const searchWithKeyword = (nextKeyword: string) => {
+    captureAnalyticsEvent('omni_search_submitted', {
+      keyword_present: Boolean(nextKeyword.trim()),
+      city: activeCity,
+      category_id: activeCategory ? categories.find((category) => category.name === activeCategory)?.id : undefined,
+      source: 'search_page',
+    })
     const params = new URLSearchParams()
     params.set('keyword', nextKeyword)
     if (activeCity !== '全部') params.set('city', activeCity)
@@ -450,7 +450,6 @@ function SearchContent() {
   }
 
   const searchWithCity = (nextCity: string) => {
-    mockAllActivities.current = []
     setActiveCity(nextCity)
     setPage(1)
     const params = new URLSearchParams()
@@ -459,9 +458,6 @@ function SearchContent() {
     router.push(`/search?${params.toString()}`)
   }
 
-  // 客户端关键字过滤（已在上方计算 pageData 时使用，此处保留变量兼容旧代码）
-  const filteredActivities = pageData
-
   const handleTimeChange = (time: TimeFilter) => {
     setActiveTime(time)
     if (time !== 'custom') setCustomDate('')
@@ -469,7 +465,6 @@ function SearchContent() {
   }
 
   const clearFilters = () => {
-    mockAllActivities.current = []
     setActiveCategory('')
     setActiveCity('全部')
     setActiveTime('all')
@@ -703,11 +698,22 @@ function SearchContent() {
           {/* 结果网格 */}
           {loading ? (
             <SearchResultsSkeleton />
+          ) : searchLoadFailure ? (
+            <div className="rounded-3xl border border-red-100 bg-white px-6 py-20 text-center text-[14px] text-gray-500">
+              <div className="font-medium text-gray-700">{searchLoadFailure.title}</div>
+              <div className="mt-2 text-[13px] text-gray-400">{searchLoadFailure.description}</div>
+              <button
+                onClick={() => fetchActivities(activeCategory, page)}
+                className="mt-5 rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] text-white"
+              >
+                {searchLoadFailure.retryLabel}
+              </button>
+            </div>
           ) : pageData.length === 0 ? (
             <div className="rounded-3xl border border-gray-100 bg-white px-6 py-20 text-center text-[14px] text-gray-500">
               <div className="font-medium text-gray-600">暂无符合条件的演出</div>
               <div className="mt-2 text-[13px] text-gray-400">可以放宽筛选条件，或先关注城市；无票票档可在购票区加入候补。</div>
-              {(emptyRecommendations.terms.length > 0 || emptyRecommendations.cities.length > 0) && (
+              {(emptyRecommendations.terms.length > 0 || emptyRecommendations.recentTerms.length > 0 || emptyRecommendations.cities.length > 0) && (
                 <div className="mx-auto mt-5 max-w-[640px] rounded-2xl bg-gray-50 px-4 py-4 text-left">
                   {emptyRecommendations.terms.length > 0 && (
                     <div>
@@ -721,8 +727,20 @@ function SearchContent() {
                       </div>
                     </div>
                   )}
-                  {emptyRecommendations.cities.length > 0 && (
+                  {emptyRecommendations.recentTerms.length > 0 && (
                     <div className={emptyRecommendations.terms.length > 0 ? 'mt-4' : ''}>
+                      <div className="mb-2 text-[12px] font-medium text-gray-500">最近浏览</div>
+                      <div className="flex flex-wrap gap-2">
+                        {emptyRecommendations.recentTerms.map(term => (
+                          <button key={term} onClick={() => searchWithKeyword(term)} className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
+                            {term}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {emptyRecommendations.cities.length > 0 && (
+                    <div className={emptyRecommendations.terms.length > 0 || emptyRecommendations.recentTerms.length > 0 ? 'mt-4' : ''}>
                       <div className="mb-2 text-[12px] font-medium text-gray-500">相邻城市</div>
                       <div className="flex flex-wrap gap-2">
                         {emptyRecommendations.cities.map(city => (
@@ -754,6 +772,7 @@ function SearchContent() {
         </div>
 
         {/* 右侧推荐 */}
+        {sidebarRecommendations.length > 0 && (
         <div className="w-[280px] shrink-0 hidden lg:block">
           <div className="bg-white rounded-3xl p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] sticky top-[96px] border border-gray-100">
             <h3 className="text-[18px] font-extrabold text-gray-900 mb-6 tracking-tight flex items-center">
@@ -761,7 +780,7 @@ function SearchContent() {
               您可能还喜欢
             </h3>
             <div className="flex flex-col gap-6">
-              {allFiltered.slice(0, 4).map((a) => (
+              {sidebarRecommendations.map((a) => (
                 <a
                   key={a.id}
                   href={a.itemType === 'tour' ? `/tour/${a.id}` : `/activity/${a.id}`}
@@ -787,6 +806,7 @@ function SearchContent() {
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   )

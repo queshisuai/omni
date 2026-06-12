@@ -14,15 +14,16 @@ function formatTime(value: string | null | undefined) {
 }
 
 function statusText(status: number | null | undefined) {
-  if (status === 1) return { text: '已通过', color: '#16a34a', bg: '#f0fdf4' }
-  if (status === 2) return { text: '已禁用', color: '#ef4444', bg: '#fef2f2' }
-  return { text: '正常', color: '#2563eb', bg: '#eff6ff' }
+  if (status === 1) return { text: '正常', color: '#16a34a', bg: '#f0fdf4' }
+  if (status === 0) return { text: '已禁用', color: '#ef4444', bg: '#fef2f2' }
+  return { text: '未知账号状态', color: '#6b7280', bg: '#f3f4f6' }
 }
 
 function applicationStatusText(status: OrganizerApplicationVO['status']) {
   if (status === 0) return { text: '待审核', color: '#ff7a00', bg: '#fff7ed' }
   if (status === 1) return { text: '已通过', color: '#16a34a', bg: '#f0fdf4' }
-  return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
+  if (status === 2) return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
+  return { text: '未知入驻状态', color: '#6b7280', bg: '#f3f4f6' }
 }
 
 
@@ -177,7 +178,7 @@ export default function ConsoleProfilePage() {
                     <ActionLink href="/console/venue" title="场馆记录" desc="创建和维护场馆记录" />
                   </>
                 ) : role === 'organizer_admin' ? (
-                  <ActionLink href="/console/organizer-admins" title="主办方管理员" desc="分配和解除主办方管理员账号" />
+                  <ActionLink href="/console/organizer-admins" title="平台主办方运营员" desc="分配和解除平台主办方运营员账号" />
                 ) : role === 'support' ? (
                   <>
                     {user.permissionCodes?.includes('support.account.manage') ? <ActionLink href="/console/support-accounts" title="客服账号管理" desc="创建、编辑和停用客服账号" /> : null}
@@ -202,7 +203,7 @@ export default function ConsoleProfilePage() {
                   : role === 'organizer'
                     ? '主办方可查看自己的商户主体信息和入驻状态，并进入商户后台进行业务管理。'
                     : role === 'organizer_admin'
-                      ? '主办方管理员负责主办方管理员账号的分配、解除和状态维护，不等同于主办方商户账号。'
+                       ? '平台主办方运营员负责主办方运营账号的分配、解除和状态维护，不等同于主办方商户账号。'
                       : '客服主管负责客服账号、客服会话和审计查看等后台管理工作；普通客服仍以客服工作台处理在线咨询。'}
               </p>
             </section>

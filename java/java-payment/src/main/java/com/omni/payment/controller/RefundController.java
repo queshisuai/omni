@@ -25,7 +25,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 退款接口
@@ -70,6 +72,17 @@ public class RefundController {
     public Result<List<RefundRequestVO>> listMine(@RequestHeader(value = "Authorization", required = false) String authorization) {
         AuthUser authUser = requireAuthUser(authorization);
         return Result.success(refundService.listUserRefunds(authUser.userId));
+    }
+
+    @GetMapping("/internal/users/{userId}")
+    public Result<List<RefundRequestVO>> listInternalUserRefunds(
+            @PathVariable Long userId,
+            @RequestParam(defaultValue = "5") Integer limit,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!StringUtils.hasText(internalApiToken) || !internalApiToken.equals(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(limitList(refundService.listUserRefunds(userId), limit));
     }
 
     @GetMapping("/admin")
@@ -122,6 +135,14 @@ public class RefundController {
         } catch (RuntimeException e) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
+    }
+
+    private <T> List<T> limitList(List<T> items, Integer limit) {
+        if (items == null || items.isEmpty()) {
+            return Collections.emptyList();
+        }
+        int size = limit == null ? 5 : Math.max(0, Math.min(limit, 20));
+        return items.stream().limit(size).collect(Collectors.toList());
     }
 
     private static class AuthUser {

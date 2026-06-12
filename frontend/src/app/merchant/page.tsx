@@ -31,10 +31,18 @@ const EMPTY_FORM: ApplicationFormState = {
   description: '',
 }
 
-function statusMeta(status: OrganizerApplicationStatus) {
+function statusMeta(status: OrganizerApplicationStatus | number | string | null | undefined) {
   if (status === 0) return { text: '待审核', color: '#ff7a00', bg: '#fff7ed' }
   if (status === 1) return { text: '已通过', color: '#16a34a', bg: '#f0fdf4' }
-  return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
+  if (status === 2) return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
+  return { text: '未知入驻状态', color: '#6b7280', bg: '#f3f4f6' }
+}
+
+function statusDescription(status: OrganizerApplicationStatus | number | string | null | undefined) {
+  if (status === 0) return '资料正在审核中。'
+  if (status === 1) return '已通过，可进入后台。'
+  if (status === 2) return '驳回后可修改后重新提交。'
+  return '入驻状态待核对，请稍后刷新或联系平台客服。'
 }
 
 function currentQualificationMeta(isCancelled: boolean, application?: OrganizerApplicationVO | null) {
@@ -47,7 +55,7 @@ function roleLabel(role?: UserRole | null) {
   if (role === 'admin') return '平台管理员'
   if (role === 'platform_super_admin') return '平台超管'
   if (role === 'organizer') return '商户账号'
-  if (role === 'organizer_admin') return '主办方管理员'
+  if (role === 'organizer_admin') return '平台主办方运营员'
   return '普通用户'
 }
 
@@ -299,11 +307,7 @@ export default function MerchantPage() {
                     <div className="mt-1 text-[#666]">
                       {isCancelledOrganizer
                         ? '主办方资格已取消，可重新提交入驻申请。'
-                        : application.status === 1
-                          ? '已通过，可进入后台。'
-                        : application.status === 2
-                          ? '驳回后可修改后重新提交。'
-                          : '资料正在审核中。'}
+                        : statusDescription(application.status)}
                     </div>
                     {application.status === 2 && application.reviewNote ? (
                       <div className="mt-2 text-[#111]">驳回原因：{application.reviewNote}</div>
@@ -413,7 +417,7 @@ export default function MerchantPage() {
                         {application ? '重新提交申请' : '提交申请'}
                       </button>
                       <span className="text-xs text-[#999]">
-                        提交时不需要传入用户 ID，系统会自动使用当前登录账号。
+                        提交时不需要传入用户编号，系统会自动使用当前登录账号。
                       </span>
                     </div>
                   </form>

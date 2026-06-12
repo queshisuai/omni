@@ -1,9 +1,19 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Eye, FileSearch, Plus, RefreshCw, X } from 'lucide-react'
-import { createReconciliationBatch, getReconciliationBatchDetail, listReconciliationBatches } from '@/lib/api'
+import { CheckCircle2, CircleSlash, Download, Eye, FileSearch, Plus, RefreshCw, X } from 'lucide-react'
+import { createReconciliationBatch, getReconciliationBatchDetail, ignoreReconciliationDifference, listReconciliationBatches, resolveReconciliationDifference } from '@/lib/api'
 import { globalAlert } from '@/components/GlobalDialog'
+import { buildConsoleReconciliationExportCsv, buildConsoleReconciliationExportExcelHtml } from '@/lib/console-reconciliation'
+import {
+  formatReconciliationBatchStatus,
+  formatReconciliationBusinessType,
+  formatReconciliationDetailStatus,
+  formatReconciliationDifferenceStatus,
+  formatReconciliationDiffType,
+  formatReconciliationSource,
+  formatReconciliationSummaryKey,
+} from '@/lib/operation-display'
 import type { ReconciliationBatchDetailVO, ReconciliationBatchVO } from '@/types/api'
 
 function todayText() {
@@ -19,50 +29,6 @@ function formatTime(value?: string | null) {
   return value.replace('T', ' ').slice(0, 19)
 }
 
-function formatStatus(status?: string | null) {
-  if (status === 'generated') return '已生成'
-  if (status === 'processing') return '处理中'
-  if (status === 'completed') return '已完成'
-  if (status === 'failed') return '失败'
-  return status || '-'
-}
-
-function formatDetailStatus(status?: string | null) {
-  if (status === 'matched') return '已匹配'
-  if (status === 'unmatched') return '未匹配'
-  if (status === 'pending') return '待处理'
-  return status || '-'
-}
-
-function formatDifferenceStatus(status?: string | null) {
-  if (status === 'open') return '待处理'
-  if (status === 'resolved') return '已处理'
-  if (status === 'ignored') return '已忽略'
-  return status || '-'
-}
-
-function formatSource(source?: string | null) {
-  if (source === 'local') return '本地日结'
-  if (source === 'alipay') return '支付宝'
-  return source || '-'
-}
-
-function formatBusinessType(type?: string | null) {
-  if (type === 'payment') return '支付'
-  if (type === 'refund') return '退款'
-  if (type === 'ticket') return '票务'
-  if (type === 'summary') return '汇总'
-  return type || '-'
-}
-
-function formatDiffType(type?: string | null) {
-  if (type === 'amount_mismatch') return '金额不一致'
-  if (type === 'missing_local') return '本地缺失'
-  if (type === 'missing_channel') return '渠道缺失'
-  if (type === 'status_mismatch') return '状态不一致'
-  return type || '-'
-}
-
 function formatAmount(value?: number | string | null) {
   if (value === null || value === undefined || value === '') return '-'
   const amount = Number(value)
@@ -74,9 +40,9 @@ function parseSummary(summaryJson?: string | null) {
   if (!summaryJson) return []
   try {
     const parsed = JSON.parse(summaryJson) as Record<string, unknown>
-    return Object.entries(parsed).slice(0, 6).map(([key, value]) => ({ key, value: String(value) }))
+    return Object.entries(parsed).slice(0, 6).map(([key, value]) => ({ key: formatReconciliationSummaryKey(key), value: String(value) }))
   } catch {
-    return [{ key: 'summary', value: summaryJson }]
+    return [{ key: formatReconciliationSummaryKey('summary'), value: summaryJson }]
   }
 }
 
@@ -89,6 +55,8 @@ export default function ReconciliationPage() {
   const [selectedDetail, setSelectedDetail] = useState<ReconciliationBatchDetailVO | null>(null)
   const [detailError, setDetailError] = useState('')
   const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [actingDifferenceId, setActingDifferenceId] = useState<number | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -121,10 +89,12 @@ export default function ReconciliationPage() {
     }
     setSubmitting(true)
     setError('')
+    setMessage('')
     try {
       const created = await createReconciliationBatch(bizDate)
       await load()
       await handleView(created)
+      setMessage('对账批次已生成')
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成对账批次失败')
     } finally {
@@ -142,6 +112,61 @@ export default function ReconciliationPage() {
     } finally {
       setDetailLoading(false)
     }
+  }
+
+  const handleDifferenceAction = async (differenceId: number, action: 'resolve' | 'ignore') => {
+    if (!selectedDetail) return
+    setError('')
+    setDetailError('')
+    setMessage('')
+    setActingDifferenceId(differenceId)
+    try {
+      if (action === 'resolve') {
+        await resolveReconciliationDifference(selectedDetail.batch.batchNo, differenceId)
+        setMessage('对账差异已标记为已处理')
+      } else {
+        await ignoreReconciliationDifference(selectedDetail.batch.batchNo, differenceId)
+        setMessage('对账差异已忽略')
+      }
+      const refreshed = await getReconciliationBatchDetail(selectedDetail.batch.batchNo)
+      setSelectedDetail(refreshed)
+      await load()
+    } catch (err) {
+      setDetailError(err instanceof Error ? err.message : '更新对账差异失败')
+    } finally {
+      setActingDifferenceId(null)
+    }
+  }
+
+  const downloadSelectedDetail = (content: string, type: string, extension: string) => {
+    if (!selectedDetail) return
+    const blob = new Blob([content], { type })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `对账单-${selectedDetail.batch.batchNo}.${extension}`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportSelectedDetail = () => {
+    if (!selectedDetail) {
+      setMessage('请先打开对账批次详情')
+      return
+    }
+    downloadSelectedDetail(buildConsoleReconciliationExportCsv(selectedDetail), 'text/csv;charset=utf-8', 'csv')
+    setMessage(`已导出对账单 ${selectedDetail.batch.batchNo}`)
+  }
+
+  const exportSelectedDetailExcel = () => {
+    if (!selectedDetail) {
+      setMessage('请先打开对账批次详情')
+      return
+    }
+    downloadSelectedDetail(buildConsoleReconciliationExportExcelHtml(selectedDetail), 'application/vnd.ms-excel;charset=utf-8', 'xls')
+    setMessage(`已导出对账单 Excel ${selectedDetail.batch.batchNo}`)
   }
 
   return (
@@ -168,7 +193,7 @@ export default function ReconciliationPage() {
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="mb-3 text-[14px] font-medium text-gray-600">最近日期</div>
           <div className="text-[20px] font-bold leading-none text-[#111]">{latestBatch?.bizDate || '-'}</div>
-          <div className="mt-2 text-[12px] text-gray-500">{formatStatus(latestBatch?.status)}</div>
+          <div className="mt-2 text-[12px] text-gray-500">{formatReconciliationBatchStatus(latestBatch?.status)}</div>
         </div>
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="mb-3 text-[14px] font-medium text-gray-600">已生成</div>
@@ -194,7 +219,7 @@ export default function ReconciliationPage() {
         </div>
       </section>
 
-      {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-[13px] text-red-500">{error}</div>}
+      {(error || message) && <div className={`rounded-xl px-4 py-3 text-[13px] ${error ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>{error || message}</div>}
 
       <section className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
         <div className="border-b border-gray-100 px-5 py-4 text-[16px] font-bold text-[#111]">批次列表</div>
@@ -223,10 +248,10 @@ export default function ReconciliationPage() {
                     <tr key={item.id} className="text-[#333]">
                       <td className="px-4 py-3 font-mono text-[12px]">{item.batchNo}</td>
                       <td className="px-4 py-3">{item.bizDate}</td>
-                      <td className="px-4 py-3">{formatSource(item.sourceType)}</td>
-                      <td className="px-4 py-3">{formatStatus(item.status)}</td>
+                      <td className="px-4 py-3">{formatReconciliationSource(item.sourceType)}</td>
+                      <td className="px-4 py-3">{formatReconciliationBatchStatus(item.status)}</td>
                       <td className="max-w-[360px] px-4 py-3 text-gray-600">
-                        {summary.length === 0 ? '-' : summary.map(part => `${part.key}: ${part.value}`).join('，')}
+                        {summary.length === 0 ? '-' : summary.map(part => `${part.key}：${part.value}`).join('，')}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">{formatTime(item.createTime)}</td>
                       <td className="px-4 py-3">
@@ -252,14 +277,34 @@ export default function ReconciliationPage() {
         <section className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
             <div className="text-[16px] font-bold text-[#111]">批次详情</div>
-            <button
-              onClick={() => { setSelectedDetail(null); setDetailError('') }}
-              aria-label="关闭详情"
-              title="关闭详情"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-[#ff1268] hover:text-[#ff1268]"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              {selectedDetail ? (
+                <>
+                  <button
+                    onClick={exportSelectedDetail}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    导出对账单
+                  </button>
+                  <button
+                    onClick={exportSelectedDetailExcel}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    导出 Excel
+                  </button>
+                </>
+              ) : null}
+              <button
+                onClick={() => { setSelectedDetail(null); setDetailError('') }}
+                aria-label="关闭详情"
+                title="关闭详情"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:border-[#ff1268] hover:text-[#ff1268]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
           {detailLoading ? (
             <div className="py-12 text-center text-[14px] text-gray-400">正在加载批次详情...</div>
@@ -278,11 +323,11 @@ export default function ReconciliationPage() {
                 </div>
                 <div>
                   <div className="text-[12px] text-gray-500">来源</div>
-                  <div className="mt-1 text-[13px] text-[#111]">{formatSource(selectedDetail.batch.sourceType)}</div>
+                  <div className="mt-1 text-[13px] text-[#111]">{formatReconciliationSource(selectedDetail.batch.sourceType)}</div>
                 </div>
                 <div>
                   <div className="text-[12px] text-gray-500">状态</div>
-                  <div className="mt-1 text-[13px] text-[#111]">{formatStatus(selectedDetail.batch.status)}</div>
+                  <div className="mt-1 text-[13px] text-[#111]">{formatReconciliationBatchStatus(selectedDetail.batch.status)}</div>
                 </div>
               </div>
 
@@ -306,10 +351,10 @@ export default function ReconciliationPage() {
                         {selectedDetail.details.map(detail => (
                           <tr key={detail.id}>
                             <td className="px-4 py-3">{detail.businessNo}</td>
-                            <td className="px-4 py-3">{formatBusinessType(detail.businessType)}</td>
+                            <td className="px-4 py-3">{formatReconciliationBusinessType(detail.businessType)}</td>
                             <td className="px-4 py-3">{formatAmount(detail.expectedAmount)}</td>
                             <td className="px-4 py-3">{formatAmount(detail.actualAmount)}</td>
-                            <td className="px-4 py-3">{formatDetailStatus(detail.status)}</td>
+                            <td className="px-4 py-3">{formatReconciliationDetailStatus(detail.status)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -332,16 +377,41 @@ export default function ReconciliationPage() {
                           <th className="px-4 py-3 font-medium">差异金额</th>
                           <th className="px-4 py-3 font-medium">状态</th>
                           <th className="px-4 py-3 font-medium">原因</th>
+                          <th className="px-4 py-3 font-medium">操作</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {selectedDetail.differences.map(diff => (
                           <tr key={diff.id}>
                             <td className="px-4 py-3">{diff.businessNo || '-'}</td>
-                            <td className="px-4 py-3">{formatDiffType(diff.diffType)}</td>
+                            <td className="px-4 py-3">{formatReconciliationDiffType(diff.diffType)}</td>
                             <td className="px-4 py-3">{formatAmount(diff.diffAmount)}</td>
-                            <td className="px-4 py-3">{formatDifferenceStatus(diff.status)}</td>
+                            <td className="px-4 py-3">{formatReconciliationDifferenceStatus(diff.status)}</td>
                             <td className="max-w-[320px] px-4 py-3 text-gray-600">{diff.reason || '-'}</td>
+                            <td className="min-w-[220px] px-4 py-3">
+                              {diff.status === 'open' ? (
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    onClick={() => handleDifferenceAction(diff.id, 'resolve')}
+                                    disabled={actingDifferenceId === diff.id}
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                    标记已处理
+                                  </button>
+                                  <button
+                                    onClick={() => handleDifferenceAction(diff.id, 'ignore')}
+                                    disabled={actingDifferenceId === diff.id}
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+                                  >
+                                    <CircleSlash className="h-3.5 w-3.5" />
+                                    忽略
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[12px] text-gray-400">已结束</span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

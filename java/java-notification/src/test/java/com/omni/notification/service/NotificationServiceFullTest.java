@@ -12,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Collections;
 import java.util.List;
@@ -34,7 +35,7 @@ class NotificationServiceFullTest {
 
     @BeforeEach void setup() {
         svc = new NotificationService(mapper);
-        ctl = new NotificationController(svc, TOKEN, JWT_SECRET);
+        ctl = new NotificationController(svc, mock(NotificationEventService.class), TOKEN, JWT_SECRET);
     }
 
     @BeforeAll static void ensureJwt() {
@@ -104,6 +105,7 @@ class NotificationServiceFullTest {
     class SmsTests {
         @Test @DisplayName("NF-007: send SMS → 200")
         void nf007() {
+            enableDirectChannel();
             Result<Void> r = ctl.sendSms(jwt(2004L), Map.of("content", "您的验证码是666666"));
             assertEquals(200, r.getCode());
             ArgumentCaptor<Notification> c = ArgumentCaptor.forClass(Notification.class);
@@ -113,6 +115,7 @@ class NotificationServiceFullTest {
 
         @Test @DisplayName("NF-008: JWT userId cannot be forged")
         void nf008() {
+            enableDirectChannel();
             // Request body has userId=9999 but JWT has userId=2004
             Result<Void> r = ctl.sendSms(jwt(2004L), Map.of("userId", 9999L, "content", "test"));
             assertEquals(200, r.getCode());
@@ -128,10 +131,13 @@ class NotificationServiceFullTest {
             verify(mapper, never()).insert(any());
         }
 
-        @Test @DisplayName("NF-010: content empty → NPE (toString on null)")
+        @Test @DisplayName("NF-010: direct SMS disabled before body parsing")
         void nf010() {
-            // body.get("content") returns null → null.toString() → NPE
-            assertThrows(NullPointerException.class, () -> ctl.sendSms(jwt(2004L), Map.of()));
+            Result<Void> r = ctl.sendSms(jwt(2004L), Map.of());
+
+            assertEquals(400, r.getCode());
+            assertEquals("当前环境未启用短信直发", r.getMessage());
+            verify(mapper, never()).insert(any());
         }
     }
 
@@ -140,6 +146,7 @@ class NotificationServiceFullTest {
     class EmailTests {
         @Test @DisplayName("NF-011: send email → 200")
         void nf011() {
+            enableDirectChannel();
             Result<Void> r = ctl.sendEmail(jwt(2004L), Map.of("content", "邮件通知"));
             assertEquals(200, r.getCode());
             ArgumentCaptor<Notification> c = ArgumentCaptor.forClass(Notification.class);
@@ -214,5 +221,9 @@ class NotificationServiceFullTest {
             Result<List<Notification>> r = ctl.listNotifications("Bearer eyJhbGciOiJIUzI1NiJ9.e30.XmNK3GpH3Ys7XRJoHmDqF1qnMX8vC1NP7NcQ8e3F2zA");
             assertEquals(401, r.getCode());
         }
+    }
+
+    private void enableDirectChannel() {
+        ReflectionTestUtils.setField(ctl, "directChannelEnabled", true);
     }
 }

@@ -9,6 +9,46 @@ import { NotificationClientService } from './notification-client.service';
 import { ORDER_CREATE_RELEASE_PENDING, TeamGrabRepository } from './team-grab.repository';
 import type { TeamGrabRequestRecord, TeamSeatStrategy } from './team-grab.types';
 
+type TeamGrabLatencyPhase = 'lock' | 'price' | 'order' | 'confirm' | 'notification';
+
+class TeamGrabLatencyTrace {
+  private readonly startedAt = Date.now();
+  private readonly phases: Record<TeamGrabLatencyPhase, number> = {
+    lock: 0,
+    price: 0,
+    order: 0,
+    confirm: 0,
+    notification: 0,
+  };
+
+  async measure<T>(phase: TeamGrabLatencyPhase, action: () => Promise<T>): Promise<T> {
+    const startedAt = Date.now();
+    try {
+      return await action();
+    } finally {
+      this.phases[phase] += Math.max(0, Date.now() - startedAt);
+    }
+  }
+
+  format(record: GrabRequestRecord, teamGrab: TeamGrabRequestRecord, outcome: string): string {
+    return [
+      '小队抢票链路耗时:',
+      `teamGrabRequestId=${teamGrab.requestId}`,
+      `grabRequestId=${record.requestId}`,
+      `teamId=${teamGrab.teamId}`,
+      `sessionId=${teamGrab.sessionId}`,
+      `ticketTypeId=${teamGrab.ticketTypeId}`,
+      `outcome=${outcome}`,
+      `lockMs=${this.phases.lock}`,
+      `priceMs=${this.phases.price}`,
+      `orderMs=${this.phases.order}`,
+      `confirmMs=${this.phases.confirm}`,
+      `notificationMs=${this.phases.notification}`,
+      `totalMs=${Math.max(0, Date.now() - this.startedAt)}`,
+    ].join(' ');
+  }
+}
+
 @Injectable()
 export class TeamGrabProcessorService {
   private readonly logger = new Logger(TeamGrabProcessorService.name);
@@ -28,106 +68,132 @@ export class TeamGrabProcessorService {
       return true;
     }
 
-    const progressed = await this.grabRepository.updateProgress(record.requestId, {
-      status: GRAB_STATUS.ORDER_CREATING,
-      message: '正在锁定小队座位',
-      currentTicketTypeId: record.ticketTypeId,
-      currentAttemptIndex: 0,
-      attempts: record.attemptsSnapshot,
-      workerId: record.workerId,
-    });
-    if (!progressed) return false;
-
-    const grabbing = await this.teamRepository.updateTeamGrabStatus(teamGrab.requestId, 'GRABBING', ['PENDING', 'GRABBING']);
-    if (!grabbing) return false;
-
-    let lockedSeatIds: number[] = [];
-    let lockedSeatLabels: string[] = [];
-    let matchedStrategy: TeamSeatStrategy | null = null;
-    let orderInput: CreateTeamOrderWithLockedSeatsInput;
+    const latencyTrace = new TeamGrabLatencyTrace();
+    let outcome = 'FAILED';
     try {
-      const lock = await this.ticketClient.lockTeamSeats({
-        sessionId: teamGrab.sessionId,
-        ticketTypeId: teamGrab.ticketTypeId,
-        quantity: teamGrab.quantity,
-        strategy: teamGrab.strategy,
-        fallbacks: teamGrab.fallbacks,
-        lockRequestId: teamGrab.requestId,
-        lockExpireTime: this.formatLocalDateTime(record.expireTime),
+      const progressed = await this.grabRepository.updateProgress(record.requestId, {
+        status: GRAB_STATUS.ORDER_CREATING,
+        message: '正在锁定小队座位',
+        currentTicketTypeId: record.ticketTypeId,
+        currentAttemptIndex: 0,
+        attempts: record.attemptsSnapshot,
+        workerId: record.workerId,
       });
-      lockedSeatIds = lock.lockedSeatIds;
-      lockedSeatLabels = lock.seatLabels;
-      matchedStrategy = lock.matchedStrategy as TeamSeatStrategy;
-
-      const persisted = await this.teamRepository.persistLockedSeats(teamGrab.requestId, {
-        lockedSeatIds: lock.lockedSeatIds,
-        seatLabels: lock.seatLabels,
-        matchedStrategy,
-      });
-      if (!persisted) {
-        throw new Error('保存小队锁座结果失败');
-      }
-
-      const authorizedMaxUnitPrice = await this.authorizedMaxUnitPrice(teamGrab);
-      orderInput = {
-        teamId: teamGrab.teamId,
-        userId: teamGrab.payerUserId,
-        payerUserId: teamGrab.payerUserId,
-        sessionId: teamGrab.sessionId,
-        ticketTypeId: teamGrab.ticketTypeId,
-        quantity: teamGrab.quantity,
-        seats: lock.lockedSeatIds.map((seatId, index) => ({
-          sessionSeatId: seatId,
-          seatLabel: lock.seatLabels[index],
-        })),
-        teamGrabRequestId: teamGrab.requestId,
-        grabRequestId: record.requestId,
-        matchedStrategy: lock.matchedStrategy,
-        authorizedMaxUnitPrice,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '小队抢票处理失败';
-      if (lockedSeatIds.length > 0) {
-        const released = await this.releaseLockedSeats(teamGrab.requestId, lockedSeatIds);
-        if (!released) {
-          const releasePending = await this.markReleasePendingOrRetry(teamGrab, {
-            lockedSeatIds,
-            seatLabels: lockedSeatLabels,
-            matchedStrategy: matchedStrategy ?? teamGrab.strategy,
-          });
-          if (!releasePending) {
-            const requestIdReleasePending = await this.markRequestIdReleasePendingOrRetry(teamGrab);
-            if (!requestIdReleasePending) return false;
-          }
-
-          await this.markPendingRecovery(record, teamGrab);
-          return false;
-        }
-      } else {
-        const released = await this.releaseLockedSeats(teamGrab.requestId, []);
-        if (!released) {
-          const requestIdReleasePending = await this.markRequestIdReleasePendingOrRetry(teamGrab);
-          if (!requestIdReleasePending) return false;
-
-          await this.markPendingRecovery(record, teamGrab);
-          return false;
-        }
-      }
-      await this.markFailed(record, teamGrab, message);
-      return true;
-    }
-
-    try {
-      const orderCreateClaim = await this.teamRepository.markTeamGrabOrderCreateInProgress(teamGrab.requestId);
-      if (!orderCreateClaim) {
-        await this.markPendingRecovery(record, teamGrab);
+      if (!progressed) {
+        outcome = 'PROGRESS_RETRY';
         return false;
       }
-      const order = await this.orderClient.createTeamOrderWithLockedSeats(orderInput);
-      return await this.finishOrderCreated(record, teamGrab, order.id);
-    } catch (error) {
-      this.logger.error(error);
-      return await this.recoverAmbiguousOrderCreation(record, teamGrab);
+
+      const grabbing = await this.teamRepository.updateTeamGrabStatus(teamGrab.requestId, 'GRABBING', ['PENDING', 'GRABBING']);
+      if (!grabbing) {
+        outcome = 'TEAM_STATUS_RETRY';
+        return false;
+      }
+
+      let lockedSeatIds: number[] = [];
+      let lockedSeatLabels: string[] = [];
+      let matchedStrategy: TeamSeatStrategy | null = null;
+      let orderInput: CreateTeamOrderWithLockedSeatsInput;
+      try {
+        const lock = await latencyTrace.measure('lock', () => this.ticketClient.lockTeamSeats({
+          sessionId: teamGrab.sessionId,
+          ticketTypeId: teamGrab.ticketTypeId,
+          quantity: teamGrab.quantity,
+          strategy: teamGrab.strategy,
+          fallbacks: teamGrab.fallbacks,
+          lockRequestId: teamGrab.requestId,
+          lockExpireTime: this.formatLocalDateTime(record.expireTime),
+        }));
+        lockedSeatIds = lock.lockedSeatIds;
+        lockedSeatLabels = lock.seatLabels;
+        matchedStrategy = lock.matchedStrategy as TeamSeatStrategy;
+
+        const persisted = await this.teamRepository.persistLockedSeats(teamGrab.requestId, {
+          lockedSeatIds: lock.lockedSeatIds,
+          seatLabels: lock.seatLabels,
+          matchedStrategy,
+        });
+        if (!persisted) {
+          throw new Error('保存小队锁座结果失败');
+        }
+
+        const authorizedMaxUnitPrice = await latencyTrace.measure('price', () => this.authorizedMaxUnitPrice(teamGrab));
+        orderInput = {
+          teamId: teamGrab.teamId,
+          userId: teamGrab.payerUserId,
+          payerUserId: teamGrab.payerUserId,
+          sessionId: teamGrab.sessionId,
+          ticketTypeId: teamGrab.ticketTypeId,
+          quantity: teamGrab.quantity,
+          seats: lock.lockedSeatIds.map((seatId, index) => ({
+            sessionSeatId: seatId,
+            seatLabel: lock.seatLabels[index],
+          })),
+          teamGrabRequestId: teamGrab.requestId,
+          grabRequestId: record.requestId,
+          matchedStrategy: lock.matchedStrategy,
+          authorizedMaxUnitPrice,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '小队抢票处理失败';
+        if (lockedSeatIds.length > 0) {
+          const released = await this.releaseLockedSeats(teamGrab.requestId, lockedSeatIds);
+          if (!released) {
+            const releasePending = await this.markReleasePendingOrRetry(teamGrab, {
+              lockedSeatIds,
+              seatLabels: lockedSeatLabels,
+              matchedStrategy: matchedStrategy ?? teamGrab.strategy,
+            });
+            if (!releasePending) {
+              const requestIdReleasePending = await this.markRequestIdReleasePendingOrRetry(teamGrab);
+              if (!requestIdReleasePending) {
+                outcome = 'RELEASE_PENDING_RETRY';
+                return false;
+              }
+            }
+
+            await this.markPendingRecovery(record, teamGrab);
+            outcome = 'RELEASE_PENDING';
+            return false;
+          }
+        } else {
+          const released = await this.releaseLockedSeats(teamGrab.requestId, []);
+          if (!released) {
+            const requestIdReleasePending = await this.markRequestIdReleasePendingOrRetry(teamGrab);
+            if (!requestIdReleasePending) {
+              outcome = 'REQUEST_ID_RELEASE_RETRY';
+              return false;
+            }
+
+            await this.markPendingRecovery(record, teamGrab);
+            outcome = 'REQUEST_ID_RELEASE_PENDING';
+            return false;
+          }
+        }
+        await this.markFailed(record, teamGrab, message);
+        outcome = 'FAILED';
+        return true;
+      }
+
+      try {
+        const orderCreateClaim = await this.teamRepository.markTeamGrabOrderCreateInProgress(teamGrab.requestId);
+        if (!orderCreateClaim) {
+          await this.markPendingRecovery(record, teamGrab);
+          outcome = 'PENDING_RECOVERY';
+          return false;
+        }
+        const order = await latencyTrace.measure('order', () => this.orderClient.createTeamOrderWithLockedSeats(orderInput));
+        const finished = await this.finishOrderCreated(record, teamGrab, order.id, latencyTrace);
+        outcome = finished ? 'ORDER_CREATED' : 'PENDING_RECOVERY';
+        return finished;
+      } catch (error) {
+        this.logger.error(error);
+        const recovered = await this.recoverAmbiguousOrderCreation(record, teamGrab, latencyTrace);
+        outcome = recovered ? 'ORDER_CREATED' : 'PENDING_RECOVERY';
+        return recovered;
+      }
+    } finally {
+      this.logger.log(latencyTrace.format(record, teamGrab, outcome));
     }
   }
 
@@ -192,26 +258,29 @@ export class TeamGrabProcessorService {
     record: GrabRequestRecord,
     teamGrab: TeamGrabRequestRecord,
     orderId: number,
+    latencyTrace: TeamGrabLatencyTrace,
   ): Promise<boolean> {
     try {
-      const teamOrderCreated = await this.teamRepository.markTeamGrabOrderCreatedAndLockTeam(
-        teamGrab.requestId,
-        teamGrab.teamId,
-        orderId,
-      );
-      if (!teamOrderCreated) throw new Error('保存小队抢票订单失败');
+      await latencyTrace.measure('confirm', async () => {
+        const teamOrderCreated = await this.teamRepository.markTeamGrabOrderCreatedAndLockTeam(
+          teamGrab.requestId,
+          teamGrab.teamId,
+          orderId,
+        );
+        if (!teamOrderCreated) throw new Error('保存小队抢票订单失败');
 
-      const grabOrderCreated = await this.grabRepository.markOrderCreated(
-        record.requestId,
-        orderId,
-        teamGrab.ticketTypeId,
-        record.attemptsSnapshot,
-        GRAB_STATUS.ORDER_CREATING,
-        record.workerId,
-      );
-      if (!grabOrderCreated) throw new Error('保存抢票订单失败');
+        const grabOrderCreated = await this.grabRepository.markOrderCreated(
+          record.requestId,
+          orderId,
+          teamGrab.ticketTypeId,
+          record.attemptsSnapshot,
+          GRAB_STATUS.ORDER_CREATING,
+          record.workerId,
+        );
+        if (!grabOrderCreated) throw new Error('保存抢票订单失败');
+      });
 
-      await this.notifyLocked(teamGrab, orderId);
+      await latencyTrace.measure('notification', () => this.notifyLocked(teamGrab, orderId));
       return true;
     } catch (error) {
       this.logger.error(error);
@@ -249,11 +318,12 @@ export class TeamGrabProcessorService {
   private async recoverAmbiguousOrderCreation(
     record: GrabRequestRecord,
     teamGrab: TeamGrabRequestRecord,
+    latencyTrace: TeamGrabLatencyTrace,
   ): Promise<boolean> {
     try {
       const order = await this.orderClient.findByGrabRequestId(record.requestId);
       if (order?.id != null) {
-        return await this.finishOrderCreated(record, teamGrab, order.id);
+        return await this.finishOrderCreated(record, teamGrab, order.id, latencyTrace);
       }
     } catch (lookupError) {
       this.logger.error(lookupError);

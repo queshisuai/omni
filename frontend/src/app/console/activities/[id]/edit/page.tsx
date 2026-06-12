@@ -55,7 +55,7 @@ export default function EditActivityPage() {
 
   useEffect(() => {
     if (!Number.isInteger(activityId) || activityId <= 0) {
-      setError('活动ID不正确')
+      setError('活动编号不正确')
       setLoading(false)
       return
     }
@@ -109,7 +109,7 @@ export default function EditActivityPage() {
       return
     }
     if (!Number.isInteger(activityId) || activityId <= 0) {
-      setError('活动ID不正确')
+      setError('活动编号不正确')
       return
     }
     if (!form.name.trim()) {

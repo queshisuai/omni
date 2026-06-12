@@ -1,5 +1,8 @@
 package com.omni.order.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.omni.exception.BusinessException;
 import com.omni.order.dto.TicketCheckInResponse;
 import com.omni.order.dto.TicketTransferClaimResponse;
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -94,6 +98,46 @@ class TicketWalletServiceTest {
         service.issueForPaidOrder(order);
 
         verify(electronicTicketMapper, never()).insertIgnoreTicketNo(any(ElectronicTicket.class));
+    }
+
+    @Test
+    void issueForPaidOrderLogsSegmentedLatencyForTicketIssuing() {
+        Order order = paidOrder(9002L, 2004L, 101L, 1L, 1);
+        OrderAttendee attendee = attendee(13L, 7003L, "Charlie", "110***********033");
+        OrderSeat seat = seat(23L, "B-1");
+        when(electronicTicketMapper.countByOrderId(9002L)).thenReturn(0L);
+        when(orderAttendeeMapper.selectByOrderIds(List.of(9002L))).thenReturn(List.of(attendee));
+        when(orderSeatMapper.selectLockedAndSoldSeatsByOrderId(9002L)).thenReturn(List.of(seat));
+        when(electronicTicketMapper.nextId()).thenReturn(7103L);
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(TicketWalletService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.INFO);
+        try {
+            service.issueForPaidOrder(order);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        String message = appender.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(line -> line.contains("电子票出票链路耗时"))
+                .findFirst()
+                .orElse("");
+
+        ArgumentCaptor<ElectronicTicket> captor = ArgumentCaptor.forClass(ElectronicTicket.class);
+        verify(electronicTicketMapper, org.mockito.Mockito.times(1)).insertIgnoreTicketNo(captor.capture());
+        assertEquals(7103L, captor.getValue().getId());
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("orderId=9002"));
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("orderNo=DM9002"));
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("outcome=ISSUED"));
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("existingCheckMs="));
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("attendeeLoadMs="));
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("seatLoadMs="));
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("ticketInsertMs="));
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("ticketCount=1"));
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("totalMs="));
     }
 
     @Test

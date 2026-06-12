@@ -6,6 +6,7 @@ import { KeyRound, RefreshCw, Save, ShieldCheck } from 'lucide-react'
 import { globalConfirm } from '@/components/GlobalDialog'
 import { getUserInfo, listRbacPermissions, listRbacRoles, updateRbacRolePermissions } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
+import { buildRbacPermissionDiff, formatRbacPermissionDiffList } from '@/lib/rbac-permission-diff'
 import type { RbacPermissionVO, RbacRoleVO } from '@/types/api'
 
 function groupPermission(code: string) {
@@ -25,25 +26,6 @@ function groupPermission(code: string) {
     ticket: '票务',
   }
   return labels[prefix] || '其他'
-}
-
-function diffPermissionCodes(before: string[], after: string[]) {
-  const beforeSet = new Set(before)
-  const afterSet = new Set(after)
-  return {
-    added: after.filter(code => !beforeSet.has(code)),
-    removed: before.filter(code => !afterSet.has(code)),
-  }
-}
-
-function formatPermissionList(codes: string[], permissionNameByCode: Map<string, string>) {
-  if (codes.length === 0) return '无'
-  const visibleCodes = codes.slice(0, 8)
-  const items = visibleCodes.map(code => `${permissionNameByCode.get(code) || code}（${code}）`)
-  if (codes.length > visibleCodes.length) {
-    items.push(`另有 ${codes.length - visibleCodes.length} 项`)
-  }
-  return items.join('\n')
 }
 
 export default function ConsoleRolesPage() {
@@ -91,6 +73,11 @@ export default function ConsoleRolesPage() {
   const permissionNameByCode = useMemo(() => {
     return new Map(permissions.map(permission => [permission.code, permission.name]))
   }, [permissions])
+  const permissionChangePreview = useMemo(() => {
+    return buildRbacPermissionDiff(originalPermissionCodes, selectedPermissionCodes, permissionNameByCode, {
+      roleCode: selectedRoleCode,
+    })
+  }, [originalPermissionCodes, permissionNameByCode, selectedPermissionCodes, selectedRoleCode])
   const groupedPermissions = useMemo(() => {
     const groups = new Map<string, RbacPermissionVO[]>()
     for (const permission of permissions) {
@@ -115,25 +102,23 @@ export default function ConsoleRolesPage() {
     if (!selectedRoleCode) return
     setMessage('')
     setError('')
-    const { added, removed } = diffPermissionCodes(originalPermissionCodes, selectedPermissionCodes)
-    if (added.length === 0 && removed.length === 0) {
+    if (!permissionChangePreview.hasChanges) {
       setMessage('角色授权没有变化')
       return
     }
-    const isDangerous = selectedRoleCode === 'platform_super_admin' || removed.includes('rbac.manage')
     const confirmed = await globalConfirm({
-      type: isDangerous ? 'danger' : 'confirm',
-      title: isDangerous ? '确认保存高危授权变更' : '确认保存角色授权',
+      type: permissionChangePreview.hasSensitiveChanges ? 'danger' : 'confirm',
+      title: '确认更新角色权限',
       content: [
         `角色：${selectedRole?.name || selectedRoleCode}`,
         '',
-        `新增权限：\n${formatPermissionList(added, permissionNameByCode)}`,
+        `新增权限：\n${formatRbacPermissionDiffList(permissionChangePreview.added)}`,
         '',
-        `移除权限：\n${formatPermissionList(removed, permissionNameByCode)}`,
+        `移除权限：\n${formatRbacPermissionDiffList(permissionChangePreview.removed)}`,
         '',
-        isDangerous ? '该操作可能影响平台后台管理能力，请确认后继续。' : '保存后将立即影响该角色的后台访问能力。',
+        permissionChangePreview.hasSensitiveChanges ? '本次包含敏感权限变更，可能影响平台后台管理能力，请确认后继续。' : '保存后将立即影响该角色的后台访问能力。',
       ].join('\n'),
-      confirmText: '保存',
+      confirmText: '确认更新',
       cancelText: '取消',
     })
     if (!confirmed) return
@@ -217,6 +202,48 @@ export default function ConsoleRolesPage() {
           </div>
 
           <div className="space-y-5 p-5">
+            <div className={`rounded-lg border px-4 py-3 text-[13px] ${permissionChangePreview.hasSensitiveChanges ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-semibold text-[#111]">权限变更预览</div>
+                {permissionChangePreview.hasSensitiveChanges && (
+                  <span className="rounded-full bg-red-100 px-2 py-1 text-[12px] font-medium text-red-600">敏感权限变更</span>
+                )}
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div>
+                  <div className="mb-2 font-medium text-green-700">新增权限</div>
+                  {permissionChangePreview.added.length === 0 ? (
+                    <div className="text-gray-500">无</div>
+                  ) : (
+                    <ul className="space-y-1 text-gray-700">
+                      {permissionChangePreview.added.map(item => (
+                        <li key={item.code}>
+                          {item.name} <span className="font-mono text-[12px] text-gray-500">（{item.code}）</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <div className="mb-2 font-medium text-red-700">移除权限</div>
+                  {permissionChangePreview.removed.length === 0 ? (
+                    <div className="text-gray-500">无</div>
+                  ) : (
+                    <ul className="space-y-1 text-gray-700">
+                      {permissionChangePreview.removed.map(item => (
+                        <li key={item.code}>
+                          {item.name} <span className="font-mono text-[12px] text-gray-500">（{item.code}）</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 text-[12px] text-gray-500">
+                {permissionChangePreview.hasChanges ? '保存前请核对以上变更，保存后将立即影响该角色的后台访问能力。' : '当前没有待保存的权限变更。'}
+              </div>
+            </div>
+
             {groupedPermissions.map(([group, items]) => (
               <div key={group}>
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[#111]">

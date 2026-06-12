@@ -1,6 +1,11 @@
 server:
   port: 8088
 
+omni:
+  gateway:
+    diagnostics:
+      slow-threshold-ms: ${GATEWAY_SLOW_THRESHOLD_MS:800}
+
 spring:
   main:
     web-application-type: reactive
@@ -26,40 +31,105 @@ spring:
         server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
         file-extension: yaml
     gateway:
+      httpclient:
+        connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+        response-timeout: ${GATEWAY_RESPONSE_TIMEOUT:5s}
       routes:
+        - id: support-stream-service
+          uri: lb://java-user
+          predicates:
+            - Path=/api/user/support/conversations/{conversationId}/messages/stream
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_STREAM_RESPONSE_TIMEOUT_MS:-1}
+        - id: user-auth-service
+          uri: lb://java-user
+          predicates:
+            - Path=/api/user/login,/api/user/send-code
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_SHORT_RESPONSE_TIMEOUT_MS:3000}
         - id: user-service
           uri: lb://java-user
           predicates:
             - Path=/api/user/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_DEFAULT_ROUTE_RESPONSE_TIMEOUT_MS:5000}
+        - id: ticket-hot-read-service
+          uri: lb://java-ticket
+          predicates:
+            - Path=/api/ticket/activities,/api/ticket/sessions/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_SHORT_RESPONSE_TIMEOUT_MS:3000}
         - id: ticket-service
           uri: lb://java-ticket
           predicates:
             - Path=/api/ticket/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_DEFAULT_ROUTE_RESPONSE_TIMEOUT_MS:5000}
         - id: ticket-uploads
           uri: lb://java-ticket
           predicates:
             - Path=/uploads/ticket/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_UPLOAD_RESPONSE_TIMEOUT_MS:10000}
         - id: user-uploads
           uri: lb://java-user
           predicates:
             - Path=/uploads/user/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_UPLOAD_RESPONSE_TIMEOUT_MS:10000}
+        - id: order-read-service
+          uri: lb://java-order
+          predicates:
+            - Path=/api/order/user/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_SHORT_RESPONSE_TIMEOUT_MS:3000}
         - id: order-service
           uri: lb://java-order
           predicates:
             - Path=/api/order/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_DEFAULT_ROUTE_RESPONSE_TIMEOUT_MS:5000}
+        - id: payment-sync-service
+          uri: lb://java-payment
+          predicates:
+            - Path=/api/payment/alipay/sync/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_LONG_RESPONSE_TIMEOUT_MS:15000}
         - id: payment-service
           uri: lb://java-payment
           predicates:
             - Path=/api/payment/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_DEFAULT_ROUTE_RESPONSE_TIMEOUT_MS:5000}
         - id: notification-service
           uri: lb://java-notification
           predicates:
             - Path=/api/notification/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_SHORT_RESPONSE_TIMEOUT_MS:3000}
         - id: waitlist-service
           uri: http://localhost:3001
           predicates:
             - Path=/api/waitlist/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_LONG_RESPONSE_TIMEOUT_MS:15000}
         - id: grab-service
           uri: http://localhost:3001
           predicates:
             - Path=/api/grab/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_LONG_RESPONSE_TIMEOUT_MS:15000}

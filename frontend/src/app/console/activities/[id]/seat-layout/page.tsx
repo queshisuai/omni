@@ -28,7 +28,7 @@ export default function ActivitySeatLayoutPage() {
 
   useEffect(() => {
     if (!Number.isInteger(activityId) || activityId <= 0) {
-      setError('活动ID不正确')
+      setError('活动编号不正确')
       setLoading(false)
       return
     }

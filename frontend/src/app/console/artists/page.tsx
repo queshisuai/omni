@@ -3,8 +3,18 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Edit, Search } from 'lucide-react'
+import { globalAlert } from '@/components/GlobalDialog'
 import { getUser } from '@/lib/auth'
 import { listAdminArtists, updateAdminArtistRisk } from '@/lib/api'
+import {
+  canToggleArtistRiskStatus,
+  formatArtistListReviewStatus,
+  formatArtistListRiskStatus,
+  formatArtistRiskToggleAction,
+  getArtistListReviewTone,
+  getArtistListRiskTone,
+  getNextArtistRiskStatus,
+} from '@/lib/console-artists'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import type { ArtistEntity, ArtistReviewStatus, ArtistRiskStatus, UserRole } from '@/types/api'
 
@@ -144,16 +154,29 @@ function ArtistCard({ item, canManageAllArtists, onUpdate }: { item: ArtistEntit
   const [riskModalOpen, setRiskModalOpen] = useState(false)
   const [riskReason, setRiskReason] = useState('')
   const [riskError, setRiskError] = useState('')
+  const canToggleRisk = canToggleArtistRiskStatus(item.riskStatus)
+  const isRisky = item.riskStatus === 'risky'
+  const riskActionLabel = formatArtistRiskToggleAction(item.riskStatus)
+  const riskActionClassName = !canToggleRisk
+    ? 'cursor-not-allowed border-[#f6c343] text-[#ad6800] opacity-80'
+    : isRisky
+      ? 'border-[#dc2626] text-[#dc2626] hover:bg-[#fef2f2]'
+      : 'border-[#ff7a00] text-[#ff7a00] hover:bg-[#fff7ed]'
 
   const handleRiskToggle = async (confirmedReason: string | null) => {
-    const isRisky = item.riskStatus === 'risky'
+    const nextRiskStatus = getNextArtistRiskStatus(item.riskStatus)
     
     if (confirmedReason === null) {
       setRiskModalOpen(false)
       return
     }
 
-    if (!isRisky && !confirmedReason.trim()) {
+    if (!nextRiskStatus) {
+      setRiskModalOpen(false)
+      return
+    }
+
+    if (nextRiskStatus === 'risky' && !confirmedReason.trim()) {
       setRiskError('必须填写风险原因')
       return
     }
@@ -163,12 +186,12 @@ function ArtistCard({ item, canManageAllArtists, onUpdate }: { item: ArtistEntit
     setRiskModalOpen(false)
     try {
       await updateAdminArtistRisk(item.id, {
-        riskStatus: isRisky ? 'normal' : 'risky',
-        reason: isRisky ? null : confirmedReason.trim(),
+        riskStatus: nextRiskStatus,
+        reason: nextRiskStatus === 'normal' ? null : confirmedReason.trim(),
       })
       onUpdate()
     } catch (err) {
-      alert(err instanceof Error ? err.message : `操作失败`)
+      await globalAlert(err instanceof Error ? err.message : '操作失败')
     } finally {
       setUpdating(false)
     }
@@ -188,8 +211,8 @@ function ArtistCard({ item, canManageAllArtists, onUpdate }: { item: ArtistEntit
               {item.description && <div className="mt-2 line-clamp-2 text-[13px] text-[#555]">{item.description}</div>}
               {item.riskReason && item.riskStatus === 'risky' && <div className="mt-2 text-[13px] text-[#dc2626]">风险原因：{item.riskReason}</div>}
               <div className="mt-3 flex flex-wrap gap-2">
-                <StatusPill label={reviewLabel(item.reviewStatus)} tone={item.reviewStatus === 'approved' ? 'green' : item.reviewStatus === 'rejected' ? 'red' : 'yellow'} />
-                <StatusPill label={item.riskStatus === 'risky' ? '风险艺人' : '风险正常'} tone={item.riskStatus === 'risky' ? 'red' : 'gray'} />
+                <StatusPill label={formatArtistListReviewStatus(item.reviewStatus)} tone={getArtistListReviewTone(item.reviewStatus)} />
+                <StatusPill label={formatArtistListRiskStatus(item.riskStatus)} tone={getArtistListRiskTone(item.riskStatus)} />
               </div>
             </div>
           </div>
@@ -197,18 +220,15 @@ function ArtistCard({ item, canManageAllArtists, onUpdate }: { item: ArtistEntit
             {canManageAllArtists && (
               <button
                 onClick={() => {
+                  if (!canToggleRisk) return
                   setRiskReason('')
                   setRiskError('')
                   setRiskModalOpen(true)
                 }}
-                disabled={updating}
-                className={`inline-flex shrink-0 items-center justify-center rounded-full border px-4 py-2 text-[13px] transition-colors ${
-                  item.riskStatus === 'risky' 
-                    ? 'border-[#dc2626] text-[#dc2626] hover:bg-[#fef2f2]' 
-                    : 'border-[#ff7a00] text-[#ff7a00] hover:bg-[#fff7ed]'
-                }`}
+                disabled={updating || !canToggleRisk}
+                className={`inline-flex shrink-0 items-center justify-center rounded-full border px-4 py-2 text-[13px] transition-colors ${riskActionClassName}`}
               >
-                {item.riskStatus === 'risky' ? '解除风险' : '列入风险'}
+                {riskActionLabel}
               </button>
             )}
             <Link href={`/console/artists/${item.id}/edit`} className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full border border-[#ddd] px-4 py-2 text-[13px] text-[#333] hover:border-[#ff1268] hover:text-[#ff1268]">
@@ -218,19 +238,19 @@ function ArtistCard({ item, canManageAllArtists, onUpdate }: { item: ArtistEntit
         </div>
       </div>
 
-      {riskModalOpen && (
+      {riskModalOpen && canToggleRisk && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <h3 className="text-[18px] font-semibold text-[#1a1a2e]">
-              {item.riskStatus === 'risky' ? '解除风险' : '列入风险'}
+              {riskActionLabel}
             </h3>
             <p className="mt-2 text-[14px] text-[#666]">
-              {item.riskStatus === 'risky' 
+              {isRisky
                 ? `确定要解除艺人“${item.name}”的风险状态吗？解除后该艺人的演出将允许正常售票。` 
                 : `将艺人“${item.name}”列入风险后，所有包含该艺人的活动均会被自动拦截并暂停售票。`}
             </p>
             
-            {item.riskStatus !== 'risky' && (
+            {!isRisky && (
               <div className="mt-4">
                 <textarea
                   value={riskReason}
@@ -254,14 +274,14 @@ function ArtistCard({ item, canManageAllArtists, onUpdate }: { item: ArtistEntit
                 取消
               </button>
               <button
-                onClick={() => handleRiskToggle(item.riskStatus === 'risky' ? '' : riskReason)}
+                onClick={() => handleRiskToggle(isRisky ? '' : riskReason)}
                 className={`rounded-xl px-5 py-2.5 text-[14px] font-medium text-white ${
-                  item.riskStatus === 'risky' 
+                  isRisky
                     ? 'bg-[#15803d] hover:bg-[#166534]' 
                     : 'bg-[#dc2626] hover:bg-[#b91c1c]'
                 }`}
               >
-                {item.riskStatus === 'risky' ? '确认解除' : '确认列入风险'}
+                {isRisky ? '确认解除' : '确认列入风险'}
               </button>
             </div>
           </div>
@@ -274,10 +294,4 @@ function ArtistCard({ item, canManageAllArtists, onUpdate }: { item: ArtistEntit
 function StatusPill({ label, tone }: { label: string; tone: 'green' | 'red' | 'yellow' | 'gray' }) {
   const className = tone === 'green' ? 'bg-[#f0fdf4] text-[#15803d]' : tone === 'red' ? 'bg-[#fef2f2] text-[#dc2626]' : tone === 'yellow' ? 'bg-[#fffbeb] text-[#b45309]' : 'bg-[#f5f5f5] text-[#666]'
   return <span className={`rounded-full px-2.5 py-1 text-[12px] ${className}`}>{label}</span>
-}
-
-function reviewLabel(status: ArtistEntity['reviewStatus']) {
-  if (status === 'approved') return '已通过'
-  if (status === 'rejected') return '已拒绝'
-  return '待审核'
 }

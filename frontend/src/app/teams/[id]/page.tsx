@@ -10,7 +10,7 @@ import { TeamMemberList } from '@/components/team-grab/TeamMemberList'
 import { TeamStrategyPicker } from '@/components/team-grab/TeamStrategyPicker'
 import {
   confirmTeamGrab,
-  createAlipayQrPay,
+  createAlipayPagePay,
   getTeamGrab,
   getTeamGrabProgress,
   leaveTeamGrab,
@@ -25,6 +25,8 @@ import {
   canShowPayButton,
   canTriggerTeamGrab,
   confirmedMemberCount,
+  teamContextSummary,
+  teamMemberDisplayName,
   teamMemberSeatAssignmentLabel,
   teamStatusLabel,
   triggerTeamGrabWithRecovery,
@@ -32,7 +34,7 @@ import {
 import type {
   GrabProgressResult,
   GrabStatus,
-  QrPayResponse,
+  PagePayResponse,
   TeamSeatStrategy,
   TeamStatus,
   TicketTeamDetailVO,
@@ -64,6 +66,10 @@ const GRAB_STATUS_LABELS: Record<GrabStatus, string> = {
   EXPIRED: '已结束',
 }
 
+function formatGrabProgressStatus(status: string) {
+  return GRAB_STATUS_LABELS[status as GrabStatus] || '状态同步中'
+}
+
 export default function TeamRoomPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -78,7 +84,7 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
   const [syncingPaid, setSyncingPaid] = useState(false)
   const [requestId, setRequestId] = useState<string | null>(null)
   const [progress, setProgress] = useState<GrabProgressResult | null>(null)
-  const [qrPay, setQrPay] = useState<QrPayResponse | null>(null)
+  const [pagePay, setPagePay] = useState<PagePayResponse | null>(null)
   const pollTickRef = useRef(0)
   const stoppedRequestIdsRef = useRef(new Set<string>())
 
@@ -165,6 +171,7 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
   const canPay = Boolean(team && currentUserId && detail?.latestOrderId && canShowPayButton(team, currentUserId))
   const canTrigger = Boolean(detail && currentUserId && canTriggerTeamGrab(detail, currentUserId))
   const terminalProgress = progress ? TERMINAL_GRAB_STATUSES.has(progress.status) : false
+  const teamSummary = team ? teamContextSummary(team) : null
 
   const handleUpdateStrategy = async (strategy: TeamSeatStrategy, fallbacks: TeamSeatStrategy[]) => {
     if (!team) return
@@ -218,10 +225,10 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
     if (!detail?.latestOrderId) return
     setActionLoading(true)
     try {
-      const pay = await createAlipayQrPay(detail.latestOrderId)
-      setQrPay(pay)
+      const pay = await createAlipayPagePay(detail.latestOrderId)
+      setPagePay(pay)
     } catch (err: unknown) {
-      await globalAlert(err instanceof Error ? err.message : '创建支付二维码失败')
+      await globalAlert(err instanceof Error ? err.message : '创建支付页面失败')
     } finally {
       setActionLoading(false)
     }
@@ -271,7 +278,7 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
 
   const copyInvite = async () => {
     if (!team) return
-    const text = `小队 ID：${team.id}\n邀请码：${team.inviteCode}\n链接：${inviteLink}`
+    const text = `邀请码：${team.inviteCode}\n链接：${inviteLink}`
     try {
       await navigator.clipboard.writeText(text)
       await globalAlert('邀请信息已复制')
@@ -318,15 +325,22 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
         <div className="mb-5 flex flex-col gap-4 border-b border-[#e5e5e5] bg-white px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <h1 className="text-[22px] font-medium text-[#111]">小队房间 #{team.id}</h1>
+              <h1 className="text-[22px] font-medium text-[#111]">小队房间</h1>
               <span className="rounded-full bg-[#fff0f5] px-3 py-1 text-[12px] font-medium text-[#ff1268]">
                 {teamStatusLabel(team.status)}
               </span>
             </div>
+            {teamSummary && (
+              <div className="mb-2">
+                <div className="truncate text-[17px] font-semibold text-[#111]">{teamSummary.title}</div>
+                <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-[#777]">
+                  {teamSummary.meta.map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-[#777]">
-              <span>活动 {team.activityId}</span>
-              <span>场次 {team.sessionId}</span>
-              <span>票档 {team.ticketTypeId}</span>
               <span>已确认 {confirmedCount}/{team.size}</span>
             </div>
           </div>
@@ -395,10 +409,6 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
             <h2 className="mb-4 text-[16px] font-medium text-[#111]">邀请</h2>
             <div className="space-y-3 text-[13px] text-[#555]">
               <div className="flex flex-wrap justify-between gap-3 border-b border-[#f0f0f0] pb-3">
-                <span className="text-[#999]">小队 ID</span>
-                <span className="font-medium text-[#333]">{team.id}</span>
-              </div>
-              <div className="flex flex-wrap justify-between gap-3 border-b border-[#f0f0f0] pb-3">
                 <span className="text-[#999]">邀请码</span>
                 <span className="font-medium text-[#333]">{team.inviteCode}</span>
               </div>
@@ -434,7 +444,7 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
               {team.status === 'LOCKED' && detail.latestOrderId ? (
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="font-medium text-[#333]">订单 {detail.latestOrderId}</div>
+                    <div className="font-medium text-[#333]">锁票订单已生成</div>
                     <div className="mt-1 text-[#999]">{isLeader ? '请完成支付' : '队长待支付'}</div>
                   </div>
                   {canPay && (
@@ -459,13 +469,13 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
           <section className="bg-white p-5 lg:col-span-2">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-[16px] font-medium text-[#111]">抢票进度</h2>
-              {requestId && <span className="text-[12px] text-[#999]">requestId {requestId}</span>}
+              {requestId && <span className="text-[12px] text-[#999]">抢票进度同步中</span>}
             </div>
             {progress ? (
               <div className="grid gap-3 text-[13px] sm:grid-cols-3">
                 <div className="rounded border border-[#e5e5e5] p-3">
                   <div className="text-[#999]">状态</div>
-                  <div className="mt-1 font-medium text-[#333]">{GRAB_STATUS_LABELS[progress.status]}</div>
+                  <div className="mt-1 font-medium text-[#333]">{formatGrabProgressStatus(progress.status)}</div>
                 </div>
                 <div className="rounded border border-[#e5e5e5] p-3">
                   <div className="text-[#999]">排队</div>
@@ -489,12 +499,15 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
             <h2 className="mb-4 text-[16px] font-medium text-[#111]">座位分配</h2>
             {assignedMembers.length > 0 ? (
               <div className="overflow-hidden rounded border border-[#e5e5e5]">
-                {assignedMembers.map(member => (
-                  <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f0f0f0] px-4 py-3 text-[13px] last:border-b-0">
-                    <span className="font-medium text-[#333]">用户 {member.userId}</span>
-                    <span className="text-[#666]">{teamMemberSeatAssignmentLabel(member)}</span>
-                  </div>
-                ))}
+                {assignedMembers.map((member, index) => {
+                  const displayName = teamMemberDisplayName(member, { leaderUserId: team.leaderUserId, currentUserId, index })
+                  return (
+                    <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f0f0f0] px-4 py-3 text-[13px] last:border-b-0">
+                      <span className="font-medium text-[#333]">{displayName}</span>
+                      <span className="text-[#666]">{teamMemberSeatAssignmentLabel(member)}</span>
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               <div className="rounded border border-[#e5e5e5] bg-[#fafafa] px-4 py-5 text-[13px] text-[#999]">
@@ -506,13 +519,13 @@ export default function TeamRoomPage({ params }: { params: Promise<{ id: string 
       </main>
       <Footer />
 
-      {qrPay && (
+      {pagePay && (
         <AlipayQrPayModal
-          pay={qrPay}
-          productName={`小队订单 ${team.id}`}
-          onClose={() => setQrPay(null)}
+          pay={pagePay}
+          productName="小队锁票订单"
+          onClose={() => setPagePay(null)}
           onPaid={() => {
-            setQrPay(null)
+            setPagePay(null)
             void handleSyncPaid()
           }}
         />

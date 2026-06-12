@@ -158,6 +158,62 @@ describe('TeamGrabProcessorService', () => {
     expect(teamRepository.updateTeamStatus).not.toHaveBeenCalled();
   });
 
+  it('logs segmented latency for team seat lock price order confirmation and notification phases', async () => {
+    const record = grabRecord();
+    const teamGrab = teamGrabRecord();
+    const teamRepository: any = {
+      findTeamGrabByGrabRequestId: jest.fn().mockResolvedValue(teamGrab),
+      updateTeamGrabStatus: jest.fn().mockResolvedValue({ ...teamGrab, status: 'GRABBING' }),
+      persistLockedSeats: jest.fn().mockResolvedValue({
+        ...teamGrab,
+        lockedSeatIds: [501, 502],
+        seatLabels: ['A-1', 'A-2'],
+        matchedStrategy: 'SAME_BLOCK',
+      }),
+      markTeamGrabOrderCreateInProgress: jest.fn().mockResolvedValue({ ...teamGrab, status: 'LOCKED', failReason: 'ORDER_CREATE_IN_PROGRESS' }),
+      markTeamGrabOrderCreatedAndLockTeam: jest.fn().mockResolvedValue({ ...teamGrab, status: 'ORDER_CREATED', orderId: 9001 }),
+      listConfirmedMembers: jest.fn().mockResolvedValue([{ userId: 100 }, { userId: 200 }]),
+    };
+    const grabRepository: any = {
+      updateProgress: jest.fn().mockResolvedValue(record),
+      markOrderCreated: jest.fn().mockResolvedValue({ ...record, status: GRAB_STATUS.ORDER_CREATED, orderId: 9001 }),
+    };
+    const ticketClient: any = {
+      lockTeamSeats: jest.fn().mockResolvedValue({
+        lockedSeatIds: [501, 502],
+        seatLabels: ['A-1', 'A-2'],
+        matchedStrategy: 'SAME_BLOCK',
+      }),
+      listVisibleTicketTypes: jest.fn().mockResolvedValue([{ ticketTypeId: 30, name: 'VIP', price: 880, remainStock: 10 }]),
+      releaseTeamSeatLock: jest.fn(),
+    };
+    const orderClient: any = {
+      createTeamOrderWithLockedSeats: jest.fn().mockResolvedValue({ id: 9001, orderNo: 'TO1', amount: 1760 }),
+    };
+    const notificationClient: any = {
+      sendLocked: jest.fn().mockResolvedValue(undefined),
+    };
+    const { processor } = createProcessor({ teamRepository, grabRepository, ticketClient, orderClient, notificationClient });
+    const logSpy = jest.spyOn((processor as any).logger, 'log').mockImplementation(() => undefined);
+
+    await expect(processor.process(record)).resolves.toBe(true);
+
+    const message = logSpy.mock.calls
+      .map((call) => String(call[0]))
+      .find((line) => line.includes('小队抢票链路耗时'));
+    expect(message).toBeDefined();
+    expect(message).toEqual(expect.stringContaining('teamGrabRequestId=TEAM-GRAB-1'));
+    expect(message).toEqual(expect.stringContaining('grabRequestId=GRAB-QUEUED-1'));
+    expect(message).toEqual(expect.stringContaining('teamId=1'));
+    expect(message).toEqual(expect.stringContaining('outcome=ORDER_CREATED'));
+    expect(message).toEqual(expect.stringContaining('lockMs='));
+    expect(message).toEqual(expect.stringContaining('priceMs='));
+    expect(message).toEqual(expect.stringContaining('orderMs='));
+    expect(message).toEqual(expect.stringContaining('confirmMs='));
+    expect(message).toEqual(expect.stringContaining('notificationMs='));
+    expect(message).toEqual(expect.stringContaining('totalMs='));
+  });
+
   it('does not lock seats or create order when grab progress update loses worker fencing', async () => {
     const record = grabRecord();
     const teamGrab = teamGrabRecord();

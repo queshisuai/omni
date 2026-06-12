@@ -6,6 +6,7 @@ import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowRule;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowRuleManager;
 import com.alipay.api.AlipayClient;
+import com.alipay.api.request.AlipayTradePagePayRequest;
 import com.alipay.api.request.AlipayTradePrecreateRequest;
 import com.alipay.api.response.AlipayTradePrecreateResponse;
 import com.omni.common.result.Result;
@@ -51,6 +52,7 @@ class AlipayServiceTest {
         properties.setAppId("app-id");
         properties.setMerchantPrivateKey("merchant-private-key");
         properties.setAlipayPublicKey("alipay-public-key");
+        properties.setReturnUrl("http://localhost/payment/result");
         orderClient = mock(OrderClient.class);
         paymentMapper = mock(PaymentMapper.class);
         alipayClient = mock(AlipayClient.class);
@@ -81,6 +83,7 @@ class AlipayServiceTest {
         Payment payment = paymentCaptor.getValue();
         assertEquals(10L, payment.getOrderId());
         assertEquals("DM1001", payment.getOutTradeNo());
+        assertEquals("ALIPAY", payment.getPaymentMethod());
         assertEquals(new BigDecimal("280.00"), payment.getAmount());
         assertEquals(PaymentService.STATUS_PENDING, payment.getStatus());
         assertNotNull(payment.getPaymentNo());
@@ -141,6 +144,32 @@ class AlipayServiceTest {
         ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
         verify(paymentMapper).updateById(paymentCaptor.capture());
         assertEquals(PaymentService.STATUS_FAILED, paymentCaptor.getValue().getStatus());
+    }
+
+    @Test
+    void createPagePayMapsRuntimeExceptionFromAlipayPageExecute() throws Exception {
+        OrderInfoResponse order = order(23L, "DM1011", new BigDecimal("280.00"), 1);
+        when(orderClient.getOrder(23L, "internal-token")).thenReturn(Result.success(order));
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+        when(alipayClient.pageExecute(any(AlipayTradePagePayRequest.class))).thenThrow(new RuntimeException("invalid gateway"));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createPagePay(23L));
+
+        assertEquals("生成支付宝支付表单失败", error.getMessage());
+        ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentMapper).updateById(paymentCaptor.capture());
+        assertEquals(PaymentService.STATUS_FAILED, paymentCaptor.getValue().getStatus());
+    }
+
+    @Test
+    void createPagePayRejectsUnresolvedAlipayPlaceholderBeforePaymentInsert() {
+        properties.setAppId("${ALIPAY_APP_ID}");
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.createPagePay(24L));
+
+        assertEquals("支付宝 appId 未配置", error.getMessage());
+        verify(orderClient, never()).getOrder(anyLong(), anyString());
+        verify(paymentMapper, never()).insert(any());
     }
 
     @Test

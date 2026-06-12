@@ -10,8 +10,13 @@ import type {
   GrabProgressResult,
   GrabRequestResult,
   LoginResponse,
+  NotificationPreferenceVO,
   OrganizerApplicationStatus,
   OrganizerApplicationVO,
+  OrganizerOpsAssignmentPayload,
+  OrganizerOpsAssignmentVO,
+  OrganizerOpsFollowUpPayload,
+  OrganizerOpsFollowUpVO,
   PrivateAssetVO,
   ResetPasswordRequest,
   SeatMapResponse,
@@ -76,7 +81,8 @@ function assertPositiveInteger(value: number, name: string) {
 }
 
 function formatParameterLabel(name: string) {
-  return PARAMETER_LABELS[name] ?? (hasChinese(name) ? name : '参数')
+  const label = PARAMETER_LABELS[name] ?? (hasChinese(name) ? name : '参数')
+  return label.replaceAll('ID', '编号')
 }
 
 function hasChinese(value: string) {
@@ -570,6 +576,11 @@ export async function listSupportAudits(conversationId: number) {
   return request<import('@/types/api').SupportAuditVO[]>(`/api/user/support/agent/conversations/${conversationId}/audits`)
 }
 
+export async function getSupportConversationContext(conversationId: number) {
+  assertPositiveInteger(conversationId, '客服会话ID')
+  return request<import('@/types/api').SupportContextVO>(`/api/user/support/agent/conversations/${conversationId}/context`)
+}
+
 export async function closeSupportConversation(conversationId: number, reason?: string) {
   assertPositiveInteger(conversationId, '客服会话ID')
   return request<import('@/types/api').SupportConversationVO>(`/api/user/support/agent/conversations/${conversationId}/close`, {
@@ -623,6 +634,33 @@ export async function createExceptionTask(params: import('@/types/api').Exceptio
   })
 }
 
+export async function claimExceptionTask(taskId: number) {
+  assertPositiveInteger(taskId, '异常任务ID')
+  return request<import('@/types/api').ExceptionTaskVO>(`/api/user/console/exception-tasks/${taskId}/claim`, {
+    method: 'POST',
+  })
+}
+
+export async function resolveExceptionTask(taskId: number, result: string) {
+  assertPositiveInteger(taskId, '异常任务ID')
+  const normalized = result.trim()
+  if (!normalized) throw new Error('处理结果不能为空')
+  return request<import('@/types/api').ExceptionTaskVO>(`/api/user/console/exception-tasks/${taskId}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ result: normalized } satisfies import('@/types/api').ExceptionTaskActionPayload),
+  })
+}
+
+export async function closeExceptionTask(taskId: number, result: string) {
+  assertPositiveInteger(taskId, '异常任务ID')
+  const normalized = result.trim()
+  if (!normalized) throw new Error('处理结果不能为空')
+  return request<import('@/types/api').ExceptionTaskVO>(`/api/user/console/exception-tasks/${taskId}/close`, {
+    method: 'POST',
+    body: JSON.stringify({ result: normalized } satisfies import('@/types/api').ExceptionTaskActionPayload),
+  })
+}
+
 export async function listReconciliationBatches() {
   return request<import('@/types/api').ReconciliationBatchVO[]>('/api/user/console/reconciliation/batches')
 }
@@ -638,6 +676,24 @@ export async function getReconciliationBatchDetail(batchNo: string) {
   const normalized = batchNo.trim()
   if (!normalized) throw new Error('对账批次号不能为空')
   return request<import('@/types/api').ReconciliationBatchDetailVO>(`/api/user/console/reconciliation/batches/${encodeURIComponent(normalized)}`)
+}
+
+export async function resolveReconciliationDifference(batchNo: string, differenceId: number) {
+  const normalized = batchNo.trim()
+  if (!normalized) throw new Error('对账批次号不能为空')
+  assertPositiveInteger(differenceId, '对账差异ID')
+  return request<import('@/types/api').ReconciliationDifferenceVO>(`/api/user/console/reconciliation/batches/${encodeURIComponent(normalized)}/differences/${differenceId}/resolve`, {
+    method: 'POST',
+  })
+}
+
+export async function ignoreReconciliationDifference(batchNo: string, differenceId: number) {
+  const normalized = batchNo.trim()
+  if (!normalized) throw new Error('对账批次号不能为空')
+  assertPositiveInteger(differenceId, '对账差异ID')
+  return request<import('@/types/api').ReconciliationDifferenceVO>(`/api/user/console/reconciliation/batches/${encodeURIComponent(normalized)}/differences/${differenceId}/ignore`, {
+    method: 'POST',
+  })
 }
 
 export async function listRbacRoles() {
@@ -667,7 +723,7 @@ export async function createOrganizerAdminAccount(params: { phone: string; nickn
 }
 
 export async function updateOrganizerAdminAccount(id: number, params: { phone: string; nickname: string; password?: string; status?: number }) {
-  assertPositiveInteger(id, '主办方管理员账号ID')
+  assertPositiveInteger(id, '平台主办方运营员账号ID')
   return request<import('@/types/api').OrganizerAdminAccountVO>(`/api/user/console/organizer-admins/${id}`, {
     method: 'PUT',
     body: JSON.stringify(params),
@@ -675,16 +731,41 @@ export async function updateOrganizerAdminAccount(id: number, params: { phone: s
 }
 
 export async function deactivateOrganizerAdminAccount(id: number) {
-  assertPositiveInteger(id, '主办方管理员账号ID')
+  assertPositiveInteger(id, '平台主办方运营员账号ID')
   return request<import('@/types/api').OrganizerAdminAccountVO>(`/api/user/console/organizer-admins/${id}/deactivate`, {
     method: 'POST',
   })
 }
 
 export async function deleteOrganizerAdminAccount(id: number) {
-  assertPositiveInteger(id, '主办方管理员账号ID')
+  assertPositiveInteger(id, '平台主办方运营员账号ID')
   return request<import('@/types/api').OrganizerAdminAccountVO>(`/api/user/console/organizer-admins/${id}`, {
     method: 'DELETE',
+  })
+}
+
+export async function listOrganizerOpsAssignments() {
+  return request<OrganizerOpsAssignmentVO[]>('/api/user/console/organizer-ops/assignments')
+}
+
+export async function updateOrganizerOpsAssignment(organizerUserId: number, params: OrganizerOpsAssignmentPayload) {
+  assertPositiveInteger(organizerUserId, '主办方ID')
+  return request<OrganizerOpsAssignmentVO>(`/api/user/console/organizer-ops/assignments/${organizerUserId}`, {
+    method: 'PUT',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function listOrganizerOpsFollowUps(organizerUserId: number) {
+  assertPositiveInteger(organizerUserId, '主办方ID')
+  return request<OrganizerOpsFollowUpVO[]>(`/api/user/console/organizer-ops/assignments/${organizerUserId}/follow-ups`)
+}
+
+export async function createOrganizerOpsFollowUp(organizerUserId: number, params: OrganizerOpsFollowUpPayload) {
+  assertPositiveInteger(organizerUserId, '主办方ID')
+  return request<OrganizerOpsFollowUpVO>(`/api/user/console/organizer-ops/assignments/${organizerUserId}/follow-ups`, {
+    method: 'POST',
+    body: JSON.stringify(params),
   })
 }
 
@@ -763,6 +844,15 @@ export async function createActivityReview(activityId: number, params: { orderId
   })
 }
 
+export async function reportActivityReview(activityId: number, reviewId: number, reason: string) {
+  assertPositiveInteger(activityId, '活动ID')
+  assertPositiveInteger(reviewId, '评价ID')
+  return request<import('@/types/api').ActivityReviewReportVO>(`/api/ticket/activities/${activityId}/reviews/${reviewId}/reports`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
 export async function listActivityQuestions(activityId: number) {
   assertPositiveInteger(activityId, '活动ID')
   return request<import('@/types/api').ActivityQuestionVO[]>(`/api/ticket/activities/${activityId}/questions`)
@@ -773,6 +863,55 @@ export async function createActivityQuestion(activityId: number, content: string
   return request<import('@/types/api').ActivityQuestionVO>(`/api/ticket/activities/${activityId}/questions`, {
     method: 'POST',
     body: JSON.stringify({ content }),
+  })
+}
+
+export async function listAdminActivityReviews(params: { activityId?: number; status?: number } = {}) {
+  const search = new URLSearchParams()
+  if (params.activityId) search.set('activityId', String(params.activityId))
+  if (params.status != null) search.set('status', String(params.status))
+  const qs = search.toString()
+  return request<import('@/types/api').ActivityReviewVO[]>(`/api/ticket/admin/activity-engagement/reviews${qs ? `?${qs}` : ''}`)
+}
+
+export async function moderateAdminActivityReview(reviewId: number, action: 'APPROVE' | 'HIDE' | 'RESTORE', note?: string) {
+  assertPositiveInteger(reviewId, '评价ID')
+  const body: import('@/types/api').ActivityReviewModerationRequest = note ? { action, note } : { action }
+  return request<import('@/types/api').ActivityReviewVO>(`/api/ticket/admin/activity-engagement/reviews/${reviewId}/moderation`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function listAdminActivityReviewReports(status?: string) {
+  const search = new URLSearchParams()
+  if (status) search.set('status', status)
+  const qs = search.toString()
+  return request<import('@/types/api').ActivityReviewReportVO[]>(`/api/ticket/admin/activity-engagement/review-reports${qs ? `?${qs}` : ''}`)
+}
+
+export async function moderateAdminActivityReviewReport(reportId: number, action: 'RESOLVE' | 'HIDE' | 'REJECT', note?: string) {
+  assertPositiveInteger(reportId, '举报ID')
+  const body: import('@/types/api').ActivityReviewReportModerationRequest = note ? { action, note } : { action }
+  return request<import('@/types/api').ActivityReviewReportVO>(`/api/ticket/admin/activity-engagement/review-reports/${reportId}/moderation`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function listAdminActivityQuestions(params: { activityId?: number; status?: string } = {}) {
+  const search = new URLSearchParams()
+  if (params.activityId) search.set('activityId', String(params.activityId))
+  if (params.status) search.set('status', params.status)
+  const qs = search.toString()
+  return request<import('@/types/api').ActivityQuestionVO[]>(`/api/ticket/admin/activity-engagement/questions${qs ? `?${qs}` : ''}`)
+}
+
+export async function moderateAdminActivityQuestion(questionId: number, params: import('@/types/api').ActivityQuestionModerationRequest) {
+  assertPositiveInteger(questionId, '问题ID')
+  return request<import('@/types/api').ActivityQuestionVO>(`/api/ticket/admin/activity-engagement/questions/${questionId}/moderation`, {
+    method: 'POST',
+    body: JSON.stringify(params),
   })
 }
 
@@ -863,6 +1002,29 @@ export async function listMyNotifications() {
 
 export async function getNotificationSummary() {
   return request<import('@/types/api').NotificationSummaryVO>('/api/notification/summary')
+}
+
+const NOTIFICATION_PREFERENCES: NotificationPreferenceVO[] = [
+  {
+    channel: 'IN_APP',
+    label: '站内通知',
+    enabled: true,
+    locked: true,
+    statusText: '已开启',
+    description: '订单、候补、抢票、退款、改期和客服回复都会通过站内消息提醒。',
+  },
+  {
+    channel: 'SMS',
+    label: '短信通知',
+    enabled: false,
+    locked: true,
+    statusText: '暂不可用',
+    description: '当前仅提供站内消息提醒；短信通知开放后可在这里开启。',
+  },
+]
+
+export async function getNotificationPreferences() {
+  return NOTIFICATION_PREFERENCES.map((item) => ({ ...item }))
 }
 
 export async function markAllNotificationsRead() {
@@ -1245,6 +1407,10 @@ export async function getGrabOpsSummary() {
   return request<import('@/types/api').GrabOpsSummaryVO>('/api/grab/admin/ops-summary')
 }
 
+export async function getPlatformOpsSummary() {
+  return request<import('@/types/api').PlatformOpsSummaryVO>('/api/user/console/ops-summary')
+}
+
 export async function listConsoleOrders(params: { paidOnly?: boolean } = {}) {
   const searchParams = new URLSearchParams()
   if (params.paidOnly !== undefined) searchParams.set('paidOnly', String(params.paidOnly))
@@ -1434,6 +1600,13 @@ export async function updateActivityStatus(id: number, body: Record<string, unkn
 export async function deactivateActivity(id: number, body: { userId: number; confirmRefund: boolean; reason?: string }) {
   return request<import('@/types/api').RefundImpactResponse>(`/api/ticket/admin/activities/${id}/deactivate`, {
     method: 'POST', body: JSON.stringify(body),
+  })
+}
+
+export async function notifyActivityBuyers(id: number, body: { userId: number; confirmNotify: boolean; content: string }) {
+  const { userId: _userId, ...safeBody } = body
+  return request<import('@/types/api').ActivityBuyerNotificationResponse>(`/api/ticket/admin/activities/${id}/buyer-notifications`, {
+    method: 'POST', body: JSON.stringify(safeBody),
   })
 }
 

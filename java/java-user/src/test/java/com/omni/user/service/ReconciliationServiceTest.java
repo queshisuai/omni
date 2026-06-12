@@ -7,6 +7,7 @@ import com.omni.common.dto.ReconciliationDetailResponse;
 import com.omni.common.dto.ReconciliationDifferenceResponse;
 import com.omni.common.dto.ReconciliationSourceResponse;
 import com.omni.common.result.Result;
+import com.omni.exception.BusinessException;
 import com.omni.user.client.PaymentReconciliationInternalClient;
 import com.omni.user.entity.ReconciliationBatch;
 import com.omni.user.entity.ReconciliationDetail;
@@ -24,6 +25,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -181,5 +183,74 @@ class ReconciliationServiceTest {
         assertEquals("REC20260603-363F0A8A", response.getBatch().getBatchNo());
         assertEquals("PAY20260603001", response.getDetails().get(0).getBusinessNo());
         assertEquals("amount_mismatch", response.getDifferences().get(0).getDiffType());
+    }
+
+    @Test
+    void resolvesOpenDifferenceAndCompletesBatchWhenNoOpenDifferencesRemain() {
+        ReconciliationBatch batch = batch("REC20260608-00000001", "generated");
+        ReconciliationDifference difference = difference(9L, "REC20260608-00000001", "open");
+        when(batchMapper.selectOne(any())).thenReturn(batch);
+        when(differenceMapper.selectOne(any())).thenReturn(difference);
+        when(differenceMapper.selectCount(any())).thenReturn(0L);
+
+        ReconciliationDifferenceResponse response = service.resolveDifference("REC20260608-00000001", 9L);
+
+        assertEquals("resolved", response.getStatus());
+        ArgumentCaptor<ReconciliationDifference> differenceCaptor = ArgumentCaptor.forClass(ReconciliationDifference.class);
+        ArgumentCaptor<ReconciliationBatch> batchCaptor = ArgumentCaptor.forClass(ReconciliationBatch.class);
+        verify(differenceMapper).updateById(differenceCaptor.capture());
+        verify(batchMapper).updateById(batchCaptor.capture());
+        assertEquals("resolved", differenceCaptor.getValue().getStatus());
+        assertEquals("completed", batchCaptor.getValue().getStatus());
+    }
+
+    @Test
+    void ignoresOpenDifferenceAndKeepsBatchProcessingWhenOtherOpenDifferencesRemain() {
+        ReconciliationBatch batch = batch("REC20260608-00000002", "generated");
+        ReconciliationDifference difference = difference(10L, "REC20260608-00000002", "open");
+        when(batchMapper.selectOne(any())).thenReturn(batch);
+        when(differenceMapper.selectOne(any())).thenReturn(difference);
+        when(differenceMapper.selectCount(any())).thenReturn(1L);
+
+        ReconciliationDifferenceResponse response = service.ignoreDifference("REC20260608-00000002", 10L);
+
+        assertEquals("ignored", response.getStatus());
+        ArgumentCaptor<ReconciliationBatch> batchCaptor = ArgumentCaptor.forClass(ReconciliationBatch.class);
+        verify(batchMapper).updateById(batchCaptor.capture());
+        assertEquals("processing", batchCaptor.getValue().getStatus());
+    }
+
+    @Test
+    void rejectsResolvingClosedDifference() {
+        ReconciliationBatch batch = batch("REC20260608-00000003", "generated");
+        ReconciliationDifference difference = difference(11L, "REC20260608-00000003", "resolved");
+        when(batchMapper.selectOne(any())).thenReturn(batch);
+        when(differenceMapper.selectOne(any())).thenReturn(difference);
+
+        assertThrows(BusinessException.class, () -> service.resolveDifference("REC20260608-00000003", 11L));
+    }
+
+    private ReconciliationBatch batch(String batchNo, String status) {
+        ReconciliationBatch batch = new ReconciliationBatch();
+        batch.setId(20L);
+        batch.setBatchNo(batchNo);
+        batch.setBizDate(LocalDate.of(2026, 6, 8));
+        batch.setSourceType("local");
+        batch.setStatus(status);
+        return batch;
+    }
+
+    private ReconciliationDifference difference(Long id, String batchNo, String status) {
+        ReconciliationDifference difference = new ReconciliationDifference();
+        difference.setId(id);
+        difference.setBatchNo(batchNo);
+        difference.setDiffType("amount_mismatch");
+        difference.setBusinessNo("RF202606080001");
+        difference.setExpectedAmount(new BigDecimal("66.00"));
+        difference.setActualAmount(new BigDecimal("60.00"));
+        difference.setDiffAmount(new BigDecimal("6.00"));
+        difference.setReason("退款金额不一致");
+        difference.setStatus(status);
+        return difference;
     }
 }

@@ -121,6 +121,11 @@ export class GrabService {
     return this.toProgressResponse(record);
   }
 
+  async listByUser(userId: number, limit = 5): Promise<GrabRequestResponse[]> {
+    const records = await this.repository.listByUser(userId, this.normalizeLimit(limit));
+    return Promise.all(records.map((record) => this.toResponse(record)));
+  }
+
   private async toProgressResponse(record: GrabRequestRecord): Promise<GrabProgressResponse> {
     const queueRank = record.queueSeq == null ? null : await this.queueService.calculateQueueRank(record.sessionId, record.queueSeq);
     const visibleStock = await this.resolveProgressVisibleStock(record);
@@ -249,6 +254,11 @@ export class GrabService {
 
   private generateRequestId(): string {
     return `GRAB${randomBytes(12).toString('hex')}`;
+  }
+
+  private normalizeLimit(limit: number): number {
+    if (!Number.isFinite(limit)) return 5;
+    return Math.max(0, Math.min(Math.trunc(limit), 20));
   }
 
   private async resolveProgressVisibleStock(record: GrabRequestRecord) {

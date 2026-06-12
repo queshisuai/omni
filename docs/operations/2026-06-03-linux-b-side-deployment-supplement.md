@@ -192,13 +192,15 @@ RABBITMQ_HOST=127.0.0.1
 RABBITMQ_PORT=5672
 RABBITMQ_USER=<RabbitMQ用户>
 RABBITMQ_PASSWORD=<RabbitMQ密码>
-ORDER_SERVICE_URL=http://127.0.0.1:8088
-TICKET_SERVICE_URL=http://127.0.0.1:8088
+ORDER_SERVICE_URL=http://127.0.0.1:8083
+TICKET_SERVICE_URL=http://127.0.0.1:8082
 NOTIFICATION_SERVICE_URL=http://127.0.0.1:8088
 API_GATEWAY_URL=http://127.0.0.1:8088
 INTERNAL_API_TOKEN=<与Java服务一致>
 JWT_SECRET=<与Java服务一致>
 ```
+
+`grab-service` 调用订单和票务 internal API 时应优先直连 `java-order` 和 `java-ticket`，避免内部链路绕 Gateway 增加耗时和故障面；Gateway 仍作为前端和外部 API 的统一入口。
 
 ## frontend 环境变量
 

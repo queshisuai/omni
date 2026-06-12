@@ -55,7 +55,11 @@ class GatewaySentinelConfigTest {
 
         assertPatterns(definitions.get(GatewaySentinelConfig.WAITLIST_API), "/api/waitlist");
         assertPatterns(definitions.get(GatewaySentinelConfig.ORDER_CREATE_API), "/api/order/create", "/api/order/create-with-seats");
-        assertPatterns(definitions.get(GatewaySentinelConfig.PAYMENT_CRITICAL_API), "/api/payment/alipay/sync", "/api/payment/alipay/notify");
+        assertPatterns(definitions.get(GatewaySentinelConfig.PAYMENT_CRITICAL_API),
+                "/api/payment/alipay/page-pay",
+                "/api/payment/alipay/qr-pay",
+                "/api/payment/alipay/sync",
+                "/api/payment/alipay/notify");
         assertPatterns(definitions.get(GatewaySentinelConfig.USER_AUTH_API), "/api/user/login", "/api/user/send-code");
         assertPatterns(definitions.get(GatewaySentinelConfig.TICKET_HOT_READ_API),
                 "/api/ticket/activities",

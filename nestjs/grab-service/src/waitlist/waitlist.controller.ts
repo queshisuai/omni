@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Param, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { AuthenticatedRequest } from '../auth/authenticated-request';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { WaitlistService } from './waitlist.service';
@@ -34,6 +34,16 @@ export class WaitlistController {
   @UseGuards(JwtAuthGuard)
   async mine(@Req() request: AuthenticatedRequest): Promise<ApiResult<WaitlistEntryResponse[]>> {
     return success(await this.waitlistService.listMine(request.user.userId));
+  }
+
+  @Get('internal/users/:userId/entries')
+  async internalListByUser(
+    @Headers('x-internal-token') token: string | undefined,
+    @Param('userId') userId: string,
+    @Query('limit') limit = '5',
+  ): Promise<ApiResult<WaitlistEntryResponse[]>> {
+    this.requireInternalToken(token);
+    return success(await this.waitlistService.listByUser(Number(userId), Number(limit)));
   }
 
   @Delete('entries/:id')

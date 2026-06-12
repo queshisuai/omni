@@ -22,6 +22,10 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: '已驳回',
 }
 
+function formatResolutionStatus(status: string) {
+  return STATUS_LABEL[status] || '未知审核状态'
+}
+
 export default function RiskResolutionsPage() {
   return (
     <Suspense fallback={<div className="text-[#999]">加载中...</div>}>
@@ -128,10 +132,10 @@ function RiskResolutionsContent() {
             return (
               <div key={item.id} className="rounded-xl border border-[#eee] bg-white p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="font-semibold text-[#1a1a2e]">{item.activityName || `活动 #${item.activityId}`}</div>
-                  <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{STATUS_LABEL[item.status] || item.status}</span>
+                  <div className="font-semibold text-[#1a1a2e]">{item.activityName || `活动编号：${item.activityId}`}</div>
+                  <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{formatResolutionStatus(item.status)}</span>
                 </div>
-                <div className="mt-1 text-[12px] text-[#999]">活动ID：{item.activityId}</div>
+                <div className="mt-1 text-[12px] text-[#999]">活动编号：{item.activityId}</div>
                 <div className="mt-1 text-[13px] text-[#666]">处理说明：{item.resolutionNote || '未填写'}</div>
                 {item.reviewNote && <div className="mt-1 text-[13px] text-[#666]">审核备注：{item.reviewNote}</div>}
                 {editable ? (

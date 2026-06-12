@@ -9,6 +9,7 @@ import com.omni.user.dto.SupportAccountResponse;
 import com.omni.user.dto.SupportAuditResponse;
 import com.omni.user.dto.SupportCloseRejectRequest;
 import com.omni.user.dto.SupportCloseRequest;
+import com.omni.user.dto.SupportContextResponse;
 import com.omni.user.dto.SupportConversationRequest;
 import com.omni.user.dto.SupportConversationResponse;
 import com.omni.user.dto.SupportMessageRequest;
@@ -21,7 +22,9 @@ import com.omni.user.dto.SupportTransferRequest;
 import com.omni.user.service.CustomerSupportService;
 import com.omni.user.service.HelpCenterService;
 import com.omni.user.service.SupportAccountService;
+import com.omni.user.service.SupportContextService;
 import io.jsonwebtoken.Claims;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -38,13 +41,17 @@ public class SupportController {
     private final HelpCenterService helpCenterService;
     private final CustomerSupportService customerSupportService;
     private final SupportAccountService supportAccountService;
+    private final SupportContextService supportContextService;
 
+    @Autowired
     public SupportController(HelpCenterService helpCenterService,
                              CustomerSupportService customerSupportService,
-                             SupportAccountService supportAccountService) {
+                             SupportAccountService supportAccountService,
+                             SupportContextService supportContextService) {
         this.helpCenterService = helpCenterService;
         this.customerSupportService = customerSupportService;
         this.supportAccountService = supportAccountService;
+        this.supportContextService = supportContextService;
     }
 
     @GetMapping("/help/faqs")
@@ -244,6 +251,15 @@ public class SupportController {
         Long userId = parseUserId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         return Result.success(customerSupportService.listAudits(userId, id));
+    }
+
+    @GetMapping("/support/agent/conversations/{id}/context")
+    public Result<SupportContextResponse> getContext(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(supportContextService.getContext(userId, id));
     }
 
     @GetMapping("/support/admin/accounts")

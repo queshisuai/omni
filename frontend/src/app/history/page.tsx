@@ -99,7 +99,7 @@ export default function HistoryPage() {
                   className="h-[116px] w-[88px] rounded object-cover sm:h-[138px] sm:w-[104px]"
                 />
                 <div className="min-w-0">
-                  <div className="line-clamp-2 text-[17px] font-medium leading-6 text-[#111]">{item.title || `演出 ${item.activityId}`}</div>
+                  <div className="line-clamp-2 text-[17px] font-medium leading-6 text-[#111]">{item.title || '演出信息待同步'}</div>
                   <div className="mt-3 flex flex-wrap gap-2 text-[13px] text-[#777]">
                     {item.category && <span className="rounded bg-[#f7f7f7] px-2 py-1">{item.category}</span>}
                     {item.city && (

@@ -1,3 +1,5 @@
+import type { ActivityViewSignal } from './personalized-recommendations.ts'
+
 export type SubscriptionTargetType =
   | 'ACTIVITY_WANT'
   | 'SALE_REMINDER'
@@ -39,4 +41,41 @@ export function getCountdownText(value: string | null | undefined, nowMs = Date.
 export function formatSubscriptionTime(value: string | null | undefined) {
   if (!value) return '时间待定'
   return value.replace('T', ' ').slice(0, 16)
+}
+
+export interface SubscriptionEmptyGuide {
+  activityId: string
+  title: string
+  href: string
+  actionLabel: string
+  poster?: string | null
+  meta: string
+  artistHint?: string | null
+}
+
+export function buildSubscriptionEmptyGuides(signals: ActivityViewSignal[], limit = 3): SubscriptionEmptyGuide[] {
+  const seen = new Set<string>()
+  const guides: SubscriptionEmptyGuide[] = []
+
+  for (const signal of signals) {
+    const activityId = signal.activityId?.trim()
+    const title = signal.title?.trim()
+    if (!activityId || !title || seen.has(activityId)) continue
+
+    const city = signal.city?.trim()
+    const artist = signal.artist?.trim()
+    guides.push({
+      activityId,
+      title,
+      href: `/activity/${activityId}`,
+      poster: signal.poster || null,
+      meta: [city, artist].filter(Boolean).join(' · ') || '活动详情',
+      actionLabel: Number(signal.status) === 1 ? '去添加想看' : '开启开售提醒',
+      artistHint: artist ? `也可关注${artist}` : null,
+    })
+    seen.add(activityId)
+    if (guides.length >= limit) break
+  }
+
+  return guides
 }

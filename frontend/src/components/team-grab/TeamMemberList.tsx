@@ -1,6 +1,6 @@
 'use client'
 
-import { teamMemberSeatAssignmentLabel } from '@/lib/team-grab'
+import { teamMemberDisplayName, teamMemberSeatAssignmentLabel } from '@/lib/team-grab'
 import type { TeamMemberStatus, TicketTeamMemberVO } from '@/types/api'
 
 const MEMBER_STATUS_LABELS: Record<TeamMemberStatus, string> = {
@@ -8,6 +8,10 @@ const MEMBER_STATUS_LABELS: Record<TeamMemberStatus, string> = {
   JOINED: '已加入',
   CONFIRMED: '已确认',
   LEFT: '已离队',
+}
+
+function formatTeamMemberStatus(status: string) {
+  return MEMBER_STATUS_LABELS[status as TeamMemberStatus] || '状态同步中'
 }
 
 interface TeamMemberListProps {
@@ -42,10 +46,12 @@ export function TeamMemberList({
         <div>座位分配</div>
         <div></div>
       </div>
-      {sortedMembers.map(member => {
+      {sortedMembers.map((member, index) => {
         const isLeader = member.userId === leaderUserId
         const isCurrent = currentUserId === member.userId
+        const displayName = teamMemberDisplayName(member, { leaderUserId, currentUserId, index })
         const assignment = teamMemberSeatAssignmentLabel(member)
+        const statusLabel = formatTeamMemberStatus(member.status)
         const canRemove = canRemoveMembers && !isLeader && member.status !== 'LEFT'
 
         return (
@@ -55,17 +61,17 @@ export function TeamMemberList({
           >
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">用户 {member.userId}</span>
-                {isCurrent && (
+                <span className="font-medium">{displayName}</span>
+                {isCurrent && displayName !== '我' && (
                   <span className="rounded-full bg-[#fff0f5] px-2 py-0.5 text-[12px] text-[#ff1268]">我</span>
                 )}
               </div>
               <div className="mt-1 text-[12px] text-[#999] sm:hidden">
-                {isLeader ? '队长' : '成员'} - {MEMBER_STATUS_LABELS[member.status]}
+                {isLeader ? '队长' : '成员'} - {statusLabel}
               </div>
             </div>
             <div className="hidden text-[#666] sm:block">{isLeader ? '队长' : '成员'}</div>
-            <div className="hidden text-[#666] sm:block">{MEMBER_STATUS_LABELS[member.status]}</div>
+            <div className="hidden text-[#666] sm:block">{statusLabel}</div>
             <div className="text-[12px] text-[#777] sm:text-[13px]">
               {assignment || '未分配'}
             </div>

@@ -7,7 +7,7 @@ import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
 import { canAccessConsolePath, canEnterConsole, getConsoleBrandLabel, getConsoleRoleLabel, getDefaultConsolePath, isPlatformAdminRole } from '@/lib/console-auth'
 import { isConsolePathAllowedForRole } from '@/lib/console-paths'
-import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones, ShieldAlert, FileSearch, ShieldCheck, ChevronDown } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones, ShieldAlert, FileSearch, ShieldCheck, ChevronDown, MessageSquareText } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 type ConsoleMenuItem = {
@@ -24,6 +24,7 @@ const menuItems: ConsoleMenuItem[] = [
   { href: '/console/tours', label: '巡演草稿管理', icon: GitPullRequestArrow, roles: ['admin'] },
   { href: '/console/sessions', label: '场次管理', icon: Clock },
   { href: '/console/orders', label: '订单查看', icon: ShoppingCart },
+  { href: '/console/activity-engagement', label: '评价问答管理', icon: MessageSquareText, roles: ['admin'] },
   { href: '/console/check-in', label: '入场核验', icon: ClipboardList },
   { href: '/console/refunds', label: '退款审核', icon: RotateCcw },
   { href: '/console/artists', label: '艺人管理', icon: Users, roles: ['admin'] },
@@ -33,9 +34,10 @@ const menuItems: ConsoleMenuItem[] = [
   { href: '/console/venue', label: '场馆记录', icon: MapPin, roles: ['admin'] },
   { href: '/console/venue/applications', label: '场馆资料审核', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/station-config-reviews', label: '站点变更审核', icon: GitPullRequestArrow, roles: ['admin'] },
+  { href: '/console/organizer-ops', label: '运营工作台', icon: ShieldCheck, roles: ['admin'] },
   { href: '/console/organizer-applications', label: '主办方管理', icon: ClipboardList, roles: ['admin'] },
   { href: '/console/support-accounts', label: '客服账号管理', icon: Headphones, roles: ['admin'], group: '账号管理' },
-  { href: '/console/organizer-admins', label: '主办方管理员账号管理', icon: Users, roles: ['admin'], group: '账号管理' },
+  { href: '/console/organizer-admins', label: '平台主办方运营员账号管理', icon: Users, roles: ['admin'], group: '账号管理' },
   { href: '/console/support-conversations', label: '客服会话记录', icon: Headphones, roles: ['admin'] },
   { href: '/console/roles', label: '角色权限', icon: ShieldCheck, roles: ['admin'] },
   { href: '/console/audit-logs', label: '操作审计', icon: ClipboardList, roles: ['admin'] },

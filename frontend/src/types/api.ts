@@ -199,6 +199,12 @@ export interface WaitlistEntryVO {
   id: number
   sessionId: number
   ticketTypeId: number
+  activityId?: number | null
+  activityName?: string | null
+  activityPoster?: string | null
+  ticketTypeName?: string | null
+  venueName?: string | null
+  sessionTime?: string | null
   quantity: number
   status: WaitlistEntryStatus
   rank: number | null
@@ -275,6 +281,11 @@ export interface TicketTeamVO {
   activityId: number
   sessionId: number
   ticketTypeId: number
+  activityName?: string | null
+  activityPoster?: string | null
+  ticketTypeName?: string | null
+  venueName?: string | null
+  sessionTime?: string | null
   size: number
   strategy: TeamSeatStrategy
   fallbacks: TeamSeatStrategy[]
@@ -480,6 +491,17 @@ export interface NotificationSummaryVO {
   visibleCount: number
   readCount: number
   typeCounts?: Record<string, number> | null
+}
+
+export type NotificationPreferenceChannel = 'IN_APP' | 'SMS'
+
+export interface NotificationPreferenceVO {
+  channel: NotificationPreferenceChannel
+  label: string
+  enabled: boolean
+  locked: boolean
+  statusText: string
+  description: string
 }
 
 export interface ActivityRiskCaseVO {
@@ -708,6 +730,23 @@ export interface GrabOpsSummaryVO {
   }
 }
 
+export interface PlatformOpsSummaryVO {
+  generatedAt?: string | null
+  funnelSteps: ActivityFunnelStepVO[]
+  ticket: AdminSummaryVO
+  refund: {
+    totalCount: number
+    abnormalCount: number
+  }
+  grab: GrabOpsSummaryVO
+  workbench: {
+    pendingExceptionCount: number
+    latestBatch?: ReconciliationBatchVO | null
+    latestAudit?: OperationAuditLogVO | null
+  }
+  errors: Array<{ source: string; message: string }>
+}
+
 export interface HelpFaqVO {
   category: string
   question: string
@@ -796,6 +835,73 @@ export interface SupportAuditVO {
   createTime?: string | null
 }
 
+export interface SupportContextVO {
+  conversationId: number
+  user: {
+    userId: number
+    nickname?: string | null
+    phoneMask?: string | null
+  }
+  orders: Array<{
+    id: number
+    orderNo?: string | null
+    status?: number | null
+    amount?: number | null
+    activityName?: string | null
+    sessionTime?: string | null
+    href?: string | null
+  }>
+  refunds: Array<{
+    id: number
+    orderId?: number | null
+    orderNo?: string | null
+    status?: number | null
+    reason?: string | null
+    href?: string | null
+  }>
+  tickets: Array<{
+    ticketId: number
+    orderId?: number | null
+    activityName?: string | null
+    sessionTime?: string | null
+    status?: number | null
+    checkedIn?: boolean | null
+    href?: string | null
+  }>
+  waitlist: Array<{
+    id: number
+    sessionId?: number | null
+    ticketTypeId?: number | null
+    quantity?: number | null
+    status?: string | null
+    rank?: number | null
+    estimatedWaitText?: string | null
+  }>
+  grabRequests: Array<{
+    requestId: string
+    sessionId?: number | null
+    ticketTypeId?: number | null
+    quantity?: number | null
+    status?: string | null
+    queueRank?: number | null
+    progressMessage?: string | null
+    failReason?: string | null
+    href?: string | null
+  }>
+  notifications: Array<{
+    id: number
+    title?: string | null
+    content?: string | null
+    type?: string | null
+    read?: boolean | null
+    createTime?: string | null
+  }>
+  errors: Array<{
+    section: string
+    message: string
+  }>
+}
+
 export interface RbacRoleVO {
   code: string
   name: string
@@ -817,6 +923,40 @@ export interface OrganizerAdminAccountVO {
   status: number
   createTime?: string | null
   updateTime?: string | null
+}
+
+export interface OrganizerOpsAssignmentVO {
+  organizerUserId: number
+  assignedOperatorId?: number | null
+  riskLevel: string
+  status: string
+  nextFollowAt?: string | null
+  lastFollowAt?: string | null
+  createTime?: string | null
+  updateTime?: string | null
+}
+
+export interface OrganizerOpsAssignmentPayload {
+  assignedOperatorId?: number | null
+  riskLevel?: string | null
+  status?: string | null
+  nextFollowAt?: string | null
+}
+
+export interface OrganizerOpsFollowUpVO {
+  id: number
+  organizerUserId: number
+  operatorId: number
+  followType: string
+  content: string
+  nextFollowAt?: string | null
+  createTime?: string | null
+}
+
+export interface OrganizerOpsFollowUpPayload {
+  followType: string
+  content: string
+  nextFollowAt?: string | null
 }
 
 export interface OperationAuditLogVO {
@@ -863,6 +1003,10 @@ export interface ExceptionTaskCreatePayload {
   severity: string
   reason?: string | null
   evidenceUrls?: string[]
+}
+
+export interface ExceptionTaskActionPayload {
+  result: string
 }
 
 export interface ReconciliationBatchVO {
@@ -1447,6 +1591,29 @@ export interface ActivityReviewVO {
   createTime?: string | null
 }
 
+export interface ActivityReviewReportVO {
+  id?: number | null
+  reviewId: number
+  activityId: number
+  userId: number
+  reason: string
+  status: 'PENDING' | 'RESOLVED' | 'REJECTED' | string
+  handledBy?: number | null
+  handleNote?: string | null
+  createTime?: string | null
+  handledAt?: string | null
+}
+
+export interface ActivityReviewModerationRequest {
+  action: 'APPROVE' | 'HIDE' | 'RESTORE'
+  note?: string | null
+}
+
+export interface ActivityReviewReportModerationRequest {
+  action: 'RESOLVE' | 'HIDE' | 'REJECT'
+  note?: string | null
+}
+
 export interface ActivityReviewListVO {
   summary: ActivityReviewSummaryVO
   reviews: ActivityReviewVO[]
@@ -1462,6 +1629,11 @@ export interface ActivityQuestionVO {
   status: 'PENDING' | 'ANSWERED' | 'HIDDEN' | string
   createTime?: string | null
   answeredAt?: string | null
+}
+
+export interface ActivityQuestionModerationRequest {
+  action: 'ANSWER' | 'HIDE' | 'RESTORE'
+  answer?: string | null
 }
 
 /** 预约 */
@@ -1541,6 +1713,7 @@ export interface OrderEntity {
   ticketName?: string | null
   unitPrice?: number | null
   seatLabels?: string | null
+  seatSelectionMode?: 'NONE' | 'RANDOM' | 'EXPLICIT' | 'TEAM' | string | null
   grabRequestId?: string | null
   requestedTicketTypeId?: number | null
   matchedTicketTypeId?: number | null
@@ -1610,6 +1783,7 @@ export interface QrPayResponse {
   amount: number
   subject: string
   qrCode: string
+  qrCodeUrl?: string
 }
 
 export interface PaymentStatusResponse {
@@ -1683,6 +1857,15 @@ export interface RefundImpactResponse {
   refundUnknownCount: number
   refundCompensationRequiredCount: number
   failures: DirectRefundResponse[]
+}
+
+export interface ActivityBuyerNotificationResponse {
+  activityId: number
+  activityName: string
+  paidOrderCount: number
+  notifiedUserCount: number
+  notificationCount: number
+  skippedOrderCount: number
 }
 
 export interface DeactivateOrganizerRequest {

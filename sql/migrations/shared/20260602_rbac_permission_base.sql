@@ -34,7 +34,7 @@ INSERT INTO rbac_role (code, name) VALUES
     ('support_manager', '客服主管'),
     ('support_agent', '普通客服'),
     ('organizer', '主办方'),
-    ('organizer_admin', '主办方管理员')
+    ('organizer_admin', '平台主办方运营员')
 ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, update_time = CURRENT_TIMESTAMP;
 
 INSERT INTO rbac_permission (code, name) VALUES
@@ -109,11 +109,17 @@ INSERT INTO "user" (role, phone, nickname, password, status) VALUES
 ON CONFLICT (phone) DO NOTHING;
 
 INSERT INTO "user" (role, phone, nickname, password, status) VALUES
-    ('organizer_admin', '13910000004', '主办方管理员', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
-ON CONFLICT (phone) DO NOTHING;
+    ('organizer_admin', '13910000004', '平台主办方运营员', '$2b$10$IrlVGWCZr8mdeVWCvvlCzOftfq/KiIHItDinPUZvD6KyBDHzY1BzG', 1)
+ON CONFLICT (phone) DO UPDATE
+SET role = EXCLUDED.role,
+    nickname = EXCLUDED.nickname,
+    status = EXCLUDED.status,
+    update_time = CURRENT_TIMESTAMP;
 
 UPDATE "user"
-SET role = 'organizer_admin', update_time = CURRENT_TIMESTAMP
+SET role = 'organizer_admin',
+    nickname = '平台主办方运营员',
+    update_time = CURRENT_TIMESTAMP
 WHERE phone = '13910000004' AND role = 'organizer';
 
 DELETE FROM support_account

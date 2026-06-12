@@ -40,6 +40,30 @@ function canEditArtist(user: UserInfo | null, artist: ArtistEntity | null) {
   return user.role === 'organizer' && artist.submittedBy === user.id && artist.reviewStatus === 'pending'
 }
 
+function formatArtistReviewStatus(status?: string | null) {
+  switch (status) {
+    case 'pending':
+      return '待审核'
+    case 'approved':
+      return '已通过'
+    case 'rejected':
+      return '已驳回'
+    default:
+      return '未知审核状态'
+  }
+}
+
+function formatArtistRiskStatus(status?: string | null) {
+  switch (status) {
+    case 'normal':
+      return '风险正常'
+    case 'risky':
+      return '风险艺人'
+    default:
+      return '未知风险状态'
+  }
+}
+
 export default function EditArtistPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -54,7 +78,7 @@ export default function EditArtistPage() {
 
   useEffect(() => {
     if (!Number.isInteger(artistId) || artistId <= 0) {
-      setError('艺人 ID 不正确')
+      setError('艺人编号不正确')
       setLoading(false)
       return
     }
@@ -174,8 +198,8 @@ export default function EditArtistPage() {
               hint="支持 JPG、PNG、WEBP、GIF，上传后自动写入头像地址。"
             />
             <div className="mt-4 rounded-xl bg-[#fafafa] p-3 text-[12px] leading-5 text-[#666]">
-              审核状态：{artist.reviewStatus || '未知'}<br />
-              风险状态：{artist.riskStatus || '未知'}<br />
+              审核状态：{formatArtistReviewStatus(artist.reviewStatus)}<br />
+              风险状态：{formatArtistRiskStatus(artist.riskStatus)}<br />
               提交人：{artist.submittedBy || '未知'}
             </div>
             {!editable && <div className="mt-3 rounded-xl bg-[#fff7ed] p-3 text-[13px] text-[#c2410c]">当前账号没有编辑权限。</div>}

@@ -7,6 +7,8 @@ import com.omni.ticket.dto.TeamSeatLockRequest;
 import com.omni.ticket.dto.TeamSeatLockResponse;
 import com.omni.ticket.dto.TeamSeatLockValidationRequest;
 import com.omni.ticket.dto.TeamSeatLockValidationResponse;
+import com.omni.ticket.dto.TicketPurchaseContextRequest;
+import com.omni.ticket.dto.TicketPurchaseContextResponse;
 import com.omni.ticket.dto.TicketTypeVisibleResponse;
 import com.omni.ticket.dto.TicketTypesVisibleRequest;
 import com.omni.ticket.dto.TicketSalesLockRequest;
@@ -78,6 +80,34 @@ class TicketSalesInternalControllerTest {
         assertEquals(1L, result.getData().get(0).getTicketTypeId());
         assertEquals("A", result.getData().get(0).getName());
         verify(service).listVisibleTicketTypes(request);
+    }
+
+    @Test
+    void purchaseContextRejectsMissingToken() {
+        Result<TicketPurchaseContextResponse> result = controller.purchaseContext(new TicketPurchaseContextRequest(), null);
+
+        assertEquals(403, result.getCode());
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void purchaseContextDelegatesWhenTokenMatches() {
+        TicketPurchaseContextRequest request = new TicketPurchaseContextRequest();
+        request.setSessionId(101L);
+        request.setTicketTypeId(202L);
+        TicketPurchaseContextResponse response = new TicketPurchaseContextResponse();
+        response.setSessionId(101L);
+        response.setTicketTypeId(202L);
+        response.setActivityName("周末演唱会");
+        response.setTicketTypeName("看台 A");
+        when(service.getPurchaseContext(request)).thenReturn(response);
+
+        Result<TicketPurchaseContextResponse> result = controller.purchaseContext(request, "test-internal-token");
+
+        assertEquals(200, result.getCode());
+        assertEquals("周末演唱会", result.getData().getActivityName());
+        assertEquals("看台 A", result.getData().getTicketTypeName());
+        verify(service).getPurchaseContext(request);
     }
 
     @Test

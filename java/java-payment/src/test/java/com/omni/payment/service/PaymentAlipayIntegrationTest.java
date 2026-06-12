@@ -1,5 +1,8 @@
 package com.omni.payment.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.AlipayResponse;
 import com.alipay.api.request.AlipayTradePagePayRequest;
@@ -22,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -64,7 +68,7 @@ class PaymentAlipayIntegrationTest {
         OrderInfoResponse o = new OrderInfoResponse(); o.setId(id); o.setStatus(status); o.setAmount(amount); o.setOrderNo(orderNo); return o;
     }
     Payment payment(Long id, Long orderId, int status, String outTradeNo) {
-        Payment p = new Payment(); p.setId(id); p.setOrderId(orderId); p.setStatus(status); p.setOutTradeNo(outTradeNo); p.setPaymentMethod("ALIPAY_SANDBOX"); p.setAmount(new BigDecimal("200.00")); return p;
+        Payment p = new Payment(); p.setId(id); p.setOrderId(orderId); p.setStatus(status); p.setOutTradeNo(outTradeNo); p.setPaymentMethod("ALIPAY"); p.setAmount(new BigDecimal("200.00")); return p;
     }
 
     // ===== 3.1 Create Payment (PM-001~007) =====
@@ -181,6 +185,58 @@ class PaymentAlipayIntegrationTest {
         void pm016() { assertTrue(true); }
         @Test @DisplayName("PM-018: sync decision → covered by syncDecisionAllowsCancelWhenTradeDoesNotExist")
         void pm018() { assertTrue(true); }
+
+        @Test @DisplayName("PM-024: sync logs segmented latency")
+        void syncLogsSegmentedLatency() throws Exception {
+            when(orderClient.getOrder(eq(100L), any())).thenReturn(
+                    Result.success(order(100L, 1, bd("200"), "ORDER001")),
+                    Result.success(order(100L, 2, bd("200"), "ORDER001"))
+            );
+            Payment pending = payment(1L, 100L, PaymentService.STATUS_PENDING, "ORDER001");
+            when(paymentMapper.selectOne(any())).thenReturn(pending);
+            AlipayTradeQueryResponse queryResponse = mock(AlipayTradeQueryResponse.class);
+            when(queryResponse.isSuccess()).thenReturn(true);
+            when(queryResponse.getTradeStatus()).thenReturn("TRADE_SUCCESS");
+            when(queryResponse.getTotalAmount()).thenReturn("200.00");
+            when(queryResponse.getTradeNo()).thenReturn("TRADE_SYNC_001");
+            when(queryResponse.getBuyerUserId()).thenReturn("BUYER_SYNC_001");
+            when(queryResponse.getBody()).thenReturn("{\"trade_status\":\"TRADE_SUCCESS\"}");
+            when(alipayClient.execute(any(AlipayTradeQueryRequest.class))).thenReturn(queryResponse);
+            ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(AlipayService.class);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            logger.setLevel(Level.INFO);
+            try {
+                PaymentStatusResponse response = svc.syncByOrderId(100L);
+                assertEquals(PaymentService.STATUS_SUCCESS, response.getPaymentStatus());
+            } finally {
+                logger.detachAppender(appender);
+            }
+
+            verify(confirmationService).confirmPayment(
+                    eq(pending),
+                    eq("TRADE_SYNC_001"),
+                    eq("BUYER_SYNC_001"),
+                    eq("{\"trade_status\":\"TRADE_SUCCESS\"}"),
+                    eq("{\"trade_status\":\"TRADE_SUCCESS\"}")
+            );
+            String message = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .filter(line -> line.contains("支付同步链路耗时"))
+                    .findFirst()
+                    .orElse("");
+
+            assertTrue(message.contains("orderId=100"));
+            assertTrue(message.contains("orderNo=ORDER001"));
+            assertTrue(message.contains("outcome=CONFIRMED"));
+            assertTrue(message.contains("orderLoadMs="));
+            assertTrue(message.contains("paymentLoadMs="));
+            assertTrue(message.contains("alipayQueryMs="));
+            assertTrue(message.contains("confirmPaymentMs="));
+            assertTrue(message.contains("orderReloadMs="));
+            assertTrue(message.contains("totalMs="));
+        }
     }
 
     // ===== 3.4 Seata (PM-019~021) =====

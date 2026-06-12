@@ -22,9 +22,9 @@
 
 | 对象 | 当前证据 | 建议方向 | 原因 |
 |:---|:---|:---|:---|
-| `organizer_admin` | 前端类型、SQL 权限、账号服务均使用 `organizer_admin`；中文多处显示“主办方管理员” | 改为平台主办方运营员，代码可逐步迁移到 `organizer_ops_agent` / `organizer_ops_manager` | 当前定位是平台级运营角色，不是主办方租户管理员。 |
-| 评价/问答 | 活动详情和 API 已存在 `reviews`、`questions` | 正式化为活动评价与购前问答模块 | 既然评价重新纳入项目范围，就需要补审核、举报、订单校验和后台入口。 |
-| 前端 API 聚合 | `frontend/src/lib/api.ts` 聚合大量业务 API | 按领域拆分：user、ticket、order、payment、support、console、grab | 后续接 ES、通知、客服上下文时，单文件维护成本会继续上升。 |
+| `organizer_admin` | 第一轮已把用户可见文案、菜单、审计展示、基线中文名和 real-demo seed 昵称收口为“平台主办方运营员”；内部 role code、SQL 权限和账号服务仍兼容使用 `organizer_admin` | 短期继续兼容 `organizer_admin`；后续如拆岗位，可迁移到 `organizer_ops_agent` / `organizer_ops_manager` | 当前定位是平台级运营角色，不是主办方租户管理员；生产前允许重命名，但需要兼容迁移。 |
+| 评价/问答 | 第一轮已正式化为 `activity_review` / `activity_question`：评价提交绑定 `orderId` 并通过 order internal API 校验，后台已有审核、隐藏、恢复、举报处理和问答回复入口 | 继续作为活动评价与购前问答模块演进 | 第一轮已完成正式化主链路和标准 Gateway / 浏览器复测；后续继续补运营统计和更细审核策略。 |
+| 前端 API 聚合 | `frontend/src/lib/api.ts` 聚合大量业务 API，客服上下文接入后 support、order、payment、grab、notification 类型继续集中在单文件 | 按领域拆分：user、ticket、order、payment、support、console、grab | 后续接 ES、通知和评价后台时，单文件维护成本会继续上升。 |
 | 种子数据体系 | `sql/seeds/prod-split-real-demo` 已有真实演示 seed，`sql/seed.sql` 仍是历史共享库 seed | 以 real-demo seed 为主，历史 seed 归档或明确仅共享库兼容 | 防止开发者误用旧共享库种子数据。 |
 
 ## P2：可评估接入
@@ -49,5 +49,8 @@
 
 1. 先做 ES 搜索详细实施计划。
 2. 并行补 Gateway 直连和经网关延迟基线脚本。
-3. 单独立项 `organizer_admin` 到平台主办方运营员的命名迁移。
-4. 把 mock 降级、固定验证码、默认密钥列入生产前清理任务。
+3. 客服上下文已完成标准端口和 Gateway `8088` 复测；后续跨服务联动验收仍要先确认真实运行态，避免把旧进程误判为网关问题。
+4. 评价系统第一轮已完成订单校验、审核、举报、问答管理、前端入口和标准 Gateway / 浏览器复测。
+5. 入场核验同步第一阶段已完成只读入口、核验记录和 real-demo seed；后续只在设备/人员鉴权、异常补录和备用扫码页上继续增强。
+6. 如要改 role code，再设计 `organizer_admin` 到 `organizer_ops_agent` / `organizer_ops_manager` 的兼容迁移。
+7. 把 mock 降级、固定验证码、默认密钥列入生产前清理任务。

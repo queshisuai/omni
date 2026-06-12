@@ -14,7 +14,7 @@
     <packaging>jar</packaging>
 
     <name>java-payment</name>
-    <description>支付服务 - 模拟支付、回调处理、支付记录</description>
+    <description>支付服务 - 支付宝支付、回调处理、支付记录</description>
 
     <dependencies>
         <dependency>

@@ -87,6 +87,49 @@ public class MqConfig {
                 .with(MqConstants.RK_NOTIFICATION_SEND_DLQ);
     }
 
+    @Bean
+    public Queue notificationEventQueue() {
+        return QueueBuilder.durable(MqConstants.Q_NOTIFICATION_EVENT)
+                .withArgument("x-dead-letter-exchange", MqConstants.NOTIFICATION_RETRY_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", MqConstants.RK_NOTIFICATION_EVENT_RETRY)
+                .build();
+    }
+
+    @Bean
+    public Binding notificationEventBinding() {
+        return BindingBuilder.bind(notificationEventQueue())
+                .to(notificationExchange())
+                .with(MqConstants.RK_NOTIFICATION_EVENT);
+    }
+
+    @Bean
+    public Queue notificationEventRetryQueue() {
+        return QueueBuilder.durable(MqConstants.Q_NOTIFICATION_EVENT_RETRY)
+                .withArgument("x-message-ttl", RETRY_TTL_MILLIS)
+                .withArgument("x-dead-letter-exchange", MqConstants.NOTIFICATION_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", MqConstants.RK_NOTIFICATION_EVENT)
+                .build();
+    }
+
+    @Bean
+    public Binding notificationEventRetryBinding() {
+        return BindingBuilder.bind(notificationEventRetryQueue())
+                .to(notificationRetryExchange())
+                .with(MqConstants.RK_NOTIFICATION_EVENT_RETRY);
+    }
+
+    @Bean
+    public Queue notificationEventDeadLetterQueue() {
+        return QueueBuilder.durable(MqConstants.Q_NOTIFICATION_EVENT_DLQ).build();
+    }
+
+    @Bean
+    public Binding notificationEventDeadLetterBinding() {
+        return BindingBuilder.bind(notificationEventDeadLetterQueue())
+                .to(notificationDeadLetterExchange())
+                .with(MqConstants.RK_NOTIFICATION_EVENT_DLQ);
+    }
+
     // ── Waitlist ──
 
     @Bean
@@ -188,5 +231,65 @@ public class MqConfig {
         return BindingBuilder.bind(waitlistOrderPaidDeadLetterQueue())
                 .to(waitlistDeadLetterExchange())
                 .with(MqConstants.RK_WAITLIST_ORDER_PAID_DLQ);
+    }
+
+    // ── Search index ──
+
+    @Bean
+    public TopicExchange searchIndexExchange() {
+        return new TopicExchange(MqConstants.SEARCH_INDEX_EXCHANGE);
+    }
+
+    @Bean
+    public TopicExchange searchIndexRetryExchange() {
+        return new TopicExchange(MqConstants.SEARCH_INDEX_RETRY_EXCHANGE);
+    }
+
+    @Bean
+    public TopicExchange searchIndexDeadLetterExchange() {
+        return new TopicExchange(MqConstants.SEARCH_INDEX_DLX);
+    }
+
+    @Bean
+    public Queue searchActivityChangedQueue() {
+        return QueueBuilder.durable(MqConstants.Q_SEARCH_ACTIVITY_CHANGED)
+                .withArgument("x-dead-letter-exchange", MqConstants.SEARCH_INDEX_RETRY_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", MqConstants.RK_SEARCH_ACTIVITY_CHANGED_RETRY)
+                .build();
+    }
+
+    @Bean
+    public Binding searchActivityChangedBinding() {
+        return BindingBuilder.bind(searchActivityChangedQueue())
+                .to(searchIndexExchange())
+                .with(MqConstants.RK_SEARCH_ACTIVITY_CHANGED);
+    }
+
+    @Bean
+    public Queue searchActivityChangedRetryQueue() {
+        return QueueBuilder.durable(MqConstants.Q_SEARCH_ACTIVITY_CHANGED_RETRY)
+                .withArgument("x-message-ttl", RETRY_TTL_MILLIS)
+                .withArgument("x-dead-letter-exchange", MqConstants.SEARCH_INDEX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", MqConstants.RK_SEARCH_ACTIVITY_CHANGED)
+                .build();
+    }
+
+    @Bean
+    public Binding searchActivityChangedRetryBinding() {
+        return BindingBuilder.bind(searchActivityChangedRetryQueue())
+                .to(searchIndexRetryExchange())
+                .with(MqConstants.RK_SEARCH_ACTIVITY_CHANGED_RETRY);
+    }
+
+    @Bean
+    public Queue searchActivityChangedDeadLetterQueue() {
+        return QueueBuilder.durable(MqConstants.Q_SEARCH_ACTIVITY_CHANGED_DLQ).build();
+    }
+
+    @Bean
+    public Binding searchActivityChangedDeadLetterBinding() {
+        return BindingBuilder.bind(searchActivityChangedDeadLetterQueue())
+                .to(searchIndexDeadLetterExchange())
+                .with(MqConstants.RK_SEARCH_ACTIVITY_CHANGED_DLQ);
     }
 }

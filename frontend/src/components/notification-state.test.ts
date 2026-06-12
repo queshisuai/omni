@@ -59,6 +59,50 @@ test('classifies waitlist notifications as message-center waitlist alerts', () =
   assert.equal(getNotificationTypeMeta({ ...notification(5, '2026-05-22T12:00:00'), type: 'WAITLIST_PAID' }).label, '候补通知')
 })
 
+test('classifies new event notifications by business scenario', () => {
+  assert.equal(getNotificationTypeMeta({ ...notification(140, '2026-06-07T10:00:00'), type: 'GRAB_SUCCESS' }).label, '抢票通知')
+  assert.equal(getNotificationTypeMeta({ ...notification(141, '2026-06-07T10:00:00'), type: 'GRAB_FAILED' }).label, '抢票通知')
+  assert.equal(getNotificationTypeMeta({ ...notification(142, '2026-06-07T10:00:00'), type: 'WAITLIST_MATCHED' }).label, '候补通知')
+  assert.equal(getNotificationTypeMeta({ ...notification(143, '2026-06-07T10:00:00'), type: 'ORDER_PAYMENT_TIMEOUT' }).label, '订单提醒')
+  assert.equal(getNotificationTypeMeta({ ...notification(149, '2026-06-07T10:00:00'), type: 'ACTIVITY_BUYER_NOTICE' }).label, '活动通知')
+  assert.equal(getNotificationTypeMeta({ ...notification(144, '2026-06-07T10:00:00'), type: 'ACTIVITY_RESCHEDULED' }).label, '活动变更')
+  assert.equal(getNotificationTypeMeta({ ...notification(145, '2026-06-07T10:00:00'), type: 'ACTIVITY_CANCELLED' }).label, '活动变更')
+  assert.equal(getNotificationTypeMeta({ ...notification(146, '2026-06-07T10:00:00'), type: 'REFUND_APPROVED' }).label, '退款通知')
+  assert.equal(getNotificationTypeMeta({ ...notification(147, '2026-06-07T10:00:00'), type: 'REFUND_FAILED' }).label, '退款通知')
+})
+
+test('does not label unknown notification types as generic in-app messages', () => {
+  assert.deepEqual(getNotificationTypeMeta({ ...notification(148, '2026-06-07T10:00:00'), type: 'FUTURE_EVENT' }), {
+    key: 'FUTURE_EVENT',
+    label: '未知消息',
+    color: '#64748b',
+    bg: '#f8fafc',
+  })
+})
+
+test('links new event notifications to user-visible order or waitlist entries', () => {
+  assert.deepEqual(getNotificationAction({ ...notification(150, '2026-06-07T10:00:00'), type: 'GRAB_SUCCESS', orderId: 9002 }), {
+    href: '/orders/9002',
+    buttonLabel: '查看抢票订单',
+  })
+  assert.deepEqual(getNotificationAction({ ...notification(151, '2026-06-07T10:00:00'), type: 'GRAB_FAILED' }), {
+    href: '/orders',
+    buttonLabel: '查看订单',
+  })
+  assert.deepEqual(getNotificationAction({ ...notification(152, '2026-06-07T10:00:00'), type: 'WAITLIST_MATCHED', orderId: 9003 }), {
+    href: '/orders/9003',
+    buttonLabel: '处理候补订单',
+  })
+  assert.deepEqual(getNotificationAction({ ...notification(153, '2026-06-07T10:00:00'), type: 'ORDER_PAYMENT_TIMEOUT', orderId: 9004 }), {
+    href: '/orders/9004',
+    buttonLabel: '查看待支付订单',
+  })
+  assert.deepEqual(getNotificationAction({ ...notification(154, '2026-06-07T10:00:00'), type: 'ACTIVITY_RESCHEDULED', orderId: 9005 }), {
+    href: '/orders/9005',
+    buttonLabel: '查看相关订单',
+  })
+})
+
 test('links waitlist notifications to the related order without exposing service source', () => {
   assert.deepEqual(getNotificationAction({ ...notification(6, '2026-05-22T12:00:00'), type: 'WAITLIST_OFFERED', orderId: 9001 }), {
     href: '/orders/9001',
@@ -78,6 +122,17 @@ test('links team and generic order notifications to order service pages', () => 
   assert.deepEqual(getNotificationAction({ ...notification(9, '2026-05-22T12:00:00'), type: 'SMS', orderId: 7001 }), {
     href: '/orders/7001',
     buttonLabel: '查看相关订单',
+  })
+})
+
+test('links refund notifications to the concrete order detail', () => {
+  assert.deepEqual(getNotificationAction({ ...notification(15, '2026-06-07T10:00:00'), type: 'REFUND_APPROVED', orderId: 980057 }), {
+    href: '/orders/980057',
+    buttonLabel: '查看退款进度',
+  })
+  assert.deepEqual(getNotificationAction({ ...notification(16, '2026-06-07T10:00:00'), type: 'REFUND_FAILED' }), {
+    href: '/orders',
+    buttonLabel: '查看退款订单',
   })
 })
 

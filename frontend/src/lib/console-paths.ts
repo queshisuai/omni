@@ -11,11 +11,12 @@ const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href:
   { permission: 'session.manage', label: '场次管理', href: '/console/sessions' },
   { permission: 'artist.manage', label: '艺人管理', href: '/console/artists' },
   { permission: 'order.view', label: '订单查看', href: '/console/orders' },
+  { permission: 'activity.review.manage', label: '评价问答管理', href: '/console/activity-engagement' },
   { permission: 'checkin.view', label: '入场核验', href: '/console/check-in' },
   { permission: 'refund.review', label: '退款审核', href: '/console/refunds' },
   { permission: 'venue.manage', label: '场馆记录', href: '/console/venue' },
   { permission: 'organizer.review', label: '主办方管理', href: '/console/organizer-applications' },
-  { permission: 'organizer.account.manage', label: '主办方管理员账号管理', href: '/console/organizer-admins' },
+  { permission: 'organizer.account.manage', label: '平台主办方运营员账号管理', href: '/console/organizer-admins' },
   { permission: 'venue.review', label: '场馆资料审核', href: '/console/venue/applications' },
   { permission: 'station.review', label: '站点变更审核', href: '/console/station-config-reviews' },
   { permission: 'risk.review', label: '恢复售票审核', href: '/console/risk-resolutions' },
@@ -68,10 +69,17 @@ export function isConsolePathAllowedForRole(role: UserRole | string | null | und
 }
 
 export function getConsoleQuickActions(role: UserRole | string | null | undefined, permissionCodes: string[] = []): ConsoleQuickAction[] {
+  const hasOrganizerOpsHome =
+    permissionCodes.includes('organizer.review') ||
+    permissionCodes.includes('organizer.account.manage') ||
+    permissionCodes.includes('organizer.follow.manage') ||
+    permissionCodes.includes('organizer.assign.manage')
+
   if (role === 'admin' || role === 'platform_super_admin') {
-    return PERMISSION_QUICK_ACTIONS
+    const actions = PERMISSION_QUICK_ACTIONS
       .filter(action => permissionCodes.includes(action.permission))
       .map(({ label, href }) => ({ label, href }))
+    return hasOrganizerOpsHome ? [{ label: '运营工作台', href: '/console/organizer-ops' }, ...actions] : actions
   }
 
   if (role === 'organizer') {
@@ -88,6 +96,7 @@ export function getConsoleQuickActions(role: UserRole | string | null | undefine
 
   if (role === 'organizer_admin') {
     return [
+      ...(hasOrganizerOpsHome ? [{ label: '运营工作台', href: '/console/organizer-ops' }] : []),
       ...PERMISSION_QUICK_ACTIONS
         .filter(action => permissionCodes.includes(action.permission))
         .map(({ label, href }) => ({ label, href })),

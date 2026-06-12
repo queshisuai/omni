@@ -14,6 +14,8 @@ public class AdminSummaryResponse {
     private Long refundAbnormalCount = 0L;
     private Long riskCheckCount = 0L;
     private Long riskHitCount = 0L;
+    private Long interestCount = 0L;
+    private Long reminderCount = 0L;
     private List<HotActivityResponse> hotActivities = new ArrayList<>();
 
     public AdminSummaryResponse() {
@@ -95,6 +97,22 @@ public class AdminSummaryResponse {
 
     public void setRiskHitCount(Long riskHitCount) {
         this.riskHitCount = riskHitCount;
+    }
+
+    public Long getInterestCount() {
+        return interestCount;
+    }
+
+    public void setInterestCount(Long interestCount) {
+        this.interestCount = interestCount;
+    }
+
+    public Long getReminderCount() {
+        return reminderCount;
+    }
+
+    public void setReminderCount(Long reminderCount) {
+        this.reminderCount = reminderCount;
     }
 
     public List<HotActivityResponse> getHotActivities() {

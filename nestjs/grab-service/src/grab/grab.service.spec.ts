@@ -36,6 +36,40 @@ describe('GrabService', () => {
     expect(ids.every((id) => /^GRAB[0-9a-f]{24}$/.test(id))).toBe(true);
   });
 
+  it('lists user grab requests with a bounded repository limit', async () => {
+    const repository: any = {
+      listByUser: jest.fn().mockResolvedValue([
+        {
+          requestId: 'GRAB-LIST-1',
+          status: GRAB_STATUS.QUEUED,
+          progressStatus: GRAB_STATUS.QUEUED,
+          progressMessage: 'queued',
+          orderId: null,
+          failReason: null,
+          queueSeq: null,
+          sessionId: 101,
+        },
+      ]),
+    };
+    const service = createService({ repository });
+
+    const result = await service.listByUser(2004, 50);
+
+    expect(repository.listByUser).toHaveBeenCalledWith(2004, 20);
+    expect(result).toEqual([
+      {
+        requestId: 'GRAB-LIST-1',
+        status: GRAB_STATUS.QUEUED,
+        orderId: null,
+        failReason: null,
+        queueSeq: null,
+        queueRank: null,
+        estimatedWaitSeconds: null,
+        message: 'queued',
+      },
+    ]);
+  });
+
   it('enqueues a grab request and does not create an order during submit', async () => {
     const repository: any = {
       findByUserAndIdempotency: jest.fn().mockResolvedValue(null),

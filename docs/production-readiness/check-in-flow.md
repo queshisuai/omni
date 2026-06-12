@@ -16,8 +16,10 @@
 | 动态入场码 | `POST /api/order/tickets/{ticketId}/entry-code` | 已生成短期有效 HMAC 签名码。 |
 | 内部核验接口 | `POST /api/order/internal/tickets/check-in` | 已校验 `X-Internal-Token` 并调用核验逻辑。 |
 | 核验状态更新 | `TicketWalletService.checkIn(String entryCode)` | 已把未入场电子票改为已验票，并写 `checked_in_at`。 |
+| 核验同步记录 | `POST /api/order/internal/tickets/check-in/sync`、`ticket_check_in_record` | 已记录成功、重复扫码、失败等核验请求，并支持 `requestId` 幂等。 |
+| 主办方/平台入场概览 | `GET /api/ticket/admin/check-in/overview`、`GET /api/ticket/admin/check-in/records`、`frontend/src/app/console/check-in/page.tsx` | 已通过 `java-ticket` facade 查询 order-owned 核验记录，标准端口已验收。 |
 
-现有能力适合做内部闭环验证，但还不够支撑真实线下检票，因为它缺少核验设备身份、工作人员权限、场次范围、核验记录、幂等请求号和异常追踪。
+第一阶段已经支撑“线下核验同步 + 核验记录查询 + 主办方入场概览”的只读闭环。真实大场馆线下检票仍缺 Gateway 设备/人员签名鉴权、限流、traceId、离线核验包和异常补录工作流。
 
 ## 推荐主流程
 
@@ -64,13 +66,13 @@ sequenceDiagram
 
 ## 数据模型方向
 
-后续如果正式实现，建议先补 order 库迁移：
+第一阶段已补 order 库迁移：
 
 - `ticket_check_in_record`：记录每次核验请求，包含 `ticket_id`、`order_id`、`user_id`、`session_id`、`device_id`、`operator_user_id`、`channel`、`request_id`、`result`、`failure_reason`、`checked_in_at`。
 - `check_in_device`：记录设备身份、密钥摘要、绑定主办方/场次/场馆范围、状态和最近在线时间。
 - `request_id` 建唯一索引，用于设备重试幂等。
 
-如果先不做设备管理表，也至少要在核验记录里保留 `channel`、`operator_user_id`、`request_id` 和失败原因，避免只有电子票最终状态、没有过程审计。
+后续增强重点不再是补记录表，而是把设备/人员鉴权前置到 Gateway 或核验接入层，并把异常补录、复核和设备在线状态做成可运营入口。
 
 ## 异常场景
 
@@ -92,16 +94,18 @@ sequenceDiagram
 
 ## 种子数据要求
 
-real-demo seed 后续应补齐：
+real-demo seed 第一阶段已补齐基础组合：
 
 - 未入场、已验票、已失效、已转赠票据组合。
-- 成功核验记录、重复扫码记录、过期码失败记录、退款后拒绝记录。
-- 至少一台有效设备、一台停用设备、一个有场次权限的核验人员。
-- 主办方入场概览和平台核验记录查询能展示的演示数据。
+- 成功核验记录、重复扫码记录、停用设备失败记录。
+- 至少一台有效设备和一台停用设备。
+- 主办方入场概览和平台核验记录查询可用的 `sessionId=910011` 演示数据。
+
+后续如果做异常补录和现场处理，还需要继续补过期码失败、退款后拒绝、工作人员权限和线下同步失败补录样本。
 
 ## 下一步
 
-1. 先做入场核验同步详细实施计划：`docs/production-readiness/check-in-sync-implementation-plan.md`。
-2. 再补 SQL 迁移和本地数据库迁移。
-3. 然后实现设备/人员权限、核验记录、主办方入场概览。
-4. 最后评估是否增加备用 Web 扫码核验页。
+1. 继续补 Gateway 设备/工作人员鉴权、限流、traceId 和 requestId 防重放。
+2. 设计异常补录与复核入口，只给授权运营或场务使用。
+3. 评估备用 Web 扫码核验页，仅用于小型活动、设备故障或异常补录，不作为常规主流程。
+4. 如接工作人员 App 或闸机，禁止暴露 `X-Internal-Token`，由 Gateway 或核验接入层换取内部调用。

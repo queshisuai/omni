@@ -6,7 +6,7 @@
 
 - 项目是类大麦网票务平台，采用 **B 端主导、C 端参与** 模式。
 - B 端包含 admin 平台管理员和 organizer 主办方；C 端包含普通用户浏览、购票、订单、退款和通知。
-- 评价系统和动态系统已经移除；不要恢复 `ReviewSection`、`MomentSection`、`SocialController`、review/moment API 或相关持久化代码。
+- 评价系统已重新纳入 C 端活动详情、购后观演反馈和购前问答范围；活动评价、评价审核、评价举报和活动问答均已支持。动态系统仍然禁止恢复；不要恢复 `MomentSection`、`SocialController`、moment API 或旧 social/moment 持久化代码。新增评价能力应围绕 `activity_review` / `activity_question` 命名，不要混用旧社交动态边界。
 - 当前推荐运行方式是 `prod-split`：Java 业务服务按服务拆分 PostgreSQL database，抢票服务独立使用 `omni_grab`，网关不连接业务数据库。
 - `omni_ticket` 只作为历史共享库、迁移源或 local-schema disposable 实验库，不再作为当前业务运行库；当前票务库必须是 `omni_ticket_split`。
 - 分布式保护 Sentinel 已完成：网关、用户、票务、订单、支付核心链路已接入限流、熔断或降级保护。
@@ -47,7 +47,8 @@ Omni/
 │   └── java-notification/         # 通知服务 :8085
 ├── frontend/                      # Next.js 前端 :3000
 ├── nestjs/grab-service/           # 抢票入口服务 :3001
-├── docker/seata/                  # Seata Server 配置和 Nacos 配置导入脚本
+├── docker/                        # Docker 基础设施配置
+│   └── seata/                     # Seata Server 配置和 Nacos 配置导入脚本
 ├── sql/
 │   ├── docker-init/               # Docker PostgreSQL 初始化脚本
 │   ├── local/                     # 仅本地 disposable DB 使用
@@ -55,7 +56,15 @@ Omni/
 │   └── production-split/          # 生产物理拆库迁移资产
 ├── scripts/                       # 启动、边界检查、拆库导入导出、runtime verifier
 ├── docs/                          # 设计、边界、运维文档
-├── runtime/uploads/               # 本地公开上传文件
+│   ├── microservices/             # 微服务边界与表所有权文档
+│   ├── operations/                # 运维手册、拆库设计、SLA、RBAC
+│   ├── specs/                     # 总体设计规格
+│   ├── production-readiness/      # 生产就绪审计
+│   └── runbooks/                  # 运行时验证
+├── runtime/                       # 运行时目录
+│   ├── uploads/                   # 本地公开上传文件
+│   ├── logs/                      # 运行时日志
+│   └── private-uploads/           # 私有上传文件
 └── start-project.ps1              # 当前推荐一键启动脚本
 ```
 
@@ -179,14 +188,21 @@ pnpm dev
 cd nestjs/grab-service
 $env:GRAB_SERVICE_PORT='3001'
 $env:GRAB_DB_HOST='localhost'
+$env:GRAB_DB_PORT='5432'
 $env:GRAB_DB_NAME='omni_grab'
 $env:GRAB_DB_USER='postgres'
 $env:GRAB_DB_PASSWORD='123456'
 $env:REDIS_HOST='localhost'
 $env:REDIS_PORT='6379'
 $env:ORDER_SERVICE_URL='http://localhost:8088'
+$env:TICKET_SERVICE_URL='http://localhost:8088'
+$env:NOTIFICATION_SERVICE_URL='http://localhost:8088'
 $env:INTERNAL_API_TOKEN='omni-local-internal-token'
 $env:JWT_SECRET='omni-local-jwt-secret-must-be-at-least-32-bytes'
+$env:RABBITMQ_HOST='localhost'
+$env:RABBITMQ_PORT='5672'
+$env:RABBITMQ_USER='admin'
+$env:RABBITMQ_PASSWORD='123456'
 npm run start:dev
 ```
 
@@ -269,6 +285,7 @@ PowerShell 下调用 `curl.exe` 传 JSON 时优先使用 `--%`，避免引号转
 
 - 平台管理员可以查看全平台后台订单、审核主办方、审核场馆申请、审核站点配置、处理风险和艺人治理。
 - 主办方只能查看和管理自己创建或归属自己的活动、巡演、场次、票档、座位图和订单。
+- 评价审核：平台管理员可在后台审核评价内容、处理评价举报；评价审核接口需从 JWT 解析操作者角色。
 - 后台订单接口是 `GET /api/ticket/admin/orders`，当前已从 JWT 解析操作者；前端 `listConsoleOrders()` 不再传 `userId`。
 - 用户侧订单回收站/隐藏只影响 C 端个人列表，不影响 B 端后台订单查看。
 
@@ -298,6 +315,14 @@ PowerShell 下调用 `curl.exe` 传 JSON 时优先使用 `--%`，避免引号转
 - 用户申请退款在 `java-payment`，退款审核会通过 `java-order`、`java-ticket` 做订单和票务权限/影响校验。
 - 内部状态更新受 Seata 保护；真实支付宝退款、通知、Redis 和外部副作用不由 Seata AT 回滚。
 - 外部退款成功但内部落库失败时，继续走补偿/人工处理，不要假设 Seata 能撤销支付宝侧结果。
+
+### 评价与问答
+
+- `java-ticket` 拥有评价和问答数据（`activity_review`、`activity_question` 相关表），不跨服务查询 user 表，userId 为 copied id。
+- 评价能力：用户购后可对活动评分（1-5 星）和文字评价；主办方可回复评价。
+- 评价审核：平台管理员审核评价内容，处理评价举报。
+- 购前问答：用户可在活动详情页提问，主办方或管理员回答。
+- 新增评价相关 internal API 必须校验 `X-Internal-Token`。
 
 ### 订单状态
 
@@ -367,7 +392,7 @@ Gateway 限流触发时返回 `429` JSON：
 | 服务 | 拥有数据 | 不能做的事 |
 |:---|:---|:---|
 | `java-user` | 用户、头像/用户资产、主办方申请 | 不直接写票务、订单、支付表 |
-| `java-ticket` | 活动、巡演、站点、场次、票档、SeatCraft、场馆、艺人、风险、票务资产 | 不直接写订单/支付表 |
+| `java-ticket` | 活动、巡演、站点、场次、票档、SeatCraft、场馆、艺人、风险、票务资产、评价（review）、问答（question） | 不直接写订单/支付表 |
 | `java-order` | 订单、订单座位、订单快照、订单状态 | 不直接查 user/ticket 表 |
 | `java-payment` | 支付记录、退款申请、支付宝交互状态 | 不直接查 order/user/ticket 表 |
 | `java-notification` | 通知消息 | 不拥有 user/order 数据 |
@@ -499,7 +524,7 @@ psql -h localhost -p 5432 -U postgres -d postgres -t -A -c "SELECT datname, appl
 - 涉及订单、票务、支付跨服务写链路时，不得绕过 Seata 全局事务或删除 `undo_log` 表。
 - Seata 只能保证数据库内部事务边界；支付宝、Redis、通知等外部副作用必须设计补偿。
 - 不要提交本地备份、数据库 dump、运行 artifact、`backups/` 或 `runtime/uploads` 里的临时文件。
-- 不要恢复已删除的评价/动态系统。
+- 评价系统当前允许作为活动详情、购后反馈和购前问答能力迭代；不要恢复动态系统、`SocialController`、`MomentSection`、moment API 或旧 social/moment 持久化代码。
 - 不要把默认 `application.yml` 改成 local-schema 或生产拆库专用配置；当前推荐运行入口是 `prod-split` profile 和 `start-project.ps1`。
 - 不要把 `omni_ticket` 当作当前运行库；票务服务当前运行库是 `omni_ticket_split`。
 - 新增 B 端权限接口时，优先从 JWT/Authorization 解析当前用户，避免“前端传谁就按谁查”。

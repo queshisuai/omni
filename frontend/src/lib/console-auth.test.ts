@@ -40,17 +40,23 @@ test('platform admin actions still require permission codes', () => {
 test('organizer admin manages organizer accounts but not organizer business pages', () => {
   const permissions = ['organizer.account.manage']
   assert.equal(canEnterConsole('organizer_admin', permissions), true)
-  assert.equal(getDefaultConsolePath('organizer_admin', permissions), '/console/organizer-admins')
+  assert.equal(getDefaultConsolePath('organizer_admin', permissions), '/console/organizer-ops')
+  assert.equal(canAccessConsolePath('/console/organizer-ops', permissions), true)
   assert.equal(canAccessConsolePath('/console/organizer-admins', permissions), true)
   assert.equal(canAccessConsolePath('/console/activities', permissions), false)
 })
 
 test('organizer admin default entry follows granted permissions', () => {
+  assert.equal(getDefaultConsolePath('organizer_admin', ['organizer.review']), '/console/organizer-ops')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['organizer.account.manage']), '/console/organizer-ops')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['organizer.follow.manage']), '/console/organizer-ops')
+  assert.equal(canAccessConsolePath('/console/organizer-ops', ['organizer.follow.manage']), true)
+  assert.equal(canAccessConsolePath('/console/organizer-ops', ['organizer.assign.manage']), true)
   assert.equal(getDefaultConsolePath('organizer_admin', ['activity.manage']), '/console/activities')
   assert.equal(getDefaultConsolePath('organizer_admin', ['tour.manage']), '/console/tours')
   assert.equal(getDefaultConsolePath('organizer_admin', ['order.view']), '/console/orders')
   assert.equal(getDefaultConsolePath('organizer_admin', ['checkin.view']), '/console/check-in')
-  assert.equal(getDefaultConsolePath('organizer_admin', ['organizer.account.manage', 'activity.manage']), '/console/activities')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['organizer.account.manage', 'activity.manage']), '/console/organizer-ops')
   assert.equal(getDefaultConsolePath('organizer_admin', []), '/console')
 })
 
@@ -59,11 +65,16 @@ test('check-in console path requires dedicated permission', () => {
   assert.equal(canAccessConsolePath('/console/check-in', ['order.view']), false)
 })
 
+test('activity engagement console path requires review management permission', () => {
+  assert.equal(canAccessConsolePath('/console/activity-engagement', ['activity.review.manage']), true)
+  assert.equal(canAccessConsolePath('/console/activity-engagement', ['activity.manage']), false)
+})
+
 test('formats console role and brand labels without mixing platform and scoped admins', () => {
   assert.equal(getConsoleRoleLabel('admin'), '平台管理员')
   assert.equal(getConsoleRoleLabel('platform_super_admin'), '平台超管')
   assert.equal(getConsoleRoleLabel('support', ['support.account.manage']), '客服主管')
-  assert.equal(getConsoleRoleLabel('organizer_admin'), '主办方管理员')
+  assert.equal(getConsoleRoleLabel('organizer_admin'), '平台主办方运营员')
   assert.equal(getConsoleBrandLabel('support', ['support.account.manage']), '客服管理后台')
-  assert.equal(getConsoleBrandLabel('organizer_admin'), '主办方管理后台')
+  assert.equal(getConsoleBrandLabel('organizer_admin'), '平台主办方运营后台')
 })

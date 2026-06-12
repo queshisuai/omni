@@ -50,6 +50,7 @@ class CustomerSupportFullTest {
     @Mock CustomerSupportService customerSupportService;
     @Mock HelpCenterService helpCenterService;
     @Mock SupportAccountService supportAccountService;
+    @Mock SupportContextService supportContextService;
 
     private CustomerSupportService service;
     private SupportController controller;
@@ -70,7 +71,7 @@ class CustomerSupportFullTest {
         service = new CustomerSupportService(conversationMapper, messageMapper, noteMapper, tagMapper, auditMapper,
                 quickReplyMapper, userMapper, new SupportAiService((q,k)->Optional.empty()),
                 notificationProducer, "test-token", Runnable::run);
-        controller = new SupportController(helpCenterService, customerSupportService, supportAccountService);
+        controller = new SupportController(helpCenterService, customerSupportService, supportAccountService, supportContextService);
     }
 
     // ============ 3.1 Start Conversation (CS-001~004) ============
@@ -247,10 +248,13 @@ class CustomerSupportFullTest {
             when(userMapper.selectById(8001L)).thenReturn(u(8001L,"support"));
             SupportConversation c = convAi(700L,2004L);
             when(conversationMapper.selectById(700L)).thenReturn(c);
-            when(messageMapper.insert(any())).thenReturn(1);
+            when(messageMapper.insert(any())).thenAnswer(inv -> {
+                inv.getArgument(0, SupportMessage.class).setId(701L);
+                return 1;
+            });
             SupportMessageRequest r = new SupportMessageRequest(); r.setContent("Refund processed");
             service.sendMessage(8001L,700L, r);
-            verify(notificationProducer).sendNotification(any());
+            verify(notificationProducer).sendNotificationEvent(any());
         }
     }
 
@@ -326,6 +330,22 @@ class CustomerSupportFullTest {
             when(userMapper.selectById(2004L)).thenReturn(u(2004L,"user"));
             when(conversationMapper.selectById(999999L)).thenReturn(null);
             assertThrows(BusinessException.class, ()->service.listMessages(2004L,999999L));
+        }
+    }
+
+    @Nested @DisplayName("3.7 Support Context")
+    class SupportContext {
+        @Test @DisplayName("CS-030: agent context is scoped by conversation")
+        void contextScopedByConversation() {
+            SupportContextResponse response = SupportContextResponse.empty(1001L, 2004L, "普通用户", "139****0001");
+            when(supportContextService.getContext(2002L, 1001L)).thenReturn(response);
+
+            Result<SupportContextResponse> result = controller.getContext(adminToken(), 1001L);
+
+            assertEquals(200, result.getCode());
+            assertEquals(1001L, result.getData().getConversationId());
+            assertEquals(2004L, result.getData().getUser().getUserId());
+            verify(supportContextService).getContext(2002L, 1001L);
         }
     }
 

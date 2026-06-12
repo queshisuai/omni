@@ -30,8 +30,8 @@ export default function ForgotPasswordPage() {
     setErrorMsg('')
     setSuccessMsg('')
     try {
-      const code = await sendSmsCode(trimmedPhone)
-      setSuccessMsg(`演示环境不会发送真实短信，Mock 验证码为 ${code || '666666'}，重置时仍会由后端校验。`)
+      await sendSmsCode(trimmedPhone)
+      setSuccessMsg('验证码已发送，请按短信提示输入。')
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : '发送验证码失败')
     } finally {
@@ -78,7 +78,7 @@ export default function ForgotPasswordPage() {
             <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">找回密码</h2>
             <p className="text-sm text-gray-500 text-center mb-8">通过手机号验证码重置登录密码</p>
             <p className="mb-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-700">
-              演示环境使用 Mock 验证码，不会发送真实短信；固定验证码 666666，提交后由后端真实校验。
+              验证码发送后请按短信提示输入，提交时会由后端校验。
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -109,7 +109,7 @@ export default function ForgotPasswordPage() {
                         type="text"
                         value={smsCode}
                         onChange={(e) => { setSmsCode(e.target.value); clearError(); setSuccessMsg('') }}
-                        placeholder="演示验证码 666666"
+                        placeholder="请输入验证码"
                         className="w-full bg-gray-50/50 border border-gray-200 text-gray-900 rounded-xl block pl-11 p-3.5 focus:ring-2 focus:ring-[#ff1268]/20 focus:border-[#ff1268] focus:bg-white outline-none transition-all placeholder:text-gray-400 font-medium"
                       />
                     </div>

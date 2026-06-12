@@ -252,7 +252,6 @@
 | `api.ts` | API 请求封装 `request<T>()`，超时 800ms，含客服 SSE `sendSupportMessageStream()` |
 | `auth.ts` | 认证管理 (localStorage token + user, 含 `getUser()`/`login()`/`logout()`) |
 | `utils.ts` | 工具函数 |
-| `mock-data.ts` | Mock 数据 (极少使用) |
 
 ### 2.4 类型 (`frontend/src/types/`)
 

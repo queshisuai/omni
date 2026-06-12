@@ -1,9 +1,13 @@
 package com.omni.ticket.service;
 
+import com.omni.common.mq.message.NotificationEventMessage;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.client.PaymentInternalClient;
+import com.omni.ticket.dto.ActivityBuyerNotificationRequest;
+import com.omni.ticket.dto.ActivityBuyerNotificationResponse;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DeleteActivityRequest;
@@ -23,10 +27,13 @@ import com.omni.ticket.mapper.ActivityArtistMapper;
 import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.mq.NotificationMqProducer;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import com.omni.ticket.service.UserAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor;
@@ -34,10 +41,12 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
@@ -64,6 +73,10 @@ class ActivityAdminServiceTest {
     private ActivityArtistMapper activityArtistMapper;
     @Mock
     private ArtistMapper artistMapper;
+    @Mock
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
+    @Mock
+    private NotificationMqProducer notificationProducer;
 
     private ActivityAdminService service;
 
@@ -98,7 +111,9 @@ class ActivityAdminServiceTest {
                 paymentInternalClient,
                 activityArtistMapper,
                 artistMapper,
+                searchIndexEventPublisher,
                 "test-token");
+        service.setNotificationProducer(notificationProducer);
     }
 
     @Test
@@ -176,6 +191,157 @@ class ActivityAdminServiceTest {
         verify(ticketTypeMapper).updateById(firstTicketType);
         verify(ticketTypeMapper).updateById(secondTicketType);
         verify(paymentInternalClient).directRefund(any(), eq("test-token"));
+        verify(searchIndexEventPublisher).publishDelete(10L);
+        verify(userAccessService).writeOperationAudit(argThat(audit ->
+                Long.valueOf(2003L).equals(audit.getOperatorId())
+                        && "organizer".equals(audit.getOperatorRole())
+                        && "activity.deactivate.refund".equals(audit.getAction())
+                        && "activity".equals(audit.getTargetType())
+                        && Long.valueOf(10L).equals(audit.getTargetId())
+                        && "测试活动".equals(audit.getTargetRef())
+                        && "活动取消".equals(audit.getReason())
+                        && Boolean.TRUE.equals(audit.getSuccess())
+                        && audit.getResult().contains("已支付订单 1 笔")
+                        && audit.getResult().contains("退款成功 1 笔")
+        ));
+    }
+
+    @Test
+    void deactivateActivitySendsCancelledEventToPaidOrderUsers() {
+        Activity activity = activity(10L, 2003L);
+        Session session = session(101L, 10L);
+        TicketType ticketType = ticketType(1001L, 101L);
+        OrderInfoResponse paidOrder = order(5001L, "DM5001", 101L);
+        paidOrder.setUserId(2004L);
+        DirectRefundResponse refundResponse = refund(5001L, "DM5001", "SUCCESS", true, "退款成功");
+
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(List.of(session));
+        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
+        when(orderInternalClient.listPaidBySessions(any(), eq("test-token"))).thenReturn(Result.success(List.of(paidOrder)));
+        when(paymentInternalClient.directRefund(any(), eq("test-token"))).thenReturn(Result.success(refundResponse));
+
+        DeactivateActivityRequest request = new DeactivateActivityRequest();
+        request.setUserId(2003L);
+        request.setConfirmRefund(true);
+        request.setReason("活动取消");
+
+        service.deactivateActivity(10L, request);
+
+        ArgumentCaptor<NotificationEventMessage> captor = ArgumentCaptor.forClass(NotificationEventMessage.class);
+        verify(notificationProducer).sendNotificationEvent(captor.capture());
+        NotificationEventMessage event = captor.getValue();
+        assertEquals("activity-cancelled:10:5001", event.getEventId());
+        assertEquals("ACTIVITY_CANCELLED", event.getEventType());
+        assertEquals("ACTIVITY_CANCELLED:5001", event.getAggregateKey());
+        assertEquals(2004L, event.getUserId());
+        assertEquals(5001L, event.getOrderId());
+        assertEquals(10L, event.getActivityId());
+        assertEquals(List.of("IN_APP", "SMS"), event.getChannels());
+        assertEquals("/orders/5001", event.getActionHref());
+        assertEquals("查看订单", event.getActionLabel());
+    }
+
+    @Test
+    void notifyActivityBuyersSendsInAppEventsAndWritesAudit() {
+        Activity activity = activity(10L, 2003L);
+        Session session = session(101L, 10L);
+        OrderInfoResponse firstOrder = order(5001L, "DM5001", 101L);
+        firstOrder.setUserId(2004L);
+        OrderInfoResponse secondOrder = order(5002L, "DM5002", 101L);
+        secondOrder.setUserId(2004L);
+        OrderInfoResponse skippedOrder = order(5003L, "DM5003", 101L);
+
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(List.of(session));
+        when(orderInternalClient.listPaidBySessions(any(), eq("test-token"))).thenReturn(Result.success(List.of(firstOrder, secondOrder, skippedOrder)));
+
+        ActivityBuyerNotificationRequest request = new ActivityBuyerNotificationRequest();
+        request.setUserId(2003L);
+        request.setConfirmNotify(true);
+        request.setContent("演出入场时间有调整，请提前查看订单详情。");
+
+        ActivityBuyerNotificationResponse response = service.notifyActivityBuyers(10L, request);
+
+        assertEquals(10L, response.getActivityId());
+        assertEquals("测试活动", response.getActivityName());
+        assertEquals(3, response.getPaidOrderCount());
+        assertEquals(2, response.getNotificationCount());
+        assertEquals(1, response.getNotifiedUserCount());
+        assertEquals(1, response.getSkippedOrderCount());
+
+        ArgumentCaptor<NotificationEventMessage> captor = ArgumentCaptor.forClass(NotificationEventMessage.class);
+        verify(notificationProducer, times(2)).sendNotificationEvent(captor.capture());
+        NotificationEventMessage event = captor.getAllValues().get(0);
+        assertEquals("ACTIVITY_BUYER_NOTICE", event.getEventType());
+        assertEquals(2004L, event.getUserId());
+        assertEquals(5001L, event.getOrderId());
+        assertEquals(10L, event.getActivityId());
+        assertEquals(List.of("IN_APP"), event.getChannels());
+        assertEquals("/orders/5001", event.getActionHref());
+        assertEquals("查看订单", event.getActionLabel());
+        assertEquals("演出入场时间有调整，请提前查看订单详情。", event.getContent());
+
+        verify(userAccessService).writeOperationAudit(argThat(audit ->
+                Long.valueOf(2003L).equals(audit.getOperatorId())
+                        && "organizer".equals(audit.getOperatorRole())
+                        && "activity.buyers.notify".equals(audit.getAction())
+                        && "activity".equals(audit.getTargetType())
+                        && Long.valueOf(10L).equals(audit.getTargetId())
+                        && "测试活动".equals(audit.getTargetRef())
+                        && Boolean.TRUE.equals(audit.getSuccess())
+                        && audit.getReason().contains("演出入场时间有调整")
+                        && audit.getResult().contains("已支付订单 3 笔")
+                        && audit.getResult().contains("通知用户 1 人")
+                        && audit.getResult().contains("站内通知 2 条")
+        ));
+    }
+
+    @Test
+    void updateActivityStatusPublishesSearchIndexUpsertWhenActivityIsEnabled() {
+        Activity activity = activity(10L, 2003L);
+        Session session = session(101L, 10L);
+        TicketType ticketType = ticketType(1001L, 101L);
+        ActivityArtist lineup = new ActivityArtist();
+        lineup.setActivityId(10L);
+        lineup.setArtistId(3001L);
+        lineup.setStatus(1);
+        Artist artist = new Artist();
+        artist.setId(3001L);
+        artist.setStatus(1);
+        artist.setReviewStatus("approved");
+        artist.setRiskStatus("normal");
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
+        when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session));
+        when(ticketTypeMapper.selectList(any())).thenReturn(Collections.singletonList(ticketType));
+        when(activityArtistMapper.selectList(any())).thenReturn(Collections.singletonList(lineup));
+        when(artistMapper.selectBatchIds(any())).thenReturn(Collections.singletonList(artist));
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(1);
+
+        service.updateActivityStatus(10L, request);
+
+        verify(searchIndexEventPublisher).publishUpsert(10L);
+    }
+
+    @Test
+    void updateActivityStatusPublishesSearchIndexDeleteWhenActivityIsDisabled() {
+        Activity activity = activity(10L, 2003L);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "activity.manage")).thenReturn(user(2003L, "organizer"));
+
+        UpdateActivityStatusRequest request = new UpdateActivityStatusRequest();
+        request.setUserId(2003L);
+        request.setStatus(0);
+
+        service.updateActivityStatus(10L, request);
+
+        verify(searchIndexEventPublisher).publishDelete(10L);
     }
 
     @Test

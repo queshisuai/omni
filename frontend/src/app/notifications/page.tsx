@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Settings } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { deleteReadNotifications, listMyNotifications, markAllNotificationsRead } from '@/lib/api'
@@ -86,6 +87,14 @@ export default function NotificationsPage() {
             <p className="mt-1 text-[13px] text-[#999]">删除会在当前账号下隐藏已读消息，换设备后状态保持一致，后端不会物理删除原始记录。</p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push('/notifications/settings')}
+              className="inline-flex cursor-pointer items-center gap-1 rounded border border-[#ddd] bg-white px-3 py-1.5 text-[13px] text-[#333] outline-none hover:border-[#ff1268] hover:text-[#ff1268]"
+            >
+              <Settings className="h-3.5 w-3.5" />
+              通知偏好
+            </button>
             <button
               type="button"
               onClick={markAllRead}

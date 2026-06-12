@@ -1,0 +1,134 @@
+x-omni-compose-scope: production-example
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: omni-redis
+    volumes:
+      - omni-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  nacos:
+    image: nacos/nacos-server:v2.4.3
+    container_name: omni-nacos
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      PREFER_HOST_MODE: hostname
+      JVM_XMS: 512m
+      JVM_XMX: 1024m
+      JVM_XMN: 256m
+    volumes:
+      - omni-nacos-data:/home/nacos/data
+      - omni-nacos-logs:/home/nacos/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8848/nacos/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  seata-config-init:
+    image: curlimages/curl:8.8.0
+    container_name: omni-seata-config-init
+    depends_on:
+      nacos:
+        condition: service_healthy
+    volumes:
+      - ./docker/seata:/seata-config:ro
+    environment:
+      NACOS_ADDR: nacos:8848
+      SEATA_CONFIG_DATA_ID: seataServer.properties
+      SEATA_CONFIG_GROUP: SEATA_GROUP
+      SEATA_ADVERTISE_HOST: ${SEATA_ADVERTISE_HOST:?SEATA_ADVERTISE_HOST is required}
+      SEATA_ADVERTISE_PORT: ${SEATA_ADVERTISE_PORT:?SEATA_ADVERTISE_PORT is required}
+    command: ["/bin/sh", "/seata-config/import-config.sh"]
+    restart: "no"
+
+  seata-server:
+    image: seataio/seata-server:1.6.1
+    container_name: omni-seata
+    depends_on:
+      nacos:
+        condition: service_healthy
+      seata-config-init:
+        condition: service_completed_successfully
+    environment:
+      SEATA_IP: ${SEATA_ADVERTISE_HOST:?SEATA_ADVERTISE_HOST is required}
+      SEATA_PORT: ${SEATA_ADVERTISE_PORT:?SEATA_ADVERTISE_PORT is required}
+    command: ["-h", "${SEATA_ADVERTISE_HOST:?SEATA_ADVERTISE_HOST is required}", "-p", "${SEATA_ADVERTISE_PORT:?SEATA_ADVERTISE_PORT is required}"]
+    volumes:
+      - ./docker/seata/application.yml:/seata-server/resources/application.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/localhost/8091' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: omni-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+    volumes:
+      - omni-rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  grab-service:
+    image: ${GRAB_SERVICE_IMAGE:?GRAB_SERVICE_IMAGE is required}
+    container_name: omni-grab-service
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      GRAB_SERVICE_PORT: 3001
+      GRAB_SERVICE_HOST: 0.0.0.0
+      GRAB_DB_HOST: ${GRAB_DB_HOST:?GRAB_DB_HOST is required}
+      GRAB_DB_PORT: ${GRAB_DB_PORT:?GRAB_DB_PORT is required}
+      GRAB_DB_NAME: ${GRAB_DB_NAME:?GRAB_DB_NAME is required}
+      GRAB_DB_USER: ${GRAB_DB_USER:?GRAB_DB_USER is required}
+      GRAB_DB_PASSWORD: ${GRAB_DB_PASSWORD:?GRAB_DB_PASSWORD is required}
+      REDIS_HOST: ${REDIS_HOST:?REDIS_HOST is required}
+      REDIS_PORT: ${REDIS_PORT:?REDIS_PORT is required}
+      ORDER_SERVICE_URL: ${ORDER_SERVICE_URL:?ORDER_SERVICE_URL is required}
+      TICKET_SERVICE_URL: ${TICKET_SERVICE_URL:?TICKET_SERVICE_URL is required}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:?NOTIFICATION_SERVICE_URL is required}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:?RABBITMQ_HOST is required}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:?RABBITMQ_PORT is required}
+      RABBITMQ_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+    ports:
+      - "127.0.0.1:3001:3001"
+    restart: unless-stopped
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}
+    container_name: omni-frontend
+    environment:
+      NODE_ENV: production
+      API_PROXY_TARGET: ${API_PROXY_TARGET:?API_PROXY_TARGET is required}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+      NEXT_PUBLIC_SENTRY_ENABLED: ${NEXT_PUBLIC_SENTRY_ENABLED:?NEXT_PUBLIC_SENTRY_ENABLED is required}
+      NEXT_PUBLIC_POSTHOG_ENABLED: ${NEXT_PUBLIC_POSTHOG_ENABLED:?NEXT_PUBLIC_POSTHOG_ENABLED is required}
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+volumes:
+  omni-redis-data:
+  omni-rabbitmq-data:
+  omni-nacos-data:
+  omni-nacos-logs:

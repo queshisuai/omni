@@ -31,7 +31,7 @@ export default function SessionSeatLayoutPage() {
 
   useEffect(() => {
     if (!Number.isInteger(sessionId) || sessionId <= 0) {
-      setError('场次ID不正确')
+      setError('场次编号不正确')
       setLoading(false)
       return
     }

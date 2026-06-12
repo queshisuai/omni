@@ -239,33 +239,47 @@ public class OrderService {
 
     @Transactional(rollbackFor = Exception.class)
     public Order markPaid(Long id) {
-        Order order = orderMapper.selectById(id);
-        if (order == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
-        }
-        if (order.getStatus() == STATUS_PAID) {
-            confirmTicketsSold(order);
-            issueElectronicTickets(order);
-            return order;
-        }
-        if (order.getStatus() != STATUS_PENDING) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许支付");
-        }
-        int updated = orderMapper.updateStatusIfCurrent(id, STATUS_PENDING, STATUS_PAID);
-        if (updated != 1) {
-            Order latest = orderMapper.selectById(id);
-            if (latest != null && latest.getStatus() == STATUS_PAID) {
-                return latest;
+        OrderFulfillmentLatencyTrace latencyTrace = new OrderFulfillmentLatencyTrace(id);
+        String outcome = "FAILED";
+        try {
+            Order order = latencyTrace.measureOrderLoad(() -> orderMapper.selectById(id));
+            latencyTrace.setOrder(order);
+            if (order == null) {
+                outcome = "NOT_FOUND";
+                throw new BusinessException(ResultCode.NOT_FOUND, "订单不存在");
             }
-            throw new BusinessException(ResultCode.CONFLICT, "订单状态已变化，不能标记为已支付");
+            if (order.getStatus() == STATUS_PAID) {
+                latencyTrace.measureTicketConfirm(() -> confirmTicketsSold(order));
+                latencyTrace.measureTicketIssue(() -> issueElectronicTickets(order));
+                outcome = "ALREADY_PAID";
+                return order;
+            }
+            if (order.getStatus() != STATUS_PENDING) {
+                outcome = "INVALID_STATUS";
+                throw new BusinessException(ResultCode.BAD_REQUEST, "订单状态不允许支付");
+            }
+            int updated = latencyTrace.measureStatusUpdate(() -> orderMapper.updateStatusIfCurrent(id, STATUS_PENDING, STATUS_PAID));
+            if (updated != 1) {
+                Order latest = latencyTrace.measureOrderLoad(() -> orderMapper.selectById(id));
+                latencyTrace.setOrder(latest);
+                if (latest != null && latest.getStatus() == STATUS_PAID) {
+                    outcome = "CONCURRENT_PAID";
+                    return latest;
+                }
+                outcome = "CONFLICT";
+                throw new BusinessException(ResultCode.CONFLICT, "订单状态已变化，不能标记为已支付");
+            }
+            order.setStatus(STATUS_PAID);
+            order.setUpdateTime(LocalDateTime.now());
+            latencyTrace.measureTicketConfirm(() -> confirmTicketsSold(order));
+            latencyTrace.measureTicketIssue(() -> issueElectronicTickets(order));
+            latencyTrace.measureWaitlistNotify(() -> notifyWaitlistPaid(order.getId()));
+            outcome = "PAID";
+            log.info("订单已标记为已支付: id={}, orderNo={}", id, order.getOrderNo());
+            return order;
+        } finally {
+            latencyTrace.log(outcome);
         }
-        order.setStatus(STATUS_PAID);
-        order.setUpdateTime(LocalDateTime.now());
-        confirmTicketsSold(order);
-        issueElectronicTickets(order);
-        notifyWaitlistPaid(order.getId());
-        log.info("订单已标记为已支付: id={}, orderNo={}", id, order.getOrderNo());
-        return order;
     }
 
     @GlobalTransactional(name = "omni-create-order-with-seats", rollbackFor = Exception.class)
@@ -1873,6 +1887,95 @@ public class OrderService {
     private String refundEventKey(Order order, TicketSalesReleaseResponse response) {
         int quantity = response != null && response.getRestoredQuantity() != null ? response.getRestoredQuantity() : 0;
         return "refund:" + order.getId() + ":session:" + order.getSessionId() + ":ticket-type:" + order.getTicketTypeId() + ":quantity:" + quantity;
+    }
+
+    private static final class OrderFulfillmentLatencyTrace {
+        private final Long requestedOrderId;
+        private final long startedAtNanos = System.nanoTime();
+        private Long orderId;
+        private String orderNo;
+        private long orderLoadNanos;
+        private long statusUpdateNanos;
+        private long ticketConfirmNanos;
+        private long ticketIssueNanos;
+        private long waitlistNotifyNanos;
+
+        private OrderFulfillmentLatencyTrace(Long requestedOrderId) {
+            this.requestedOrderId = requestedOrderId;
+        }
+
+        private void setOrder(Order order) {
+            if (order == null) {
+                return;
+            }
+            this.orderId = order.getId();
+            this.orderNo = order.getOrderNo();
+        }
+
+        private Order measureOrderLoad(Supplier<Order> action) {
+            long startedAt = System.nanoTime();
+            try {
+                return action.get();
+            } finally {
+                orderLoadNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private int measureStatusUpdate(Supplier<Integer> action) {
+            long startedAt = System.nanoTime();
+            try {
+                return action.get();
+            } finally {
+                statusUpdateNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private void measureTicketConfirm(Runnable action) {
+            long startedAt = System.nanoTime();
+            try {
+                action.run();
+            } finally {
+                ticketConfirmNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private void measureTicketIssue(Runnable action) {
+            long startedAt = System.nanoTime();
+            try {
+                action.run();
+            } finally {
+                ticketIssueNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private void measureWaitlistNotify(Runnable action) {
+            long startedAt = System.nanoTime();
+            try {
+                action.run();
+            } finally {
+                waitlistNotifyNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private void log(String outcome) {
+            long totalNanos = Math.max(0L, System.nanoTime() - startedAtNanos);
+            OrderService.log.info(
+                    "订单支付履约链路耗时: orderId={} orderNo={} outcome={} orderLoadMs={} statusUpdateMs={} ticketConfirmMs={} ticketIssueMs={} waitlistNotifyMs={} totalMs={}",
+                    orderId != null ? orderId : requestedOrderId,
+                    orderNo,
+                    outcome,
+                    millis(orderLoadNanos),
+                    millis(statusUpdateNanos),
+                    millis(ticketConfirmNanos),
+                    millis(ticketIssueNanos),
+                    millis(waitlistNotifyNanos),
+                    millis(totalNanos)
+            );
+        }
+
+        private long millis(long nanos) {
+            return nanos / 1_000_000L;
+        }
     }
 
     private <T> T callUserValidate(Supplier<T> call) {

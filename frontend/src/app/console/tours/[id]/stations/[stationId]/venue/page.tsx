@@ -49,7 +49,7 @@ export default function AddStationVenuePage() {
       return
     }
     if (!Number.isInteger(tourId) || tourId <= 0 || !Number.isInteger(stationId) || stationId <= 0) {
-      setError('巡演或站点ID不正确')
+      setError('巡演或站点编号不正确')
       setLoading(false)
       return
     }

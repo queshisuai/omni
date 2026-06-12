@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildConsoleOrderExportCsv, filterConsoleOrdersByStatus, formatOrderAttendees, getConsoleOrderScopeCopy, getSelectedConsoleOrders } from './console-orders.ts'
+import { buildConsoleOrderExportCsv, filterConsoleOrdersByStatus, formatConsoleOrderStatusLabel, formatOrderAttendees, getConsoleOrderActivityLabel, getConsoleOrderScopeCopy, getConsoleOrderStatusClassName, getConsoleOrderTicketLabel, getSelectedConsoleOrders } from './console-orders.ts'
 import type { OrderEntity } from '../types/api.ts'
 
 test('formats order attendees for console display', () => {
@@ -42,6 +42,76 @@ test('builds masked console order csv for selected orders', () => {
   assert.equal(csv.includes('110101199001010011'), false)
 })
 
+test('uses readable ticket fallback in console order displays and exports', () => {
+  const order = {
+    id: 11,
+    orderNo: 'O-11',
+    activityName: '上海演唱会',
+    ticketName: null,
+    ticketTypeId: 301,
+    matchedTicketTypeId: null,
+    quantity: 1,
+    amount: 380,
+    status: 2,
+    createTime: '2026-06-01T09:30:00',
+    attendees: [],
+  } as unknown as OrderEntity
+
+  const csv = buildConsoleOrderExportCsv([order])
+
+  assert.equal(getConsoleOrderTicketLabel(order), '票档信息待同步')
+  assert.match(csv, /票档信息待同步/)
+  assert.doesNotMatch(csv, /票档 301/)
+})
+
+test('uses readable activity fallback in console order displays and exports', () => {
+  const order = {
+    id: 13,
+    orderNo: 'O-13',
+    activityName: '',
+    ticketName: '看台A',
+    quantity: 1,
+    amount: 380,
+    status: 2,
+    createTime: '2026-06-01T09:30:00',
+    attendees: [],
+  } as unknown as OrderEntity
+
+  const csv = buildConsoleOrderExportCsv([order])
+
+  assert.equal(getConsoleOrderActivityLabel(order), '活动信息待同步')
+  assert.match(csv, /活动信息待同步/)
+  assert.doesNotMatch(csv, /未知活动/)
+})
+
+test('uses Chinese fallback for unknown console order status', () => {
+  const order = {
+    id: 12,
+    orderNo: 'O-12',
+    activityName: '上海演唱会',
+    ticketName: '看台A',
+    quantity: 1,
+    amount: 380,
+    status: 99,
+    createTime: '2026-06-01T09:30:00',
+    attendees: [],
+  } as unknown as OrderEntity
+
+  const csv = buildConsoleOrderExportCsv([order])
+
+  assert.equal(formatConsoleOrderStatusLabel(99), '未知订单状态')
+  assert.match(csv, /未知订单状态/)
+  assert.doesNotMatch(csv, /,99,/)
+})
+
+test('uses a distinct review-needed style for unknown console order status', () => {
+  assert.equal(getConsoleOrderStatusClassName(1), 'bg-[#fff8e1] text-[#f59e0b]')
+  assert.equal(getConsoleOrderStatusClassName(2), 'bg-[#f0fff4] text-[#22c55e]')
+  assert.equal(getConsoleOrderStatusClassName(3), 'bg-[#f5f5f5] text-[#999]')
+  assert.equal(getConsoleOrderStatusClassName(4), 'bg-[#f5f5f5] text-[#999]')
+  assert.equal(getConsoleOrderStatusClassName(99), 'bg-[#fff7e6] text-[#ad6800]')
+})
+
 test('keeps selected console order export in table order', () => {
   const orders = [
     { id: 1, status: 2 },
@@ -56,6 +126,6 @@ test('keeps selected console order export in table order', () => {
 test('describes organizer admin as a platform-side business role', () => {
   assert.equal(
     getConsoleOrderScopeCopy('organizer_admin'),
-    '当前权限：主办方管理员岗位账号，可按权限查看平台主办方业务订单。',
+    '当前权限：平台主办方运营员岗位账号，可按权限查看平台主办方业务订单。',
   )
 })

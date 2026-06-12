@@ -18,6 +18,8 @@ import com.omni.user.entity.User;
 import com.omni.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -35,11 +37,21 @@ public class UserService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final RbacService rbacService;
+    private final boolean mockSmsEnabled;
 
     public UserService(UserMapper userMapper, PasswordEncoder passwordEncoder, RbacService rbacService) {
+        this(userMapper, passwordEncoder, rbacService, false);
+    }
+
+    @Autowired
+    public UserService(UserMapper userMapper,
+                       PasswordEncoder passwordEncoder,
+                       RbacService rbacService,
+                       @Value("${omni.sms.mock.enabled:false}") boolean mockSmsEnabled) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.rbacService = rbacService;
+        this.mockSmsEnabled = mockSmsEnabled;
     }
 
     /**
@@ -91,7 +103,7 @@ public class UserService {
                 throw new BusinessException(ResultCode.BAD_REQUEST, "密码错误");
             }
         } else if ("sms".equals(request.getLoginType())) {
-            if (!MOCK_SMS_CODE.equals(request.getSmsCode())) {
+            if (!isValidMockSmsCode(request.getSmsCode())) {
                 throw new BusinessException(ResultCode.BAD_REQUEST, "验证码错误");
             }
         } else {
@@ -250,7 +262,7 @@ public class UserService {
         if (smsCode == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "验证码不能为空");
         }
-        if (!MOCK_SMS_CODE.equals(smsCode)) {
+        if (!isValidMockSmsCode(smsCode)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "验证码错误");
         }
         if (newPassword == null) {
@@ -295,7 +307,7 @@ public class UserService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "确认密码不能为空");
         }
 
-        if (!MOCK_SMS_CODE.equals(smsCode)) {
+        if (!isValidMockSmsCode(smsCode)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "手机号或验证码错误");
         }
         if (newPassword.length() < 6) {
@@ -322,6 +334,10 @@ public class UserService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private boolean isValidMockSmsCode(String smsCode) {
+        return mockSmsEnabled && MOCK_SMS_CODE.equals(smsCode);
     }
 
     private List<String> resolvePermissionCodes(InternalAuthContextResponse authContext) {

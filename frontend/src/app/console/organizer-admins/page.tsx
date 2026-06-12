@@ -17,6 +17,22 @@ import type { OrganizerAdminAccountVO } from '@/types/api'
 
 const emptyEditForm = { phone: '', nickname: '', password: '', status: 1 }
 
+function formatOrganizerAdminAccountStatus(status: number) {
+  if (status === 1) return '启用中'
+  if (status === 0) return '已停用'
+  return '未知账号状态'
+}
+
+function formatOrganizerAdminStatusAction(status: number) {
+  if (status === 1) return '停用'
+  if (status === 0) return '启用'
+  return '状态待核对'
+}
+
+function canToggleOrganizerAdminAccountStatus(status: number) {
+  return status === 1 || status === 0
+}
+
 export default function OrganizerAdminsPage() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<OrganizerAdminAccountVO[]>([])
@@ -34,7 +50,7 @@ export default function OrganizerAdminsPage() {
     try {
       setAccounts(await listOrganizerAdminAccounts())
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载主办方管理员账号失败')
+      setError(err instanceof Error ? err.message : '加载平台主办方运营员账号失败')
     } finally {
       setLoading(false)
     }
@@ -68,9 +84,9 @@ export default function OrganizerAdminsPage() {
       })
       setForm({ phone: '', nickname: '', password: '' })
       await load()
-      setMessage('主办方管理员账号已创建')
+      setMessage('平台主办方运营员账号已创建')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '创建主办方管理员账号失败')
+      setError(err instanceof Error ? err.message : '创建平台主办方运营员账号失败')
     } finally {
       setSaving(false)
     }
@@ -111,19 +127,24 @@ export default function OrganizerAdminsPage() {
       })
       cancelEdit()
       await load()
-      setMessage('主办方管理员账号已更新')
+      setMessage('平台主办方运营员账号已更新')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '更新主办方管理员账号失败')
+      setError(err instanceof Error ? err.message : '更新平台主办方运营员账号失败')
     } finally {
       setSaving(false)
     }
   }
 
   const toggleStatus = async (account: OrganizerAdminAccountVO) => {
+    if (!canToggleOrganizerAdminAccountStatus(account.status)) {
+      setMessage('')
+      setError('账号状态未知，请先核对后再操作')
+      return
+    }
     if (account.status === 1) {
       const confirmed = await globalConfirm({
         type: 'danger',
-        title: '停用主办方管理员账号',
+        title: '停用平台主办方运营员账号',
         content: `确认停用「${account.nickname || account.phone}」吗？停用后该账号将不能继续进入后台。`,
         confirmText: '停用',
         cancelText: '取消',
@@ -136,14 +157,14 @@ export default function OrganizerAdminsPage() {
     try {
       if (account.status === 1) {
         await deactivateOrganizerAdminAccount(account.id)
-        setMessage('主办方管理员账号已停用')
+        setMessage('平台主办方运营员账号已停用')
       } else {
         await updateOrganizerAdminAccount(account.id, {
           phone: account.phone,
           nickname: account.nickname || '',
           status: 1,
         })
-        setMessage('主办方管理员账号已启用')
+        setMessage('平台主办方运营员账号已启用')
       }
       await load()
     } catch (err) {
@@ -156,7 +177,7 @@ export default function OrganizerAdminsPage() {
   const remove = async (account: OrganizerAdminAccountVO) => {
     const confirmed = await globalConfirm({
       type: 'danger',
-      title: '删除主办方管理员账号',
+      title: '删除平台主办方运营员账号',
       content: `确认删除「${account.nickname || account.phone}」吗？删除后该账号将不再出现在列表中，也不能继续登录后台。`,
       confirmText: '删除',
       cancelText: '取消',
@@ -168,23 +189,23 @@ export default function OrganizerAdminsPage() {
     try {
       await deleteOrganizerAdminAccount(account.id)
       await load()
-      setMessage('主办方管理员账号已删除')
+      setMessage('平台主办方运营员账号已删除')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '删除主办方管理员账号失败')
+      setError(err instanceof Error ? err.message : '删除平台主办方运营员账号失败')
     } finally {
       setSaving(false)
     }
   }
 
   if (loading) {
-    return <div className="p-8 text-[14px] text-gray-500">正在加载主办方管理员账号...</div>
+    return <div className="p-8 text-[14px] text-gray-500">正在加载平台主办方运营员账号...</div>
   }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[24px] font-bold text-[#111]">主办方管理员账号管理</h1>
+          <h1 className="text-[24px] font-bold text-[#111]">平台主办方运营员账号管理</h1>
           <p className="mt-2 text-[14px] text-gray-500">维护平台侧负责主办方账号管理的职位账号，不等同于普通主办方账号。</p>
         </div>
         <button
@@ -205,7 +226,7 @@ export default function OrganizerAdminsPage() {
       <section className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2 text-[16px] font-bold text-[#111]">
           <Plus className="h-4 w-4 text-[#ff1268]" />
-          新建主办方管理员账号
+          新建平台主办方运营员账号
         </div>
         <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
           <input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} placeholder="手机号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
@@ -219,7 +240,7 @@ export default function OrganizerAdminsPage() {
         <div className="border-b border-gray-100 px-5 py-4 text-[16px] font-bold text-[#111]">账号列表</div>
         <div className="divide-y divide-gray-100">
           {accounts.length === 0 ? (
-            <div className="px-5 py-10 text-center text-[13px] text-gray-400">暂无主办方管理员账号</div>
+            <div className="px-5 py-10 text-center text-[13px] text-gray-400">暂无平台主办方运营员账号</div>
           ) : accounts.map(account => (
             <div key={account.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
               <div className="flex min-w-0 items-center gap-3">
@@ -239,7 +260,7 @@ export default function OrganizerAdminsPage() {
                 ) : (
                   <div className="min-w-0">
                     <div className="truncate text-[14px] font-semibold text-[#111]">{account.nickname || '未命名管理员'}</div>
-                    <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {account.status === 1 ? '启用中' : '已停用'} · {account.role}</div>
+                    <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {formatOrganizerAdminAccountStatus(account.status)} · {account.role}</div>
                   </div>
                 )}
               </div>
@@ -274,11 +295,11 @@ export default function OrganizerAdminsPage() {
                   </button>
                   <button
                     onClick={() => toggleStatus(account)}
-                    disabled={saving}
+                    disabled={saving || !canToggleOrganizerAdminAccountStatus(account.status)}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {account.status === 1 ? <ShieldOff className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                    {account.status === 1 ? '停用' : '启用'}
+                    {formatOrganizerAdminStatusAction(account.status)}
                   </button>
                   <button
                     onClick={() => remove(account)}

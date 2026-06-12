@@ -9,6 +9,8 @@ import com.omni.ticket.dto.TeamSeatLockRequest;
 import com.omni.ticket.dto.TeamSeatLockResponse;
 import com.omni.ticket.dto.TeamSeatLockValidationRequest;
 import com.omni.ticket.dto.TeamSeatLockValidationResponse;
+import com.omni.ticket.dto.TicketPurchaseContextRequest;
+import com.omni.ticket.dto.TicketPurchaseContextResponse;
 import com.omni.ticket.dto.TicketTypeVisibleResponse;
 import com.omni.ticket.dto.TicketTypesVisibleRequest;
 import com.omni.ticket.dto.TicketSalesLockRequest;
@@ -56,6 +58,15 @@ public class TicketSalesInternalController {
             return Result.fail(403, "forbidden");
         }
         return Result.success(service.listVisibleTicketTypes(request));
+    }
+
+    @PostMapping("/purchase-context")
+    public Result<TicketPurchaseContextResponse> purchaseContext(@RequestBody TicketPurchaseContextRequest request,
+                                                                  @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!isValidInternalToken(token)) {
+            return Result.fail(403, "forbidden");
+        }
+        return Result.success(service.getPurchaseContext(request));
     }
 
     @PostMapping("/lock-stock")

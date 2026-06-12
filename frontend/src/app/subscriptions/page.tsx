@@ -7,7 +7,8 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { cancelSubscription, createSubscription, createSubscriptionCalendar, listSubscriptions } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import { formatSubscriptionTargetType, formatSubscriptionTime, getCountdownText } from '@/lib/subscription'
+import { buildSubscriptionEmptyGuides, formatSubscriptionTargetType, formatSubscriptionTime, getCountdownText, type SubscriptionEmptyGuide } from '@/lib/subscription'
+import { ACTIVITY_VIEW_SIGNAL_KEY, parseActivityViewSignals } from '@/lib/personalized-recommendations'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import type { SubscriptionTargetType, SubscriptionVO } from '@/types/api'
 
@@ -50,6 +51,7 @@ export default function SubscriptionsPage() {
   const [savingCity, setSavingCity] = useState(false)
   const [calendarLoading, setCalendarLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [emptyGuides, setEmptyGuides] = useState<SubscriptionEmptyGuide[]>([])
 
   const loadData = () => {
     if (!isAuthenticated()) {
@@ -65,6 +67,9 @@ export default function SubscriptionsPage() {
   }
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setEmptyGuides(buildSubscriptionEmptyGuides(parseActivityViewSignals(localStorage.getItem(ACTIVITY_VIEW_SIGNAL_KEY))))
+    }
     loadData()
   }, [router])
 
@@ -191,8 +196,35 @@ export default function SubscriptionsPage() {
         ) : error ? (
           <div className="rounded-lg border border-[#ffd9e6] bg-white py-16 text-center text-[14px] text-[#ff4d4f]">{error}</div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-lg border border-[#eee] bg-white px-6 py-16 text-center text-[14px] text-[#999]">
-            暂无想看或提醒，可在活动详情页添加。
+          <div className="rounded-lg border border-[#eee] bg-white px-6 py-12 text-center text-[14px] text-[#999]">
+            <p>暂无想看或提醒，可在活动详情页添加。</p>
+            {emptyGuides.length > 0 && (
+              <div className="mx-auto mt-8 max-w-[720px] text-left">
+                <div className="mb-3 text-[13px] font-medium text-[#555]">最近浏览</div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {emptyGuides.map(guide => (
+                    <button
+                      key={guide.activityId}
+                      type="button"
+                      onClick={() => router.push(guide.href)}
+                      className="group grid min-h-[132px] grid-cols-[72px_1fr] gap-3 rounded-lg border border-[#eee] bg-[#fafafa] p-3 text-left outline-none hover:border-[#ff1268] hover:bg-white"
+                    >
+                      <img
+                        src={guide.poster || '/background.png'}
+                        alt={guide.title}
+                        className="h-[96px] w-[72px] rounded-md object-cover"
+                      />
+                      <span className="min-w-0">
+                        <span className="line-clamp-2 text-[14px] font-medium leading-5 text-[#222] group-hover:text-[#ff1268]">{guide.title}</span>
+                        <span className="mt-1 block truncate text-[12px] text-[#777]">{guide.meta}</span>
+                        <span className="mt-3 inline-flex rounded-full bg-[#fff0f5] px-2.5 py-1 text-[12px] font-medium text-[#ff1268]">{guide.actionLabel}</span>
+                        {guide.artistHint && <span className="mt-2 block truncate text-[12px] text-[#999]">{guide.artistHint}</span>}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="grid gap-4">

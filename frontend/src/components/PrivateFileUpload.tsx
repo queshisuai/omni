@@ -15,7 +15,7 @@ type PrivateFileUploadProps = {
 }
 
 function formatFileSize(size?: number | null) {
-  if (!size || size <= 0) return '未知大小'
+  if (!size || size <= 0) return '文件大小待同步'
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / 1024 / 1024).toFixed(1)} MB`
@@ -28,7 +28,7 @@ export function PrivateFileUpload({ label, value, accept, uploading = false, onU
   const [error, setError] = useState('')
   const disabled = uploading || pending
   const filename = value?.originalFilename || '未命名文件'
-  const contentType = value?.contentType || '未知类型'
+  const contentType = value?.contentType || '文件类型待同步'
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]

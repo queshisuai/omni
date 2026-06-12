@@ -19,7 +19,8 @@ const STATUS_OPTIONS: Array<{ value: OrganizerApplicationStatus | 'all'; label: 
 function statusMeta(status: OrganizerApplicationStatus) {
   if (status === 0) return { text: '待审核', color: '#ff7a00', bg: '#fff7ed' }
   if (status === 1) return { text: '已通过', color: '#16a34a', bg: '#f0fdf4' }
-  return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
+  if (status === 2) return { text: '已驳回', color: '#ef4444', bg: '#fef2f2' }
+  return { text: '未知入驻状态', color: '#6b7280', bg: '#f3f4f6' }
 }
 
 function organizerStatusMeta(status: OrganizerApplicationVO['organizerStatus']) {
@@ -27,7 +28,7 @@ function organizerStatusMeta(status: OrganizerApplicationVO['organizerStatus']) 
   if (status === 1) return { text: '主办方有效', color: '#16a34a', bg: '#f0fdf4' }
   if (status === 2) return { text: '认证已拒绝', color: '#ef4444', bg: '#fef2f2' }
   if (status === 0) return { text: '认证待审核', color: '#ff7a00', bg: '#fff7ed' }
-  return null
+  return { text: '未知主办方状态', color: '#6b7280', bg: '#f3f4f6' }
 }
 
 export default function OrganizerApplicationsPage() {
@@ -239,14 +240,12 @@ export default function OrganizerApplicationsPage() {
                       >
                         {meta.text}
                       </span>
-                      {userStatusMeta ? (
-                        <span
-                          className="rounded-full px-3 py-1 text-xs font-medium"
-                          style={{ color: userStatusMeta.color, backgroundColor: userStatusMeta.bg }}
-                        >
-                          {userStatusMeta.text}
-                        </span>
-                      ) : null}
+                      <span
+                        className="rounded-full px-3 py-1 text-xs font-medium"
+                        style={{ color: userStatusMeta.color, backgroundColor: userStatusMeta.bg }}
+                      >
+                        {userStatusMeta.text}
+                      </span>
                     </div>
                     <div className="grid gap-2 text-sm text-[#666] sm:grid-cols-2 lg:grid-cols-3">
                       <span>联系人：{item.contactName}</span>

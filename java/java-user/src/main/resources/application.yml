@@ -43,6 +43,8 @@ mybatis-plus:
 omni:
   mq:
     enabled: true
+  grab-service:
+    url: ${GRAB_SERVICE_URL:http://localhost:3001}
   support:
     ai:
       enabled: ${OMNI_SUPPORT_AI_ENABLED:${OMNI_SUPPORT_AI_LOCAL_ENABLED:true}}

@@ -21,6 +21,11 @@ export interface TicketTeamRecord {
   activityId: number;
   sessionId: number;
   ticketTypeId: number;
+  activityName?: string | null;
+  activityPoster?: string | null;
+  ticketTypeName?: string | null;
+  venueName?: string | null;
+  sessionTime?: string | null;
   size: number;
   strategy: TeamSeatStrategy;
   fallbacks: TeamSeatStrategy[];

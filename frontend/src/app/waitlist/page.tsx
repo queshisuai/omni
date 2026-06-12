@@ -8,7 +8,13 @@ import { Header } from '@/components/Header'
 import { globalConfirm } from '@/components/GlobalDialog'
 import { cancelWaitlistEntry, listMyWaitlistEntries } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
-import { canCancelWaitlistEntry, getWaitlistChanceStyle, getWaitlistPrimaryAction, getWaitlistStatusLabel } from '@/lib/waitlist'
+import {
+  canCancelWaitlistEntry,
+  getWaitlistChanceStyle,
+  getWaitlistEntryDisplay,
+  getWaitlistPrimaryAction,
+  getWaitlistStatusLabel,
+} from '@/lib/waitlist'
 import type { WaitlistEntryVO } from '@/types/api'
 
 function formatTime(value: string | null | undefined) {
@@ -129,6 +135,7 @@ export default function WaitlistPage() {
             <div className="grid gap-4">
               {entries.map((entry) => {
                 const action = getWaitlistPrimaryAction(entry.status, entry.offerOrderId)
+                const display = getWaitlistEntryDisplay(entry)
                 return (
                   <div key={entry.id} className="rounded-lg border border-[#eee] bg-white p-5 shadow-sm">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -144,10 +151,11 @@ export default function WaitlistPage() {
                             </span>
                           )}
                         </div>
-                        <div className="mt-3 grid gap-2 text-sm text-[#555] sm:grid-cols-3">
-                          <span>场次：{entry.sessionId}</span>
-                          <span>票档：{entry.ticketTypeId}</span>
-                          <span>数量：{entry.quantity}</span>
+                        <h2 className="mt-3 truncate text-[17px] font-semibold text-[#111]">{display.title}</h2>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#555]">
+                          {display.meta.map((item) => (
+                            <span key={item}>{item}</span>
+                          ))}
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#999]">
                           <Clock3 className="h-3.5 w-3.5" />

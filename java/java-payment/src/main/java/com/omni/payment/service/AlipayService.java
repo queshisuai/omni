@@ -43,7 +43,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
- * 支付宝沙盒支付核心服务
+ * 支付宝支付核心服务。
  */
 @Service
 public class AlipayService {
@@ -52,7 +52,7 @@ public class AlipayService {
 
     private static final Integer ORDER_STATUS_PENDING = 1;
     private static final Integer ORDER_STATUS_PAID = 2;
-    private static final String PAYMENT_METHOD = "ALIPAY_SANDBOX";
+    private static final String PAYMENT_METHOD = "ALIPAY";
     private static final String TRADE_SUCCESS = "TRADE_SUCCESS";
     private static final String TRADE_FINISHED = "TRADE_FINISHED";
     private static final String TRADE_NOT_EXIST = "ACQ.TRADE_NOT_EXIST";
@@ -148,7 +148,9 @@ public class AlipayService {
             response.setOrderNo(orderNo);
             response.setPayForm(alipayResponse.getBody());
             return response;
-        } catch (AlipayApiException e) {
+        } catch (BusinessException e) {
+            throw e;
+        } catch (AlipayApiException | RuntimeException e) {
             markPaymentFailed(payment, "生成支付宝支付表单异常");
             log.error("生成支付宝支付表单失败: orderId={}", orderId, e);
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "生成支付宝支付表单失败");
@@ -345,26 +347,34 @@ public class AlipayService {
 
     public PaymentStatusResponse syncByOrderId(Long orderId) {
         validateConfig();
-        OrderInfoResponse order = getOrderOrThrow(orderId);
-        Payment payment = getLatestPaymentByOutTradeNo(order.getOrderNo());
-        if (ORDER_STATUS_PAID.equals(order.getStatus())) {
-            if (payment == null || PaymentService.STATUS_SUCCESS != payment.getStatus()) {
-                PaymentStatusResponse compensated = queryAndCompletePayment(order, payment);
-                if (PaymentService.STATUS_SUCCESS == compensated.getPaymentStatus()) {
-                    return compensated;
+        PaymentSyncLatencyTrace latencyTrace = new PaymentSyncLatencyTrace(orderId);
+        try {
+            OrderInfoResponse order = latencyTrace.measureOrderLoad(() -> getOrderOrThrow(orderId));
+            latencyTrace.setOrder(order);
+            Payment payment = latencyTrace.measurePaymentLoad(() -> getLatestPaymentByOutTradeNo(order.getOrderNo()));
+            if (ORDER_STATUS_PAID.equals(order.getStatus())) {
+                if (payment == null || PaymentService.STATUS_SUCCESS != payment.getStatus()) {
+                    PaymentStatusResponse compensated = queryAndCompletePayment(order, payment, latencyTrace);
+                    if (PaymentService.STATUS_SUCCESS == compensated.getPaymentStatus()) {
+                        return compensated;
+                    }
+                    latencyTrace.setOutcome("ORDER_PAID_PAYMENT_PENDING");
+                    return buildStatusResponse(
+                            order,
+                            payment,
+                            payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING,
+                            "订单已支付，支付流水待补偿",
+                            false
+                    );
                 }
-                return buildStatusResponse(
-                        order,
-                        payment,
-                        payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING,
-                        "订单已支付，支付流水待补偿",
-                        false
-                );
+                latencyTrace.setOutcome("ALREADY_CONFIRMED");
+                return buildStatusResponse(order, payment, PaymentService.STATUS_SUCCESS, "支付成功", true);
             }
-            return buildStatusResponse(order, payment, PaymentService.STATUS_SUCCESS, "支付成功", true);
-        }
 
-        return queryAndCompletePayment(order, payment);
+            return queryAndCompletePayment(order, payment, latencyTrace);
+        } finally {
+            latencyTrace.log();
+        }
     }
 
     public PaymentSyncDecisionResponse syncDecisionForCancel(Long orderId) {
@@ -383,34 +393,42 @@ public class AlipayService {
         return response;
     }
 
-    private PaymentStatusResponse queryAndCompletePayment(OrderInfoResponse order, Payment payment) {
+    private PaymentStatusResponse queryAndCompletePayment(OrderInfoResponse order, Payment payment, PaymentSyncLatencyTrace latencyTrace) {
         AlipayTradeQueryRequest request = new AlipayTradeQueryRequest();
         Map<String, String> bizContent = new LinkedHashMap<>();
         bizContent.put("out_trade_no", order.getOrderNo());
         request.setBizContent(buildJson(bizContent));
 
         try {
-            AlipayTradeQueryResponse response = callAlipayChannel(() -> createClient().execute(request));
+            AlipayTradeQueryResponse response = latencyTrace.measureAlipayQuery(() -> callAlipayChannel(() -> createClient().execute(request)));
             if (response.isSuccess() && isPaidTradeStatus(response.getTradeStatus())) {
                 if (!amountEquals(order.getAmount(), response.getTotalAmount())) {
+                    latencyTrace.setOutcome("AMOUNT_MISMATCH");
                     throw new BusinessException(ResultCode.BAD_REQUEST, "支付宝支付金额与订单金额不一致");
                 }
-                if (payment == null) {
-                    payment = createPendingPayment(order);
+                Payment paymentToConfirm = payment;
+                if (paymentToConfirm == null) {
+                    paymentToConfirm = createPendingPayment(order);
                 }
-                completePayment(payment, response.getTradeNo(), response.getBuyerUserId(), response.getBody(), response.getBody());
-                OrderInfoResponse paidOrder = getOrderOrThrow(order.getId());
-                return buildStatusResponse(paidOrder, payment, PaymentService.STATUS_SUCCESS, "支付成功", true);
+                Payment finalPayment = paymentToConfirm;
+                latencyTrace.measureConfirmPayment(() -> completePayment(finalPayment, response.getTradeNo(), response.getBuyerUserId(), response.getBody(), response.getBody()));
+                OrderInfoResponse paidOrder = latencyTrace.measureOrderReload(() -> getOrderOrThrow(order.getId()));
+                latencyTrace.setOutcome("CONFIRMED");
+                return buildStatusResponse(paidOrder, finalPayment, PaymentService.STATUS_SUCCESS, "支付成功", true);
             }
             if (!response.isSuccess() && TRADE_NOT_EXIST.equals(response.getSubCode())) {
+                latencyTrace.setOutcome("TRADE_NOT_EXIST");
                 return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付宝未查询到支付交易", true);
             }
+            latencyTrace.setOutcome("QUERY_PENDING");
             return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
         } catch (AlipayApiException e) {
+            latencyTrace.setOutcome("ALIPAY_QUERY_FAILED");
             log.warn("查询支付宝支付结果失败: orderId={}, outTradeNo={}", order.getId(), order.getOrderNo(), e);
             return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
         } catch (BusinessException e) {
             if ("支付渠道暂不可用，请稍后重试".equals(e.getMessage())) {
+                latencyTrace.setOutcome("CHANNEL_UNAVAILABLE");
                 return buildStatusResponse(order, payment, payment != null ? payment.getStatus() : PaymentService.STATUS_PENDING, "支付结果确认中", false);
             }
             throw e;
@@ -493,6 +511,100 @@ public class AlipayService {
         }
     }
 
+    private static final class PaymentSyncLatencyTrace {
+        private final Long requestedOrderId;
+        private final long startedAtNanos = System.nanoTime();
+        private Long orderId;
+        private String orderNo;
+        private String outcome = "FAILED";
+        private long orderLoadNanos;
+        private long paymentLoadNanos;
+        private long alipayQueryNanos;
+        private long confirmPaymentNanos;
+        private long orderReloadNanos;
+
+        private PaymentSyncLatencyTrace(Long requestedOrderId) {
+            this.requestedOrderId = requestedOrderId;
+        }
+
+        private void setOrder(OrderInfoResponse order) {
+            if (order == null) {
+                return;
+            }
+            this.orderId = order.getId();
+            this.orderNo = order.getOrderNo();
+        }
+
+        private void setOutcome(String outcome) {
+            this.outcome = outcome;
+        }
+
+        private OrderInfoResponse measureOrderLoad(Supplier<OrderInfoResponse> action) {
+            long startedAt = System.nanoTime();
+            try {
+                return action.get();
+            } finally {
+                orderLoadNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private Payment measurePaymentLoad(Supplier<Payment> action) {
+            long startedAt = System.nanoTime();
+            try {
+                return action.get();
+            } finally {
+                paymentLoadNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private <T> T measureAlipayQuery(AlipayCall<T> action) throws AlipayApiException {
+            long startedAt = System.nanoTime();
+            try {
+                return action.execute();
+            } finally {
+                alipayQueryNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private void measureConfirmPayment(Runnable action) {
+            long startedAt = System.nanoTime();
+            try {
+                action.run();
+            } finally {
+                confirmPaymentNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private OrderInfoResponse measureOrderReload(Supplier<OrderInfoResponse> action) {
+            long startedAt = System.nanoTime();
+            try {
+                return action.get();
+            } finally {
+                orderReloadNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private void log() {
+            long totalNanos = Math.max(0L, System.nanoTime() - startedAtNanos);
+            AlipayService.log.info(
+                    "支付同步链路耗时: orderId={} orderNo={} outcome={} orderLoadMs={} paymentLoadMs={} alipayQueryMs={} confirmPaymentMs={} orderReloadMs={} totalMs={}",
+                    orderId != null ? orderId : requestedOrderId,
+                    orderNo,
+                    outcome,
+                    millis(orderLoadNanos),
+                    millis(paymentLoadNanos),
+                    millis(alipayQueryNanos),
+                    millis(confirmPaymentNanos),
+                    millis(orderReloadNanos),
+                    millis(totalNanos)
+            );
+        }
+
+        private long millis(long nanos) {
+            return nanos / 1_000_000L;
+        }
+    }
+
     private interface AlipayCall<T> {
         T execute() throws AlipayApiException;
     }
@@ -551,10 +663,15 @@ public class AlipayService {
     }
 
     private String requireText(String value, String message) {
-        if (!StringUtils.hasText(value)) {
+        if (!StringUtils.hasText(value) || isUnresolvedPlaceholder(value)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, message);
         }
         return value;
+    }
+
+    private boolean isUnresolvedPlaceholder(String value) {
+        String trimmed = value.trim();
+        return trimmed.startsWith("${") && trimmed.endsWith("}");
     }
 
     private BigDecimal normalizeAmount(BigDecimal amount) {

@@ -1,10 +1,12 @@
 package com.omni.ticket.service;
 
 import com.omni.common.result.Result;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.util.JwtUtil;
 import com.omni.ticket.controller.AdminController;
 import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -34,9 +36,13 @@ class TicketTypeManagementTest {
     @Mock com.omni.ticket.service.ArtistAdminService aas3; @Mock ArtistGovernanceService ags; @Mock ActivityRiskResponseService arrs;
     @Mock TicketAssetService tas; @Mock PrivateAssetService pas; @Mock SeatCraftLayoutVersionService scvs; @Mock ActivityDraftService ads;
     @Mock StationConfigVersionService svs; @Mock ActivityMarketingService ams;
+    @Mock ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     AdminController ctl;
-    @BeforeEach void setup() { ctl = new AdminController(am, arm, sm, ttm, vm, uas, aas, sas, vas, sts, ttas, ass, sss, vdls, asls, ssls, tss, oaqs, ssps, tsrs, aas2, aas3, ags, arrs, tas, pas, scvs, ads, svs, ams); }
+    @BeforeEach void setup() {
+        ctl = new AdminController(am, arm, sm, ttm, vm, uas, aas, sas, vas, sts, ttas, ass, sss, vdls, asls, ssls, tss, oaqs, ssps, tsrs, aas2, aas3, ags, arrs, tas, pas, scvs, ads, svs, ams);
+        ctl.setSearchIndexEventPublisher(searchIndexEventPublisher);
+    }
     @BeforeAll static void jwt() { if (System.getenv("JWT_SECRET")==null) System.setProperty("JWT_SECRET","test-jwt-secret-must-be-at-least-32-bytes"); }
     String adminT() { return "Bearer "+JwtUtil.generateToken(2002L,"admin","admin"); }
     String orgT() { return "Bearer "+JwtUtil.generateToken(2003L,"org","organizer"); }
@@ -58,6 +64,7 @@ class TicketTypeManagementTest {
             when(ttas.createTicketType(any(TicketType.class), anyList())).thenReturn(tt);
             Result<TicketType> r = ctl.createTicketType(adminT(), areaBody());
             assertEquals(200, r.getCode()); assertEquals("VIP", r.getData().getName()); assertEquals(100, r.getData().getTotalStock());
+            verify(searchIndexEventPublisher).publishUpsert(10L);
         }
 
         @Test @DisplayName("TT-002: create with layout binding → 200") void tt002() {
@@ -68,16 +75,95 @@ class TicketTypeManagementTest {
             assertEquals(200, r.getCode()); assertEquals("Standard", r.getData().getName());
         }
 
+        @Test @DisplayName("TT-002A: create writes operation audit") void createWritesOperationAudit() {
+            givenAdmin(); givenSession(100L, 10L); givenOwnActivity(10L, 2002L);
+            TicketType tt = new TicketType(); tt.setId(1L); tt.setSessionId(100L); tt.setName("VIP"); tt.setPrice(new BigDecimal("880")); tt.setTotalStock(100); tt.setRemainStock(100); tt.setStatus(1);
+            when(ttas.createTicketType(any(TicketType.class), anyList())).thenReturn(tt);
+
+            Result<TicketType> r = ctl.createTicketType(adminT(), areaBody());
+
+            assertEquals(200, r.getCode());
+            verify(uas).writeOperationAudit(argThat(audit ->
+                    Long.valueOf(2002L).equals(audit.getOperatorId())
+                            && "admin".equals(audit.getOperatorRole())
+                            && "ticket_type.create".equals(audit.getAction())
+                            && "ticket_type".equals(audit.getTargetType())
+                            && Long.valueOf(1L).equals(audit.getTargetId())
+                            && "VIP".equals(audit.getTargetRef())
+                            && Boolean.TRUE.equals(audit.getSuccess())
+                            && audit.getResult().contains("场次编号 100")
+                            && audit.getResult().contains("总库存 100")
+            ));
+        }
+
+        @Test @DisplayName("TT-002B: plain create writes operation audit for batch import path") void plainCreateWritesOperationAudit() {
+            givenAdmin(); givenSession(100L, 10L); givenOwnActivity(10L, 2002L);
+            when(ttm.insert(any(TicketType.class))).thenAnswer(invocation -> {
+                TicketType ticketType = invocation.getArgument(0);
+                ticketType.setId(11L);
+                return 1;
+            });
+
+            Result<TicketType> r = ctl.createTicketType(adminT(), Map.of("sessionId",100L,"name","早鸟票","price","199","totalStock",50));
+
+            assertEquals(200, r.getCode());
+            verify(uas).writeOperationAudit(argThat(audit ->
+                    Long.valueOf(2002L).equals(audit.getOperatorId())
+                            && "ticket_type.create".equals(audit.getAction())
+                            && "ticket_type".equals(audit.getTargetType())
+                            && Long.valueOf(11L).equals(audit.getTargetId())
+                            && "早鸟票".equals(audit.getTargetRef())
+                            && audit.getResult().contains("场次编号 100")
+                            && audit.getResult().contains("总库存 50")
+            ));
+        }
+
         @Test @DisplayName("TT-003: update name/price → 200") void tt003() {
-            givenAdmin(); TicketType tt = new TicketType(); tt.setId(1L); tt.setSessionId(100L); tt.setName("Old"); when(ttm.selectById(1L)).thenReturn(tt);
+            givenAdmin(); givenSession(100L, 10L); TicketType tt = new TicketType(); tt.setId(1L); tt.setSessionId(100L); tt.setName("Old"); when(ttm.selectById(1L)).thenReturn(tt);
             Result<TicketType> r = ctl.updateTicketType(1L, adminT(), Map.of("name","VIP Plus","price","990"));
             assertEquals(200, r.getCode());
+            verify(searchIndexEventPublisher).publishUpsert(10L);
         }
 
         @Test @DisplayName("TT-004: update status → 200") void tt004() {
             givenAdmin(); TicketType tt = new TicketType(); tt.setId(1L); tt.setSessionId(100L); tt.setStatus(1); when(ttm.selectById(1L)).thenReturn(tt);
             Result<TicketType> r = ctl.updateTicketType(1L, adminT(), Map.of("status",0));
             assertEquals(200, r.getCode());
+        }
+
+        @Test @DisplayName("TT-004A: update writes operation audit") void updateWritesOperationAudit() {
+            givenAdmin(); givenSession(100L, 10L);
+            TicketType tt = new TicketType(); tt.setId(1L); tt.setSessionId(100L); tt.setName("VIP"); tt.setPrice(new BigDecimal("880")); tt.setTotalStock(100); tt.setRemainStock(70); tt.setStatus(1);
+            when(ttm.selectById(1L)).thenReturn(tt);
+
+            Result<TicketType> r = ctl.updateTicketType(1L, adminT(), Map.of("name","VIP Plus","price","990","totalStock",120,"status",0));
+
+            assertEquals(200, r.getCode());
+            verify(uas).writeOperationAudit(argThat(audit ->
+                    Long.valueOf(2002L).equals(audit.getOperatorId())
+                            && "admin".equals(audit.getOperatorRole())
+                            && "ticket_type.update".equals(audit.getAction())
+                            && "ticket_type".equals(audit.getTargetType())
+                            && Long.valueOf(1L).equals(audit.getTargetId())
+                            && "VIP Plus".equals(audit.getTargetRef())
+                            && Boolean.TRUE.equals(audit.getSuccess())
+                            && audit.getResult().contains("名称")
+                            && audit.getResult().contains("票价")
+                            && audit.getResult().contains("总库存")
+                            && audit.getResult().contains("状态")
+            ));
+        }
+
+        @Test @DisplayName("TT-004B: audit failure does not block ticket type update") void auditFailureDoesNotBlockUpdate() {
+            givenAdmin(); givenSession(100L, 10L);
+            TicketType tt = new TicketType(); tt.setId(1L); tt.setSessionId(100L); tt.setName("VIP"); tt.setStatus(1);
+            when(ttm.selectById(1L)).thenReturn(tt);
+            doThrow(new RuntimeException("audit down")).when(uas).writeOperationAudit(any(OperationAuditWriteRequest.class));
+
+            Result<TicketType> r = ctl.updateTicketType(1L, adminT(), Map.of("status",0));
+
+            assertEquals(200, r.getCode());
+            verify(ttm).updateById(tt);
         }
 
         @Test @DisplayName("TT-005: delete → 200 (no orders)") void tt005() {
@@ -87,6 +173,7 @@ class TicketTypeManagementTest {
             Activity a = new Activity(); a.setId(10L); a.setOrganizerId(2003L); when(am.selectById(10L)).thenReturn(a);
             Result<Void> r = ctl.deleteTicketType(orgT(), null, 1L);
             assertEquals(200, r.getCode());
+            verify(searchIndexEventPublisher).publishUpsert(10L);
         }
 
         @Test @DisplayName("TT-006: delete with orders → rejected") void tt006() {
@@ -126,7 +213,19 @@ class TicketTypeManagementTest {
         }
 
         @Test @DisplayName("TT-011: stock=0 → sold out") void tt011() { assertTrue(true); }
-        @Test @DisplayName("TT-012: negative stock protection") void tt012() { assertTrue(true); }
+
+        @Test @DisplayName("TT-012: update totalStock below sold stock → rejected") void tt012() {
+            givenAdmin(); givenSession(100L, 10L);
+            TicketType tt = new TicketType(); tt.setId(1L); tt.setSessionId(100L); tt.setTotalStock(100); tt.setRemainStock(40); tt.setStatus(1);
+            when(ttm.selectById(1L)).thenReturn(tt);
+
+            Result<TicketType> r = ctl.updateTicketType(1L, adminT(), Map.of("totalStock", 50));
+
+            assertEquals(400, r.getCode());
+            assertEquals(100, tt.getTotalStock());
+            assertEquals(40, tt.getRemainStock());
+            verify(ttm, never()).updateById(any());
+        }
     }
 
     // ===== 2.3 Area/Layout Binding (TT-013~015) =====

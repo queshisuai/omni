@@ -13,6 +13,7 @@ import com.omni.ticket.entity.Session;
 import com.omni.ticket.mapper.ActivityArtistMapper;
 import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class ActivityArtistService {
     private final OrderInternalClient orderInternalClient;
     private final NotificationMqProducer notificationProducer;
     private final String internalToken;
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     public ActivityArtistService(ActivityArtistMapper activityArtistMapper, ArtistMapper artistMapper) {
         this(activityArtistMapper, artistMapper, null, null, null, null);
@@ -58,6 +60,11 @@ public class ActivityArtistService {
         this.orderInternalClient = orderInternalClient;
         this.notificationProducer = notificationProducer;
         this.internalToken = internalToken;
+    }
+
+    @Autowired(required = false)
+    public void setSearchIndexEventPublisher(ActivitySearchIndexEventPublisher searchIndexEventPublisher) {
+        this.searchIndexEventPublisher = searchIndexEventPublisher;
     }
 
     @Transactional
@@ -82,6 +89,7 @@ public class ActivityArtistService {
             activityArtistMapper.insert(row);
         }
         notifyCastChange(activityId, before, normalized);
+        publishSearchUpsert(activityId);
     }
 
     public List<ActivityArtistDto> listAdminLineup(Long activityId) {
@@ -196,6 +204,12 @@ public class ActivityArtistService {
         for (OrderInfoResponse order : result.getData()) {
             if (order == null || order.getUserId() == null || !notifiedUsers.add(order.getUserId())) continue;
             notificationProducer.sendNotification(order.getUserId(), order.getId(), "IN_APP", "你购买的活动阵容发生变更，可在订单页申请阵容变更退款。");
+        }
+    }
+
+    private void publishSearchUpsert(Long activityId) {
+        if (searchIndexEventPublisher != null && activityId != null) {
+            searchIndexEventPublisher.publishUpsert(activityId);
         }
     }
 }

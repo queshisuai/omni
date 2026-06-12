@@ -1,11 +1,14 @@
 package com.omni.ticket.client;
 
 import com.omni.common.dto.InternalAuthContextResponse;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.result.Result;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 @FeignClient(name = "java-user")
@@ -18,4 +21,8 @@ public interface UserInternalClient {
     @GetMapping("/api/user/internal/auth/context/{id}")
     Result<InternalAuthContextResponse> getAuthContext(@PathVariable("id") Long id,
                                                        @RequestHeader("X-Internal-Token") String internalToken);
+
+    @PostMapping("/api/user/internal/operation-audits")
+    Result<Void> writeOperationAudit(@RequestBody OperationAuditWriteRequest request,
+                                     @RequestHeader("X-Internal-Token") String internalToken);
 }

@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getToken, getUser } from '@/lib/auth'
-import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
+import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, notifyActivityBuyers, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
 import { getRealNameRequirementLabel, getTicketTransferAllowedLabel } from '@/lib/activity-flags'
 import { canUseConsoleAction, hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
-import { Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
+import { Bell, Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
-import type { ActivityEntity, PageResult, RefundImpactResponse, TourEntity, UserRole } from '@/types/api'
+import type { ActivityBuyerNotificationResponse, ActivityEntity, PageResult, RefundImpactResponse, TourEntity, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
 const ADMIN_FETCH_SIZE = 500
@@ -38,21 +38,87 @@ function getActivityStatusText(activity: ActivityEntity) {
   if (activity.publishStatus === 'risk_suspended') return '风险停票'
   if (activity.publishStatus === 'deactivated') return '下架'
   if (activity.publishStatus === 'announced') return '上架'
-  return activity.status === 1 ? '上架' : '下架'
+  if (activity.status === 1) return '上架'
+  if (activity.status === 0) return '下架'
+  return '未知活动状态'
 }
 
 function getActivityStatusClass(activity: ActivityEntity) {
   if (activity.publishStatus === 'draft') return 'bg-[#fff7ed] text-[#f97316]'
   if (activity.publishStatus === 'risk_suspended') return 'bg-[#fff1f2] text-[#e11d48]'
-  return activity.status === 1 ? 'bg-[#f0fff4] text-[#22c55e]' : 'bg-[#f5f5f5] text-[#999]'
+  if (activity.status === 1) return 'bg-[#f0fff4] text-[#22c55e]'
+  if (activity.status === 0) return 'bg-[#f5f5f5] text-[#999]'
+  return 'bg-[#fff7ed] text-[#f97316]'
+}
+
+function isKnownActivitySaleStatus(status: number) {
+  return status === 1 || status === 0
+}
+
+function getActivitySaleActionTitle(activity: ActivityEntity) {
+  if (!isKnownActivitySaleStatus(activity.status)) return '状态待核对'
+  return activity.itemType === 'tour' || activity.status === 1 ? '下架并退款' : '上架'
+}
+
+function nextActivitySaleStatus(status: number) {
+  return status === 1 ? 0 : 1
+}
+
+function shouldShowSaleStatusControl(activity: ActivityEntity) {
+  if (activity.publishStatus === 'draft' || activity.publishStatus === 'risk_suspended') return false
+  if (activity.itemType === 'tour' && activity.publishStatus === 'deactivated') return false
+  return true
 }
 
 function canToggleSaleStatus(activity: ActivityEntity) {
+  if (!isKnownActivitySaleStatus(activity.status)) return false
   if (activity.publishStatus === 'draft' || activity.publishStatus === 'risk_suspended') return false
   if (activity.itemType === 'tour') {
     return activity.status === 1 && activity.publishStatus !== 'deactivated'
   }
   return true
+}
+
+function isBatchDeactivatableActivity(activity: ActivityEntity) {
+  return canToggleSaleStatus(activity) && (activity.itemType === 'tour' || nextActivitySaleStatus(activity.status) === 0)
+}
+
+function getBatchDeactivatableActivities(activities: ActivityEntity[], selectedActivityKeys: Set<string>) {
+  return activities.filter(activity => selectedActivityKeys.has(activityRowKey(activity)) && isBatchDeactivatableActivity(activity))
+}
+
+function isBatchNotifiableActivity(activity: ActivityEntity) {
+  if (activity.itemType === 'tour') return false
+  if (activity.publishStatus === 'draft' || activity.publishStatus === 'risk_suspended') return false
+  return isKnownActivitySaleStatus(activity.status)
+}
+
+function getBatchNotifiableActivities(activities: ActivityEntity[], selectedActivityKeys: Set<string>) {
+  return activities.filter(activity => selectedActivityKeys.has(activityRowKey(activity)) && isBatchNotifiableActivity(activity))
+}
+
+function isBatchSelectableActivity(activity: ActivityEntity) {
+  return isBatchDeactivatableActivity(activity) || isBatchNotifiableActivity(activity)
+}
+
+function buildRefundImpactSummary(result: Pick<RefundImpactResponse,
+  'deactivatedActivityCount' |
+  'paidOrderCount' |
+  'refundSuccessCount' |
+  'refundFailedCount' |
+  'refundUnknownCount' |
+  'refundCompensationRequiredCount'
+>) {
+  return `已下架活动 ${result.deactivatedActivityCount} 个，已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
+}
+
+function buildBuyerNotificationSummary(result: Pick<ActivityBuyerNotificationResponse,
+  'paidOrderCount' |
+  'notifiedUserCount' |
+  'notificationCount' |
+  'skippedOrderCount'
+>) {
+  return `已支付订单 ${result.paidOrderCount} 笔，通知用户 ${result.notifiedUserCount} 人，站内通知 ${result.notificationCount} 条，跳过订单 ${result.skippedOrderCount} 笔。`
 }
 
 function emptyPage<T>(): PageResult<T> {
@@ -79,12 +145,18 @@ export default function ActivitiesPage() {
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
   const [publishingKey, setPublishingKey] = useState<string | null>(null)
+  const [selectedActivityKeys, setSelectedActivityKeys] = useState<Set<string>>(() => new Set())
   const loadDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
   const isAdmin = isPlatformAdminRole(role)
   const canManageActivities = hasConsolePermission(role, permissionCodes, 'activity.manage')
   const canManageTours = hasConsolePermission(role, permissionCodes, 'tour.manage')
   const canReviewRisk = canUseConsoleAction('risk.review', permissionCodes)
+  const batchSelectableActivities = activities.filter(isBatchSelectableActivity)
+  const batchDeactivatableActivities = getBatchDeactivatableActivities(activities, selectedActivityKeys)
+  const batchNotifiableActivities = getBatchNotifiableActivities(activities, selectedActivityKeys)
+  const allBatchSelectableSelected = batchSelectableActivities.length > 0 &&
+    batchSelectableActivities.every(activity => selectedActivityKeys.has(activityRowKey(activity)))
   const canPublishDraft = (activity: ActivityEntity) => {
     const canManageRowType = activity.itemType === 'tour' ? canManageTours : canManageActivities
     return activity.publishStatus === 'draft' && (canManageRowType || activity.organizerId === userId)
@@ -140,7 +212,10 @@ export default function ActivitiesPage() {
       const nextTotal = records.length
       const nextPages = Math.ceil(nextTotal / PAGE_SIZE) || 1
       const safePage = Math.min(Math.max(1, nextPage), nextPages)
-      setActivities(records.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE))
+      const pageRecords = records.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+      const pageKeys = new Set(pageRecords.filter(isBatchSelectableActivity).map(activityRowKey))
+      setActivities(pageRecords)
+      setSelectedActivityKeys(previous => new Set([...previous].filter(key => pageKeys.has(key))))
       setTotal(nextTotal)
       setPages(nextPages)
       setPage(safePage)
@@ -186,7 +261,7 @@ export default function ActivitiesPage() {
 
   const alertRefundImpact = async (targetLabel: string, result: RefundImpactResponse) => {
     const abnormalCount = result.refundFailedCount + result.refundUnknownCount + result.refundCompensationRequiredCount
-    const summary = `已下架活动 ${result.deactivatedActivityCount} 个，已支付订单 ${result.paidOrderCount} 笔，退款成功 ${result.refundSuccessCount} 笔，退款失败 ${result.refundFailedCount} 笔，结果未知 ${result.refundUnknownCount} 笔，需人工处理 ${result.refundCompensationRequiredCount} 笔。`
+    const summary = buildRefundImpactSummary(result)
     if (abnormalCount > 0) {
       await globalAlert(`${targetLabel}已下架并发起退款，但部分退款失败/结果未知/需人工处理。${summary}`)
     } else {
@@ -194,10 +269,160 @@ export default function ActivitiesPage() {
     }
   }
 
+  const toggleActivitySelection = (activity: ActivityEntity, checked: boolean) => {
+    if (!isBatchSelectableActivity(activity)) return
+    const key = activityRowKey(activity)
+    setSelectedActivityKeys(previous => {
+      const next = new Set(previous)
+      if (checked) {
+        next.add(key)
+      } else {
+        next.delete(key)
+      }
+      return next
+    })
+  }
+
+  const toggleAllBatchSelectable = (checked: boolean) => {
+    setSelectedActivityKeys(previous => {
+      const next = new Set(previous)
+      for (const activity of batchSelectableActivities) {
+        const key = activityRowKey(activity)
+        if (checked) {
+          next.add(key)
+        } else {
+          next.delete(key)
+        }
+      }
+      return next
+    })
+  }
+
+  const handleBatchDeactivate = async () => {
+    const selected = getBatchDeactivatableActivities(activities, selectedActivityKeys)
+    if (selected.length === 0) {
+      await globalAlert('请先选择可下架的上架活动或巡演。')
+      return
+    }
+    const confirmed = await globalConfirm(`已选择 ${selected.length} 个活动/巡演。批量下架并退款后，所选活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意批量下架并同意退款。`)
+    if (!confirmed) return
+
+    const impact = {
+      deactivatedActivityCount: 0,
+      paidOrderCount: 0,
+      refundSuccessCount: 0,
+      refundFailedCount: 0,
+      refundUnknownCount: 0,
+      refundCompensationRequiredCount: 0,
+    }
+    const failedMessages: string[] = []
+    const completedKeys = new Set<string>()
+
+    for (const activity of selected) {
+      try {
+        const result = activity.itemType === 'tour'
+          ? await deactivateTour(activity.id, {
+            userId,
+            confirmRefund: true,
+            reason: isAdmin ? '平台批量下架巡演/多站点活动自动退款' : '主办方批量下架巡演/多站点活动自动退款',
+          })
+          : await deactivateActivity(activity.id, {
+            userId,
+            confirmRefund: true,
+            reason: isAdmin ? '平台批量下架活动自动退款' : '主办方批量下架活动自动退款',
+          })
+        impact.deactivatedActivityCount += result.deactivatedActivityCount
+        impact.paidOrderCount += result.paidOrderCount
+        impact.refundSuccessCount += result.refundSuccessCount
+        impact.refundFailedCount += result.refundFailedCount
+        impact.refundUnknownCount += result.refundUnknownCount
+        impact.refundCompensationRequiredCount += result.refundCompensationRequiredCount
+        completedKeys.add(activityRowKey(activity))
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '处理失败'
+        failedMessages.push(`${activity.name || '活动信息待同步'}：${message}`)
+      }
+    }
+
+    if (completedKeys.size > 0) {
+      setSelectedActivityKeys(previous => new Set([...previous].filter(key => !completedKeys.has(key))))
+      loadData(page)
+    }
+
+    const abnormalCount = impact.refundFailedCount + impact.refundUnknownCount + impact.refundCompensationRequiredCount
+    const outcome = `批量下架处理完成：成功 ${completedKeys.size} 个，失败 ${failedMessages.length} 个。${buildRefundImpactSummary(impact)}`
+    if (failedMessages.length > 0) {
+      await globalAlert(`${outcome}失败明细：${failedMessages.slice(0, 3).join('；')}${failedMessages.length > 3 ? '；其余失败项请刷新后重试。' : ''}`)
+    } else if (abnormalCount > 0) {
+      await globalAlert(`${outcome}部分退款失败/结果未知/需人工处理，请进入退款审核页继续跟进。`)
+    } else {
+      await globalAlert(outcome)
+    }
+  }
+
+  const handleBatchNotifyBuyers = async () => {
+    const selected = getBatchNotifiableActivities(activities, selectedActivityKeys)
+    if (selected.length === 0) {
+      await globalAlert('请先选择可通知的普通活动。')
+      return
+    }
+    const content = await globalPrompt('通知内容将发送给所选普通活动的已支付订单用户，请填写明确的中文通知。', '批量通知购票用户', '请输入通知内容（必填）')
+    if (content === null) return
+    const trimmedContent = content.trim()
+    if (!trimmedContent) {
+      await globalAlert('通知内容不能为空')
+      return
+    }
+    const confirmed = await globalConfirm(`已选择 ${selected.length} 个普通活动。该操作仅发送站内通知，不发送短信或邮件；用户将从通知跳转到对应订单详情。请确认：仅发送站内通知。`)
+    if (!confirmed) return
+
+    const impact = {
+      paidOrderCount: 0,
+      notifiedUserCount: 0,
+      notificationCount: 0,
+      skippedOrderCount: 0,
+    }
+    const failedMessages: string[] = []
+    const completedKeys = new Set<string>()
+
+    for (const activity of selected) {
+      try {
+        const result = await notifyActivityBuyers(activity.id, {
+          userId,
+          confirmNotify: true,
+          content: trimmedContent,
+        })
+        impact.paidOrderCount += result.paidOrderCount
+        impact.notifiedUserCount += result.notifiedUserCount
+        impact.notificationCount += result.notificationCount
+        impact.skippedOrderCount += result.skippedOrderCount
+        completedKeys.add(activityRowKey(activity))
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '通知失败'
+        failedMessages.push(`${activity.name || '活动信息待同步'}：${message}`)
+      }
+    }
+
+    if (completedKeys.size > 0) {
+      setSelectedActivityKeys(previous => new Set([...previous].filter(key => !completedKeys.has(key))))
+    }
+
+    const outcome = `批量通知处理完成：成功 ${completedKeys.size} 个，失败 ${failedMessages.length} 个。${buildBuyerNotificationSummary(impact)}`
+    if (failedMessages.length > 0) {
+      await globalAlert(`${outcome}失败明细：${failedMessages.slice(0, 3).join('；')}${failedMessages.length > 3 ? '；其余失败项请刷新后重试。' : ''}`)
+    } else {
+      await globalAlert(outcome)
+    }
+  }
+
   const handleToggleStatus = async (activity: ActivityEntity) => {
+    if (!isKnownActivitySaleStatus(activity.status)) {
+      await globalAlert('活动状态未知，请先核对后再操作。')
+      return
+    }
     if (activity.itemType === 'tour') {
       if (activity.status !== 1 || activity.publishStatus === 'deactivated') {
-        await globalAlert('该巡演/多站点活动已下架，暂不支持从列表直接重新上架。')
+        await globalAlert('该巡演/多站点活动已下架，请进入巡演详情查看城市站点状态并按流程重新发布。')
         return
       }
       const confirmed = await globalConfirm('下架并退款后，巡演/多站点活动下已发布的城市站点、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意下架并同意退款。')
@@ -211,7 +436,7 @@ export default function ActivitiesPage() {
       loadData(page)
       return
     }
-    const newStatus = activity.status === 1 ? 0 : 1
+    const newStatus = nextActivitySaleStatus(activity.status)
     if (newStatus === 0) {
       const confirmed = await globalConfirm('下架并退款后，活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意下架并同意退款。')
       if (!confirmed) return
@@ -479,10 +704,54 @@ export default function ActivitiesPage() {
           暂无匹配活动，可调整筛选条件或点击上方新建活动草稿。
         </div>
       ) : (
+        <>
+        <div className="mb-3 flex flex-col gap-3 rounded-lg border border-[#e5e5e5] bg-white px-4 py-3 text-[13px] text-[#666] sm:flex-row sm:items-center sm:justify-between">
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={allBatchSelectableSelected}
+              disabled={batchSelectableActivities.length === 0}
+              onChange={(event) => toggleAllBatchSelectable(event.target.checked)}
+              aria-label="选择当前页可批量操作活动"
+              className="h-4 w-4 accent-[#ff1268]"
+            />
+            <span>已选择 {selectedActivityKeys.size} 个，可批量下架 {batchDeactivatableActivities.length} 个，可通知 {batchNotifiableActivities.length} 个</span>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleBatchNotifyBuyers}
+              disabled={batchNotifiableActivities.length === 0}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#ff1268] bg-white px-3 text-[13px] font-medium text-[#ff1268] disabled:cursor-not-allowed disabled:border-[#f3a1bf] disabled:text-[#f3a1bf]"
+              title="批量通知购票用户"
+            >
+              <Bell className="h-4 w-4" /> 批量通知购票用户
+            </button>
+            <button
+              type="button"
+              onClick={handleBatchDeactivate}
+              disabled={batchDeactivatableActivities.length === 0}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[#ff1268] px-3 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:bg-[#f3a1bf]"
+              title="批量下架并退款"
+            >
+              <EyeOff className="h-4 w-4" /> 批量下架并退款
+            </button>
+          </div>
+        </div>
         <div className="overflow-hidden rounded-xl border border-[#e5e5e5] bg-white">
           <table className="w-full text-[14px]">
             <thead>
               <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
+                <th className="w-[52px] p-3 text-left font-medium text-[#666]">
+                  <input
+                    type="checkbox"
+                    checked={allBatchSelectableSelected}
+                    disabled={batchSelectableActivities.length === 0}
+                    onChange={(event) => toggleAllBatchSelectable(event.target.checked)}
+                    aria-label="选择当前页可批量操作活动"
+                    className="h-4 w-4 accent-[#ff1268]"
+                  />
+                </th>
                 <th className="text-left p-3 font-medium text-[#666]">活动类型</th>
                 <th className="text-left p-3 font-medium text-[#666]">活动名称</th>
                 <th className="text-left p-3 font-medium text-[#666]">状态</th>
@@ -494,10 +763,22 @@ export default function ActivitiesPage() {
               {activities.map(a => {
                 const rowKey = activityRowKey(a)
                 const isTour = a.itemType === 'tour'
+                const canBatchDeactivate = isBatchDeactivatableActivity(a)
+                const canBatchSelect = isBatchSelectableActivity(a)
                 const configHref = isTour ? `/console/tours/${a.id}` : `/console/activities/${a.id}/edit`
                 const seatHref = isTour ? `/console/tours/${a.id}?mode=seatcraft` : `/console/sessions?activityId=${a.id}`
                 return (
                 <tr key={rowKey} className="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
+                  <td className="p-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedActivityKeys.has(rowKey)}
+                      disabled={!canBatchSelect}
+                      onChange={(event) => toggleActivitySelection(a, event.target.checked)}
+                      aria-label={`选择活动 ${a.name || '活动信息待同步'}`}
+                      className="h-4 w-4 accent-[#ff1268] disabled:cursor-not-allowed"
+                    />
+                  </td>
                   <td className="p-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-[12px] ${isTour ? 'bg-[#eff6ff] text-[#2563eb]' : 'bg-[#f5f5f5] text-[#666]'}`}>
                       {isTour ? '巡演 / 多站点活动' : '普通活动'}
@@ -525,11 +806,12 @@ export default function ActivitiesPage() {
                   <td className="p-3 text-[#999]">{a.createTime?.substring(0, 10)}</td>
                   <td className="p-3">
                     <div className="flex items-center justify-center gap-2">
-                      {canToggleSaleStatus(a) && (
+                      {shouldShowSaleStatusControl(a) && (
                         <button
                           onClick={() => handleToggleStatus(a)}
+                          disabled={!canToggleSaleStatus(a)}
                           className="p-1.5 rounded hover:bg-[#f0f0f0] text-[#666] transition-colors bg-transparent border-none cursor-pointer"
-                          title={a.itemType === 'tour' || a.status === 1 ? '下架并退款' : '上架'}
+                          title={getActivitySaleActionTitle(a)}
                         >
                           {a.itemType === 'tour' || a.status === 1 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
@@ -618,6 +900,7 @@ export default function ActivitiesPage() {
             </div>
           </div>
         </div>
+        </>
       )}
       {riskTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">

@@ -824,6 +824,8 @@ Expected:
 
 当前记录：已在 `http://localhost:3006/console/check-in` 完成手工验证。主办方账号 `13800000002` 查询 `sessionId=910011` 可看到总票数 `1`、已验票 `1`、未入场 `0`、失败 `1`、重复扫码 `1`，表格包含 `REAL-CHECKIN-SUCCESS-983013`、`REAL-CHECKIN-DUPLICATE-983013`、`REAL-CHECKIN-FAILED-983013` 三条记录。平台管理员账号 `13800000001` 查询同一场次也能看到相同概览和记录。普通用户账号 `13900000001` 访问 `/console/check-in` 被重定向回首页，且 `/tickets` 中 `ETREAL983013` 显示“已验票”。
 
+标准端口补充记录：2026-06-09 已在标准 Gateway `8088`、标准前端代理 `3000/api` 和标准浏览器 `http://localhost:3000/console/check-in` 复测 `sessionId=910011`。平台管理员 `13800000001` 与主办方 `13800000002` 均返回业务 `code=200`，概览为总票数 `1`、已验票 `1`、未入场 `0`、失败 `1`、重复扫码 `1`，记录包含 `REAL-CHECKIN-SUCCESS-983013`、`REAL-CHECKIN-DUPLICATE-983013`、`REAL-CHECKIN-FAILED-983013`。普通用户 `13900000001` 经 Gateway 查询被业务 `403 无权限` 拒绝。浏览器页面可见相同概览和记录，console error 为 `0`。
+
 启动项目后走：
 
 ```text

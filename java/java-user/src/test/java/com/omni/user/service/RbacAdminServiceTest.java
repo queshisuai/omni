@@ -66,6 +66,29 @@ class RbacAdminServiceTest {
     }
 
     @Test
+    void returnsPermissionDiffForAuditSummary() {
+        RbacRole role = new RbacRole();
+        role.setCode("support_manager");
+        RbacPermission accountPermission = permission("support.account.manage", "客服账号管理");
+        RbacPermission auditPermission = permission("audit.view", "操作审计");
+        RbacPermission conversationPermission = permission("support.conversation.view", "客服会话查看");
+        when(roleMapper.selectOne(any())).thenReturn(role);
+        when(permissionMapper.selectList(any())).thenReturn(List.of(accountPermission, auditPermission, conversationPermission));
+        when(rolePermissionMapper.selectList(any())).thenReturn(List.of(
+                rolePermission("support_manager", "audit.view"),
+                rolePermission("support_manager", "support.conversation.view")
+        ));
+
+        RbacAdminService.RolePermissionUpdateResult result =
+                service.updateRolePermissions("support_manager", List.of("support.conversation.view", "support.account.manage"));
+
+        assertEquals(List.of("support.account.manage"), result.getAddedPermissionCodes());
+        assertEquals(List.of("audit.view"), result.getRemovedPermissionCodes());
+        assertEquals("新增权限：客服账号管理（support.account.manage）；移除权限：操作审计（audit.view）；更新后权限数：2",
+                result.toAuditSummary());
+    }
+
+    @Test
     void rejectsUnknownPermissionCode() {
         RbacRole role = new RbacRole();
         role.setCode("support_manager");
@@ -100,5 +123,19 @@ class RbacAdminServiceTest {
                 List.of("rbac.manage", "station.review", "organizer.review"),
                 captor.getAllValues().stream().map(RbacRolePermission::getPermissionCode).collect(java.util.stream.Collectors.toList())
         );
+    }
+
+    private RbacPermission permission(String code, String name) {
+        RbacPermission permission = new RbacPermission();
+        permission.setCode(code);
+        permission.setName(name);
+        return permission;
+    }
+
+    private RbacRolePermission rolePermission(String roleCode, String permissionCode) {
+        RbacRolePermission rolePermission = new RbacRolePermission();
+        rolePermission.setRoleCode(roleCode);
+        rolePermission.setPermissionCode(permissionCode);
+        return rolePermission;
     }
 }

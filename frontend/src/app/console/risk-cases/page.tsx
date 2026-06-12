@@ -15,6 +15,25 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string }> 
   rejected: { label: '已驳回', color: '#b91c1c', bg: '#fef2f2' },
 }
 
+function getRiskCaseStatusMeta(status: string) {
+  return STATUS_META[status] || { label: '未知审核状态', color: '#6b7280', bg: '#f3f4f6' }
+}
+
+function isKnownRiskCaseStatus(status: string) {
+  return Object.prototype.hasOwnProperty.call(STATUS_META, status)
+}
+
+function formatRiskCaseActionLabel(status: string) {
+  if (status === 'awaiting_response') return '等待主办方处理'
+  if (!isKnownRiskCaseStatus(status)) return '状态待核对'
+  return ''
+}
+
+function getRiskCaseActionClassName(status: string) {
+  if (!isKnownRiskCaseStatus(status)) return 'rounded-lg border border-[#ffd591] bg-[#fff7e6] px-4 py-2 text-[13px] text-[#ad6800]'
+  return 'rounded-lg bg-[#f3f4f6] px-4 py-2 text-[13px] text-[#666]'
+}
+
 function formatDate(value?: string | null): string {
   if (!value) return ''
   const date = new Date(value)
@@ -103,7 +122,7 @@ export default function RiskCasesPage() {
         <div className="space-y-3">
           {pageVisible.map(item => {
             const status = item.latestResolutionStatus || 'awaiting_response'
-            const meta = STATUS_META[status]
+            const meta = getRiskCaseStatusMeta(status)
             return (
               <div key={item.activityId} className="rounded-xl border border-[#ffd9e6] bg-white p-5">
                 <div className="flex flex-wrap items-start gap-3">
@@ -112,8 +131,8 @@ export default function RiskCasesPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[16px] font-medium text-[#111]">{item.activityName}</span>
                       <span className="rounded-full bg-[#fef2f2] px-2 py-0.5 text-[12px] text-[#b91c1c]">风险停票</span>
-                      {meta && <span className="rounded-full px-2 py-0.5 text-[12px]" style={{ color: meta.color, backgroundColor: meta.bg }}>{meta.label}</span>}
-                      <span className="text-[12px] text-[#999]">活动 ID：{item.activityId} · 主办 {item.organizerId}</span>
+                      <span className="rounded-full px-2 py-0.5 text-[12px]" style={{ color: meta.color, backgroundColor: meta.bg }}>{meta.label}</span>
+                      <span className="text-[12px] text-[#999]">活动编号：{item.activityId} · 主办方编号：{item.organizerId}</span>
                     </div>
                     {item.riskSuspendedReason && <div className="mt-2 text-[13px] leading-5 text-[#666]">停售原因：{item.riskSuspendedReason}</div>}
                     {item.riskSuspendedAt && <div className="mt-1 text-[12px] text-[#999]">停售时间：{formatDate(item.riskSuspendedAt)}</div>}
@@ -135,7 +154,7 @@ export default function RiskCasesPage() {
                         查看恢复记录
                       </Link>
                     ) : (
-                      <span className="rounded-lg bg-[#f3f4f6] px-4 py-2 text-[13px] text-[#666]">等待主办方处理</span>
+                      <span className={getRiskCaseActionClassName(status)}>{formatRiskCaseActionLabel(status)}</span>
                     )}
                   </div>
                 </div>

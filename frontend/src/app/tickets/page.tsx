@@ -10,6 +10,7 @@ import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import { TicketWalletSkeleton } from '@/components/Skeleton'
 import { claimTicketTransfer, createTicketEntryCode, createTicketTransfer, listMyTickets, revokeTicketTransfer } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
+import { getTicketWalletStatusCopy } from '@/lib/ticket-wallet-experience'
 import type { TicketEntryCodeVO, TicketTransferCreateVO, TicketWalletItemVO } from '@/types/api'
 
 type TicketTab = 'all' | 'unused' | 'checked' | 'transferred' | 'invalid'
@@ -20,6 +21,7 @@ const STATUS_META: Record<number, { label: string; className: string }> = {
   3: { label: '已失效', className: 'border-[#ddd] bg-[#f7f7f7] text-[#777]' },
   4: { label: '已转赠', className: 'border-[#fa8c16]/25 bg-[#fff7e6] text-[#ad6800]' },
 }
+const UNKNOWN_STATUS_META = { label: '状态同步中', className: 'border-[#ddd] bg-[#f7f7f7] text-[#777]' }
 
 function formatDateTime(value?: string | null) {
   if (!value) return '时间待定'
@@ -27,7 +29,7 @@ function formatDateTime(value?: string | null) {
 }
 
 function statusMeta(status: number) {
-  return STATUS_META[status] || STATUS_META[3]
+  return STATUS_META[status] || UNKNOWN_STATUS_META
 }
 
 function normalizeTicket(ticket: TicketWalletItemVO): TicketWalletItemVO {
@@ -35,7 +37,7 @@ function normalizeTicket(ticket: TicketWalletItemVO): TicketWalletItemVO {
     ...ticket,
     activityName: ticket.activityName || '未命名演出',
     venueName: ticket.venueName || '场馆待定',
-    ticketName: ticket.ticketName || `票档 ${ticket.ticketTypeId}`,
+    ticketName: ticket.ticketName || '票档信息待同步',
     seatLabel: ticket.seatLabel || '未分配座位',
   }
 }
@@ -260,6 +262,7 @@ export default function TicketsPage() {
             {filteredTickets.map((ticket) => {
               const meta = statusMeta(ticket.status)
               const transfer = activeTransfers[ticket.ticketId]
+              const statusCopy = getTicketWalletStatusCopy(ticket, transfer)
               const canUse = ticket.status === 1
               return (
                 <div key={ticket.ticketId} className="rounded-lg border border-[#eee] bg-white p-4 shadow-sm">
@@ -277,7 +280,7 @@ export default function TicketsPage() {
                         <span className="text-[12px] text-[#999]">票号 {ticket.ticketNo}</span>
                       </div>
                       <button
-                        onClick={() => ticket.orderId && router.push(`/orders`)}
+                        onClick={() => ticket.orderId && router.push(`/orders/${ticket.orderId}`)}
                         className="block max-w-full truncate border-none bg-transparent p-0 text-left text-[17px] font-semibold text-[#111] outline-none hover:text-[#ff1268]"
                       >
                         {ticket.activityName}
@@ -295,6 +298,10 @@ export default function TicketsPage() {
                         <div className="rounded-lg bg-[#fafafa] px-3 py-2">
                           证件：<span className="text-[#333]">{ticket.idNoMask || '-'}</span>
                         </div>
+                      </div>
+                      <div className="mt-3 rounded-lg border border-[#eef2ff] bg-[#f8fbff] px-3 py-3 text-[13px] text-[#555]">
+                        <div className="font-medium text-[#1f2a44]">{statusCopy.title}</div>
+                        <div className="mt-1 leading-5">{statusCopy.description}</div>
                       </div>
                       {transfer && (
                         <div className="mt-3 rounded-lg border border-[#ffe0ea] bg-[#fff7fa] px-3 py-3 text-[13px] text-[#666]">

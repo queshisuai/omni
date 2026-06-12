@@ -58,9 +58,9 @@ public class MockPaymentService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "当前订单状态不允许支付");
         }
 
-        Payment payment = paymentService.mockPay(order.getId(), order.getAmount());
-        paymentConfirmationService.confirmMockPayment(payment);
-        return buildResponse(order, payment.getPaymentNo(), "模拟支付成功");
+        Payment payment = paymentService.recordLocalPaymentConfirmation(order.getId(), order.getAmount());
+        paymentConfirmationService.confirmLocalPaymentConfirmation(payment);
+        return buildResponse(order, payment.getPaymentNo(), "本地支付确认成功");
     }
 
     private OrderInfoResponse getOrder(Long orderId) {

@@ -1,8 +1,10 @@
 package com.omni.notification.mq;
 
 import com.omni.common.mq.MqConstants;
+import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.common.mq.message.NotificationMessage;
 import com.omni.notification.dto.InternalNotificationRequest;
+import com.omni.notification.service.NotificationEventService;
 import com.omni.notification.service.NotificationService;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.Message;
@@ -22,10 +24,14 @@ public class NotificationMessageListener {
     private static final long MAX_RETRY_COUNT = 3L;
 
     private final NotificationService notificationService;
+    private final NotificationEventService notificationEventService;
     private final RabbitTemplate rabbitTemplate;
 
-    public NotificationMessageListener(NotificationService notificationService, RabbitTemplate rabbitTemplate) {
+    public NotificationMessageListener(NotificationService notificationService,
+                                       NotificationEventService notificationEventService,
+                                       RabbitTemplate rabbitTemplate) {
         this.notificationService = notificationService;
+        this.notificationEventService = notificationEventService;
         this.rabbitTemplate = rabbitTemplate;
     }
 
@@ -52,6 +58,25 @@ public class NotificationMessageListener {
                 return;
             }
             throw new AmqpRejectAndDontRequeueException("通知消息处理失败，进入重试队列", e);
+        }
+    }
+
+    @RabbitListener(queues = MqConstants.Q_NOTIFICATION_EVENT)
+    public void onNotificationEvent(NotificationEventMessage message, Message rawMessage) {
+        log.info("收到通知事件: eventId={}, userId={}, eventType={}",
+                message.getEventId(), message.getUserId(), message.getEventType());
+        try {
+            notificationEventService.processEvent(message);
+        } catch (Exception e) {
+            log.error("通知事件处理失败: eventId={}, userId={}, eventType={}, message={}",
+                    message.getEventId(), message.getUserId(), message.getEventType(), e.getMessage(), e);
+            if (retryCount(rawMessage, MqConstants.Q_NOTIFICATION_EVENT_RETRY) >= MAX_RETRY_COUNT) {
+                rabbitTemplate.convertAndSend(MqConstants.NOTIFICATION_DLX, MqConstants.RK_NOTIFICATION_EVENT_DLQ, message);
+                log.warn("通知事件已进入死信队列: eventId={}, userId={}, eventType={}",
+                        message.getEventId(), message.getUserId(), message.getEventType());
+                return;
+            }
+            throw new AmqpRejectAndDontRequeueException("通知事件处理失败，进入重试队列", e);
         }
     }
 

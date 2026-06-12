@@ -6,7 +6,10 @@ import {
   canTriggerTeamGrab,
   normalizeFallbacks,
   strategyLabel,
+  teamContextSummary,
+  teamMemberDisplayName,
   teamMemberSeatAssignmentLabel,
+  teamStatusLabel,
 } from './team-grab.ts'
 import type { TicketTeamDetailVO, TicketTeamMemberVO, TicketTeamVO } from '@/types/api'
 
@@ -65,6 +68,11 @@ function makeDetail(overrides: Partial<TicketTeamDetailVO> = {}): TicketTeamDeta
 
 test('labels strict contiguous strategy', () => {
   assert.equal(strategyLabel('STRICT_CONTIGUOUS'), '优先连座')
+})
+
+test('uses Chinese fallback for unknown team strategy and status', () => {
+  assert.equal(strategyLabel('FUTURE_STRATEGY' as never), '未知策略')
+  assert.equal(teamStatusLabel('FUTURE_STATUS' as never), '状态同步中')
 })
 
 test('keeps looser fallbacks in their original order', () => {
@@ -174,9 +182,16 @@ test('uses readable team seat labels before opaque ids', () => {
   )
   assert.equal(
     teamMemberSeatAssignmentLabel(makeMember({ seatId: 501, orderSeatId: 7001, seatLabel: null })),
-    'seatId 501 / orderSeatId 7001',
+    '座位确认中',
   )
+  assert.equal(teamMemberSeatAssignmentLabel(makeMember({ seatId: 501, orderSeatId: 7001, seatLabel: null })).includes('501'), false)
   assert.equal(teamMemberSeatAssignmentLabel(makeMember()), '')
+})
+
+test('builds member display names without exposing user ids', () => {
+  assert.equal(teamMemberDisplayName(makeMember({ userId: 10 }), { leaderUserId: 10, currentUserId: 11, index: 0 }), '队长')
+  assert.equal(teamMemberDisplayName(makeMember({ userId: 11 }), { leaderUserId: 10, currentUserId: 11, index: 1 }), '我')
+  assert.equal(teamMemberDisplayName(makeMember({ userId: 12 }), { leaderUserId: 10, currentUserId: 11, index: 2 }), '成员 3')
 })
 
 test('leader can remove non-leader members only while the team is editable', () => {
@@ -196,4 +211,27 @@ test('leader can remove non-leader members only while the team is editable', () 
     canLeaderRemoveTeamMember(makeTeam({ status: 'READY', leaderUserId: 10 }), 10, makeMember({ userId: 10, role: 'LEADER', status: 'CONFIRMED' })),
     false,
   )
+})
+
+test('builds readable team context summary from ticket context before ids', () => {
+  const summary = teamContextSummary(makeTeam({
+    activityName: '周末演唱会',
+    ticketTypeName: '看台 A',
+    venueName: '万象体育馆',
+    sessionTime: '2026-07-18T19:30:00',
+  }))
+
+  assert.equal(summary.title, '周末演唱会')
+  assert.deepEqual(summary.meta, ['2026-07-18 19:30', '看台 A', '万象体育馆'])
+  assert.equal(summary.meta.join(' ').includes('场次 30'), false)
+  assert.equal(summary.meta.join(' ').includes('票档 40'), false)
+})
+
+test('falls back to synchronization labels instead of opaque ids when team context is missing', () => {
+  const summary = teamContextSummary(makeTeam())
+
+  assert.equal(summary.title, '活动信息同步中')
+  assert.deepEqual(summary.meta, ['场次信息同步中', '票档信息同步中'])
+  assert.equal(summary.meta.join(' ').includes('30'), false)
+  assert.equal(summary.meta.join(' ').includes('40'), false)
 })

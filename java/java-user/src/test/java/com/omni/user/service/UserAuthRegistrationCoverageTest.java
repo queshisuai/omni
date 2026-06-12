@@ -34,8 +34,12 @@ class UserAuthRegistrationCoverageTest {
     @Mock RbacService rbacService;
     PasswordEncoder pe = new BCryptPasswordEncoder();
     UserService svc;
+    UserService mockSmsSvc;
 
-    @BeforeEach void setup() { svc = new UserService(um, pe, rbacService); }
+    @BeforeEach void setup() {
+        svc = new UserService(um, pe, rbacService);
+        mockSmsSvc = new UserService(um, pe, rbacService, true);
+    }
     @BeforeAll static void jwt() { if (System.getenv("JWT_SECRET")==null) System.setProperty("JWT_SECRET","test-jwt-secret-must-be-at-least-32-bytes"); }
     @BeforeAll static void mybatis() { TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(),""), User.class); }
 
@@ -72,7 +76,7 @@ class UserAuthRegistrationCoverageTest {
             User user = u(2004L,"13900000001","user","123456");
             when(um.selectOne(any())).thenReturn(user);
             LoginRequest r = new LoginRequest(); r.setLoginType("password"); r.setAccount("13900000001"); r.setPassword("123456");
-            LoginResponse resp = svc.login(r);
+            LoginResponse resp = mockSmsSvc.login(r);
             assertEquals(2004L, resp.getUserId()); assertEquals("user", resp.getRole()); assertNotNull(resp.getToken());
         }
         @Test @DisplayName("UA-008: wrong password → rejected") void ua008() {
@@ -89,7 +93,7 @@ class UserAuthRegistrationCoverageTest {
             User user = u(2004L,"13900000001","user","123456"); user.setPassword(null);
             when(um.selectOne(any())).thenReturn(user);
             LoginRequest r = new LoginRequest(); r.setLoginType("sms"); r.setAccount("13900000001"); r.setSmsCode("666666");
-            LoginResponse resp = svc.login(r);
+            LoginResponse resp = mockSmsSvc.login(r);
             assertEquals(2004L, resp.getUserId()); assertNotNull(resp.getToken());
         }
         @Test @DisplayName("UA-011: wrong SMS code → rejected") void ua011() {
@@ -140,13 +144,18 @@ class UserAuthRegistrationCoverageTest {
     // ===== 2.4 Send Code (UA-019~021) =====
     @Nested @DisplayName("2.4 Send Code")
     class SendCodeTests {
-        @Test @DisplayName("UA-019: send code → returns 666666") void ua019() {
+        @Test @DisplayName("UA-019: send code disabled by default") void ua019() {
             UserController ctl = new UserController(svc, null);
+            assertEquals(400, ctl.sendCode("13800000099").getCode());
+            assertEquals("当前环境未启用短信验证码", ctl.sendCode("13800000099").getMessage());
+        }
+        @Test @DisplayName("UA-020: mock send code returns 666666 when explicitly enabled") void ua020() {
+            UserController ctl = new UserController(svc, null, "", true);
             assertEquals(200, ctl.sendCode("13800000099").getCode());
             assertEquals("666666", ctl.sendCode("13800000099").getData());
         }
         @Test @DisplayName("UA-021: empty phone → handles gracefully") void ua021() {
-            UserController ctl = new UserController(svc, null);
+            UserController ctl = new UserController(svc, null, "", true);
             assertEquals(200, ctl.sendCode("").getCode());
         }
     }
@@ -158,12 +167,12 @@ class UserAuthRegistrationCoverageTest {
             User user = u(2004L,"13900000001","user","oldpwd");
             when(um.selectOne(any())).thenReturn(user);
             ResetPasswordRequest r = new ResetPasswordRequest(); r.setPhone("13900000001"); r.setSmsCode("666666"); r.setNewPassword("newpassword"); r.setConfirmPassword("newpassword");
-            svc.resetPassword(r);
+            mockSmsSvc.resetPassword(r);
             verify(um).updateById(any(User.class));
         }
         @Test @DisplayName("UA-024: mismatched confirm → 400") void ua024() {
             ResetPasswordRequest r = new ResetPasswordRequest(); r.setPhone("13900000001"); r.setSmsCode("666666"); r.setNewPassword("a"); r.setConfirmPassword("b");
-            assertThrows(BusinessException.class, () -> svc.resetPassword(r));
+            assertThrows(BusinessException.class, () -> mockSmsSvc.resetPassword(r));
         }
     }
 

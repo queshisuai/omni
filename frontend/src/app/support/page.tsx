@@ -8,6 +8,7 @@ import {
   claimSupportConversation,
   closeSupportConversation,
   escalateSupportConversation,
+  getSupportConversationContext,
   getUserInfo,
   listAgentSupportConversations,
   listEnabledSupportAgents,
@@ -21,11 +22,11 @@ import {
 } from '@/lib/api'
 import { logout } from '@/lib/auth'
 import { canUseConsoleAction } from '@/lib/console-auth'
-import { appendQuickReply, buildCloseRequestMessage, formatSupportAuditAction, formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getSupportQueueTabs, getSupportTagOptions, mergeSupportConversations, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue, type SupportQueueFilter } from '@/lib/support-tools'
-import type { SupportAccountVO, SupportAuditVO, SupportConversationVO, SupportMessageVO, SupportNoteVO, SupportQuickReplyVO } from '@/types/api'
+import { appendQuickReply, buildCloseRequestMessage, canClaimSupportConversation, canEditSupportConversation, canReplySupportConversation, canRequestSupportClose, formatSupportAuditAction, formatSupportContextSectionCount, formatSupportConversationStatus, formatSupportConversationWriteBlockedMessage, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getSupportQueueTabs, getSupportTagOptions, hasSupportContextData, mergeSupportConversations, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue, type SupportQueueFilter } from '@/lib/support-tools'
+import type { SupportAccountVO, SupportAuditVO, SupportContextVO, SupportConversationVO, SupportMessageVO, SupportNoteVO, SupportQuickReplyVO } from '@/types/api'
 
 function getConversationUserDisplay(conversation: SupportConversationVO) {
-  return conversation.userNickname || conversation.userPhoneMask || `用户 ${conversation.userId}`
+  return conversation.userNickname || conversation.userPhoneMask || `用户编号：${conversation.userId}`
 }
 
 function formatTime(value?: string | null) {
@@ -44,6 +45,7 @@ export default function SupportWorkbenchPage() {
   const [messages, setMessages] = useState<SupportMessageVO[]>([])
   const [notes, setNotes] = useState<SupportNoteVO[]>([])
   const [audits, setAudits] = useState<SupportAuditVO[]>([])
+  const [context, setContext] = useState<SupportContextVO | null>(null)
   const [quickReplies, setQuickReplies] = useState<SupportQuickReplyVO[]>([])
   const [supportAgents, setSupportAgents] = useState<SupportAccountVO[]>([])
   const [conversationFilter, setConversationFilter] = useState<SupportQueueFilter>('pending')
@@ -57,6 +59,7 @@ export default function SupportWorkbenchPage() {
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [detailLoading, setDetailLoading] = useState(false)
+  const [contextLoading, setContextLoading] = useState(false)
   const activeLoadIdRef = useRef(0)
 
   const loadConversations = async () => {
@@ -89,7 +92,10 @@ export default function SupportWorkbenchPage() {
   }, [conversations, conversationFilter])
 
   const filterTabs = getSupportQueueTabs(conversations)
-  const canReply = active?.status === 'ASSIGNED' || active?.status === 'CLOSE_REQUESTED'
+  const canClaimActiveConversation = canClaimSupportConversation(active?.status)
+  const canReply = canReplySupportConversation(active?.status)
+  const canEditActiveConversation = canEditSupportConversation(active?.status)
+  const canCloseActiveConversation = canRequestSupportClose(active?.status)
   const tagOptions = getSupportTagOptions()
   const transferTargets = supportAgents.filter(agent => agent.id !== active?.assignedAgentId)
   const quickReplyGroups = useMemo(() => {
@@ -99,6 +105,17 @@ export default function SupportWorkbenchPage() {
     }
     return Array.from(map.entries())
   }, [quickReplies])
+  const contextCounts = useMemo(() => {
+    if (!context) return []
+    return [
+      ['orders', context.orders.length],
+      ['refunds', context.refunds.length],
+      ['tickets', context.tickets.length],
+      ['waitlist', context.waitlist.length],
+      ['grabRequests', context.grabRequests.length],
+      ['notifications', context.notifications.length],
+    ] as Array<[string, number]>
+  }, [context])
 
   const loadMessages = async (conversationId: number, loadId: number) => {
     const data = await listSupportMessages(conversationId)
@@ -122,10 +139,31 @@ export default function SupportWorkbenchPage() {
     }
   }
 
+  const loadSupportContext = async (conversationId: number, loadId: number) => {
+    if (activeLoadIdRef.current === loadId) {
+      setContextLoading(true)
+    }
+    try {
+      const data = await getSupportConversationContext(conversationId)
+      if (activeLoadIdRef.current === loadId) {
+        setContext(data || null)
+      }
+    } catch {
+      if (activeLoadIdRef.current === loadId) {
+        setContext(null)
+      }
+    } finally {
+      if (activeLoadIdRef.current === loadId) {
+        setContextLoading(false)
+      }
+    }
+  }
+
   const reloadActiveConversation = async (conversationId: number, loadId: number) => {
     await Promise.all([
       loadMessages(conversationId, loadId),
       loadOperationData(conversationId, loadId),
+      loadSupportContext(conversationId, loadId),
     ])
   }
 
@@ -147,8 +185,10 @@ export default function SupportWorkbenchPage() {
       setMessages([])
       setNotes([])
       setAudits([])
+      setContext(null)
       setSelectedTags([])
       setDetailLoading(false)
+      setContextLoading(false)
       return
     }
     const loadId = activeLoadIdRef.current + 1
@@ -157,6 +197,7 @@ export default function SupportWorkbenchPage() {
     setMessages([])
     setNotes([])
     setAudits([])
+    setContext(null)
     setSelectedTags(active.tags || [])
     setTransferTarget('')
     setTransferReason('')
@@ -218,10 +259,18 @@ export default function SupportWorkbenchPage() {
     }
   }
 
+  const canProceedWithActiveWrite = (allowed: boolean) => {
+    if (allowed) return true
+    const message = formatSupportConversationWriteBlockedMessage(active?.status)
+    if (message) setError(message)
+    return false
+  }
+
   const claim = async () => {
     if (!active) return
     setStatus('')
     setError('')
+    if (!canProceedWithActiveWrite(canClaimSupportConversation(active.status))) return
     try {
       const updated = await claimSupportConversation(active.id)
       await refreshAfterOperation(updated)
@@ -235,6 +284,7 @@ export default function SupportWorkbenchPage() {
     if (!active || !text.trim()) return
     setStatus('')
     setError('')
+    if (!canProceedWithActiveWrite(canReplySupportConversation(active.status))) return
     try {
       await sendSupportMessage(active.id, text.trim())
       setText('')
@@ -248,6 +298,7 @@ export default function SupportWorkbenchPage() {
     if (!active || !noteText.trim()) return
     setStatus('')
     setError('')
+    if (!canProceedWithActiveWrite(canEditSupportConversation(active.status))) return
     try {
       await addSupportNote(active.id, noteText)
       setNoteText('')
@@ -266,6 +317,7 @@ export default function SupportWorkbenchPage() {
     if (!active) return
     setStatus('')
     setError('')
+    if (!canProceedWithActiveWrite(canEditSupportConversation(active.status))) return
     try {
       const updated = await updateSupportTags(active.id, selectedTags)
       await refreshAfterOperation(updated)
@@ -279,6 +331,7 @@ export default function SupportWorkbenchPage() {
     if (!active || !transferTarget) return
     setStatus('')
     setError('')
+    if (!canProceedWithActiveWrite(canEditSupportConversation(active.status))) return
     try {
       const updated = await transferSupportConversation(active.id, Number(transferTarget), transferReason)
       setTransferTarget('')
@@ -294,6 +347,7 @@ export default function SupportWorkbenchPage() {
     if (!active) return
     setStatus('')
     setError('')
+    if (!canProceedWithActiveWrite(canEditSupportConversation(active.status))) return
     try {
       const updated = await escalateSupportConversation(active.id, escalationReason)
       setEscalationReason('')
@@ -308,6 +362,7 @@ export default function SupportWorkbenchPage() {
     if (!active) return
     setStatus('')
     setError('')
+    if (!canProceedWithActiveWrite(canRequestSupportClose(active.status))) return
     try {
       const updated = await closeSupportConversation(active.id, closeReason)
       await refreshAfterOperation(updated)
@@ -393,7 +448,7 @@ export default function SupportWorkbenchPage() {
               <div className="flex min-h-16 items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
                 <div>
                   <div className="text-[16px] font-bold text-[#111]">{active.subject}</div>
-                  <div className="mt-1 text-[12px] text-gray-500">用户：{getConversationUserDisplay(active)} · ID：{active.userId} · {formatSupportConversationStatus(active.status)}</div>
+                  <div className="mt-1 text-[12px] text-gray-500">用户：{getConversationUserDisplay(active)} · 用户编号：{active.userId} · {formatSupportConversationStatus(active.status)}</div>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {(active.tags || []).map(tag => (
                       <span key={tag} className="rounded-full bg-[#fff0f5] px-2 py-0.5 text-[11px] text-[#ff1268]">{formatSupportTagLabel(tag)}</span>
@@ -402,7 +457,7 @@ export default function SupportWorkbenchPage() {
                   </div>
                   <div className={`mt-1 text-[12px] ${active.slaOverdue ? 'text-red-500' : 'text-gray-500'}`}>{formatSupportSlaText(active)}</div>
                 </div>
-                <button onClick={claim} disabled={active.status === 'CLOSED' || active.status === 'ASSIGNED' || active.status === 'CLOSE_REQUESTED'} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50">接入</button>
+                <button onClick={claim} disabled={!canClaimActiveConversation} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50">接入</button>
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -432,11 +487,11 @@ export default function SupportWorkbenchPage() {
                     value={text}
                     onChange={event => setText(event.target.value)}
                     onKeyDown={event => { if (event.key === 'Enter') send() }}
-                    disabled={active.status === 'CLOSED' || !canReply}
+                    disabled={!canReply}
                     placeholder={canReply ? '输入回复内容' : '请先接入该会话'}
                     className="h-11 min-w-0 flex-1 rounded-xl border border-gray-200 px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-gray-100"
                   />
-                  <button onClick={send} disabled={active.status === 'CLOSED' || !canReply || !text.trim()} className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ff1268] text-white disabled:opacity-50" title="发送">
+                  <button onClick={send} disabled={!canReply || !text.trim()} className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ff1268] text-white disabled:opacity-50" title="发送">
                     <Send className="h-4 w-4" />
                   </button>
                 </div>
@@ -452,6 +507,99 @@ export default function SupportWorkbenchPage() {
             <div className="divide-y divide-gray-100">
               <section className="p-4">
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[#111]">
+                  <ClipboardList className="h-4 w-4 text-[#ff1268]" />
+                  用户上下文
+                </div>
+                {contextLoading ? (
+                  <div className="rounded-lg bg-gray-50 px-3 py-3 text-[12px] text-gray-400">正在加载用户上下文...</div>
+                ) : !context ? (
+                  <div className="rounded-lg bg-gray-50 px-3 py-3 text-[12px] text-gray-400">暂无用户上下文</div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      {contextCounts.map(([section, count]) => (
+                        <div key={section} className="rounded-lg bg-gray-50 px-2 py-2 text-center text-[11px] text-gray-500">
+                          {formatSupportContextSectionCount(section, count)}
+                        </div>
+                      ))}
+                    </div>
+                    {!hasSupportContextData(context) && context.errors.length === 0 && (
+                      <div className="rounded-lg bg-gray-50 px-3 py-3 text-[12px] text-gray-400">暂无业务上下文</div>
+                    )}
+                    {context.orders.length > 0 && (
+                      <div>
+                        <div className="mb-2 text-[12px] font-medium text-gray-500">最近订单</div>
+                        <div className="space-y-2">
+                          {context.orders.slice(0, 3).map(order => (
+                            <a key={order.id} href={order.href || `/orders/${order.id}`} className="block rounded-lg border border-gray-200 px-3 py-2 hover:border-[#ff1268] hover:bg-[#fff7fb]">
+                              <div className="truncate text-[12px] font-medium text-[#111]">{order.orderNo || `订单编号：${order.id}`}</div>
+                              <div className="mt-1 truncate text-[12px] text-gray-500">{order.activityName || '活动信息待同步'}{order.amount != null ? ` · ¥${order.amount}` : ''}</div>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {context.refunds.length > 0 && (
+                      <div>
+                        <div className="mb-2 text-[12px] font-medium text-gray-500">退款</div>
+                        <div className="space-y-2">
+                          {context.refunds.slice(0, 2).map(refund => (
+                            <a key={refund.id} href={refund.href || `/refunds/${refund.id}`} className="block rounded-lg border border-gray-200 px-3 py-2 hover:border-[#ff1268] hover:bg-[#fff7fb]">
+                              <div className="truncate text-[12px] font-medium text-[#111]">{refund.orderNo || `退款编号：${refund.id}`}</div>
+                              <div className="mt-1 truncate text-[12px] text-gray-500">{refund.reason || '退款原因未填写'}</div>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {context.tickets.length > 0 && (
+                      <div>
+                        <div className="mb-2 text-[12px] font-medium text-gray-500">票夹</div>
+                        <div className="space-y-2">
+                          {context.tickets.slice(0, 2).map(ticket => (
+                            <a key={ticket.ticketId} href={ticket.href || '/tickets'} className="block rounded-lg border border-gray-200 px-3 py-2 hover:border-[#ff1268] hover:bg-[#fff7fb]">
+                              <div className="truncate text-[12px] font-medium text-[#111]">{ticket.activityName || `票券编号：${ticket.ticketId}`}</div>
+                              <div className="mt-1 text-[12px] text-gray-500">{ticket.checkedIn ? '已核验' : '未核验'}</div>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {(context.grabRequests.length > 0 || context.waitlist.length > 0 || context.notifications.length > 0) && (
+                      <div className="space-y-2">
+                        {context.grabRequests.slice(0, 2).map(request => (
+                          <a key={request.requestId} href={request.href || `/grab/${request.requestId}`} className="block rounded-lg border border-gray-200 px-3 py-2 hover:border-[#ff1268] hover:bg-[#fff7fb]">
+                            <div className="truncate text-[12px] font-medium text-[#111]">抢票请求号：{request.requestId}</div>
+                            <div className="mt-1 truncate text-[12px] text-gray-500">{request.progressMessage || '状态待同步'}</div>
+                          </a>
+                        ))}
+                        {context.waitlist.slice(0, 2).map(item => (
+                          <div key={item.id} className="rounded-lg border border-gray-200 px-3 py-2">
+                            <div className="truncate text-[12px] font-medium text-[#111]">候补编号：{item.id}</div>
+                            <div className="mt-1 truncate text-[12px] text-gray-500">{item.estimatedWaitText || '等待释放票'}</div>
+                          </div>
+                        ))}
+                        {context.notifications.slice(0, 2).map(item => (
+                          <div key={item.id} className="rounded-lg border border-gray-200 px-3 py-2">
+                            <div className="truncate text-[12px] font-medium text-[#111]">{item.title || `通知编号：${item.id}`}</div>
+                            <div className="mt-1 line-clamp-2 text-[12px] leading-5 text-gray-500">{item.content || '通知内容为空'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {context.errors.length > 0 && (
+                      <div className="space-y-1">
+                        {context.errors.map(error => (
+                          <div key={`${error.section}-${error.message}`} className="rounded-lg bg-orange-50 px-3 py-2 text-[12px] leading-5 text-orange-700">{error.message}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              <section className="p-4">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-[#111]">
                   <Tags className="h-4 w-4 text-[#ff1268]" />
                   用户标签
                 </div>
@@ -463,7 +611,7 @@ export default function SupportWorkbenchPage() {
                         key={option.value}
                         type="button"
                         onClick={() => toggleTag(option.value)}
-                        disabled={active.status === 'CLOSED'}
+                        disabled={!canEditActiveConversation}
                         className={`rounded-full border px-3 py-1.5 text-[12px] ${
                           selected
                             ? 'border-[#ff1268] bg-[#fff0f5] text-[#ff1268]'
@@ -475,7 +623,7 @@ export default function SupportWorkbenchPage() {
                     )
                   })}
                 </div>
-                <button type="button" onClick={saveTags} disabled={active.status === 'CLOSED'} className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[#ff1268] px-3 text-[13px] font-medium text-white disabled:opacity-50">
+                <button type="button" onClick={saveTags} disabled={!canEditActiveConversation} className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[#ff1268] px-3 text-[13px] font-medium text-white disabled:opacity-50">
                   <Tags className="h-4 w-4" />
                   保存标签
                 </button>
@@ -486,8 +634,8 @@ export default function SupportWorkbenchPage() {
                   <FileText className="h-4 w-4 text-[#ff1268]" />
                   内部备注
                 </div>
-                <textarea value={noteText} onChange={event => setNoteText(event.target.value)} disabled={active.status === 'CLOSED'} placeholder="输入内部备注，用户不可见" className="h-20 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-[13px] leading-5 outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
-                <button type="button" onClick={addNote} disabled={active.status === 'CLOSED' || !noteText.trim()} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50">
+                <textarea value={noteText} onChange={event => setNoteText(event.target.value)} disabled={!canEditActiveConversation} placeholder="输入内部备注，用户不可见" className="h-20 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-[13px] leading-5 outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
+                <button type="button" onClick={addNote} disabled={!canEditActiveConversation || !noteText.trim()} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50">
                   <FileText className="h-4 w-4" />
                   添加备注
                 </button>
@@ -537,20 +685,20 @@ export default function SupportWorkbenchPage() {
                   <ArrowRightLeft className="h-4 w-4 text-[#ff1268]" />
                   转接与升级
                 </div>
-                <select value={transferTarget} onChange={event => setTransferTarget(event.target.value)} disabled={active.status === 'CLOSED'} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268] disabled:bg-gray-100">
+                <select value={transferTarget} onChange={event => setTransferTarget(event.target.value)} disabled={!canEditActiveConversation} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268] disabled:bg-gray-100">
                   <option value="">选择转接客服</option>
                   {transferTargets.map(agent => (
                     <option key={agent.id} value={agent.id}>{agent.nickname || agent.phone}</option>
                   ))}
                 </select>
-                <input value={transferReason} onChange={event => setTransferReason(event.target.value)} disabled={active.status === 'CLOSED'} placeholder="转接原因（选填）" className="mt-2 h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
-                <button type="button" onClick={transfer} disabled={active.status === 'CLOSED' || !transferTarget} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50">
+                <input value={transferReason} onChange={event => setTransferReason(event.target.value)} disabled={!canEditActiveConversation} placeholder="转接原因（选填）" className="mt-2 h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
+                <button type="button" onClick={transfer} disabled={!canEditActiveConversation || !transferTarget} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50">
                   <ArrowRightLeft className="h-4 w-4" />
                   转接客服
                 </button>
 
-                <input value={escalationReason} onChange={event => setEscalationReason(event.target.value)} disabled={active.status === 'CLOSED'} placeholder="升级原因（选填）" className="mt-4 h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
-                <button type="button" onClick={escalate} disabled={active.status === 'CLOSED'} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-orange-200 px-3 text-[13px] text-orange-600 hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <input value={escalationReason} onChange={event => setEscalationReason(event.target.value)} disabled={!canEditActiveConversation} placeholder="升级原因（选填）" className="mt-4 h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
+                <button type="button" onClick={escalate} disabled={!canEditActiveConversation} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg border border-orange-200 px-3 text-[13px] text-orange-600 hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50">
                   <ShieldAlert className="h-4 w-4" />
                   升级管理员
                 </button>
@@ -566,7 +714,7 @@ export default function SupportWorkbenchPage() {
                   <ClipboardList className="h-4 w-4 text-[#ff1268]" />
                   结束申请
                 </div>
-                <textarea value={closeReason} onChange={event => setCloseReason(event.target.value)} disabled={active.status === 'CLOSED'} placeholder="结束原因（选填）" className="h-20 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-[13px] leading-5 outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
+                <textarea value={closeReason} onChange={event => setCloseReason(event.target.value)} disabled={!canEditActiveConversation} placeholder="结束原因（选填）" className="h-20 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-[13px] leading-5 outline-none focus:border-[#ff1268] disabled:bg-gray-100" />
                 <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-[12px] leading-5 text-gray-500">
                   {buildCloseRequestMessage(closeReason)}
                 </div>
@@ -575,7 +723,7 @@ export default function SupportWorkbenchPage() {
                     当前结束原因：{active.closeRequestReason}
                   </div>
                 )}
-                <button type="button" onClick={close} disabled={active.status === 'CLOSED' || active.status === 'CLOSE_REQUESTED'} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg bg-[#1a1a2e] px-3 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" onClick={close} disabled={!canCloseActiveConversation} className="mt-2 inline-flex h-9 items-center gap-2 rounded-lg bg-[#1a1a2e] px-3 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
                   <ClipboardList className="h-4 w-4" />
                   申请结束
                 </button>

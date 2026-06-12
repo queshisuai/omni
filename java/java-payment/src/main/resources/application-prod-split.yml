@@ -3,9 +3,39 @@ spring:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT}
+    username: ${RABBITMQ_USER}
+    password: ${RABBITMQ_PASSWORD}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_HOST}:${NACOS_PORT}
+      config:
+        server-addr: ${NACOS_HOST}:${NACOS_PORT}
+
+alipay:
+  gateway-url: ${ALIPAY_GATEWAY_URL}
+  app-id: ${ALIPAY_APP_ID}
+  merchant-private-key: ${ALIPAY_MERCHANT_PRIVATE_KEY}
+  alipay-public-key: ${ALIPAY_PUBLIC_KEY}
+  return-url: ${ALIPAY_RETURN_URL}
+  notify-url: ${ALIPAY_NOTIFY_URL}
+  mock-qr-fallback-enabled: false
+  mock-qr-auto-confirm-enabled: false
+
+omni:
+  payment:
+    mock:
+      enabled: false
+
+internal:
+  api:
+    token: ${INTERNAL_API_TOKEN}
 
 seata:
-  enabled: ${SEATA_ENABLED:true}
+  enabled: ${SEATA_ENABLED}
   application-id: ${spring.application.name}
   tx-service-group: omni_tx_group
   enable-auto-data-source-proxy: true
@@ -13,13 +43,13 @@ seata:
     type: nacos
     nacos:
       application: seata-server
-      server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+      server-addr: ${NACOS_HOST}:${NACOS_PORT}
       group: SEATA_GROUP
       cluster: default
   config:
     type: nacos
     nacos:
-      server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+      server-addr: ${NACOS_HOST}:${NACOS_PORT}
       group: SEATA_GROUP
       data-id: seataServer.properties
   service:

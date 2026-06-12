@@ -8,6 +8,10 @@ import type { PrivateAssetVO, VenueApplicationVO, VenueEntity } from '@/types/ap
 
 const statusText: Record<number, string> = { 0: '待审核', 1: '已通过', 2: '已驳回' }
 
+function formatVenueApplicationStatus(status: number) {
+  return statusText[status] || '未知场馆审核状态'
+}
+
 function formatSize(size?: number | null) {
   if (size === null || size === undefined) return '-'
   if (size < 1024) return `${size} B`
@@ -184,7 +188,7 @@ export default function VenueApplicationsPage() {
                 {item.reviewNote && <div className="mt-2 text-[13px] text-[#999]">审核备注：{item.reviewNote}</div>}
               </div>
               <div className="flex flex-col items-start gap-2 sm:items-end">
-                <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{statusText[item.status]}</span>
+                <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{formatVenueApplicationStatus(item.status)}</span>
                 {item.status === 0 && <button onClick={() => openReview(item.id)} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white">审核</button>}
               </div>
             </div>

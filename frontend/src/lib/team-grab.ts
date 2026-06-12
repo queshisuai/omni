@@ -51,12 +51,25 @@ type TriggerTeamGrabWithRecoveryArgs = {
   fallbackErrorMessage: string
 }
 
-export function strategyLabel(strategy: TeamSeatStrategy) {
-  return STRATEGY_LABELS[strategy]
+function formatDisplayTime(value: string | null | undefined) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-export function teamStatusLabel(status: TeamStatus) {
-  return TEAM_STATUS_LABELS[status]
+function readableText(value: string | null | undefined) {
+  const trimmed = value?.trim()
+  return trimmed || null
+}
+
+export function strategyLabel(strategy: string) {
+  return STRATEGY_LABELS[strategy as TeamSeatStrategy] || '未知策略'
+}
+
+export function teamStatusLabel(status: string) {
+  return TEAM_STATUS_LABELS[status as TeamStatus] || '状态同步中'
 }
 
 export function normalizeFallbacks(primary: TeamSeatStrategy, fallbacks: TeamSeatStrategy[]) {
@@ -79,6 +92,18 @@ export function defaultTeamFallbacks(primary: TeamSeatStrategy) {
 
 export function canShowPayButton(team: TicketTeamVO, currentUserId: number) {
   return team.status === 'LOCKED' && team.leaderUserId === currentUserId
+}
+
+export function teamContextSummary(team: TicketTeamVO) {
+  const hasActivityContext = Boolean(readableText(team.activityName))
+  const title = readableText(team.activityName) ?? '活动信息同步中'
+  const meta = [
+    formatDisplayTime(team.sessionTime) ?? (!hasActivityContext ? '场次信息同步中' : null),
+    readableText(team.ticketTypeName) ?? (!hasActivityContext ? '票档信息同步中' : null),
+    readableText(team.venueName),
+  ].filter((item): item is string => Boolean(item))
+
+  return { title, meta }
 }
 
 export function canTriggerTeamGrab(detail: TicketTeamDetailVO, currentUserId: number) {
@@ -118,11 +143,18 @@ export function confirmedMemberCount(members: TicketTeamMemberVO[]) {
 export function teamMemberSeatAssignmentLabel(member: TicketTeamMemberVO) {
   const readableLabel = member.seatLabel?.trim()
   if (readableLabel) return readableLabel
+  if (member.seatId != null || member.orderSeatId != null) return '座位确认中'
 
-  return [
-    member.seatId != null ? `seatId ${member.seatId}` : null,
-    member.orderSeatId != null ? `orderSeatId ${member.orderSeatId}` : null,
-  ].filter(Boolean).join(' / ')
+  return ''
+}
+
+export function teamMemberDisplayName(
+  member: TicketTeamMemberVO,
+  context: { leaderUserId: number; currentUserId?: number | null; index: number },
+) {
+  if (context.currentUserId === member.userId) return '我'
+  if (context.leaderUserId === member.userId) return '队长'
+  return `成员 ${context.index + 1}`
 }
 
 export function canLeaderRemoveTeamMember(team: TicketTeamVO, currentUserId: number | null | undefined, member: TicketTeamMemberVO) {

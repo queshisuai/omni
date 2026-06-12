@@ -19,6 +19,8 @@ import com.omni.order.mapper.OrderAttendeeMapper;
 import com.omni.order.mapper.OrderSeatMapper;
 import com.omni.order.mapper.OrderSnapshotMapper;
 import com.omni.order.mapper.TicketTransferMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,9 +30,12 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 @Service
 public class TicketWalletService {
+    private static final Logger log = LoggerFactory.getLogger(TicketWalletService.class);
+
     public static final int STATUS_UNUSED = 1;
     public static final int STATUS_CHECKED_IN = 2;
     public static final int STATUS_INVALID = 3;
@@ -66,45 +71,55 @@ public class TicketWalletService {
 
     @Transactional(rollbackFor = Exception.class)
     public void issueForPaidOrder(Order order) {
-        if (order == null || order.getId() == null || order.getUserId() == null
-                || !Integer.valueOf(OrderService.STATUS_PAID).equals(order.getStatus())) {
-            return;
-        }
-        Long existing = electronicTicketMapper.countByOrderId(order.getId());
-        if (existing != null && existing > 0) {
-            return;
-        }
+        TicketIssueLatencyTrace latencyTrace = new TicketIssueLatencyTrace(order);
+        String outcome = "FAILED";
+        try {
+            if (order == null || order.getId() == null || order.getUserId() == null
+                    || !Integer.valueOf(OrderService.STATUS_PAID).equals(order.getStatus())) {
+                outcome = "SKIPPED";
+                return;
+            }
+            Long existing = latencyTrace.measureExistingCheck(() -> electronicTicketMapper.countByOrderId(order.getId()));
+            if (existing != null && existing > 0) {
+                outcome = "ALREADY_ISSUED";
+                return;
+            }
 
-        List<OrderAttendee> attendees = orderAttendeeMapper != null
-                ? orderAttendeeMapper.selectByOrderIds(List.of(order.getId()))
-                : Collections.emptyList();
-        List<OrderSeat> seats = orderSeatMapper != null
-                ? orderSeatMapper.selectLockedAndSoldSeatsByOrderId(order.getId())
-                : Collections.emptyList();
-        int quantity = resolveTicketQuantity(order, attendees, seats);
-        LocalDateTime now = LocalDateTime.now();
-        for (int i = 0; i < quantity; i++) {
-            OrderAttendee attendee = attendees != null && i < attendees.size() ? attendees.get(i) : null;
-            OrderSeat seat = seats != null && i < seats.size() ? seats.get(i) : null;
-            ElectronicTicket ticket = new ElectronicTicket();
-            ticket.setId(electronicTicketMapper.nextId());
-            ticket.setTicketNo(buildTicketNo(order.getId(), i + 1));
-            ticket.setOrderId(order.getId());
-            ticket.setOrderSeatId(seat != null ? seat.getId() : null);
-            ticket.setUserId(order.getUserId());
-            ticket.setOriginalUserId(order.getUserId());
-            ticket.setSessionId(order.getSessionId());
-            ticket.setTicketTypeId(order.getTicketTypeId());
-            ticket.setAttendeeUserProfileId(attendee != null ? attendee.getAttendeeUserProfileId() : null);
-            ticket.setRealName(attendee != null ? attendee.getRealName() : null);
-            ticket.setIdType(attendee != null ? attendee.getIdType() : null);
-            ticket.setIdNoMask(attendee != null ? attendee.getIdNoMask() : null);
-            ticket.setPhone(attendee != null ? attendee.getPhone() : null);
-            ticket.setSeatLabel(seat != null ? seat.getSeatLabel() : null);
-            ticket.setStatus(STATUS_UNUSED);
-            ticket.setCreateTime(now);
-            ticket.setUpdateTime(now);
-            electronicTicketMapper.insertIgnoreTicketNo(ticket);
+            List<OrderAttendee> attendees = latencyTrace.measureAttendeeLoad(() -> orderAttendeeMapper != null
+                    ? orderAttendeeMapper.selectByOrderIds(List.of(order.getId()))
+                    : Collections.emptyList());
+            List<OrderSeat> seats = latencyTrace.measureSeatLoad(() -> orderSeatMapper != null
+                    ? orderSeatMapper.selectLockedAndSoldSeatsByOrderId(order.getId())
+                    : Collections.emptyList());
+            int quantity = resolveTicketQuantity(order, attendees, seats);
+            LocalDateTime now = LocalDateTime.now();
+            for (int i = 0; i < quantity; i++) {
+                OrderAttendee attendee = attendees != null && i < attendees.size() ? attendees.get(i) : null;
+                OrderSeat seat = seats != null && i < seats.size() ? seats.get(i) : null;
+                ElectronicTicket ticket = new ElectronicTicket();
+                ticket.setId(electronicTicketMapper.nextId());
+                ticket.setTicketNo(buildTicketNo(order.getId(), i + 1));
+                ticket.setOrderId(order.getId());
+                ticket.setOrderSeatId(seat != null ? seat.getId() : null);
+                ticket.setUserId(order.getUserId());
+                ticket.setOriginalUserId(order.getUserId());
+                ticket.setSessionId(order.getSessionId());
+                ticket.setTicketTypeId(order.getTicketTypeId());
+                ticket.setAttendeeUserProfileId(attendee != null ? attendee.getAttendeeUserProfileId() : null);
+                ticket.setRealName(attendee != null ? attendee.getRealName() : null);
+                ticket.setIdType(attendee != null ? attendee.getIdType() : null);
+                ticket.setIdNoMask(attendee != null ? attendee.getIdNoMask() : null);
+                ticket.setPhone(attendee != null ? attendee.getPhone() : null);
+                ticket.setSeatLabel(seat != null ? seat.getSeatLabel() : null);
+                ticket.setStatus(STATUS_UNUSED);
+                ticket.setCreateTime(now);
+                ticket.setUpdateTime(now);
+                latencyTrace.measureTicketInsert(() -> electronicTicketMapper.insertIgnoreTicketNo(ticket));
+                latencyTrace.incrementTicketCount();
+            }
+            outcome = "ISSUED";
+        } finally {
+            latencyTrace.log(outcome);
         }
     }
 
@@ -379,6 +394,85 @@ public class TicketWalletService {
             return "已过期";
         }
         return "待领取";
+    }
+
+    private static final class TicketIssueLatencyTrace {
+        private final long startedAtNanos = System.nanoTime();
+        private Long orderId;
+        private String orderNo;
+        private long existingCheckNanos;
+        private long attendeeLoadNanos;
+        private long seatLoadNanos;
+        private long ticketInsertNanos;
+        private int ticketCount;
+
+        private TicketIssueLatencyTrace(Order order) {
+            if (order == null) {
+                return;
+            }
+            this.orderId = order.getId();
+            this.orderNo = order.getOrderNo();
+        }
+
+        private <T> T measureExistingCheck(Supplier<T> action) {
+            long startedAt = System.nanoTime();
+            try {
+                return action.get();
+            } finally {
+                existingCheckNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private <T> T measureAttendeeLoad(Supplier<T> action) {
+            long startedAt = System.nanoTime();
+            try {
+                return action.get();
+            } finally {
+                attendeeLoadNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private <T> T measureSeatLoad(Supplier<T> action) {
+            long startedAt = System.nanoTime();
+            try {
+                return action.get();
+            } finally {
+                seatLoadNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private void measureTicketInsert(Runnable action) {
+            long startedAt = System.nanoTime();
+            try {
+                action.run();
+            } finally {
+                ticketInsertNanos += Math.max(0L, System.nanoTime() - startedAt);
+            }
+        }
+
+        private void incrementTicketCount() {
+            ticketCount++;
+        }
+
+        private void log(String outcome) {
+            long totalNanos = Math.max(0L, System.nanoTime() - startedAtNanos);
+            TicketWalletService.log.info(
+                    "电子票出票链路耗时: orderId={} orderNo={} outcome={} existingCheckMs={} attendeeLoadMs={} seatLoadMs={} ticketInsertMs={} ticketCount={} totalMs={}",
+                    orderId,
+                    orderNo,
+                    outcome,
+                    millis(existingCheckNanos),
+                    millis(attendeeLoadNanos),
+                    millis(seatLoadNanos),
+                    millis(ticketInsertNanos),
+                    ticketCount,
+                    millis(totalNanos)
+            );
+        }
+
+        private long millis(long nanos) {
+            return nanos / 1_000_000L;
+        }
     }
 
 }

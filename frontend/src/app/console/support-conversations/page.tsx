@@ -15,7 +15,7 @@ function formatTime(value?: string | null) {
 }
 
 function getUserDisplay(conversation: SupportConversationVO) {
-  return conversation.userNickname || conversation.userPhoneMask || `用户 ${conversation.userId}`
+  return conversation.userNickname || conversation.userPhoneMask || `用户编号：${conversation.userId}`
 }
 
 function mergeConversations(items: SupportConversationVO[]) {
@@ -208,7 +208,7 @@ export default function ConsoleSupportConversationsPage() {
                       {getUserDisplay(active)}
                     </div>
                     <div className="mt-1 text-[12px] text-gray-500">
-                      用户 ID：{active.userId} · {formatSupportConversationStatus(active.status)} · {active.sourceType === 'AI' ? 'AI 客服' : '人工客服'}
+                      用户编号：{active.userId} · {formatSupportConversationStatus(active.status)} · {active.sourceType === 'AI' ? 'AI 客服' : '人工客服'}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {(active.tags || []).map(tag => (

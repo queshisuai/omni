@@ -2,6 +2,7 @@ package com.omni.user.mq;
 
 import com.omni.common.mq.MqConstants;
 import com.omni.common.mq.MqPublishSupport;
+import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.common.mq.message.NotificationMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,22 @@ public class NotificationMqProducer {
             } catch (RuntimeException e) {
                 log.warn("通知消息发送失败: userId={}, type={}, message={}",
                         message.getUserId(), message.getType(), e.getMessage());
+            }
+        });
+    }
+
+    public void sendNotificationEvent(NotificationEventMessage message) {
+        if (message == null) {
+            return;
+        }
+        MqPublishSupport.afterCommitOrNow(() -> {
+            try {
+                log.info("Sending notification event via MQ: eventId={}, userId={}, eventType={}",
+                        message.getEventId(), message.getUserId(), message.getEventType());
+                rabbitTemplate.convertAndSend(MqConstants.NOTIFICATION_EXCHANGE, MqConstants.RK_NOTIFICATION_EVENT, message);
+            } catch (RuntimeException e) {
+                log.warn("通知事件发送失败: eventId={}, userId={}, eventType={}, message={}",
+                        message.getEventId(), message.getUserId(), message.getEventType(), e.getMessage());
             }
         });
     }

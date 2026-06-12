@@ -307,27 +307,23 @@ function buildGridSeats(block: SeatBlockDraft, overrides: Map<string, SeatOverri
 function buildArcSeats(block: SeatBlockDraft, overrides: Map<string, SeatOverrideDraft>, selectedSeatIds: string[], includeExcluded: boolean) {
   const seats: SeatCraftSeat[] = []
   const rows = positive(block.rows, 0)
+  const seatsPerRow = positive(block.seatsPerRow, 0)
   const innerRadius = positive(block.innerRadius, DEFAULT_INNER_RADIUS)
   const rowSpacing = positive(block.rowSpacing, DEFAULT_ROW_SPACING)
-  const seatSpacing = positive(block.seatSpacing, DEFAULT_SEAT_SPACING)
   const startAngle = block.arcStartAngle ?? DEFAULT_ARC_START
   const endAngle = block.arcEndAngle ?? DEFAULT_ARC_END
-  const totalAngle = endAngle - startAngle
-  const totalRadians = totalAngle * Math.PI / 180
 
   for (let row = 1; row <= rows; row += 1) {
     const radius = innerRadius + (row - 1) * rowSpacing
-    const arcLength = radius * Math.abs(totalRadians)
-    const seatsInThisRow = Math.max(1, Math.round(arcLength / seatSpacing) + 1)
 
-    for (let seat = 1; seat <= seatsInThisRow; seat += 1) {
+    for (let seat = 1; seat <= seatsPerRow; seat += 1) {
       const override = overrides.get(key(row, seat))
       const excluded = isExcluded(override)
       if (excluded && !includeExcluded) continue
-      const t = seatsInThisRow === 1 ? 0.5 : (seat - 1) / (seatsInThisRow - 1)
+      const t = seatsPerRow === 1 ? 0.5 : (seat - 1) / (seatsPerRow - 1)
       const angle = startAngle + (endAngle - startAngle) * t + (block.rotation || 0)
       const radians = angle * Math.PI / 180
-      seats.push(buildSeat(block, row, seat, block.x + radius * Math.sin(radians), block.y + radius * Math.cos(radians), override, selectedSeatIds, angle, excluded))
+      seats.push(buildSeat(block, row, seat, block.x + radius * Math.cos(radians), block.y + radius * Math.sin(radians), override, selectedSeatIds, angle, excluded))
     }
   }
   return seats

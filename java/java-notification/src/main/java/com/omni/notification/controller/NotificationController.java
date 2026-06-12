@@ -1,9 +1,11 @@
 package com.omni.notification.controller;
 
 import com.omni.common.result.Result;
+import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.notification.dto.InternalNotificationRequest;
 import com.omni.notification.dto.NotificationSummaryResponse;
 import com.omni.notification.entity.Notification;
+import com.omni.notification.service.NotificationEventService;
 import com.omni.notification.service.NotificationService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -13,8 +15,10 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 通知接口
@@ -24,13 +28,19 @@ import java.util.Map;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final NotificationEventService notificationEventService;
     private final String internalApiToken;
     private final String jwtSecret;
 
+    @Value("${omni.notification.direct-channel.enabled:false}")
+    private boolean directChannelEnabled;
+
     public NotificationController(NotificationService notificationService,
+                                  NotificationEventService notificationEventService,
                                   @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken,
-                                  @Value("${jwt.secret:${JWT_SECRET:omni-jwt-secretomni-jwt-secretomni-jwt-secret}}") String jwtSecret) {
+                                  @Value("${jwt.secret:${JWT_SECRET:}}") String jwtSecret) {
         this.notificationService = notificationService;
+        this.notificationEventService = notificationEventService;
         this.internalApiToken = internalApiToken;
         this.jwtSecret = jwtSecret;
     }
@@ -44,6 +54,16 @@ public class NotificationController {
         return Result.success(notificationService.createInternalMessage(request));
     }
 
+    @PostMapping("/internal/events")
+    public Result<Void> createInternalEvent(@RequestHeader(value = "X-Internal-Token", required = false) String token,
+                                            @RequestBody(required = false) NotificationEventMessage message) {
+        if (!StringUtils.hasText(internalApiToken) || !internalApiToken.equals(token)) {
+            return Result.fail(403, "无权限");
+        }
+        notificationEventService.processEvent(message);
+        return Result.success();
+    }
+
     /**
      * 发送短信通知
      */
@@ -53,6 +73,9 @@ public class NotificationController {
         Long userId = requireAuthenticatedUserId(authorization);
         if (userId == null) {
             return Result.fail(401, "未登录");
+        }
+        if (!directChannelEnabled) {
+            return Result.fail(400, "当前环境未启用短信直发");
         }
         Long orderId = body.get("orderId") != null ? Long.valueOf(body.get("orderId").toString()) : null;
         String content = body.get("content").toString();
@@ -69,6 +92,9 @@ public class NotificationController {
         Long userId = requireAuthenticatedUserId(authorization);
         if (userId == null) {
             return Result.fail(401, "未登录");
+        }
+        if (!directChannelEnabled) {
+            return Result.fail(400, "当前环境未启用邮件直发");
         }
         Long orderId = body.get("orderId") != null ? Long.valueOf(body.get("orderId").toString()) : null;
         String content = body.get("content").toString();
@@ -88,6 +114,17 @@ public class NotificationController {
         }
         List<Notification> notifications = notificationService.listNotifications(userId);
         return Result.success(notifications);
+    }
+
+    @GetMapping("/internal/users/{userId}/notifications")
+    public Result<List<Notification>> listInternalUserNotifications(
+            @PathVariable Long userId,
+            @RequestParam(defaultValue = "5") Integer limit,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!StringUtils.hasText(internalApiToken) || !internalApiToken.equals(token)) {
+            return Result.fail(403, "无权限");
+        }
+        return Result.success(limitList(notificationService.listNotifications(userId), limit));
     }
 
     @GetMapping("/summary")
@@ -146,6 +183,9 @@ public class NotificationController {
         if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
             return null;
         }
+        if (!StringUtils.hasText(jwtSecret)) {
+            return null;
+        }
         try {
             Claims claims = Jwts.parserBuilder()
                     .setSigningKey(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
@@ -163,5 +203,13 @@ public class NotificationController {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private <T> List<T> limitList(List<T> items, Integer limit) {
+        if (items == null || items.isEmpty()) {
+            return Collections.emptyList();
+        }
+        int size = limit == null ? 5 : Math.max(0, Math.min(limit, 20));
+        return items.stream().limit(size).collect(Collectors.toList());
     }
 }

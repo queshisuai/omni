@@ -2,6 +2,7 @@ package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.exception.BusinessException;
 import com.omni.user.mq.NotificationMqProducer;
 import com.omni.user.dto.SupportAuditResponse;
@@ -37,6 +38,8 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -261,6 +264,43 @@ class CustomerSupportServiceTest {
     }
 
     @Test
+    void streamMessageUsesAnswerDiagnosticsForAiLatencyEvidence() {
+        DiagnosticOnlySupportAiService diagnosticAiService = new DiagnosticOnlySupportAiService();
+        CustomerSupportService streamingService = new CustomerSupportService(
+                conversationMapper,
+                messageMapper,
+                noteMapper,
+                tagMapper,
+                auditMapper,
+                quickReplyMapper,
+                supportAccountMapper,
+                userMapper,
+                diagnosticAiService,
+                notificationProducer,
+                "internal-token",
+                Runnable::run
+        );
+        when(userMapper.selectById(10L)).thenReturn(user(10L, "user"));
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("OPEN");
+        conversation.setSourceType("AI");
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        stubInsertedMessageId(701L);
+        SupportMessageRequest message = new SupportMessageRequest();
+        message.setContent("我想咨询一个暂未覆盖在常见问题里的特殊场景。");
+
+        streamingService.streamMessage(10L, 99L, message);
+
+        assertEquals(1, diagnosticAiService.getDiagnosticsCalls());
+        verify(messageMapper, atLeastOnce()).insert(org.mockito.ArgumentMatchers.argThat(inserted ->
+                "AI".equals(inserted.getSenderType())
+                        && "诊断回答".equals(inserted.getContent())
+        ));
+    }
+
+    @Test
     void messageResponseIncludesSenderDisplayName() {
         User customer = user(10L, "user");
         customer.setNickname("小王");
@@ -425,20 +465,24 @@ class CustomerSupportServiceTest {
         conversation.setStatus("WAITING_AGENT");
         when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
         when(conversationMapper.selectById(99L)).thenReturn(conversation);
+        stubInsertedMessageId(501L);
 
         SupportMessageRequest message = new SupportMessageRequest();
         message.setContent("您好，票夹入口已经为您处理完成。");
 
         service.sendMessage(30L, 99L, message);
 
-        verify(notificationProducer).sendNotification(org.mockito.ArgumentMatchers.argThat(messageReq ->
-                Long.valueOf(10L).equals(messageReq.getUserId())
+        verify(notificationProducer).sendNotificationEvent(org.mockito.ArgumentMatchers.argThat(messageReq ->
+                "support-reply:99:501".equals(messageReq.getEventId())
+                        && "SUPPORT_REPLY".equals(messageReq.getEventType())
+                        && Long.valueOf(10L).equals(messageReq.getUserId())
                         && messageReq.getOrderId() == null
-                        && "SUPPORT_REPLY".equals(messageReq.getType())
                         && messageReq.getContent().contains("客服回复")
                         && "/help".equals(messageReq.getActionHref())
                         && "查看客服会话".equals(messageReq.getActionLabel())
                         && "SUPPORT_REPLY:99".equals(messageReq.getAggregateKey())
+                        && List.of("IN_APP").equals(messageReq.effectiveChannels())
+                        && Long.valueOf(99L).equals(messageReq.getPayload().get("conversationId"))
         ));
     }
 
@@ -458,7 +502,24 @@ class CustomerSupportServiceTest {
 
         service.sendMessage(30L, 99L, message);
 
-        verify(notificationProducer, org.mockito.Mockito.never()).sendNotification(any());
+        verify(notificationProducer, org.mockito.Mockito.never()).sendNotificationEvent(any(NotificationEventMessage.class));
+    }
+
+    @Test
+    void supportAgentReplySkipsNotificationWhenPersistedMessageIdIsMissing() {
+        SupportConversation conversation = new SupportConversation();
+        conversation.setId(99L);
+        conversation.setUserId(10L);
+        conversation.setStatus("WAITING_AGENT");
+        when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
+        when(conversationMapper.selectById(99L)).thenReturn(conversation);
+
+        SupportMessageRequest message = new SupportMessageRequest();
+        message.setContent("您好，客服已回复。");
+
+        service.sendMessage(30L, 99L, message);
+
+        verify(notificationProducer, org.mockito.Mockito.never()).sendNotificationEvent(any(NotificationEventMessage.class));
     }
 
     @Test
@@ -471,15 +532,16 @@ class CustomerSupportServiceTest {
         when(userMapper.selectById(30L)).thenReturn(user(30L, "support"));
         when(conversationMapper.selectById(99L)).thenReturn(conversation);
         service.markHelpPresence(10L, LocalDateTime.now().minusMinutes(2));
+        stubInsertedMessageId(502L);
 
         SupportMessageRequest message = new SupportMessageRequest();
         message.setContent("您好，客服已回复。");
 
         service.sendMessage(30L, 99L, message);
 
-        verify(notificationProducer).sendNotification(org.mockito.ArgumentMatchers.argThat(messageReq ->
+        verify(notificationProducer).sendNotificationEvent(org.mockito.ArgumentMatchers.argThat(messageReq ->
                 Long.valueOf(10L).equals(messageReq.getUserId())
-                        && "SUPPORT_REPLY".equals(messageReq.getType())
+                        && "SUPPORT_REPLY".equals(messageReq.getEventType())
         ));
     }
 
@@ -494,15 +556,16 @@ class CustomerSupportServiceTest {
         when(conversationMapper.selectById(99L)).thenReturn(conversation);
         service.markHelpPresence(10L, LocalDateTime.now());
         service.clearHelpPresence(10L);
+        stubInsertedMessageId(503L);
 
         SupportMessageRequest message = new SupportMessageRequest();
         message.setContent("您好，客服已回复。");
 
         service.sendMessage(30L, 99L, message);
 
-        verify(notificationProducer).sendNotification(org.mockito.ArgumentMatchers.argThat(messageReq ->
+        verify(notificationProducer).sendNotificationEvent(org.mockito.ArgumentMatchers.argThat(messageReq ->
                 Long.valueOf(10L).equals(messageReq.getUserId())
-                        && "SUPPORT_REPLY".equals(messageReq.getType())
+                        && "SUPPORT_REPLY".equals(messageReq.getEventType())
         ));
     }
 
@@ -770,6 +833,14 @@ class CustomerSupportServiceTest {
         return conversation;
     }
 
+    private void stubInsertedMessageId(Long messageId) {
+        when(messageMapper.insert(any())).thenAnswer(invocation -> {
+            SupportMessage inserted = invocation.getArgument(0);
+            inserted.setId(messageId);
+            return 1;
+        });
+    }
+
     private boolean wrapperHasParam(Object wrapper, Object expected) {
         if (!(wrapper instanceof AbstractWrapper)) {
             return false;
@@ -795,5 +866,28 @@ class CustomerSupportServiceTest {
             }
         }
         return false;
+    }
+
+    private static class DiagnosticOnlySupportAiService extends SupportAiService {
+        private final AtomicInteger diagnosticsCalls = new AtomicInteger();
+
+        private DiagnosticOnlySupportAiService() {
+            super((question, projectKnowledge) -> Optional.of("诊断回答"));
+        }
+
+        @Override
+        public String answerStreaming(String question, java.util.function.Consumer<String> onChunk) {
+            throw new IllegalStateException("流式客服入口必须使用诊断回答路径");
+        }
+
+        @Override
+        public AnswerDiagnostics answerStreamingWithDiagnostics(String question, java.util.function.Consumer<String> onChunk) {
+            diagnosticsCalls.incrementAndGet();
+            return super.answerStreamingWithDiagnostics(question, onChunk);
+        }
+
+        private int getDiagnosticsCalls() {
+            return diagnosticsCalls.get();
+        }
     }
 }

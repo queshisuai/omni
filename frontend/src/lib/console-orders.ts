@@ -25,6 +25,17 @@ export const CONSOLE_ORDER_STATUS_LABELS: Record<number, string> = {
   4: '已退款',
 }
 
+export function formatConsoleOrderStatusLabel(status: number) {
+  return CONSOLE_ORDER_STATUS_LABELS[status] || '未知订单状态'
+}
+
+export function getConsoleOrderStatusClassName(status: number) {
+  if (status === 1) return 'bg-[#fff8e1] text-[#f59e0b]'
+  if (status === 2) return 'bg-[#f0fff4] text-[#22c55e]'
+  if (status === 3 || status === 4) return 'bg-[#f5f5f5] text-[#999]'
+  return 'bg-[#fff7e6] text-[#ad6800]'
+}
+
 export interface ConsoleOrderStatusCounts {
   all: number
   paid: number
@@ -71,7 +82,7 @@ export function paginateConsoleOrders(
 
 export function getConsoleOrderScopeCopy(role: UserRole | null | undefined) {
   if (isPlatformAdminRole(role)) return '当前权限：平台管理员，可查看全部活动订单。'
-  if (role === 'organizer_admin') return '当前权限：主办方管理员岗位账号，可按权限查看平台主办方业务订单。'
+  if (role === 'organizer_admin') return '当前权限：平台主办方运营员岗位账号，可按权限查看平台主办方业务订单。'
   if (role === 'organizer') return '当前权限：主办方，仅查看自己活动产生的订单。'
   return '当前权限：未识别后台角色，仅在登录后展示可访问订单。'
 }
@@ -81,15 +92,25 @@ export function getSelectedConsoleOrders(orders: OrderEntity[], selectedIds: Set
   return orders.filter(order => selectedIds.has(order.id))
 }
 
+export function getConsoleOrderTicketLabel(
+  order: Pick<OrderEntity, 'ticketName' | 'matchedTicketTypeId' | 'ticketTypeId'>,
+) {
+  return order.ticketName || '票档信息待同步'
+}
+
+export function getConsoleOrderActivityLabel(order: Pick<OrderEntity, 'activityName'>) {
+  return order.activityName || '活动信息待同步'
+}
+
 export function buildConsoleOrderExportCsv(orders: OrderEntity[]) {
   const header = ['订单号', '活动', '票档', '数量', '金额', '状态', '观演人', '下单时间']
   const rows = orders.map(order => [
     order.orderNo,
-    order.activityName || '未知活动',
-    order.ticketName || `票档 ${order.matchedTicketTypeId ?? order.ticketTypeId}`,
+    getConsoleOrderActivityLabel(order),
+    getConsoleOrderTicketLabel(order),
     order.quantity,
     order.amount,
-    CONSOLE_ORDER_STATUS_LABELS[order.status] || '-',
+    formatConsoleOrderStatusLabel(order.status),
     formatOrderAttendees(order),
     order.createTime,
   ])

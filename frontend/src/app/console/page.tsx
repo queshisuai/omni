@@ -2,15 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { getUser } from '@/lib/auth'
-import { getAdminSummary, getGrabOpsSummary, listAdminRefunds, listExceptionTasks, listOperationAuditLogs, listReconciliationBatches } from '@/lib/api'
+import { getAdminSummary, getPlatformOpsSummary } from '@/lib/api'
+import { captureAnalyticsEvent } from '@/lib/analytics'
 import { canLoadPlatformOpsSummary } from '@/lib/console-ops'
 import { getConsoleQuickActions } from '@/lib/console-paths'
 import { getConsoleBrandLabel, hasConsolePermission } from '@/lib/console-auth'
 import { buildDashboardBars, summarizeOpsMetric } from '@/lib/marketing-tools'
-import { formatOperationAction } from '@/lib/operation-display'
+import { formatOperationAction, formatReconciliationBatchStatus } from '@/lib/operation-display'
 import { ConsoleDashboardSkeleton } from '@/components/Skeleton'
 import { Activity, AlertTriangle, CalendarDays, ClipboardList, FileSearch, Gauge, RotateCcw, ShieldAlert, ShoppingCart, Ticket, TrendingUp, Users } from 'lucide-react'
-import type { AdminSummaryVO, ExceptionTaskVO, GrabOpsSummaryVO, OperationAuditLogVO, ReconciliationBatchVO } from '@/types/api'
+import type { AdminSummaryVO, PlatformOpsSummaryVO } from '@/types/api'
 
 function DashboardBarList({ items, emptyText = '暂无数据' }: { items: Array<{ label: string; value: number }>; emptyText?: string }) {
   const bars = buildDashboardBars(items)
@@ -40,24 +41,16 @@ function formatDateTime(value?: string | null) {
   return value.replace('T', ' ').slice(0, 19)
 }
 
-function formatBatchStatus(status?: string | null) {
-  if (status === 'generated') return '已生成'
-  if (status === 'processing') return '处理中'
-  if (status === 'completed') return '已完成'
-  if (status === 'failed') return '失败'
-  return status || '-'
+function bucketFunnelSteps(count: number) {
+  if (count <= 0) return '0'
+  if (count <= 10) return '1-10'
+  return '10+'
 }
 
 export default function ConsoleHome() {
   const [user, setUser] = useState<ReturnType<typeof getUser>>(null)
   const [stats, setStats] = useState<AdminSummaryVO | null>(null)
-  const [grabOps, setGrabOps] = useState<GrabOpsSummaryVO | null>(null)
-  const [refundOps, setRefundOps] = useState<{ totalCount: number; abnormalCount: number } | null>(null)
-  const [platformOps, setPlatformOps] = useState<{
-    pendingExceptions: ExceptionTaskVO[]
-    latestBatch: ReconciliationBatchVO | null
-    latestAudit: OperationAuditLogVO | null
-  } | null>(null)
+  const [platformOps, setPlatformOps] = useState<PlatformOpsSummaryVO | null>(null)
   const [statsError, setStatsError] = useState('')
   const [summaryReady, setSummaryReady] = useState(false)
   const loadSummaryRef = useRef(() => {})
@@ -65,11 +58,9 @@ export default function ConsoleHome() {
 
   const loadSummary = () => {
     const u = getUser()
-    setUser(u)
+      setUser(u)
     if (u) {
       setStats(null)
-      setGrabOps(null)
-      setRefundOps(null)
       setPlatformOps(null)
       setStatsError('')
       setSummaryReady(false)
@@ -85,27 +76,12 @@ export default function ConsoleHome() {
           setStats(res)
           setSummaryReady(true)
           if (canLoadPlatformOpsSummary(u.role, permissions)) {
-            getGrabOpsSummary()
-              .then(setGrabOps)
-              .catch(() => setGrabOps(null))
-            listAdminRefunds()
-              .then((refunds) => {
-                setRefundOps({
-                  totalCount: refunds.length,
-                  abnormalCount: refunds.filter((refund) => refund.status === 3 || refund.status === 4).length,
-                })
-              })
-              .catch(() => setRefundOps(null))
-            Promise.all([
-              listExceptionTasks(),
-              listReconciliationBatches(),
-              listOperationAuditLogs({ limit: 5 }),
-            ])
-              .then(([tasks, batches, audits]) => {
-                setPlatformOps({
-                  pendingExceptions: tasks.filter(task => task.status !== 'resolved'),
-                  latestBatch: batches[0] || null,
-                  latestAudit: audits[0] || null,
+            getPlatformOpsSummary()
+              .then(data => {
+                setPlatformOps(data)
+                captureAnalyticsEvent('omni_console_ops_summary_viewed', {
+                  role: u.role,
+                  funnel_steps_bucket: bucketFunnelSteps(data.funnelSteps.length),
                 })
               })
               .catch(() => setPlatformOps(null))
@@ -212,70 +188,96 @@ export default function ConsoleHome() {
           <div className="mb-8">
             <h2 className="text-[16px] font-semibold text-gray-900 mb-4">运营驾驶舱</h2>
             <div className="mb-4 grid gap-4 md:grid-cols-3">
-              <a href="/console/exception-tasks" className="rounded-xl border border-gray-200 bg-white p-5 hover:border-[#ff1268] hover:shadow-sm">
+              <a
+                href="/console/exception-tasks"
+                onClick={() => captureAnalyticsEvent('omni_console_exception_entry_clicked', {
+                  role: user?.role,
+                  source: 'console_home',
+                })}
+                className="rounded-xl border border-gray-200 bg-white p-5 hover:border-[#ff1268] hover:shadow-sm"
+              >
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
                   <ShieldAlert className="h-4 w-4 text-[#dc2626]" /> 待处理异常
                 </div>
-                <div className="text-[28px] font-bold leading-none text-gray-900">{platformOps?.pendingExceptions.length ?? '-'}</div>
+                <div className="text-[28px] font-bold leading-none text-gray-900">{platformOps?.workbench.pendingExceptionCount ?? '-'}</div>
                 <div className="mt-2 text-[12px] text-gray-500">支付、退款、出票、库存等异常任务</div>
               </a>
-              <a href="/console/reconciliation" className="rounded-xl border border-gray-200 bg-white p-5 hover:border-[#ff1268] hover:shadow-sm">
+              <a
+                href="/console/reconciliation"
+                onClick={() => captureAnalyticsEvent('omni_console_reconciliation_entry_clicked', {
+                  role: user?.role,
+                  source: 'console_home',
+                })}
+                className="rounded-xl border border-gray-200 bg-white p-5 hover:border-[#ff1268] hover:shadow-sm"
+              >
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
                   <FileSearch className="h-4 w-4 text-[#2563eb]" /> 最近对账批次
                 </div>
-                <div className="text-[20px] font-bold leading-tight text-gray-900">{platformOps?.latestBatch?.bizDate || '暂无批次'}</div>
-                <div className="mt-2 text-[12px] text-gray-500">{formatBatchStatus(platformOps?.latestBatch?.status)}</div>
+                <div className="text-[20px] font-bold leading-tight text-gray-900">{platformOps?.workbench.latestBatch?.bizDate || '暂无批次'}</div>
+                <div className="mt-2 text-[12px] text-gray-500">{formatReconciliationBatchStatus(platformOps?.workbench.latestBatch?.status)}</div>
               </a>
               <a href="/console/audit-logs" className="rounded-xl border border-gray-200 bg-white p-5 hover:border-[#ff1268] hover:shadow-sm">
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
                   <ClipboardList className="h-4 w-4 text-[#16a34a]" /> 最新人工操作
                 </div>
                 <div className="truncate text-[16px] font-bold leading-tight text-gray-900">
-                  {platformOps?.latestAudit ? formatOperationAction(platformOps.latestAudit.action) : '暂无记录'}
+                  {platformOps?.workbench.latestAudit ? formatOperationAction(platformOps.workbench.latestAudit.action) : '暂无记录'}
                 </div>
-                <div className="mt-2 text-[12px] text-gray-500">{formatDateTime(platformOps?.latestAudit?.createTime)}</div>
+                <div className="mt-2 text-[12px] text-gray-500">{formatDateTime(platformOps?.workbench.latestAudit?.createTime)}</div>
               </a>
             </div>
+            {platformOps?.errors?.length ? (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+                {platformOps.errors.map(error => error.message).join('，')}
+              </div>
+            ) : null}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-xl border border-gray-200 bg-white p-5">
+                <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
+                  <Activity className="h-4 w-4 text-[#16a34a]" /> 运营漏斗摘要
+                </div>
+                <DashboardBarList items={(platformOps?.funnelSteps ?? []).map(item => ({ label: item.label, value: item.count }))} />
+              </div>
+
               <div className="rounded-xl border border-gray-200 bg-white p-5">
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
                   <TrendingUp className="h-4 w-4 text-[#ff1268]" /> 热门活动实时流量
                 </div>
-                <DashboardBarList items={(stats?.hotActivities ?? []).slice(0, 5).map(item => ({ label: item.activityName, value: item.orderCount }))} />
+                <DashboardBarList items={(platformOps?.ticket.hotActivities ?? stats?.hotActivities ?? []).slice(0, 5).map(item => ({ label: item.activityName, value: item.orderCount }))} />
               </div>
 
               <div className="rounded-xl border border-gray-200 bg-white p-5">
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">
                   <AlertTriangle className="h-4 w-4 text-[#f97316]" /> 抢票失败原因分布
                 </div>
-                <DashboardBarList items={(grabOps?.failureReasons ?? []).slice(0, 5).map(item => ({ label: item.reason, value: item.count }))} />
+                <DashboardBarList items={(platformOps?.grab.failureReasons ?? []).slice(0, 5).map(item => ({ label: item.reason, value: item.count }))} />
               </div>
 
               {[
                 {
                   label: '候补转化率',
-                  value: grabOps ? summarizeOpsMetric({ numerator: grabOps.waitlist.paidCount, denominator: grabOps.waitlist.totalCount }) : '暂无数据',
+                  value: platformOps ? summarizeOpsMetric({ numerator: platformOps.grab.waitlist.paidCount, denominator: platformOps.grab.waitlist.totalCount }) : '暂无数据',
                   icon: Users,
                   color: 'text-[#2563eb]',
                 },
                 {
                   label: '支付超时率',
-                  value: summarizeOpsMetric({ numerator: stats?.paymentTimeoutCount ?? 0, denominator: stats?.orderCount ?? 0 }),
+                  value: summarizeOpsMetric({ numerator: platformOps?.ticket.paymentTimeoutCount ?? stats?.paymentTimeoutCount ?? 0, denominator: platformOps?.ticket.orderCount ?? stats?.orderCount ?? 0 }),
                   icon: Gauge,
                   color: 'text-[#f97316]',
                 },
                 {
                   label: '退款异常率',
                   value: summarizeOpsMetric({
-                    numerator: refundOps?.abnormalCount ?? stats?.refundAbnormalCount ?? 0,
-                    denominator: refundOps?.totalCount ?? stats?.refundRequestCount ?? 0,
+                    numerator: platformOps?.refund.abnormalCount ?? stats?.refundAbnormalCount ?? 0,
+                    denominator: platformOps?.refund.totalCount ?? stats?.refundRequestCount ?? 0,
                   }),
                   icon: RotateCcw,
                   color: 'text-[#dc2626]',
                 },
                 {
                   label: '风控命中率',
-                  value: summarizeOpsMetric({ numerator: stats?.riskHitCount ?? 0, denominator: stats?.riskCheckCount ?? 0 }),
+                  value: summarizeOpsMetric({ numerator: platformOps?.ticket.riskHitCount ?? stats?.riskHitCount ?? 0, denominator: platformOps?.ticket.riskCheckCount ?? stats?.riskCheckCount ?? 0 }),
                   icon: Activity,
                   color: 'text-[#16a34a]',
                 },

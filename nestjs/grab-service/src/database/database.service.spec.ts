@@ -7,9 +7,22 @@ jest.mock('pg', () => ({
 
 describe('DatabaseService', () => {
   const PoolMock = Pool as unknown as jest.Mock;
+  const originalEnv = process.env;
 
   beforeEach(() => {
     PoolMock.mockReset();
+    process.env = {
+      ...originalEnv,
+      GRAB_DB_HOST: 'db.local',
+      GRAB_DB_PORT: '5432',
+      GRAB_DB_NAME: 'omni_grab',
+      GRAB_DB_USER: 'grab_user',
+      GRAB_DB_PASSWORD: 'grab-password',
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   it('commits and releases successful transactions', async () => {
@@ -56,5 +69,12 @@ describe('DatabaseService', () => {
     expect(query).toHaveBeenNthCalledWith(2, 'insert into x values (1)');
     expect(query).toHaveBeenNthCalledWith(3, 'ROLLBACK');
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails during initialization when database environment is missing', () => {
+    delete process.env.GRAB_DB_HOST;
+
+    expect(() => new DatabaseService()).toThrow('抢票数据库地址未配置');
+    expect(PoolMock).not.toHaveBeenCalled();
   });
 });

@@ -156,7 +156,7 @@ export function ActivityArtistSelector({ value, onChange }: Props) {
         {value.map((item, index) => (
           <div key={item.artistId} className="rounded-lg border border-[#e5e5e5] bg-white p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-[#fff0f3] px-3 py-1 text-[13px] font-medium text-[#ff1268]">{item.name || `艺人 ${item.artistId}`}</span>
+              <span className="rounded-full bg-[#fff0f3] px-3 py-1 text-[13px] font-medium text-[#ff1268]">{item.name || '艺人信息待同步'}</span>
               {(item.isPrimary || item.primary) && <span className="rounded-full bg-[#1a1a2e] px-2 py-0.5 text-[12px] text-white">主艺人</span>}
               <button type="button" onClick={() => setPrimary(item.artistId)} className="text-[12px] text-[#3b82f6]">设为主艺人</button>
               <button type="button" disabled={index === 0} onClick={() => move(item.artistId, -1)} className="text-[12px] text-[#666] disabled:text-[#bbb]">上移</button>

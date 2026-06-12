@@ -1,10 +1,19 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, addSupportNote, closeSupportConversation, createAlipayQrPay, createOrganizerAdminAccount, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getReconciliationBatchDetail, getTeamGrabProgress, joinTeamGrab, listActivities, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, rejectCloseSupportConversation, removeTeamGrabMember, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateOrganizerAdminAccount, updateRbacRolePermissions, updateSupportTags } from './api.ts'
+import { ApiError, addSupportNote, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, removeTeamGrabMember, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateSupportTags } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
+
+test('parameter validation errors use Chinese identifier wording', async () => {
+  await assert.rejects(() => getActivityMarketing(0), { message: '活动编号不正确' })
+  await assert.rejects(() => getCheckInOverview(0), { message: '场次编号不正确' })
+  await assert.rejects(() => listCheckInRecords({ sessionId: 0 }), { message: '场次编号不正确' })
+  await assert.rejects(() => getSessionSeatLayout(0, 1), { message: '场次编号不正确' })
+  await assert.rejects(() => getSessionSeatLayout(1, 0), { message: '用户编号不正确' })
+  await assert.rejects(() => getSeatCraftDraft('session', 0), { message: 'SeatCraft 归属编号不正确' })
+})
 
 test('allows alipay qr pay response that takes longer than the default request timeout', async () => {
   const originalFetch = globalThis.fetch
@@ -66,6 +75,39 @@ test('allows support AI replies that take longer than the default request timeou
       ['/api/user/support/conversations', 'POST', JSON.stringify({ subject: '转赠', initialMessage: '如何转赠' })],
       ['/api/user/support/conversations/88/messages', 'POST', JSON.stringify({ content: '然后如何转赠' })],
     ])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads support conversation context through conversation scoped endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: {
+        conversationId: 1001,
+        user: { userId: 2004, nickname: '普通用户', phoneMask: '139****0001' },
+        orders: [],
+        refunds: [],
+        tickets: [],
+        waitlist: [],
+        grabRequests: [],
+        notifications: [],
+        errors: [],
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await getSupportConversationContext(1001)
+
+    assert.equal(requestedUrl, '/api/user/support/agent/conversations/1001/context')
+    assert.equal(result.conversationId, 1001)
+    assert.equal(result.user.userId, 2004)
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -183,6 +225,48 @@ test('updates activity marketing without leaking body user id', async () => {
   }
 })
 
+test('notifies activity buyers through activity admin endpoint without leaking body user id', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  let requestedMethod = ''
+  let requestedBody = ''
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input)
+    requestedMethod = init?.method ?? 'GET'
+    requestedBody = String(init?.body ?? '')
+    return new Response(JSON.stringify({
+      code: 200,
+      message: 'success',
+      data: {
+        activityId: 101,
+        activityName: '测试演唱会',
+        paidOrderCount: 3,
+        notifiedUserCount: 2,
+        notificationCount: 3,
+        skippedOrderCount: 0,
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await notifyActivityBuyers(101, {
+      userId: 9999,
+      confirmNotify: true,
+      content: '演出入场时间有调整，请查看订单详情。',
+    })
+
+    assert.equal(result.notificationCount, 3)
+    assert.equal(requestedUrl, '/api/ticket/admin/activities/101/buyer-notifications')
+    assert.equal(requestedMethod, 'POST')
+    assert.equal(requestedBody, JSON.stringify({
+      confirmNotify: true,
+      content: '演出入场时间有调整，请查看订单详情。',
+    }))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('loads grab operations summary for platform dashboard', async () => {
   const originalFetch = globalThis.fetch
   let requestedUrl = ''
@@ -204,6 +288,37 @@ test('loads grab operations summary for platform dashboard', async () => {
     assert.equal(requestedUrl, '/api/grab/admin/ops-summary')
     assert.equal(result.failureReasons[0].count, 7)
     assert.equal(result.waitlist.conversionRate, 0.4)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads platform operations summary through user console aggregate endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: {
+        generatedAt: '2026-06-09T09:00:00',
+        funnelSteps: [{ key: 'paid', label: '支付', count: 7 }],
+        ticket: { orderCount: 10, paidOrderCount: 7, hotActivities: [] },
+        refund: { totalCount: 2, abnormalCount: 1 },
+        grab: { failureReasons: [], waitlist: { totalCount: 10, paidCount: 4, conversionRate: 0.4 } },
+        workbench: { pendingExceptionCount: 1, latestBatch: null, latestAudit: null },
+        errors: [],
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await getPlatformOpsSummary()
+
+    assert.equal(requestedUrl, '/api/user/console/ops-summary')
+    assert.equal(result.funnelSteps[0].key, 'paid')
+    assert.equal(result.workbench.pendingExceptionCount, 1)
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -268,6 +383,38 @@ test('creates exception task through user console endpoint', async () => {
   }
 })
 
+test('updates exception task status through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    const url = String(input)
+    const status = url.endsWith('/claim') ? 'processing' : url.endsWith('/resolve') ? 'resolved' : 'closed'
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: { id: 9, taskType: 'refund_failed', businessNo: 'BIZ-1', severity: 'high', status, result: '已处理' },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const claimed = await claimExceptionTask(9)
+    const resolved = await resolveExceptionTask(9, '已处理')
+    const closed = await closeExceptionTask(9, '重复任务')
+
+    assert.deepEqual(requested.map(item => [item.url, item.method, item.body]), [
+      ['/api/user/console/exception-tasks/9/claim', 'POST', ''],
+      ['/api/user/console/exception-tasks/9/resolve', 'POST', JSON.stringify({ result: '已处理' })],
+      ['/api/user/console/exception-tasks/9/close', 'POST', JSON.stringify({ result: '重复任务' })],
+    ])
+    assert.equal(claimed.status, 'processing')
+    assert.equal(resolved.status, 'resolved')
+    assert.equal(closed.status, 'closed')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('loads and creates reconciliation batches through user console endpoint', async () => {
   const originalFetch = globalThis.fetch
   const requested: Array<{ url: string; method: string; body: string }> = []
@@ -292,6 +439,120 @@ test('loads and creates reconciliation batches through user console endpoint', a
     assert.equal(requested[1].body, JSON.stringify({ bizDate: '2026-06-02' }))
     assert.equal(batches[0].batchNo, 'REC20260601-00000001')
     assert.equal(created.batchNo, 'REC20260602-00000002')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('updates reconciliation differences through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    const url = String(input)
+    const status = url.endsWith('/resolve') ? 'resolved' : 'ignored'
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: { id: 4, batchNo: 'REC20260603-363F0A8A', diffType: 'amount_mismatch', businessNo: 'RF20260603001', diffAmount: 6, status },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const resolved = await resolveReconciliationDifference('REC20260603-363F0A8A', 4)
+    const ignored = await ignoreReconciliationDifference('REC20260603-363F0A8A', 4)
+
+    assert.deepEqual(requested.map(item => [item.url, item.method, item.body]), [
+      ['/api/user/console/reconciliation/batches/REC20260603-363F0A8A/differences/4/resolve', 'POST', ''],
+      ['/api/user/console/reconciliation/batches/REC20260603-363F0A8A/differences/4/ignore', 'POST', ''],
+    ])
+    assert.equal(resolved.status, 'resolved')
+    assert.equal(ignored.status, 'ignored')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('creates activity review with paid order id', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  let requestedBody = ''
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input)
+    requestedBody = String(init?.body ?? '')
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: { id: 77, activityId: 10, userId: 2004, orderId: 9001, rating: 5, status: 0 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await createActivityReview(10, { orderId: 9001, rating: 5, content: '观演体验很好' })
+
+    assert.equal(requestedUrl, '/api/ticket/activities/10/reviews')
+    assert.equal(requestedBody, JSON.stringify({ orderId: 9001, rating: 5, content: '观演体验很好' }))
+    assert.equal(result.status, 0)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('reports an activity review', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  let requestedBody = ''
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input)
+    requestedBody = String(init?.body ?? '')
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: { id: 9, reviewId: 77, activityId: 10, userId: 2005, reason: '包含辱骂内容', status: 'PENDING' },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await reportActivityReview(10, 77, '包含辱骂内容')
+
+    assert.equal(requestedUrl, '/api/ticket/activities/10/reviews/77/reports')
+    assert.equal(requestedBody, JSON.stringify({ reason: '包含辱骂内容' }))
+    assert.equal(result.status, 'PENDING')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads and moderates admin activity engagement endpoints', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    requested.push({ url, method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    const data = url.includes('/review-reports')
+      ? [{ id: 9, reviewId: 77, status: 'PENDING' }]
+      : url.includes('/questions')
+        ? [{ id: 3, activityId: 10, userId: 2004, content: '几点检票', status: 'ANSWERED' }]
+        : [{ id: 77, activityId: 10, userId: 2004, rating: 5, status: 0 }]
+    return new Response(JSON.stringify({ code: 200, message: '成功', data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    await listAdminActivityReviews({ activityId: 10, status: 0 })
+    await moderateAdminActivityReview(77, 'APPROVE')
+    await listAdminActivityReviewReports('PENDING')
+    await moderateAdminActivityReviewReport(9, 'RESOLVE', '已隐藏')
+    await listAdminActivityQuestions({ activityId: 10, status: 'PENDING' })
+    await moderateAdminActivityQuestion(3, { action: 'ANSWER', answer: '19:00 开始检票' })
+
+    assert.deepEqual(requested.map(item => [item.url, item.method, item.body]), [
+      ['/api/ticket/admin/activity-engagement/reviews?activityId=10&status=0', 'GET', ''],
+      ['/api/ticket/admin/activity-engagement/reviews/77/moderation', 'POST', JSON.stringify({ action: 'APPROVE' })],
+      ['/api/ticket/admin/activity-engagement/review-reports?status=PENDING', 'GET', ''],
+      ['/api/ticket/admin/activity-engagement/review-reports/9/moderation', 'POST', JSON.stringify({ action: 'RESOLVE', note: '已隐藏' })],
+      ['/api/ticket/admin/activity-engagement/questions?activityId=10&status=PENDING', 'GET', ''],
+      ['/api/ticket/admin/activity-engagement/questions/3/moderation', 'POST', JSON.stringify({ action: 'ANSWER', answer: '19:00 开始检票' })],
+    ])
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -368,31 +629,85 @@ test('manages organizer admin accounts through user console endpoint', async () 
       code: 200,
       message: '成功',
       data: init?.method === 'POST'
-        ? { id: 12, phone: '13900000004', nickname: '主办方管理员', role: 'organizer_admin', status: 1 }
-        : [{ id: 11, phone: '13900000003', nickname: '主办方管理员', role: 'organizer_admin', status: 1 }],
+        ? { id: 12, phone: '13900000004', nickname: '平台主办方运营员', role: 'organizer_admin', status: 1 }
+        : [{ id: 11, phone: '13900000003', nickname: '平台主办方运营员', role: 'organizer_admin', status: 1 }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }) as typeof fetch
 
   try {
     const accounts = await listOrganizerAdminAccounts()
-    const created = await createOrganizerAdminAccount({ phone: '13900000004', nickname: '主办方管理员', password: 'admin123' })
-    await updateOrganizerAdminAccount(11, { phone: '13900000003', nickname: '主办方管理员', status: 1 })
+    const created = await createOrganizerAdminAccount({ phone: '13900000004', nickname: '平台主办方运营员', password: 'admin123' })
+    await updateOrganizerAdminAccount(11, { phone: '13900000003', nickname: '平台主办方运营员', status: 1 })
     await deactivateOrganizerAdminAccount(11)
     await deleteOrganizerAdminAccount(11)
 
     assert.equal(requested[0].url, '/api/user/console/organizer-admins')
     assert.equal(requested[1].url, '/api/user/console/organizer-admins')
     assert.equal(requested[1].method, 'POST')
-    assert.equal(requested[1].body, JSON.stringify({ phone: '13900000004', nickname: '主办方管理员', password: 'admin123' }))
+    assert.equal(requested[1].body, JSON.stringify({ phone: '13900000004', nickname: '平台主办方运营员', password: 'admin123' }))
     assert.equal(requested[2].url, '/api/user/console/organizer-admins/11')
     assert.equal(requested[2].method, 'PUT')
-    assert.equal(requested[2].body, JSON.stringify({ phone: '13900000003', nickname: '主办方管理员', status: 1 }))
+    assert.equal(requested[2].body, JSON.stringify({ phone: '13900000003', nickname: '平台主办方运营员', status: 1 }))
     assert.equal(requested[3].url, '/api/user/console/organizer-admins/11/deactivate')
     assert.equal(requested[3].method, 'POST')
     assert.equal(requested[4].url, '/api/user/console/organizer-admins/11')
     assert.equal(requested[4].method, 'DELETE')
     assert.equal(accounts[0].role, 'organizer_admin')
     assert.equal(created.id, 12)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('manages organizer ops follow-up records through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    const url = String(input)
+    const data = url.endsWith('/follow-ups')
+      ? init?.method === 'POST'
+        ? { id: 8, organizerUserId: 3003, operatorId: 2002, followType: 'phone', content: '已电话确认资质材料', nextFollowAt: '2026-06-09T10:00:00' }
+        : [{ id: 7, organizerUserId: 3003, operatorId: 2002, followType: 'note', content: '等待补充授权书' }]
+      : [{ organizerUserId: 3003, assignedOperatorId: 2002, riskLevel: 'watch', status: 'pending_material' }]
+    return new Response(JSON.stringify({ code: 200, message: '成功', data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const assignments = await listOrganizerOpsAssignments()
+    await updateOrganizerOpsAssignment(3003, {
+      assignedOperatorId: 2002,
+      riskLevel: 'high',
+      status: 'restricted',
+      nextFollowAt: '2026-06-10T09:30:00',
+    })
+    const followUps = await listOrganizerOpsFollowUps(3003)
+    const created = await createOrganizerOpsFollowUp(3003, {
+      followType: 'phone',
+      content: '已电话确认资质材料',
+      nextFollowAt: '2026-06-09T10:00:00',
+    })
+
+    assert.equal(requested[0].url, '/api/user/console/organizer-ops/assignments')
+    assert.equal(requested[1].url, '/api/user/console/organizer-ops/assignments/3003')
+    assert.equal(requested[1].method, 'PUT')
+    assert.equal(requested[1].body, JSON.stringify({
+      assignedOperatorId: 2002,
+      riskLevel: 'high',
+      status: 'restricted',
+      nextFollowAt: '2026-06-10T09:30:00',
+    }))
+    assert.equal(requested[2].url, '/api/user/console/organizer-ops/assignments/3003/follow-ups')
+    assert.equal(requested[3].url, '/api/user/console/organizer-ops/assignments/3003/follow-ups')
+    assert.equal(requested[3].method, 'POST')
+    assert.equal(requested[3].body, JSON.stringify({
+      followType: 'phone',
+      content: '已电话确认资质材料',
+      nextFollowAt: '2026-06-09T10:00:00',
+    }))
+    assert.equal(assignments[0].riskLevel, 'watch')
+    assert.equal(followUps[0].content, '等待补充授权书')
+    assert.equal(created.id, 8)
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -447,6 +762,38 @@ test('loads check-in overview and records through ticket admin endpoint', async 
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+test('exposes notification preferences without technical delivery fields', async () => {
+  const api = await import('./api.ts') as unknown as {
+    getNotificationPreferences?: () => Promise<Array<Record<string, unknown>>>
+  }
+  const loader = api.getNotificationPreferences
+
+  assert.equal(typeof loader, 'function')
+  if (typeof loader !== 'function') return
+
+  const preferences = await loader()
+
+  assert.deepEqual(preferences, [
+    {
+      channel: 'IN_APP',
+      label: '站内通知',
+      enabled: true,
+      locked: true,
+      statusText: '已开启',
+      description: '订单、候补、抢票、退款、改期和客服回复都会通过站内消息提醒。',
+    },
+    {
+      channel: 'SMS',
+      label: '短信通知',
+      enabled: false,
+      locked: true,
+      statusText: '暂不可用',
+      description: '当前仅提供站内消息提醒；短信通知开放后可在这里开启。',
+    },
+  ])
+  assert.equal(preferences.some((item) => 'provider' in item || 'eventId' in item || 'dlq' in item), false)
 })
 
 test('uses support conversation operation endpoints', async () => {
@@ -550,6 +897,39 @@ test('serializes activity search filters into query params', async () => {
     })
 
     assert.equal(requestedUrl, '/api/ticket/activities?page=1&size=20&keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&city=%E4%B8%8A%E6%B5%B7&dateFrom=2026-06-01&dateTo=2026-06-30&minPrice=180&maxPrice=880&saleStatus=on_sale&seatMapOnly=true&realNameRequired=false&sort=price_asc')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('serializes ES activity search keyword city flags and sort params', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: 'success',
+      data: { records: [], total: 0, size: 20, current: 2, pages: 0 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    await listActivities({
+      page: 2,
+      size: 20,
+      keyword: '周杰伦',
+      city: '北京',
+      saleStatus: 'on_sale',
+      seatMapOnly: true,
+      realNameRequired: true,
+      sort: 'price_asc',
+    })
+
+    assert.equal(
+      requestedUrl,
+      '/api/ticket/activities?page=2&size=20&keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&city=%E5%8C%97%E4%BA%AC&saleStatus=on_sale&seatMapOnly=true&realNameRequired=true&sort=price_asc'
+    )
   } finally {
     globalThis.fetch = originalFetch
   }

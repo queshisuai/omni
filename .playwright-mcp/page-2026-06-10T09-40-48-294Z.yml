@@ -1,0 +1,50 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "万象 万象" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - img "万象" [ref=e7]
+          - generic [ref=e8]: 万象
+        - button "全国" [ref=e10]:
+          - img [ref=e11]
+          - generic [ref=e14]: 全国
+          - img [ref=e15]
+        - navigation [ref=e17]:
+          - link "首页" [ref=e18] [cursor=pointer]:
+            - /url: /
+          - link "分类" [ref=e19] [cursor=pointer]:
+            - /url: /search
+        - generic [ref=e20]:
+          - img [ref=e21] [cursor=pointer]
+          - textbox "搜索明星、演出、体育赛事" [ref=e24]
+        - button "登录" [ref=e26] [cursor=pointer]:
+          - img [ref=e27]
+          - generic [ref=e30]: 登录
+          - img [ref=e31]
+        - button [ref=e33]:
+          - img [ref=e34]
+    - contentinfo [ref=e77]:
+      - generic [ref=e78]:
+        - generic [ref=e79]:
+          - generic [ref=e80]: 关于万象
+          - generic [ref=e81]: 协议及隐私权政策
+          - generic [ref=e82]: 廉正举报
+          - generic [ref=e83]: 联系合作
+          - generic [ref=e84]: 招聘信息
+          - generic [ref=e85]: 防骗秘籍
+          - link "商户入驻" [ref=e86] [cursor=pointer]:
+            - /url: /merchant
+        - generic [ref=e87]:
+          - generic [ref=e88]:
+            - generic [ref=e89]: 京ICP证031057号
+            - generic [ref=e90]: "|"
+            - generic [ref=e91]: 京ICP备11043884号
+            - generic [ref=e92]: "|"
+            - generic [ref=e93]: 京公网安备11010502037341号
+          - paragraph [ref=e94]: 万象文化传媒发展有限公司 版权所有
+          - paragraph [ref=e95]: 2003-2020 版权所有，保留所有权利
+          - paragraph [ref=e96]: 热线电话：10103721
+  - button "在线客服" [ref=e97]:
+    - img [ref=e98]
+    - generic [ref=e100]: 在线客服

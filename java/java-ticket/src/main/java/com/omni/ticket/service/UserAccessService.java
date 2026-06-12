@@ -1,6 +1,7 @@
 package com.omni.ticket.service;
 
 import com.omni.common.dto.InternalAuthContextResponse;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
@@ -121,6 +122,25 @@ public class UserAccessService {
             throw e;
         } catch (RuntimeException e) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "用户服务无响应");
+        }
+    }
+
+    public void writeOperationAudit(OperationAuditWriteRequest request) {
+        if (request == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "审计参数不能为空");
+        }
+        if (!StringUtils.hasText(internalApiToken)) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "内部接口令牌未配置");
+        }
+        try {
+            Result<Void> result = userInternalClient.writeOperationAudit(request, internalApiToken);
+            if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+                throw new BusinessException(ResultCode.INTERNAL_ERROR, "操作审计服务无响应");
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "操作审计服务无响应");
         }
     }
 

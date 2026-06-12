@@ -7,6 +7,8 @@ import com.omni.ticket.dto.TeamSeatLockRequest;
 import com.omni.ticket.dto.TeamSeatLockResponse;
 import com.omni.ticket.dto.TeamSeatLockValidationRequest;
 import com.omni.ticket.dto.TeamSeatLockValidationResponse;
+import com.omni.ticket.dto.TicketPurchaseContextRequest;
+import com.omni.ticket.dto.TicketPurchaseContextResponse;
 import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
 import com.omni.ticket.dto.TicketTypeVisibleResponse;
 import com.omni.ticket.dto.TicketTypesVisibleRequest;
@@ -120,6 +122,42 @@ public class TicketSalesInternalService {
         fillSnapshotFields(response, request.getSessionId());
         if (request.getSeatIds() != null && !request.getSeatIds().isEmpty()) {
             response.setSeatLabels(String.join(", ", sessionSeatMapper.selectSeatLabelsByIds(request.getSeatIds())));
+        }
+        return response;
+    }
+
+    public TicketPurchaseContextResponse getPurchaseContext(TicketPurchaseContextRequest request) {
+        if (request == null || request.getSessionId() == null || request.getTicketTypeId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票务上下文参数不能为空");
+        }
+        TicketType ticketType = ticketTypeMapper.selectById(request.getTicketTypeId());
+        if (ticketType == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "票档不存在");
+        }
+        if (!request.getSessionId().equals(ticketType.getSessionId())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "票档不属于当前场次");
+        }
+
+        Session session = sessionMapper.selectById(request.getSessionId());
+        if (session == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "场次不存在");
+        }
+
+        TicketPurchaseContextResponse response = new TicketPurchaseContextResponse();
+        response.setSessionId(request.getSessionId());
+        response.setTicketTypeId(request.getTicketTypeId());
+        response.setTicketTypeName(ticketType.getName());
+        response.setSessionTime(session.getStartTime());
+        response.setActivityId(session.getActivityId());
+
+        Activity activity = activityMapper.selectById(session.getActivityId());
+        if (activity != null) {
+            response.setActivityName(activity.getName());
+            response.setActivityPoster(activity.getPoster());
+        }
+        Venue venue = venueMapper.selectById(session.getVenueId());
+        if (venue != null) {
+            response.setVenueName(venue.getName());
         }
         return response;
     }

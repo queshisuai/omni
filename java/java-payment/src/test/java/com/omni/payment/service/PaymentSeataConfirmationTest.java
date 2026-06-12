@@ -1,5 +1,8 @@
 package com.omni.payment.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
@@ -10,6 +13,7 @@ import com.omni.payment.mapper.PaymentMapper;
 import io.seata.spring.annotation.GlobalTransactional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
@@ -66,6 +70,38 @@ class PaymentSeataConfirmationTest {
     }
 
     @Test
+    void confirmPaymentLogsSegmentedLatencyForOrderConfirmationAndPaymentUpdate() {
+        OrderClient orderClient = mock(OrderClient.class);
+        PaymentMapper paymentMapper = mock(PaymentMapper.class);
+        PaymentConfirmationService service = new PaymentConfirmationService(orderClient, paymentMapper, "internal-token");
+        Payment payment = pendingPayment();
+        when(orderClient.markPaid(10L, "internal-token")).thenReturn(Result.success(order(10L)));
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(PaymentConfirmationService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.INFO);
+        try {
+            service.confirmPayment(payment, "TRADE1001", "BUYER1001", "raw", "callback");
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        String message = appender.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(line -> line.contains("支付确认链路耗时"))
+                .findFirst()
+                .orElse("");
+
+        assertTrue(message.contains("paymentId=100"));
+        assertTrue(message.contains("orderId=10"));
+        assertTrue(message.contains("outcome=CONFIRMED"));
+        assertTrue(message.contains("orderMarkPaidMs="));
+        assertTrue(message.contains("paymentUpdateMs="));
+        assertTrue(message.contains("totalMs="));
+    }
+
+    @Test
     void confirmPaymentIsIdempotentWhenPaymentAlreadySuccessAndTradeNoMatches() {
         OrderClient orderClient = mock(OrderClient.class);
         PaymentMapper paymentMapper = mock(PaymentMapper.class);
@@ -101,7 +137,7 @@ class PaymentSeataConfirmationTest {
         payment.setId(100L);
         payment.setOrderId(10L);
         payment.setPaymentNo("PAY1001");
-        payment.setPaymentMethod("ALIPAY_SANDBOX");
+        payment.setPaymentMethod("ALIPAY");
         payment.setOutTradeNo("DM1001");
         payment.setAmount(new BigDecimal("280.00"));
         payment.setStatus(PaymentService.STATUS_PENDING);

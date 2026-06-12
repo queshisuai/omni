@@ -14,6 +14,7 @@ import com.omni.ticket.entity.Session;
 import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.mapper.ActivityMapper;
+import com.omni.ticket.mapper.PerformanceSubscriptionMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.service.UserAccessService;
@@ -52,13 +53,15 @@ class AdminSummaryServiceTest {
     private OrderInternalClient orderInternalClient;
     @Mock
     private TourMapper tourMapper;
+    @Mock
+    private PerformanceSubscriptionMapper performanceSubscriptionMapper;
 
     private AdminSummaryService service;
 
     @BeforeEach
     void setUp() {
         service = new AdminSummaryService(activityMapper, sessionMapper, ticketTypeMapper,
-                userAccessService, orderInternalClient, tourMapper, "internal-token");
+                userAccessService, orderInternalClient, tourMapper, performanceSubscriptionMapper, "internal-token");
     }
 
     @Test
@@ -120,6 +123,7 @@ class AdminSummaryServiceTest {
                         order(2L, 10L, 2),
                         order(3L, 11L, 3)
                 )));
+        when(performanceSubscriptionMapper.selectCount(any())).thenReturn(3L, 2L);
 
         AdminSummaryResponse summary = service.getSummary(2002L);
 
@@ -129,6 +133,8 @@ class AdminSummaryServiceTest {
         assertEquals(3L, summary.getOrderCount());
         assertEquals(1L, summary.getRiskHitCount());
         assertEquals(2L, summary.getRiskCheckCount());
+        assertEquals(3L, summary.getInterestCount());
+        assertEquals(2L, summary.getReminderCount());
         verify(orderInternalClient).listPaidBySessions(any(PaidOrdersBySessionsRequest.class), eq("internal-token"));
     }
 
@@ -174,7 +180,7 @@ class AdminSummaryServiceTest {
     @Test
     void throwsInternalErrorAndSkipsOrderServiceWhenInternalTokenMissing() {
         service = new AdminSummaryService(activityMapper, sessionMapper, ticketTypeMapper,
-                userAccessService, orderInternalClient, tourMapper, "");
+                userAccessService, orderInternalClient, tourMapper, performanceSubscriptionMapper, "");
         allowSummaryAccess(2002L, "admin");
         when(activityMapper.selectList(any())).thenReturn(Collections.singletonList(activity(101L, 2002L)));
         when(sessionMapper.selectList(any())).thenReturn(Collections.singletonList(session(10L)));

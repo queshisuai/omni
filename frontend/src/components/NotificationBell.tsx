@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bell } from 'lucide-react'
-import { getUser, isAuthenticated } from '@/lib/auth'
+import { AUTH_UPDATED_EVENT, getUser, isAuthenticated } from '@/lib/auth'
 import { deleteReadNotifications, listMyNotifications, markAllNotificationsRead, markNotificationRead } from '@/lib/api'
 import { filterVisibleNotifications, getNotificationAction, getNotificationTypeMeta, getReadNotificationIds, isNotificationUnread } from './notification-state'
 import type { NotificationVO, UserRole } from '@/types/api'
@@ -52,10 +52,10 @@ export function NotificationBell() {
     }
     checkAuth()
     window.addEventListener('focus', checkAuth)
-    window.addEventListener('damai-user-updated', checkAuth)
+    window.addEventListener(AUTH_UPDATED_EVENT, checkAuth)
     return () => {
       window.removeEventListener('focus', checkAuth)
-      window.removeEventListener('damai-user-updated', checkAuth)
+      window.removeEventListener(AUTH_UPDATED_EVENT, checkAuth)
     }
   }, [])
 

@@ -1,6 +1,6 @@
-import { GrabController, GrabSessionController } from './grab.controller';
+import { GrabController, GrabInternalController, GrabSessionController } from './grab.controller';
 import { GRAB_STATUS } from './grab-status';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
 describe('GrabController', () => {
   it('submits grab request using authenticated user id', async () => {
@@ -113,5 +113,34 @@ describe('GrabController', () => {
     await expect(controller.stockVisible('0', '1')).rejects.toBeInstanceOf(BadRequestException);
     await expect(controller.stockVisible('101', '')).rejects.toBeInstanceOf(BadRequestException);
     expect(visibleStockService.getSessionVisibleStock).not.toHaveBeenCalled();
+  });
+
+  it('rejects internal user grab list when internal token is invalid', async () => {
+    const previous = process.env.INTERNAL_API_TOKEN;
+    process.env.INTERNAL_API_TOKEN = 'internal-token';
+    const service: any = {
+      listByUser: jest.fn(),
+    };
+    const controller = new GrabInternalController(service);
+
+    await expect(controller.internalListByUser('wrong-token', '2004', '5')).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(service.listByUser).not.toHaveBeenCalled();
+    process.env.INTERNAL_API_TOKEN = previous;
+  });
+
+  it('lists user grab requests through internal token', async () => {
+    const previous = process.env.INTERNAL_API_TOKEN;
+    process.env.INTERNAL_API_TOKEN = 'internal-token';
+    const response = [{ requestId: 'GRAB1', status: GRAB_STATUS.QUEUED }];
+    const service: any = {
+      listByUser: jest.fn().mockResolvedValue(response),
+    };
+    const controller = new GrabInternalController(service);
+
+    const result = await controller.internalListByUser('internal-token', '2004', '1');
+
+    expect(service.listByUser).toHaveBeenCalledWith(2004, 1);
+    expect(result).toEqual({ code: 200, message: '成功', data: response });
+    process.env.INTERNAL_API_TOKEN = previous;
   });
 });

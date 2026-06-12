@@ -47,6 +47,12 @@ export interface WaitlistEntryResponse {
   id: number;
   sessionId: number;
   ticketTypeId: number;
+  activityId?: number | null;
+  activityName?: string | null;
+  activityPoster?: string | null;
+  ticketTypeName?: string | null;
+  venueName?: string | null;
+  sessionTime?: string | null;
   quantity: number;
   status: WaitlistEntryStatus;
   rank: number | null;

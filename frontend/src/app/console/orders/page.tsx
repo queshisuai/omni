@@ -8,21 +8,20 @@ import { ConsoleTableSkeleton } from '@/components/Skeleton'
 import { CheckSquare, Download, Square } from 'lucide-react'
 import {
   buildConsoleOrderExportCsv,
-  CONSOLE_ORDER_STATUS_LABELS,
   CONSOLE_ORDER_STATUS_TABS,
   countConsoleOrdersByStatus,
   filterConsoleOrdersByStatus,
   paginateConsoleOrders,
   type ConsoleOrderStatusFilter,
+  getConsoleOrderActivityLabel,
   getConsoleOrderScopeCopy,
+  getConsoleOrderTicketLabel,
   getSelectedConsoleOrders,
   formatOrderAttendees,
+  formatConsoleOrderStatusLabel,
+  getConsoleOrderStatusClassName,
 } from '@/lib/console-orders'
 import type { OrderEntity, UserRole } from '@/types/api'
-
-function getTicketTypeLabel(order: OrderEntity) {
-  return order.ticketName || `票档 ${order.matchedTicketTypeId ?? order.ticketTypeId}`
-}
 
 export default function ConsoleOrdersPage() {
   const [orders, setOrders] = useState<OrderEntity[]>([])
@@ -211,11 +210,11 @@ export default function ConsoleOrdersPage() {
                   </td>
                   <td className="p-3 font-medium text-[#333]">{o.orderNo}</td>
                   <td className="p-3 text-[#333] max-w-[260px]">
-                    <div className="font-medium line-clamp-2">{o.activityName || '未知活动'}</div>
+                    <div className="font-medium line-clamp-2">{getConsoleOrderActivityLabel(o)}</div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-[#777]">
-                      <span>{getTicketTypeLabel(o)}</span>
+                      <span>{getConsoleOrderTicketLabel(o)}</span>
                       {showTicketRoute && (
-                        <span className="text-[#999]">#{requestedTicketTypeId} → #{matchedTicketTypeId}</span>
+                        <span className="text-[#999]">原票档编号：{requestedTicketTypeId} → 实际票档编号：{matchedTicketTypeId}</span>
                       )}
                       {o.autoDowngraded && (
                         <span className="inline-flex items-center rounded border border-[#ffb3ca] bg-[#fff7fa] px-1.5 py-0.5 text-[11px] font-medium text-[#ff1268]">
@@ -230,11 +229,7 @@ export default function ConsoleOrdersPage() {
                   </td>
                   <td className="p-3 text-[#666]">{o.quantity}张</td>
                   <td className="p-3">
-                    <span className={`text-[12px] px-2 py-0.5 rounded-full ${
-                      o.status === 1 ? 'bg-[#fff8e1] text-[#f59e0b]' :
-                      o.status === 2 ? 'bg-[#f0fff4] text-[#22c55e]' :
-                      'bg-[#f5f5f5] text-[#999]'
-                    }`}>{CONSOLE_ORDER_STATUS_LABELS[o.status] || '-'}</span>
+                    <span className={`text-[12px] px-2 py-0.5 rounded-full ${getConsoleOrderStatusClassName(o.status)}`}>{formatConsoleOrderStatusLabel(o.status)}</span>
                   </td>
                   <td className="p-3 text-[#999]">{o.createTime?.substring(0, 10)}</td>
                 </tr>

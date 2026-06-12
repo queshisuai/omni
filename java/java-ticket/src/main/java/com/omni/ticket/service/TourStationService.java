@@ -332,6 +332,8 @@ public class TourStationService {
         tourMapper.updateById(tour);
         response.setActivityId(tour.getId());
         response.setActivityName(tour.getTitle());
+        activityAdminService.writeDeactivationAudit(request.getUserId(), user.getRole(), "tour", tour.getId(),
+                tour.getTitle(), request.getReason(), response);
         return response;
     }
 

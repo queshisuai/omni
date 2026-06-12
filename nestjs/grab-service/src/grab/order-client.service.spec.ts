@@ -217,6 +217,13 @@ describe('OrderClientService', () => {
     });
   });
 
+  it('fails during initialization when order service URL is missing', async () => {
+    delete process.env.ORDER_SERVICE_URL;
+
+    expect(() => new OrderClientService()).toThrow('订单服务地址未配置');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('fails before calling order service when internal token is missing', async () => {
     delete process.env.INTERNAL_API_TOKEN;
     const service = new OrderClientService();

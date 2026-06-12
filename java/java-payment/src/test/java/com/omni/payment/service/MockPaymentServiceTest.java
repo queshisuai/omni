@@ -34,7 +34,7 @@ class MockPaymentServiceTest {
         OrderInfoResponse order = order(100L, 2004L, 1);
         Payment payment = payment(100L, "PAY1001");
         when(orderClient.getOrder(100L, "internal-token")).thenReturn(Result.success(order));
-        when(paymentService.mockPay(100L, new BigDecimal("280.00"))).thenReturn(payment);
+        when(paymentService.recordLocalPaymentConfirmation(100L, new BigDecimal("280.00"))).thenReturn(payment);
 
         MockPayResponse response = service.pay(100L, 2004L);
 
@@ -42,9 +42,9 @@ class MockPaymentServiceTest {
         assertEquals("DM1001", response.getOrderNo());
         assertEquals("PAY1001", response.getPaymentNo());
         assertEquals(2, response.getOrderStatus());
-        assertEquals("模拟支付成功", response.getMessage());
-        verify(paymentService).mockPay(100L, new BigDecimal("280.00"));
-        verify(confirmationService).confirmMockPayment(payment);
+        assertEquals("本地支付确认成功", response.getMessage());
+        verify(paymentService).recordLocalPaymentConfirmation(100L, new BigDecimal("280.00"));
+        verify(confirmationService).confirmLocalPaymentConfirmation(payment);
     }
 
     @Test
@@ -64,8 +64,8 @@ class MockPaymentServiceTest {
 
         assertEquals(ResultCode.FORBIDDEN.getCode(), error.getCode());
         assertEquals("不能支付他人的订单", error.getMessage());
-        verify(paymentService, never()).mockPay(100L, new BigDecimal("280.00"));
-        verify(confirmationService, never()).confirmMockPayment(org.mockito.ArgumentMatchers.any());
+        verify(paymentService, never()).recordLocalPaymentConfirmation(100L, new BigDecimal("280.00"));
+        verify(confirmationService, never()).confirmLocalPaymentConfirmation(org.mockito.ArgumentMatchers.any());
     }
 
     private OrderInfoResponse order(Long id, Long userId, Integer status) {

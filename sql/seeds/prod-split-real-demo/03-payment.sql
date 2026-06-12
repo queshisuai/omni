@@ -74,7 +74,8 @@ INSERT INTO refund_request (id, order_id, user_id, payment_id, refund_no, amount
 (985005, 980046, 2008, 984046, 'REFREAL985005', 300.00, 1, 'full', '退款异常：支付渠道返回结果未知', 4, 2002, '退款异常，需人工查询渠道结果', NULL, '{"seed":true,"status":"UNKNOWN","message":"退款异常，渠道结果未知"}', CURRENT_TIMESTAMP - INTERVAL '7 days', CURRENT_TIMESTAMP - INTERVAL '6 days', NULL),
 (985006, 980047, 2004, 984047, 'REFREAL985006', 180.00, 1, 'full', '用户申请退票', 1, 2002, '审核通过，已退款', 'ALI-REF-REAL-980047', '{"seed":true,"status":"SUCCESS"}', CURRENT_TIMESTAMP - INTERVAL '9 days', CURRENT_TIMESTAMP - INTERVAL '8 days', CURRENT_TIMESTAMP - INTERVAL '8 days'),
 (985007, 980048, 2008, 984048, 'REFREAL985007', 120.00, 1, 'full', '退款异常：支付渠道返回结果未知', 4, 2002, '退款异常，需人工查询渠道结果', NULL, '{"seed":true,"status":"UNKNOWN","message":"退款异常，渠道结果未知"}', CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '2 days', NULL),
-(985008, 980049, 2004, 984049, 'REFREAL985008', 300.00, 1, 'full', '用户申请退票', 1, 2002, '审核通过，已退款', 'ALI-REF-REAL-980049', '{"seed":true,"status":"SUCCESS"}', CURRENT_TIMESTAMP - INTERVAL '5 days', CURRENT_TIMESTAMP - INTERVAL '4 days', CURRENT_TIMESTAMP - INTERVAL '4 days')
+(985008, 980049, 2004, 984049, 'REFREAL985008', 300.00, 1, 'full', '用户申请退票', 1, 2002, '审核通过，已退款', 'ALI-REF-REAL-980049', '{"seed":true,"status":"SUCCESS"}', CURRENT_TIMESTAMP - INTERVAL '5 days', CURRENT_TIMESTAMP - INTERVAL '4 days', CURRENT_TIMESTAMP - INTERVAL '4 days'),
+(985009, 980006, 2008, 984006, 'REFREAL985009', 440.00, 2, 'full', '主办方退款处理演示：用户申请整单退票', 0, NULL, NULL, NULL, '{"seed":true,"status":"PENDING","scope":"organizer-2003"}', CURRENT_TIMESTAMP - INTERVAL '20 minutes', NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, review_note = EXCLUDED.review_note, raw_response = EXCLUDED.raw_response;
 
 SELECT setval('payment_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM payment), 1), 1), true);

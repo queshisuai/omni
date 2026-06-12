@@ -1,4 +1,4 @@
-import { SectionData } from "@/types/damai";
+import { SectionData } from "@/types/omni";
 import { TicketCard } from "./TicketCard";
 import { ChevronRight } from "lucide-react";
 import { buildSectionItemKey } from "@/lib/section-row";

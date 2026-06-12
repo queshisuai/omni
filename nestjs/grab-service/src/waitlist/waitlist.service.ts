@@ -1,10 +1,14 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { TicketClientService, PurchaseContextInfo } from '../grab/ticket-client.service';
 import { WaitlistRepository } from './waitlist.repository';
 import { CreateWaitlistEntryDto, WaitlistEntryRecord, WaitlistEntryResponse } from './waitlist.types';
 
 @Injectable()
 export class WaitlistService {
-  constructor(private readonly repository: WaitlistRepository) {}
+  constructor(
+    private readonly repository: WaitlistRepository,
+    @Optional() private readonly ticketClient?: TicketClientService,
+  ) {}
 
   async createEntry(userId: number, dto: CreateWaitlistEntryDto): Promise<WaitlistEntryResponse> {
     this.validateCreateDto(dto);
@@ -16,7 +20,7 @@ export class WaitlistService {
         quantity: dto.quantity,
         attendeeIds: [...(dto.attendeeIds ?? [])].sort((a, b) => a - b),
       });
-      return this.toResponse(result.entry, result.rank);
+      return this.toResponseWithContext(result.entry, result.rank);
     } catch (error: any) {
       if (error?.code === '23505') {
         throw new ConflictException('已加入该场次票档候补');
@@ -27,13 +31,18 @@ export class WaitlistService {
 
   async listMine(userId: number): Promise<WaitlistEntryResponse[]> {
     const entries = await this.repository.listByUser(userId);
-    return entries.map((entry) => this.toResponse(entry, entry.rank ?? null));
+    return Promise.all(entries.map((entry) => this.toResponseWithContext(entry, entry.rank ?? null)));
+  }
+
+  async listByUser(userId: number, limit = 5): Promise<WaitlistEntryResponse[]> {
+    const entries = await this.repository.listByUser(userId, this.normalizeLimit(limit));
+    return Promise.all(entries.map((entry) => this.toResponseWithContext(entry, entry.rank ?? null)));
   }
 
   async cancelEntry(userId: number, entryId: number): Promise<WaitlistEntryResponse> {
     const entry = await this.repository.cancelWaitingEntry(entryId, userId);
     if (!entry) throw new NotFoundException('未找到可取消的候补记录');
-    return this.toResponse(entry, null);
+    return this.toResponseWithContext(entry, null);
   }
 
   private validateCreateDto(dto: CreateWaitlistEntryDto): void {
@@ -47,6 +56,18 @@ export class WaitlistService {
         throw new BadRequestException('实名观演人信息无效');
       }
     }
+  }
+
+  private normalizeLimit(limit: number): number {
+    if (!Number.isFinite(limit)) return 5;
+    return Math.max(0, Math.min(Math.trunc(limit), 20));
+  }
+
+  private async toResponseWithContext(entry: WaitlistEntryRecord, rank: number | null): Promise<WaitlistEntryResponse> {
+    const response = this.toResponse(entry, rank);
+    const context = await this.loadPurchaseContext(entry.sessionId, entry.ticketTypeId);
+    if (!context) return response;
+    return this.applyPurchaseContext(response, context);
   }
 
   private toResponse(entry: WaitlistEntryRecord, rank: number | null): WaitlistEntryResponse {
@@ -64,6 +85,27 @@ export class WaitlistService {
       offerOrderId: entry.offerOrderId,
       offerExpireTime: entry.offerExpireTime ? entry.offerExpireTime.toISOString() : null,
       failReason: entry.failReason,
+    };
+  }
+
+  private async loadPurchaseContext(sessionId: number, ticketTypeId: number): Promise<PurchaseContextInfo | null> {
+    if (!this.ticketClient) return null;
+    try {
+      return await this.ticketClient.getPurchaseContext(sessionId, ticketTypeId);
+    } catch {
+      return null;
+    }
+  }
+
+  private applyPurchaseContext(response: WaitlistEntryResponse, context: PurchaseContextInfo): WaitlistEntryResponse {
+    return {
+      ...response,
+      activityId: context.activityId,
+      activityName: context.activityName,
+      activityPoster: context.activityPoster,
+      ticketTypeName: context.ticketTypeName,
+      venueName: context.venueName,
+      sessionTime: context.sessionTime,
     };
   }
 

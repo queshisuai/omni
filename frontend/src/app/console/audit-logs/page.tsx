@@ -93,7 +93,7 @@ export default function AuditLogsPage() {
           <input
             value={filters.operatorId}
             onChange={event => setFilters({ ...filters, operatorId: event.target.value.replace(/\D/g, '') })}
-            placeholder="操作人ID"
+            placeholder="操作人编号"
             className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
           />
           <input
@@ -120,7 +120,7 @@ export default function AuditLogsPage() {
           <input
             value={filters.traceId}
             onChange={event => setFilters({ ...filters, traceId: event.target.value })}
-            placeholder="TraceId"
+            placeholder="追踪编号"
             className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
           />
           <button onClick={submit} disabled={loading} className="h-10 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">查询</button>
@@ -141,12 +141,12 @@ export default function AuditLogsPage() {
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-4 py-3 font-medium">时间</th>
-                  <th className="px-4 py-3 font-medium">操作人</th>
+                  <th className="px-4 py-3 font-medium">操作人编号</th>
                   <th className="px-4 py-3 font-medium">动作</th>
                   <th className="px-4 py-3 font-medium">对象</th>
                   <th className="px-4 py-3 font-medium">结果</th>
                   <th className="px-4 py-3 font-medium">说明</th>
-                  <th className="px-4 py-3 font-medium">TraceId</th>
+                  <th className="px-4 py-3 font-medium">追踪编号</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -154,7 +154,7 @@ export default function AuditLogsPage() {
                   <tr key={item.id} className="text-[#333]">
                     <td className="whitespace-nowrap px-4 py-3">{formatTime(item.createTime)}</td>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-[#111]">{item.operatorId}</div>
+                      <div className="font-medium text-[#111]">操作人编号：{item.operatorId || '-'}</div>
                       <div className="mt-1 text-[12px] text-gray-500">{formatOperatorRole(item.operatorRole)}</div>
                     </td>
                     <td className="px-4 py-3">{formatOperationAction(item.action)}</td>

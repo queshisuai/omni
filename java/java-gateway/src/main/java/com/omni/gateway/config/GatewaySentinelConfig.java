@@ -82,6 +82,8 @@ public class GatewaySentinelConfig implements InitializingBean {
         addApiPath(definitions, WAITLIST_API, "/api/waitlist");
         addApiPath(definitions, ORDER_CREATE_API, "/api/order/create");
         addApiPath(definitions, ORDER_CREATE_API, "/api/order/create-with-seats");
+        addApiPath(definitions, PAYMENT_CRITICAL_API, "/api/payment/alipay/page-pay");
+        addApiPath(definitions, PAYMENT_CRITICAL_API, "/api/payment/alipay/qr-pay");
         addApiPath(definitions, PAYMENT_CRITICAL_API, "/api/payment/alipay/sync");
         addApiPath(definitions, PAYMENT_CRITICAL_API, "/api/payment/alipay/notify");
         addApiPath(definitions, USER_AUTH_API, "/api/user/login");

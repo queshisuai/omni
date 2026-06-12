@@ -12,6 +12,7 @@ import com.alipay.api.response.AlipayTradeRefundResponse;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.omni.common.dto.InternalAuthContextResponse;
+import com.omni.common.mq.message.NotificationEventMessage;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
@@ -31,6 +32,7 @@ import com.omni.payment.entity.Payment;
 import com.omni.payment.entity.RefundRequest;
 import com.omni.payment.mapper.PaymentMapper;
 import com.omni.payment.mapper.RefundRequestMapper;
+import com.omni.payment.mq.NotificationMqProducer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -45,6 +47,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -79,6 +82,7 @@ public class RefundService {
     private final PaymentMapper paymentMapper;
     private final UserInternalClient userInternalClient;
     private final TicketRefundReviewInternalClient ticketRefundReviewInternalClient;
+    private final NotificationMqProducer notificationProducer;
     private final String internalApiToken;
     private final Supplier<AlipayClient> alipayClientFactory;
 
@@ -89,9 +93,10 @@ public class RefundService {
                           PaymentMapper paymentMapper,
                           UserInternalClient userInternalClient,
                           TicketRefundReviewInternalClient ticketRefundReviewInternalClient,
+                          NotificationMqProducer notificationProducer,
                           @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}") String internalApiToken) {
         this(alipayProperties, orderClient, refundRequestMapper, paymentMapper,
-                userInternalClient, ticketRefundReviewInternalClient, internalApiToken, null);
+                userInternalClient, ticketRefundReviewInternalClient, notificationProducer, internalApiToken, null);
     }
 
     public RefundService(AlipayProperties alipayProperties,
@@ -102,12 +107,26 @@ public class RefundService {
                          TicketRefundReviewInternalClient ticketRefundReviewInternalClient,
                          String internalApiToken,
                          Supplier<AlipayClient> alipayClientFactory) {
+        this(alipayProperties, orderClient, refundRequestMapper, paymentMapper,
+                userInternalClient, ticketRefundReviewInternalClient, null, internalApiToken, alipayClientFactory);
+    }
+
+    public RefundService(AlipayProperties alipayProperties,
+                         OrderClient orderClient,
+                         RefundRequestMapper refundRequestMapper,
+                         PaymentMapper paymentMapper,
+                         UserInternalClient userInternalClient,
+                         TicketRefundReviewInternalClient ticketRefundReviewInternalClient,
+                         NotificationMqProducer notificationProducer,
+                         String internalApiToken,
+                         Supplier<AlipayClient> alipayClientFactory) {
         this.alipayProperties = alipayProperties;
         this.orderClient = orderClient;
         this.refundRequestMapper = refundRequestMapper;
         this.paymentMapper = paymentMapper;
         this.userInternalClient = userInternalClient;
         this.ticketRefundReviewInternalClient = ticketRefundReviewInternalClient;
+        this.notificationProducer = notificationProducer;
         this.internalApiToken = internalApiToken;
         this.alipayClientFactory = alipayClientFactory;
     }
@@ -236,6 +255,7 @@ public class RefundService {
 
         LocalDateTime now = LocalDateTime.now();
         refund = updateRefundRejected(refundId, reviewerId, reviewNote, now);
+        sendRefundNotificationEvent("REFUND_REJECTED", refund, order);
         return toVO(refund, order);
     }
 
@@ -282,10 +302,12 @@ public class RefundService {
                     markOrderRefundedByType(order.getId(), refund);
                 } catch (RuntimeException e) {
                     updateRefundCompensationRequired(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), e.getMessage(), now);
+                    sendRefundNotificationEvent("COMPENSATION_REQUIRED", refund, order);
                     throw new BusinessException(ResultCode.INTERNAL_ERROR,
                             "支付宝退款已成功，但订单状态更新失败，需人工补偿");
                 }
                 refund = updateRefundSucceeded(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), now);
+                sendRefundNotificationEvent("REFUND_APPROVED", refund, order);
                 return toVO(refund, order);
             }
 
@@ -294,9 +316,13 @@ public class RefundService {
             } else {
                 refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款响应为空，退款结果未知，请稍后重试/查询", now);
             }
+            if (response == null) {
+                sendRefundNotificationEvent("REFUND_UNKNOWN", refund, order);
+            }
             return toVO(refund, order);
         } catch (AlipayApiException e) {
             refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款异常，退款结果未知，请稍后重试/查询: " + e.getMessage(), now);
+            sendRefundNotificationEvent("REFUND_UNKNOWN", refund, order);
             return toVO(refund, order);
         }
     }
@@ -370,6 +396,78 @@ public class RefundService {
             return "DIRECT_REFUND_" + order.getId();
         }
         return "DIRECT_REFUND_" + requireText(order != null ? order.getOrderNo() : null, "订单号不能为空");
+    }
+
+    private void sendRefundNotificationEvent(String eventType, RefundRequest refund, OrderInfoResponse order) {
+        if (notificationProducer == null || refund == null || order == null || refund.getId() == null) {
+            return;
+        }
+        Long orderId = refund.getOrderId() != null ? refund.getOrderId() : order.getId();
+        Long userId = refund.getUserId() != null ? refund.getUserId() : order.getUserId();
+        if (orderId == null || userId == null) {
+            log.warn("退款通知事件缺少必要字段，跳过发送 eventType={}, refundId={}, orderId={}, userId={}",
+                    eventType, refund.getId(), orderId, userId);
+            return;
+        }
+
+        NotificationEventMessage message = new NotificationEventMessage();
+        message.setEventId(refundEventPrefix(eventType) + ":" + refund.getId() + ":" + refundEventSuffix(refund));
+        message.setEventType(eventType);
+        message.setAggregateKey(eventType + ":" + refund.getId());
+        message.setUserId(userId);
+        message.setOrderId(orderId);
+        message.setActivityId(order.getActivityId());
+        message.setChannels(List.of(NotificationEventMessage.CHANNEL_IN_APP, NotificationEventMessage.CHANNEL_SMS));
+        if ("REFUND_UNKNOWN".equals(eventType) || "COMPENSATION_REQUIRED".equals(eventType)) {
+            message.setPriority("HIGH");
+        }
+        message.setContent(refundNotificationContent(eventType));
+        message.setActionHref("/orders/" + orderId);
+        message.setActionLabel("查看订单");
+        message.setPayload(refundNotificationPayload(eventType, refund, orderId, order));
+        message.setOccurredAt(LocalDateTime.now());
+        notificationProducer.sendNotificationEvent(message);
+    }
+
+    private String refundEventPrefix(String eventType) {
+        return eventType.toLowerCase(Locale.ROOT).replace('_', '-');
+    }
+
+    private String refundEventSuffix(RefundRequest refund) {
+        if (StringUtils.hasText(refund.getRefundNo())) {
+            return refund.getRefundNo();
+        }
+        return String.valueOf(refund.getStatus());
+    }
+
+    private Map<String, Object> refundNotificationPayload(String eventType, RefundRequest refund,
+                                                          Long orderId, OrderInfoResponse order) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("eventType", eventType);
+        payload.put("refundId", refund.getId());
+        payload.put("refundNo", refund.getRefundNo());
+        payload.put("orderId", orderId);
+        payload.put("amount", refund.getAmount());
+        payload.put("refundType", refund.getRefundType());
+        payload.put("activityId", order.getActivityId());
+        payload.put("activityName", order.getActivityName());
+        return payload;
+    }
+
+    private String refundNotificationContent(String eventType) {
+        if ("REFUND_APPROVED".equals(eventType)) {
+            return "你的退款申请已通过，退款进度请查看订单。";
+        }
+        if ("REFUND_REJECTED".equals(eventType)) {
+            return "你的退款申请未通过，详情请查看订单。";
+        }
+        if ("REFUND_UNKNOWN".equals(eventType)) {
+            return "退款结果暂未确认，请稍后查看订单或联系客服。";
+        }
+        if ("COMPENSATION_REQUIRED".equals(eventType)) {
+            return "退款已进入人工补偿处理，请查看订单。";
+        }
+        return "退款状态已更新，请查看订单。";
     }
 
     private RefundRequest updateRefundRejected(Long refundId, Long reviewerId, String reviewNote, LocalDateTime now) {

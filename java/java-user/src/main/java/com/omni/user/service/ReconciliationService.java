@@ -32,6 +32,11 @@ import java.util.stream.Collectors;
 public class ReconciliationService {
 
     private static final BigDecimal ZERO_AMOUNT = new BigDecimal("0.00");
+    private static final String DIFFERENCE_STATUS_OPEN = "open";
+    private static final String DIFFERENCE_STATUS_RESOLVED = "resolved";
+    private static final String DIFFERENCE_STATUS_IGNORED = "ignored";
+    private static final String BATCH_STATUS_PROCESSING = "processing";
+    private static final String BATCH_STATUS_COMPLETED = "completed";
 
     private final ReconciliationBatchMapper batchMapper;
     private final ReconciliationDetailMapper detailMapper;
@@ -113,6 +118,62 @@ public class ReconciliationService {
         response.setDetails(details);
         response.setDifferences(differences);
         return response;
+    }
+
+    @Transactional
+    public ReconciliationDifferenceResponse resolveDifference(String batchNo, Long differenceId) {
+        return updateDifferenceStatus(batchNo, differenceId, DIFFERENCE_STATUS_RESOLVED);
+    }
+
+    @Transactional
+    public ReconciliationDifferenceResponse ignoreDifference(String batchNo, Long differenceId) {
+        return updateDifferenceStatus(batchNo, differenceId, DIFFERENCE_STATUS_IGNORED);
+    }
+
+    private ReconciliationDifferenceResponse updateDifferenceStatus(String batchNo, Long differenceId, String status) {
+        ReconciliationBatch batch = loadBatch(batchNo);
+        ReconciliationDifference difference = loadDifference(batch.getBatchNo(), differenceId);
+        if (!DIFFERENCE_STATUS_OPEN.equals(difference.getStatus())) {
+            throw new BusinessException(ResultCode.CONFLICT, "只有待处理差异可以操作");
+        }
+        difference.setStatus(status);
+        differenceMapper.updateById(difference);
+        refreshBatchStatus(batch);
+        return toDifferenceResponse(difference);
+    }
+
+    private ReconciliationBatch loadBatch(String batchNo) {
+        if (!StringUtils.hasText(batchNo)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "对账批次号不能为空");
+        }
+        ReconciliationBatch batch = batchMapper.selectOne(new LambdaQueryWrapper<ReconciliationBatch>()
+                .eq(ReconciliationBatch::getBatchNo, batchNo.trim()));
+        if (batch == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "对账批次不存在");
+        }
+        return batch;
+    }
+
+    private ReconciliationDifference loadDifference(String batchNo, Long differenceId) {
+        if (differenceId == null || differenceId <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "对账差异ID不能为空");
+        }
+        ReconciliationDifference difference = differenceMapper.selectOne(new LambdaQueryWrapper<ReconciliationDifference>()
+                .eq(ReconciliationDifference::getBatchNo, batchNo)
+                .eq(ReconciliationDifference::getId, differenceId));
+        if (difference == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "对账差异不存在");
+        }
+        return difference;
+    }
+
+    private void refreshBatchStatus(ReconciliationBatch batch) {
+        Long openCount = differenceMapper.selectCount(new LambdaQueryWrapper<ReconciliationDifference>()
+                .eq(ReconciliationDifference::getBatchNo, batch.getBatchNo())
+                .eq(ReconciliationDifference::getStatus, DIFFERENCE_STATUS_OPEN));
+        batch.setStatus(openCount != null && openCount > 0 ? BATCH_STATUS_PROCESSING : BATCH_STATUS_COMPLETED);
+        batch.setUpdateTime(LocalDateTime.now());
+        batchMapper.updateById(batch);
     }
 
     private ReconciliationSourceResponse fetchLocalSource(ReconciliationBatchCreateRequest request) {

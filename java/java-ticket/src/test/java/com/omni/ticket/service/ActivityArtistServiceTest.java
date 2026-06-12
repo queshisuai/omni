@@ -6,6 +6,7 @@ import com.omni.ticket.entity.Artist;
 import com.omni.ticket.mapper.ActivityArtistMapper;
 import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.*;
 class ActivityArtistServiceTest {
     @Mock ActivityArtistMapper activityArtistMapper;
     @Mock ArtistMapper artistMapper;
+    @Mock ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     @Test
     void springCanCreateActivityArtistServiceWithConstructorInjection() {
@@ -73,6 +75,23 @@ class ActivityArtistServiceTest {
         assertEquals(1L, captor.getAllValues().get(1).getArtistId());
         assertFalse(captor.getAllValues().get(1).getPrimary());
         assertEquals(2, captor.getAllValues().get(1).getSort());
+    }
+
+    @Test
+    void saveLineupPublishesSearchIndexUpsert() {
+        ActivityArtistService service = new ActivityArtistService(activityArtistMapper, artistMapper);
+        service.setSearchIndexEventPublisher(searchIndexEventPublisher);
+        Artist artist = artist(1L, "artist");
+        when(artistMapper.selectBatchIds(List.of(1L))).thenReturn(List.of(artist));
+
+        ActivityArtistDto dto = new ActivityArtistDto();
+        dto.setArtistId(1L);
+        dto.setPrimary(true);
+        dto.setVisibility("public");
+
+        service.saveLineup(10L, List.of(dto));
+
+        verify(searchIndexEventPublisher).publishUpsert(10L);
     }
 
     @Test

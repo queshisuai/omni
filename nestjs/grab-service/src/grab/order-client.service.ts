@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { requireEnv } from '../runtime-env';
 
 export interface CreateOrderInput {
   userId: number;
@@ -58,7 +59,7 @@ export interface OrderSeatResponse {
 
 @Injectable()
 export class OrderClientService {
-  private readonly baseUrl = process.env.ORDER_SERVICE_URL || 'http://localhost:8088';
+  private readonly baseUrl = requireEnv('ORDER_SERVICE_URL', '订单服务地址未配置');
   private readonly internalToken = process.env.INTERNAL_API_TOKEN;
 
   async createOrder(input: CreateOrderInput): Promise<CreatedOrderResponse> {

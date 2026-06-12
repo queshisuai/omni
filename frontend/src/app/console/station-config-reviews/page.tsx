@@ -4,19 +4,9 @@ import { useEffect, useState } from 'react'
 import { getUser, updateStoredUser } from '@/lib/auth'
 import { approveStationConfigVersion, getUserInfo, listStationConfigReviews, rejectStationConfigVersion } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
+import { formatStationConfigChangeType } from '@/lib/operation-display'
 import { globalPrompt } from '@/components/GlobalDialog'
 import type { StationConfigVersionVO } from '@/types/api'
-
-function formatChangeType(type: string) {
-  const text: Record<string, string> = {
-    create: '创建站点',
-    update_city: '修改城市',
-    set_venue: '设置场馆',
-    change_venue: '变更场馆',
-    delete_station: '删除站点',
-  }
-  return text[type] || type
-}
 
 export default function StationConfigReviewsPage() {
   const [items, setItems] = useState<StationConfigVersionVO[]>([])
@@ -123,7 +113,7 @@ export default function StationConfigReviewsPage() {
                 {items.map(item => (
                   <tr key={item.id} className="text-[#333]">
                     <td className="px-4 py-3">{item.versionNo ? `v${item.versionNo}` : '-'}</td>
-                    <td className="px-4 py-3">{formatChangeType(item.changeType)}</td>
+                    <td className="px-4 py-3">{formatStationConfigChangeType(item.changeType)}</td>
                     <td className="px-4 py-3">{item.city || '城市待定'}</td>
                     <td className="px-4 py-3">{item.stationName || (item.city ? `${item.city}站` : '未命名站点')}</td>
                     <td className="px-4 py-3">{item.venueName || '未绑定场馆'}</td>

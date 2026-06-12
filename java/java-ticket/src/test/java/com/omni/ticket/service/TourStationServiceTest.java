@@ -471,6 +471,8 @@ class TourStationServiceTest {
                 && "deactivated".equals(updated.getReviewStatus())
                 && Integer.valueOf(1).equals(updated.getStatus())
                 && updated.getUpdateTime() != null));
+        verify(activityAdminService).writeDeactivationAudit(2003L, "organizer", "tour", 10L,
+                "万象巡演", "巡演取消", impact);
     }
 
     @Test

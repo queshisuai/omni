@@ -162,7 +162,7 @@ export default function VenuePage() {
         <table className="w-full text-[14px]">
           <thead>
             <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
-              <th className="text-left p-3 font-medium text-[#666]">ID</th>
+              <th className="text-left p-3 font-medium text-[#666]">场馆编号</th>
               <th className="text-left p-3 font-medium text-[#666]">名称</th>
               <th className="text-left p-3 font-medium text-[#666]">城市</th>
               <th className="text-left p-3 font-medium text-[#666]">地址</th>

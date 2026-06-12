@@ -1,0 +1,389 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "万象 万象" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - img "万象" [ref=e7]
+          - generic [ref=e8]: 万象
+        - button "全国" [ref=e10]:
+          - img [ref=e11]
+          - generic [ref=e14]: 全国
+          - img [ref=e15]
+        - navigation [ref=e17]:
+          - link "首页" [ref=e18] [cursor=pointer]:
+            - /url: /
+          - link "分类" [ref=e19] [cursor=pointer]:
+            - /url: /search
+        - generic [ref=e20]:
+          - img [ref=e21] [cursor=pointer]
+          - textbox "搜索明星、演出、体育赛事" [ref=e24]
+        - button "登录" [ref=e26] [cursor=pointer]:
+          - img [ref=e27]
+          - generic [ref=e30]: 登录
+          - img [ref=e31]
+        - button [ref=e33]:
+          - img [ref=e34]
+    - generic [ref=e35]:
+      - generic [ref=e36]: 共 22 个商品
+      - generic [ref=e38]:
+        - generic [ref=e39]:
+          - generic [ref=e40]:
+            - generic [ref=e41]: 城 市：
+            - generic [ref=e42]:
+              - generic [ref=e43]:
+                - generic [ref=e44]: 当前选中城市全国
+                - textbox "输入城市名快速搜索" [ref=e45]
+              - generic [ref=e46]:
+                - button "全部" [ref=e47]
+                - button "北京" [ref=e48]
+                - button "上海" [ref=e49]
+                - button "广州" [ref=e50]
+                - button "深圳" [ref=e51]
+                - button "杭州" [ref=e52]
+                - button "南京" [ref=e53]
+                - button "成都" [ref=e54]
+                - button "武汉" [ref=e55]
+                - button "天津" [ref=e56]
+                - button "沈阳" [ref=e57]
+                - button "西安" [ref=e58]
+                - button "苏州" [ref=e59]
+                - button "更多..." [ref=e60]
+          - generic [ref=e61]:
+            - generic [ref=e62]: 分 类：
+            - generic [ref=e63]:
+              - button "全部" [ref=e64]
+              - button "演唱会" [ref=e176]
+              - button "话剧歌剧" [ref=e177]
+              - button "体育" [ref=e178]
+              - button "儿童亲子" [ref=e179]
+              - button "展览休闲" [ref=e180]
+              - button "音乐会" [ref=e181]
+              - button "曲苑杂坛" [ref=e182]
+              - button "舞蹈芭蕾" [ref=e183]
+              - button "二次元" [ref=e184]
+              - button "旅游展览" [ref=e185]
+          - generic [ref=e65]:
+            - generic [ref=e66]: 时 间：
+            - generic [ref=e67]:
+              - button "全部" [ref=e68]
+              - button "今天" [ref=e69]
+              - button "明天" [ref=e70]
+              - button "本周末" [ref=e71]
+              - button "一个月内" [ref=e72]
+              - generic [ref=e73]:
+                - button "按日历" [ref=e74]
+                - textbox
+          - generic [ref=e75]:
+            - generic [ref=e76]: 价 格：
+            - generic [ref=e77]:
+              - spinbutton [ref=e78]
+              - generic [ref=e79]: 至
+              - spinbutton [ref=e80]
+              - button "180以下" [ref=e81]
+              - button "180-580" [ref=e82]
+              - button "580以上" [ref=e83]
+          - generic [ref=e84]:
+            - generic [ref=e85]: 条 件：
+            - generic [ref=e86]:
+              - button "全部状态" [ref=e87]
+              - button "售票中" [ref=e88]
+              - button "待开票" [ref=e89]
+              - button "已售罄" [ref=e90]
+              - generic [ref=e91] [cursor=pointer]:
+                - checkbox "可选座" [ref=e92]
+                - text: 可选座
+              - combobox [ref=e93]:
+                - option "实名不限" [selected]
+                - option "实名制"
+                - option "非实名制"
+        - generic [ref=e94]:
+          - generic [ref=e95]:
+            - button "推荐排序" [ref=e96]
+            - button "相关度排序" [ref=e97]
+            - button "最近开场" [ref=e98]
+            - button "最新上架" [ref=e99]
+            - button "价格升序" [ref=e100]
+            - button "价格降序" [ref=e101]
+          - generic [ref=e102]: 1 / 2
+        - generic [ref=e103]:
+          - generic [ref=e104]: 热门搜索
+          - button "演唱会" [ref=e105]
+          - button "音乐节" [ref=e106]
+          - button "话剧" [ref=e107]
+          - button "脱口秀" [ref=e108]
+          - button "周末演出" [ref=e109]
+          - button "亲子剧" [ref=e110]
+          - button "成都非遗博览园体验展 西安站" [ref=e186]
+          - button "西安" [ref=e187]
+        - generic [ref=e188]:
+          - link "成都非遗博览园体验展 西安站 成都非遗博览园体验展 西安站 西安 2027-02-07 ¥80起" [ref=e189] [cursor=pointer]:
+            - /url: /activity/900100
+            - img "成都非遗博览园体验展 西安站" [ref=e191]
+            - generic [ref=e192]:
+              - heading "成都非遗博览园体验展 西安站" [level=3] [ref=e193]
+              - generic [ref=e194]:
+                - img [ref=e195]
+                - generic [ref=e198]: 西安
+              - generic [ref=e199]:
+                - img [ref=e200]
+                - generic [ref=e202]: 2027-02-07
+              - generic [ref=e204]: ¥80起
+          - link "民谣30年·不如一见演唱会 苏州站 民谣30年·不如一见演唱会 苏州站 苏州 2027-02-09 ¥380起" [ref=e205] [cursor=pointer]:
+            - /url: /activity/900101
+            - img "民谣30年·不如一见演唱会 苏州站" [ref=e207]
+            - generic [ref=e208]:
+              - heading "民谣30年·不如一见演唱会 苏州站" [level=3] [ref=e209]
+              - generic [ref=e210]:
+                - img [ref=e211]
+                - generic [ref=e214]: 苏州
+              - generic [ref=e215]:
+                - img [ref=e216]
+                - generic [ref=e218]: 2027-02-09
+              - generic [ref=e220]: ¥380起
+          - link "话剧《倾城之恋》五周年特别版 苏州站 话剧《倾城之恋》五周年特别版 苏州站 苏州 2027-02-11 ¥180起" [ref=e221] [cursor=pointer]:
+            - /url: /activity/900102
+            - img "话剧《倾城之恋》五周年特别版 苏州站" [ref=e223]
+            - generic [ref=e224]:
+              - heading "话剧《倾城之恋》五周年特别版 苏州站" [level=3] [ref=e225]
+              - generic [ref=e226]:
+                - img [ref=e227]
+                - generic [ref=e230]: 苏州
+              - generic [ref=e231]:
+                - img [ref=e232]
+                - generic [ref=e234]: 2027-02-11
+              - generic [ref=e236]: ¥180起
+          - link "2026年山东省齐鲁足球超级联赛 苏州站 2026年山东省齐鲁足球超级联赛 苏州站 苏州 2027-02-13 ¥160起" [ref=e237] [cursor=pointer]:
+            - /url: /activity/900103
+            - img "2026年山东省齐鲁足球超级联赛 苏州站" [ref=e239]
+            - generic [ref=e240]:
+              - heading "2026年山东省齐鲁足球超级联赛 苏州站" [level=3] [ref=e241]
+              - generic [ref=e242]:
+                - img [ref=e243]
+                - generic [ref=e246]: 苏州
+              - generic [ref=e247]:
+                - img [ref=e248]
+                - generic [ref=e250]: 2027-02-13
+              - generic [ref=e252]: ¥160起
+          - link "加拿大奇幻马秀 Ethereal 灵秀·舞马 苏州站 加拿大奇幻马秀 Ethereal 灵秀·舞马 苏州站 苏州 2027-02-15 ¥120起" [ref=e253] [cursor=pointer]:
+            - /url: /activity/900104
+            - img "加拿大奇幻马秀 Ethereal 灵秀·舞马 苏州站" [ref=e255]
+            - generic [ref=e256]:
+              - heading "加拿大奇幻马秀 Ethereal 灵秀·舞马 苏州站" [level=3] [ref=e257]
+              - generic [ref=e258]:
+                - img [ref=e259]
+                - generic [ref=e262]: 苏州
+              - generic [ref=e263]:
+                - img [ref=e264]
+                - generic [ref=e266]: 2027-02-15
+              - generic [ref=e268]: ¥120起
+          - link "teamLab 数字艺术沉浸展 苏州站 teamLab 数字艺术沉浸展 苏州站 苏州 2027-02-17 ¥90起" [ref=e269] [cursor=pointer]:
+            - /url: /activity/900105
+            - img "teamLab 数字艺术沉浸展 苏州站" [ref=e271]
+            - generic [ref=e272]:
+              - heading "teamLab 数字艺术沉浸展 苏州站" [level=3] [ref=e273]
+              - generic [ref=e274]:
+                - img [ref=e275]
+                - generic [ref=e278]: 苏州
+              - generic [ref=e279]:
+                - img [ref=e280]
+                - generic [ref=e282]: 2027-02-17
+              - generic [ref=e284]: ¥90起
+          - link "上海交响乐团新年音乐会 苏州站 上海交响乐团新年音乐会 苏州站 苏州 2027-02-19 ¥220起" [ref=e285] [cursor=pointer]:
+            - /url: /activity/900106
+            - img "上海交响乐团新年音乐会 苏州站" [ref=e287]
+            - generic [ref=e288]:
+              - heading "上海交响乐团新年音乐会 苏州站" [level=3] [ref=e289]
+              - generic [ref=e290]:
+                - img [ref=e291]
+                - generic [ref=e294]: 苏州
+              - generic [ref=e295]:
+                - img [ref=e296]
+                - generic [ref=e298]: 2027-02-19
+              - generic [ref=e300]: ¥220起
+          - link "笑果文化脱口秀周末秀 苏州站 笑果文化脱口秀周末秀 苏州站 苏州 2027-02-21 ¥100起" [ref=e301] [cursor=pointer]:
+            - /url: /activity/900107
+            - img "笑果文化脱口秀周末秀 苏州站" [ref=e303]
+            - generic [ref=e304]:
+              - heading "笑果文化脱口秀周末秀 苏州站" [level=3] [ref=e305]
+              - generic [ref=e306]:
+                - img [ref=e307]
+                - generic [ref=e310]: 苏州
+              - generic [ref=e311]:
+                - img [ref=e312]
+                - generic [ref=e314]: 2027-02-21
+              - generic [ref=e316]: ¥100起
+          - link "陶身体剧场现代舞《13》 苏州站 陶身体剧场现代舞《13》 苏州站 苏州 2027-02-23 ¥240起" [ref=e317] [cursor=pointer]:
+            - /url: /activity/900108
+            - img "陶身体剧场现代舞《13》 苏州站" [ref=e319]
+            - generic [ref=e320]:
+              - heading "陶身体剧场现代舞《13》 苏州站" [level=3] [ref=e321]
+              - generic [ref=e322]:
+                - img [ref=e323]
+                - generic [ref=e326]: 苏州
+              - generic [ref=e327]:
+                - img [ref=e328]
+                - generic [ref=e330]: 2027-02-23
+              - generic [ref=e332]: ¥240起
+          - link "Bilibili 二次元电竞嘉年华 苏州站 Bilibili 二次元电竞嘉年华 苏州站 苏州 2027-02-25 ¥180起" [ref=e333] [cursor=pointer]:
+            - /url: /activity/900109
+            - img "Bilibili 二次元电竞嘉年华 苏州站" [ref=e335]
+            - generic [ref=e336]:
+              - heading "Bilibili 二次元电竞嘉年华 苏州站" [level=3] [ref=e337]
+              - generic [ref=e338]:
+                - img [ref=e339]
+                - generic [ref=e342]: 苏州
+              - generic [ref=e343]:
+                - img [ref=e344]
+                - generic [ref=e346]: 2027-02-25
+              - generic [ref=e348]: ¥180起
+          - link "中国旅游集团丝路城市旅游展 苏州站 中国旅游集团丝路城市旅游展 苏州站 苏州 2027-02-27 ¥80起" [ref=e349] [cursor=pointer]:
+            - /url: /activity/900110
+            - img "中国旅游集团丝路城市旅游展 苏州站" [ref=e351]
+            - generic [ref=e352]:
+              - heading "中国旅游集团丝路城市旅游展 苏州站" [level=3] [ref=e353]
+              - generic [ref=e354]:
+                - img [ref=e355]
+                - generic [ref=e358]: 苏州
+              - generic [ref=e359]:
+                - img [ref=e360]
+                - generic [ref=e362]: 2027-02-27
+              - generic [ref=e364]: ¥80起
+          - link "2026「良辰·声境如梦」音乐会 天津站 2026「良辰·声境如梦」音乐会 天津站 天津 2027-03-01 ¥380起" [ref=e365] [cursor=pointer]:
+            - /url: /activity/900111
+            - img "2026「良辰·声境如梦」音乐会 天津站" [ref=e367]
+            - generic [ref=e368]:
+              - heading "2026「良辰·声境如梦」音乐会 天津站" [level=3] [ref=e369]
+              - generic [ref=e370]:
+                - img [ref=e371]
+                - generic [ref=e374]: 天津
+              - generic [ref=e375]:
+                - img [ref=e376]
+                - generic [ref=e378]: 2027-03-01
+              - generic [ref=e380]: ¥380起
+          - link "外百老汇音乐剧《谋杀歌谣》中文版 天津站 外百老汇音乐剧《谋杀歌谣》中文版 天津站 天津 2027-03-03 ¥180起" [ref=e381] [cursor=pointer]:
+            - /url: /activity/900112
+            - img "外百老汇音乐剧《谋杀歌谣》中文版 天津站" [ref=e383]
+            - generic [ref=e384]:
+              - heading "外百老汇音乐剧《谋杀歌谣》中文版 天津站" [level=3] [ref=e385]
+              - generic [ref=e386]:
+                - img [ref=e387]
+                - generic [ref=e390]: 天津
+              - generic [ref=e391]:
+                - img [ref=e392]
+                - generic [ref=e394]: 2027-03-03
+              - generic [ref=e396]: ¥180起
+          - link "2026怡宝中超联赛北京国安主场赛事 天津站 2026怡宝中超联赛北京国安主场赛事 天津站 天津 2027-03-05 ¥160起" [ref=e397] [cursor=pointer]:
+            - /url: /activity/900113
+            - img "2026怡宝中超联赛北京国安主场赛事 天津站" [ref=e399]
+            - generic [ref=e400]:
+              - heading "2026怡宝中超联赛北京国安主场赛事 天津站" [level=3] [ref=e401]
+              - generic [ref=e402]:
+                - img [ref=e403]
+                - generic [ref=e406]: 天津
+              - generic [ref=e407]:
+                - img [ref=e408]
+                - generic [ref=e410]: 2027-03-05
+              - generic [ref=e412]: ¥160起
+          - link "开心麻花沉浸乐园儿童剧《安徒生盛会》 天津站 开心麻花沉浸乐园儿童剧《安徒生盛会》 天津站 天津 2027-03-07 ¥120起" [ref=e413] [cursor=pointer]:
+            - /url: /activity/900114
+            - img "开心麻花沉浸乐园儿童剧《安徒生盛会》 天津站" [ref=e415]
+            - generic [ref=e416]:
+              - heading "开心麻花沉浸乐园儿童剧《安徒生盛会》 天津站" [level=3] [ref=e417]
+              - generic [ref=e418]:
+                - img [ref=e419]
+                - generic [ref=e422]: 天津
+              - generic [ref=e423]:
+                - img [ref=e424]
+                - generic [ref=e426]: 2027-03-07
+              - generic [ref=e428]: ¥120起
+          - link "故宫博物院国风生活美学展 天津站 故宫博物院国风生活美学展 天津站 天津 2027-03-09 ¥90起" [ref=e429] [cursor=pointer]:
+            - /url: /activity/900115
+            - img "故宫博物院国风生活美学展 天津站" [ref=e431]
+            - generic [ref=e432]:
+              - heading "故宫博物院国风生活美学展 天津站" [level=3] [ref=e433]
+              - generic [ref=e434]:
+                - img [ref=e435]
+                - generic [ref=e438]: 天津
+              - generic [ref=e439]:
+                - img [ref=e440]
+                - generic [ref=e442]: 2027-03-09
+              - generic [ref=e444]: ¥90起
+          - link "李泉爵士流行音乐会 天津站 李泉爵士流行音乐会 天津站 天津 2027-03-11 ¥220起" [ref=e445] [cursor=pointer]:
+            - /url: /activity/900116
+            - img "李泉爵士流行音乐会 天津站" [ref=e447]
+            - generic [ref=e448]:
+              - heading "李泉爵士流行音乐会 天津站" [level=3] [ref=e449]
+              - generic [ref=e450]:
+                - img [ref=e451]
+                - generic [ref=e454]: 天津
+              - generic [ref=e455]:
+                - img [ref=e456]
+                - generic [ref=e458]: 2027-03-11
+              - generic [ref=e460]: ¥220起
+          - link "中央芭蕾舞团《天鹅湖》 天津站 中央芭蕾舞团《天鹅湖》 天津站 天津 2027-03-15 ¥240起" [ref=e461] [cursor=pointer]:
+            - /url: /activity/900118
+            - img "中央芭蕾舞团《天鹅湖》 天津站" [ref=e463]
+            - generic [ref=e464]:
+              - heading "中央芭蕾舞团《天鹅湖》 天津站" [level=3] [ref=e465]
+              - generic [ref=e466]:
+                - img [ref=e467]
+                - generic [ref=e470]: 天津
+              - generic [ref=e471]:
+                - img [ref=e472]
+                - generic [ref=e474]: 2027-03-15
+              - generic [ref=e476]: ¥240起
+          - link "山口胜平声优见面会 天津站 山口胜平声优见面会 天津站 天津 2027-03-17 ¥180起" [ref=e477] [cursor=pointer]:
+            - /url: /activity/900119
+            - img "山口胜平声优见面会 天津站" [ref=e479]
+            - generic [ref=e480]:
+              - heading "山口胜平声优见面会 天津站" [level=3] [ref=e481]
+              - generic [ref=e482]:
+                - img [ref=e483]
+                - generic [ref=e486]: 天津
+              - generic [ref=e487]:
+                - img [ref=e488]
+                - generic [ref=e490]: 2027-03-17
+              - generic [ref=e492]: ¥180起
+          - link "乌镇江南水乡旅行节 天津站 乌镇江南水乡旅行节 天津站 天津 2027-03-19 ¥80起" [ref=e493] [cursor=pointer]:
+            - /url: /activity/900120
+            - img "乌镇江南水乡旅行节 天津站" [ref=e495]
+            - generic [ref=e496]:
+              - heading "乌镇江南水乡旅行节 天津站" [level=3] [ref=e497]
+              - generic [ref=e498]:
+                - img [ref=e499]
+                - generic [ref=e502]: 天津
+              - generic [ref=e503]:
+                - img [ref=e504]
+                - generic [ref=e506]: 2027-03-19
+              - generic [ref=e508]: ¥80起
+        - generic [ref=e509]:
+          - button "上一页" [disabled] [ref=e510]
+          - button "1" [ref=e511]
+          - button "2" [ref=e512]
+          - button "下一页" [ref=e513]
+    - contentinfo [ref=e152]:
+      - generic [ref=e153]:
+        - generic [ref=e154]:
+          - generic [ref=e155]: 关于万象
+          - generic [ref=e156]: 协议及隐私权政策
+          - generic [ref=e157]: 廉正举报
+          - generic [ref=e158]: 联系合作
+          - generic [ref=e159]: 招聘信息
+          - generic [ref=e160]: 防骗秘籍
+          - link "商户入驻" [ref=e161] [cursor=pointer]:
+            - /url: /merchant
+        - generic [ref=e162]:
+          - generic [ref=e163]:
+            - generic [ref=e164]: 京ICP证031057号
+            - generic [ref=e165]: "|"
+            - generic [ref=e166]: 京ICP备11043884号
+            - generic [ref=e167]: "|"
+            - generic [ref=e168]: 京公网安备11010502037341号
+          - paragraph [ref=e169]: 万象文化传媒发展有限公司 版权所有
+          - paragraph [ref=e170]: 2003-2020 版权所有，保留所有权利
+          - paragraph [ref=e171]: 热线电话：10103721
+  - button "在线客服" [ref=e172]:
+    - img [ref=e173]
+    - generic [ref=e175]: 在线客服
+  - alert [ref=e514]

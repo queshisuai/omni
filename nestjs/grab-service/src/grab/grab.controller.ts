@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { AuthenticatedRequest } from '../auth/authenticated-request';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GrabService } from './grab.service';
@@ -38,6 +38,29 @@ export class GrabController {
   @Post(':requestId/cancel')
   async cancel(@Req() request: AuthenticatedRequest, @Param('requestId') requestId: string): Promise<ApiResult<GrabRequestResponse>> {
     return success(await this.grabService.cancelRequest(request.user.userId, requestId));
+  }
+}
+
+@Controller('api/grab/internal')
+export class GrabInternalController {
+  private readonly internalToken = process.env.INTERNAL_API_TOKEN || '';
+
+  constructor(private readonly grabService: GrabService) {}
+
+  @Get('users/:userId/requests')
+  async internalListByUser(
+    @Headers('x-internal-token') token: string | undefined,
+    @Param('userId') userId: string,
+    @Query('limit') limit = '5',
+  ): Promise<ApiResult<GrabRequestResponse[]>> {
+    this.requireInternalToken(token);
+    return success(await this.grabService.listByUser(Number(userId), Number(limit)));
+  }
+
+  private requireInternalToken(token: string | undefined): void {
+    if (!this.internalToken || token !== this.internalToken) {
+      throw new UnauthorizedException('内部接口令牌无效');
+    }
   }
 }
 

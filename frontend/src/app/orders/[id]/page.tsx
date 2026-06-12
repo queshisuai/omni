@@ -9,7 +9,7 @@ import { Footer } from '@/components/Footer'
 import { listMyRefunds, listOrders, listTrashOrders } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { formatOrderAttendees } from '@/lib/console-orders'
-import { buildOrderDetailTimeline, getOrderDetailStatusCopy, type TimelineState } from '@/lib/orders-experience'
+import { buildOrderDetailTimeline, formatOrderSeatLabel, getOrderDetailStatusCopy, type TimelineState } from '@/lib/orders-experience'
 import { buildRefundTimeline } from '@/lib/refund-flow'
 import type { OrderEntity, RefundRequestVO } from '@/types/api'
 
@@ -21,17 +21,16 @@ const STATUS_COLOR: Record<TimelineState, string> = {
 }
 
 function enrich(order: OrderEntity) {
-  const fallbackTicketTypeId = order.matchedTicketTypeId ?? order.ticketTypeId
   return {
     ...order,
-    activityName: order.activityName || '未知活动',
+    activityName: order.activityName || '活动信息待同步',
     activityPoster: order.activityPoster || '/background.png',
     activityId: order.activityId ?? null,
-    venueName: order.venueName || '未知场馆',
+    venueName: order.venueName || '场馆信息待同步',
     sessionTime: order.sessionTime || '',
-    ticketName: order.ticketName || `票档 ${fallbackTicketTypeId}`,
+    ticketName: order.ticketName || '票档信息待同步',
     unitPrice: order.unitPrice || order.amount / order.quantity,
-    seatLabels: order.seatLabels || '座位信息生成中',
+    seatLabels: formatOrderSeatLabel(order),
   }
 }
 
@@ -103,7 +102,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   }
 
   const statusCopy = getOrderDetailStatusCopy(order.status)
-  const timeline = buildOrderDetailTimeline(order)
+  const timeline = buildOrderDetailTimeline(order, latestRefund)
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50 pb-16 md:pb-0">

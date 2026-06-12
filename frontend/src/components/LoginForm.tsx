@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation'
 import { login, sendSmsCode } from '@/lib/api'
 import { setToken, setUser } from '@/lib/auth'
 import { getLoginRedirectForRole } from '@/lib/support-tools'
-import { Mail, Lock, Phone, KeyRound, QrCode, ArrowRight } from 'lucide-react'
+import { Mail, Lock, Phone, KeyRound, ArrowRight } from 'lucide-react'
 
-type LoginTab = 'password' | 'sms' | 'qrcode'
+type LoginTab = 'password' | 'sms'
 
 interface LoginFormProps {
   successMessage?: string
@@ -52,7 +52,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
   const handleSmsLogin = async (e: FormEvent) => {
     e.preventDefault()
     if (!smsMobile.trim()) { setErrorMsg('请输入手机号'); return }
-    if (!smsCode.trim()) { setErrorMsg('请输入短信验证码。演示环境固定验证码为 666666，仍会提交后端校验。'); return }
+    if (!smsCode.trim()) { setErrorMsg('请输入短信验证码'); return }
 
     setLoading(true)
     setErrorMsg('')
@@ -76,9 +76,9 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
     setErrorMsg('')
     setSmsInfoMsg('')
     try {
-      const code = await sendSmsCode(smsMobile.trim())
+      await sendSmsCode(smsMobile.trim())
       setSmsSent(true)
-      setSmsInfoMsg(`演示环境不会发送真实短信，验证码为 ${code || '666666'}，登录时仍会由后端校验。`)
+      setSmsInfoMsg('验证码已发送，请按短信提示输入。')
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : '发送验证码失败')
     } finally {
@@ -103,14 +103,6 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
         >
           验证码登录
           {activeTab === 'sms' && <div className="absolute bottom-[-1px] left-1/2 -translate-x-1/2 w-8 h-[3px] bg-[#ff1268] rounded-full" />}
-        </button>
-        <button
-          onClick={() => { setActiveTab('qrcode'); clearError() }}
-          className={`pb-3 transition-all duration-300 ml-auto ${activeTab === 'qrcode' ? 'text-[#ff1268]' : 'text-gray-400 hover:text-gray-600'}`}
-          title="扫码登录"
-        >
-          <QrCode className="w-5 h-5" />
-          {activeTab === 'qrcode' && <div className="absolute bottom-[-1px] right-0 w-5 h-[3px] bg-[#ff1268] rounded-full" />}
         </button>
       </div>
 
@@ -196,7 +188,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
                   <input
                     type="text" value={smsCode}
                     onChange={(e) => { setSmsCode(e.target.value); clearError() }}
-                    placeholder="演示验证码 666666"
+                    placeholder="请输入验证码"
                     className="w-full bg-gray-50/50 border border-gray-200 text-gray-900 rounded-xl block pl-11 p-3.5 focus:ring-2 focus:ring-[#ff1268]/20 focus:border-[#ff1268] focus:bg-white outline-none transition-all placeholder:text-gray-400 font-medium"
                   />
                 </div>
@@ -209,7 +201,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
                   {smsSending ? '发送中...' : smsSent ? '重新获取' : '获取验证码'}
                 </button>
               </div>
-              <p className="text-xs leading-5 text-gray-500">演示环境使用 Mock 验证码，不会发送真实短信；固定验证码 666666 需通过后端校验。</p>
+              <p className="text-xs leading-5 text-gray-500">验证码发送后请按短信提示输入，提交时会由后端校验。</p>
             </div>
 
             {errorMsg && (
@@ -243,21 +235,7 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
           </form>
         )}
 
-        {/* ========== 扫码登录 ========== */}
-        {activeTab === 'qrcode' && (
-          <div className="py-6 flex flex-col items-center animate-in fade-in slide-in-from-right-4 duration-300">
-            <div className="w-[180px] h-[180px] bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center mb-6 p-2 relative group overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-b from-[#ff1268]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <QrCode className="w-32 h-32 text-gray-800" />
-              {/* Scan Line Animation */}
-              <div className="absolute top-0 left-0 w-full h-[2px] bg-[#ff1268] shadow-[0_0_8px_#ff1268] animate-[scan_2s_ease-in-out_infinite]" />
-            </div>
-            <h3 className="text-[16px] font-semibold text-gray-800 mb-2">打开万象应用扫码登录</h3>
-            <p className="text-sm text-gray-500">点击“我的”右上角扫一扫</p>
-          </div>
-        )}
-
-        {/* Links & SNS */}
+        {/* Links */}
         <div className="mt-6 flex items-center justify-between text-sm">
           <a onClick={() => router.push('/register')} className="text-gray-500 hover:text-[#ff1268] cursor-pointer transition-colors font-medium">
             免费注册
@@ -266,37 +244,6 @@ export function LoginForm({ successMessage = '' }: LoginFormProps) {
             忘记密码
           </a>
         </div>
-
-        <div className="mt-8">
-           <div className="flex items-center justify-center space-x-4 mb-6">
-             <span className="h-[1px] bg-gray-100 flex-1"></span>
-             <span className="text-xs text-gray-400 font-medium">其他登录方式</span>
-             <span className="h-[1px] bg-gray-100 flex-1"></span>
-           </div>
-           <div className="flex justify-center gap-4">
-             {[
-               { name: '淘宝', icon: 'ri:taobao-fill', color: '#ff5000' },
-               { name: '微信', icon: 'ri:wechat-fill', color: '#09bb07' },
-               { name: 'QQ', icon: 'ri:qq-fill', color: '#12b7f5' },
-               { name: '微博', icon: 'ri:weibo-fill', color: '#e6162d' },
-               { name: '支付宝', icon: 'ri:alipay-fill', color: '#1677ff' }
-             ].map((platform) => (
-               <button
-                 key={platform.name}
-                 title={`${platform.name}登录`}
-                 className="w-10 h-10 rounded-full flex items-center justify-center text-white hover:scale-110 hover:shadow-md transition-all active:scale-95"
-                 style={{ backgroundColor: platform.color }}
-               >
-                 <img 
-                   src={`https://api.iconify.design/${platform.icon}.svg?color=white`} 
-                   alt={platform.name} 
-                   className="w-5 h-5" 
-                 />
-               </button>
-             ))}
-           </div>
-        </div>
-
       </div>
     </div>
   )

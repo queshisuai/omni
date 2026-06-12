@@ -52,7 +52,7 @@ export function getAutoDowngradeDisplay(progress: GrabAutoDowngradeSource) {
   if (!progress.allowAutoDowngrade) return '未开启自动降档'
   const matched = progress.requestedTicketTypes?.find((ticket) => ticket.ticketTypeId === progress.matchedTicketTypeId)
   if (matched && progress.requestedTicketTypes?.[0]?.ticketTypeId !== matched.ticketTypeId) {
-    return `已自动降档至 ${matched.name ?? `票档 ${matched.ticketTypeId}`}`
+    return matched.name ? `已自动降档至 ${matched.name}` : '已自动降档，票档信息待同步'
   }
   return '已开启，按票档顺序尝试'
 }

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { SupportConversationVO } from '@/types/api'
-import { appendQuickReply, buildCloseRequestMessage, buildSupportSubject, canRequestSupportHandoff, filterSupportConversations, formatSupportAuditAction, formatSupportConversationStatus, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getLoginRedirectForRole, getSupportConversationRecordsHref, getSupportQueueTabs, getSupportTagOptions, isSupportHelpConversationPath, mergeSupportConversations, pickDefaultUserSupportConversation, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue } from './support-tools.ts'
+import type { SupportContextVO, SupportConversationVO } from '@/types/api'
+import { appendQuickReply, buildCloseRequestMessage, buildSupportSubject, canClaimSupportConversation, canEditSupportConversation, canReplySupportConversation, canRequestSupportClose, canRequestSupportHandoff, filterSupportConversations, formatSupportAuditAction, formatSupportContextSectionCount, formatSupportConversationStatus, formatSupportConversationWriteBlockedMessage, formatSupportHandoffActionLabel, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getLoginRedirectForRole, getSupportConversationRecordsHref, getSupportQueueTabs, getSupportTagOptions, hasSupportContextData, isKnownSupportConversationStatus, isSupportHelpConversationPath, mergeSupportConversations, pickDefaultUserSupportConversation, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue } from './support-tools.ts'
 
 test('routes users to role-specific entry after login', () => {
   assert.equal(getLoginRedirectForRole('support'), '/support')
@@ -11,7 +11,7 @@ test('routes users to role-specific entry after login', () => {
   assert.equal(getLoginRedirectForRole('platform_super_admin'), '/console')
   assert.equal(getLoginRedirectForRole('organizer'), '/console')
   assert.equal(getLoginRedirectForRole('organizer_admin'), '/console')
-  assert.equal(getLoginRedirectForRole('organizer_admin', ['organizer.account.manage']), '/console/organizer-admins')
+  assert.equal(getLoginRedirectForRole('organizer_admin', ['organizer.account.manage']), '/console/organizer-ops')
   assert.equal(getLoginRedirectForRole('organizer_admin', ['activity.manage']), '/console/activities')
   assert.equal(getLoginRedirectForRole('user'), '/')
 })
@@ -22,6 +22,7 @@ test('formats support conversation status in Chinese', () => {
   assert.equal(formatSupportConversationStatus('ASSIGNED'), '人工处理中')
   assert.equal(formatSupportConversationStatus('CLOSE_REQUESTED'), '等待用户确认结束')
   assert.equal(formatSupportConversationStatus('CLOSED'), '已结束')
+  assert.equal(formatSupportConversationStatus('FUTURE_STATUS'), '未知会话状态')
 })
 
 test('formats support message sender by customer and agent perspective', () => {
@@ -111,6 +112,31 @@ test('only allows handoff after a live conversation exists', () => {
   assert.equal(canRequestSupportHandoff({ status: 'CLOSED' }), false)
 })
 
+test('formats support handoff action label without hiding unknown status', () => {
+  assert.equal(formatSupportHandoffActionLabel(null), '转人工客服')
+  assert.equal(formatSupportHandoffActionLabel('OPEN'), '转人工客服')
+  assert.equal(formatSupportHandoffActionLabel('WAITING_AGENT'), '人工介入请等待')
+  assert.equal(formatSupportHandoffActionLabel('ASSIGNED'), '人工客服处理中')
+  assert.equal(formatSupportHandoffActionLabel('CLOSE_REQUESTED'), '等待你确认是否结束')
+  assert.equal(formatSupportHandoffActionLabel('FUTURE_STATUS'), '状态待核对')
+})
+
+test('blocks support workbench writes when conversation status is unknown', () => {
+  assert.equal(isKnownSupportConversationStatus('FUTURE_STATUS'), false)
+  assert.equal(canClaimSupportConversation('FUTURE_STATUS'), false)
+  assert.equal(canReplySupportConversation('FUTURE_STATUS'), false)
+  assert.equal(canEditSupportConversation('FUTURE_STATUS'), false)
+  assert.equal(canRequestSupportClose('FUTURE_STATUS'), false)
+  assert.equal(formatSupportConversationWriteBlockedMessage('FUTURE_STATUS'), '会话状态待核对，请刷新后再操作')
+
+  assert.equal(isKnownSupportConversationStatus('ASSIGNED'), true)
+  assert.equal(canReplySupportConversation('ASSIGNED'), true)
+  assert.equal(canEditSupportConversation('ASSIGNED'), true)
+  assert.equal(canRequestSupportClose('ASSIGNED'), true)
+  assert.equal(canClaimSupportConversation('WAITING_AGENT'), true)
+  assert.equal(canClaimSupportConversation('ASSIGNED'), false)
+})
+
 test('treats only the help page as the customer support conversation window', () => {
   assert.equal(isSupportHelpConversationPath('/help'), true)
   assert.equal(isSupportHelpConversationPath('/help?from=message'), true)
@@ -122,6 +148,19 @@ test('treats only the help page as the customer support conversation window', ()
 
 test('links admin support management to user conversation records instead of agent filtered records', () => {
   assert.equal(getSupportConversationRecordsHref(), '/console/support-conversations')
+})
+
+test('formatSupportContextSectionCount returns Chinese labels', () => {
+  assert.equal(formatSupportContextSectionCount('orders', 2), '订单 2')
+  assert.equal(formatSupportContextSectionCount('refunds', 0), '退款 0')
+  assert.equal(formatSupportContextSectionCount('tickets', 3), '票夹 3')
+  assert.equal(formatSupportContextSectionCount('unknown', 1), '未知上下文 1')
+})
+
+test('hasSupportContextData detects any non-empty section', () => {
+  assert.equal(hasSupportContextData({ orders: [{ id: 1 }], refunds: [], tickets: [], waitlist: [], grabRequests: [], notifications: [] } as unknown as SupportContextVO), true)
+  assert.equal(hasSupportContextData({ orders: [], refunds: [], tickets: [], waitlist: [], grabRequests: [], notifications: [] } as unknown as SupportContextVO), false)
+  assert.equal(hasSupportContextData(null), false)
 })
 
 test('picks a real agent conversation before self-assigned admin artifacts in user help center', () => {
@@ -153,7 +192,9 @@ test('does not reopen a closed conversation as the default user help session', (
 
 test('formats support operation labels and close request copy', () => {
   assert.equal(formatSupportTagLabel('REFUND'), '退款')
+  assert.equal(formatSupportTagLabel('FUTURE_TAG'), '未知标签')
   assert.equal(formatSupportAuditAction('TRANSFERRED'), '转接客服')
+  assert.equal(formatSupportAuditAction('FUTURE_ACTION'), '未知操作')
   assert.equal(buildCloseRequestMessage(' 已解决 '), '人工客服申请结束会话，原因：已解决')
   assert.equal(buildCloseRequestMessage(''), '人工客服申请结束会话，请确认是否结束。')
   assert.deepEqual(getSupportTagOptions().map(item => item.value), ['REFUND', 'TICKET', 'ADMISSION', 'ACCOUNT', 'PAYMENT_EXCEPTION'])
