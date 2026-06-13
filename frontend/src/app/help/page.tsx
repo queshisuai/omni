@@ -18,7 +18,7 @@ import {
   startSupportConversation,
 } from '@/lib/api'
 import { getToken, getUser } from '@/lib/auth'
-import { buildSupportSubject, canRequestSupportHandoff, formatSupportConversationStatus, formatSupportHandoffActionLabel, formatSupportMessageSender, isSupportHelpConversationPath, pickDefaultUserSupportConversation, shouldPollSupportConversation } from '@/lib/support-tools'
+import { buildSupportSubject, canConfirmSupportConversationClose, canEditSupportConversation, canRequestSupportHandoff, formatSupportConversationStatus, formatSupportConversationWriteBlockedMessage, formatSupportHandoffActionLabel, formatSupportMessageSender, isSupportHelpConversationPath, pickDefaultUserSupportConversation, shouldPollSupportConversation } from '@/lib/support-tools'
 import type { HelpFaqVO, SupportConversationVO, SupportMessageVO } from '@/types/api'
 
 export default function HelpPage() {
@@ -64,6 +64,11 @@ export default function HelpPage() {
     }
     return Array.from(map.entries())
   }, [faqs])
+  const conversationWriteBlockedMessage = conversation ? formatSupportConversationWriteBlockedMessage(conversation.status) : ''
+  const canSendSupportMessage = !conversation || canEditSupportConversation(conversation.status)
+  const canConfirmCloseConversation = Boolean(conversation && canConfirmSupportConversationClose(conversation.status))
+  const supportInputPlaceholder = conversationWriteBlockedMessage
+    || (conversation?.status === 'CLOSE_REQUESTED' ? '如需继续咨询，请直接输入问题' : '输入订单、票夹、退款等问题')
 
   const refreshMessages = async (id: number) => {
     const data = await listSupportMessages(id)
@@ -221,6 +226,10 @@ export default function HelpPage() {
       setMessage('请先登录后再使用在线客服')
       return
     }
+    if (conversation && !canEditSupportConversation(conversation.status)) {
+      setMessage(formatSupportConversationWriteBlockedMessage(conversation.status) || '当前会话已结束，不能继续发送消息')
+      return
+    }
     setLoading(true)
     setAiThinking(false)
     setMessage('')
@@ -287,6 +296,10 @@ export default function HelpPage() {
 
   const confirmClose = async () => {
     if (!conversation || loading) return
+    if (!canConfirmSupportConversationClose(conversation.status)) {
+      setMessage(formatSupportConversationWriteBlockedMessage(conversation.status) || '当前会话暂不能结束，请刷新后再操作')
+      return
+    }
     setLoading(true)
     setMessage('')
     try {
@@ -302,7 +315,11 @@ export default function HelpPage() {
 
   const handoff = async () => {
     if (loading) return
-    if (!conversation || !canRequestSupportHandoff(conversation)) return
+    if (!conversation) return
+    if (!canRequestSupportHandoff(conversation)) {
+      setMessage(formatSupportConversationWriteBlockedMessage(conversation.status) || '当前会话暂不能转人工，请刷新后再操作')
+      return
+    }
     setLoading(true)
     setMessage('')
     try {
@@ -414,14 +431,14 @@ export default function HelpPage() {
                   value={text}
                   onChange={event => setText(event.target.value)}
                   onKeyDown={event => { if (event.key === 'Enter') send() }}
-                  disabled={conversation?.status === 'CLOSED'}
-                  placeholder={conversation?.status === 'CLOSE_REQUESTED' ? '如需继续咨询，请直接输入问题' : '输入订单、票夹、退款等问题'}
+                  disabled={!canSendSupportMessage}
+                  placeholder={supportInputPlaceholder}
                   className="h-11 min-w-0 flex-1 rounded-xl border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
                 />
                 <button
                   type="button"
                   onClick={send}
-                  disabled={loading || conversation?.status === 'CLOSED'}
+                  disabled={loading || !canSendSupportMessage}
                   className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ff1268] text-white disabled:opacity-60"
                   title="发送"
                 >
@@ -436,7 +453,7 @@ export default function HelpPage() {
               >
                 {formatSupportHandoffActionLabel(conversation?.status)}
               </button>
-              {conversation?.status === 'CLOSE_REQUESTED' && (
+              {canConfirmCloseConversation && (
                 <button
                   type="button"
                   onClick={confirmClose}

@@ -31,6 +31,26 @@ function organizerStatusMeta(status: OrganizerApplicationVO['organizerStatus']) 
   return { text: '未知主办方状态', color: '#6b7280', bg: '#f3f4f6' }
 }
 
+function isKnownOrganizerStatus(status?: number | null) {
+  return status === 0 || status === 1 || status === 2 || status === 3
+}
+
+function isCancelledOrganizerAccount(item: OrganizerApplicationVO) {
+  return item.organizerStatus === 3 || item.role === 'user'
+}
+
+function canDeactivateOrganizerAccount(item: OrganizerApplicationVO) {
+  return item.status === 1 && item.organizerStatus === 1 && item.role !== 'user'
+}
+
+function isKnownOrganizerApplicationStatus(status?: number | null) {
+  return status === 0 || status === 1 || status === 2
+}
+
+function isReviewableOrganizerApplicationStatus(status?: number | null) {
+  return status === 0
+}
+
 export default function OrganizerApplicationsPage() {
   const router = useRouter()
   const [user, setUser] = useState<UserInfo | null>(null)
@@ -98,11 +118,15 @@ export default function OrganizerApplicationsPage() {
     })
   }, [items, keyword])
 
-  const handleApprove = async (id: number) => {
-    setSavingId(id)
+  const handleApprove = async (item: OrganizerApplicationVO) => {
+    if (!isReviewableOrganizerApplicationStatus(item.status)) {
+      setError('入驻审核状态待核对，请刷新后再操作')
+      return
+    }
+    setSavingId(item.id)
     setError('')
     try {
-      await approveOrganizerApplication(id, reviewNote.trim() || undefined)
+      await approveOrganizerApplication(item.id, reviewNote.trim() || undefined)
       setReviewNote('')
       await loadData(statusFilter)
     } catch (err: unknown) {
@@ -112,16 +136,20 @@ export default function OrganizerApplicationsPage() {
     }
   }
 
-  const handleReject = async (id: number) => {
+  const handleReject = async (item: OrganizerApplicationVO) => {
+    if (!isReviewableOrganizerApplicationStatus(item.status)) {
+      setError('入驻审核状态待核对，请刷新后再操作')
+      return
+    }
     const note = reviewNote.trim()
     if (!note) {
       setError('驳回时必须填写原因')
       return
     }
-    setSavingId(id)
+    setSavingId(item.id)
     setError('')
     try {
-      await rejectOrganizerApplication(id, note)
+      await rejectOrganizerApplication(item.id, note)
       setReviewNote('')
       await loadData(statusFilter)
     } catch (err: unknown) {
@@ -133,6 +161,10 @@ export default function OrganizerApplicationsPage() {
 
   const handleDeactivate = async (item: OrganizerApplicationVO) => {
     if (!user) return
+    if (!canDeactivateOrganizerAccount(item)) {
+      setError(isKnownOrganizerStatus(item.organizerStatus) ? '当前主办方状态不能取消' : '主办方状态待核对，请刷新后再操作')
+      return
+    }
     const confirmed = await globalConfirm(`取消主办方后，${item.organizerName} 将降级为普通用户并无法继续访问后台；其旗下全部活动、场次、票档将下架，并直接为关联已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这批已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意取消主办方并同意退款。`)
     if (!confirmed) return
     setSavingId(item.id)
@@ -227,7 +259,9 @@ export default function OrganizerApplicationsPage() {
           {filteredItems.map((item) => {
             const meta = statusMeta(item.status)
             const userStatusMeta = organizerStatusMeta(item.organizerStatus)
-            const isCancelled = item.organizerStatus === 3 || item.role === 'user'
+            const isCancelled = isCancelledOrganizerAccount(item)
+            const reviewable = isReviewableOrganizerApplicationStatus(item.status)
+            const canDeactivate = canDeactivateOrganizerAccount(item)
             return (
               <div key={item.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -262,16 +296,16 @@ export default function OrganizerApplicationsPage() {
                   </div>
                   <div className="flex flex-col gap-2 lg:min-w-[160px] lg:items-end">
                     <button
-                      onClick={() => handleApprove(item.id)}
-                      disabled={savingId === item.id || item.status !== 0}
+                      onClick={() => handleApprove(item)}
+                      disabled={savingId === item.id || !reviewable}
                       className="inline-flex items-center justify-center gap-2 rounded-full bg-[#16a34a] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#13813b] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {savingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                       通过
                     </button>
                     <button
-                      onClick={() => handleReject(item.id)}
-                      disabled={savingId === item.id || item.status !== 0}
+                      onClick={() => handleReject(item)}
+                      disabled={savingId === item.id || !reviewable}
                       className="inline-flex items-center justify-center gap-2 rounded-full border border-[#ef4444] px-4 py-2 text-sm font-medium text-[#ef4444] transition-colors hover:bg-[#fef2f2] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <XCircle className="h-4 w-4" />
@@ -279,12 +313,13 @@ export default function OrganizerApplicationsPage() {
                     </button>
                     <button
                       onClick={() => handleDeactivate(item)}
-                      disabled={savingId === item.id || item.status !== 1 || isCancelled}
+                      disabled={savingId === item.id || !canDeactivate}
                       className="inline-flex items-center justify-center gap-2 rounded-full border border-[#f97316] px-4 py-2 text-sm font-medium text-[#f97316] transition-colors hover:bg-[#fff7ed] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <ShieldOff className="h-4 w-4" />
                       {isCancelled ? '已取消主办方' : '取消主办方'}
                     </button>
+                    {(!isKnownOrganizerApplicationStatus(item.status) || !isKnownOrganizerStatus(item.organizerStatus)) ? <span className="rounded-full border border-[#ffd591] bg-[#fff7e6] px-3 py-1 text-[12px] text-[#ad6800]">状态待核对</span> : null}
                     <div className="text-xs text-[#999]">驳回前请在上方备注框填写原因</div>
                   </div>
                 </div>

@@ -33,6 +33,14 @@ export function canReviewConsoleRefund(status: RefundStatus | number | null | un
   return status === 0 || status === 4
 }
 
+export function canApplyConsoleRefundReviewAction(
+  status: RefundStatus | number | null | undefined,
+  action: 'approve' | 'reject',
+) {
+  if (action === 'approve') return canReviewConsoleRefund(status)
+  return status === 0
+}
+
 export function getBatchRefundApproveTargets<T extends Pick<RefundRequestVO, 'status'>>(refunds: T[]) {
   return refunds.filter(refund => canReviewConsoleRefund(refund.status))
 }

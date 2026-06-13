@@ -11,3 +11,14 @@ test('audit log filters use Chinese business labels for traceable identifiers', 
   assert.match(source, /操作人编号/)
   assert.match(source, /追踪编号/)
 })
+
+test('audit log filters use Chinese select options for action and target type', () => {
+  assert.match(source, /getOperationActionFilterOptions/)
+  assert.match(source, /getOperationTargetTypeFilterOptions/)
+  assert.match(source, /全部操作类型/)
+  assert.match(source, /全部对象类型/)
+  assert.match(source, /value=\{option\.value\}/)
+  assert.match(source, /\{option\.label\}/)
+  assert.doesNotMatch(source, /placeholder="动作"/)
+  assert.doesNotMatch(source, /placeholder="对象类型"/)
+})

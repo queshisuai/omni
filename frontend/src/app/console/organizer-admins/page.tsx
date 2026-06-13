@@ -17,20 +17,28 @@ import type { OrganizerAdminAccountVO } from '@/types/api'
 
 const emptyEditForm = { phone: '', nickname: '', password: '', status: 1 }
 
-function formatOrganizerAdminAccountStatus(status: number) {
+function isKnownOrganizerAdminAccountStatus(status?: number | null) {
+  return status === 1 || status === 0
+}
+
+function isEnabledOrganizerAdminAccountStatus(status?: number | null) {
+  return status === 1
+}
+
+function formatOrganizerAdminAccountStatus(status?: number | null) {
   if (status === 1) return '启用中'
   if (status === 0) return '已停用'
   return '未知账号状态'
 }
 
-function formatOrganizerAdminStatusAction(status: number) {
+function formatOrganizerAdminStatusAction(status?: number | null) {
   if (status === 1) return '停用'
   if (status === 0) return '启用'
   return '状态待核对'
 }
 
-function canToggleOrganizerAdminAccountStatus(status: number) {
-  return status === 1 || status === 0
+function canToggleOrganizerAdminAccountStatus(status?: number | null) {
+  return isKnownOrganizerAdminAccountStatus(status)
 }
 
 export default function OrganizerAdminsPage() {
@@ -95,6 +103,10 @@ export default function OrganizerAdminsPage() {
   const startEdit = (account: OrganizerAdminAccountVO) => {
     setMessage('')
     setError('')
+    if (!isKnownOrganizerAdminAccountStatus(account.status)) {
+      setError('账号状态待核对，请刷新后再操作')
+      return
+    }
     setEditingId(account.id)
     setEditForm({
       phone: account.phone,
@@ -138,10 +150,10 @@ export default function OrganizerAdminsPage() {
   const toggleStatus = async (account: OrganizerAdminAccountVO) => {
     if (!canToggleOrganizerAdminAccountStatus(account.status)) {
       setMessage('')
-      setError('账号状态未知，请先核对后再操作')
+      setError('账号状态待核对，请刷新后再操作')
       return
     }
-    if (account.status === 1) {
+    if (isEnabledOrganizerAdminAccountStatus(account.status)) {
       const confirmed = await globalConfirm({
         type: 'danger',
         title: '停用平台主办方运营员账号',
@@ -155,7 +167,7 @@ export default function OrganizerAdminsPage() {
     setError('')
     setSaving(true)
     try {
-      if (account.status === 1) {
+      if (isEnabledOrganizerAdminAccountStatus(account.status)) {
         await deactivateOrganizerAdminAccount(account.id)
         setMessage('平台主办方运营员账号已停用')
       } else {
@@ -298,7 +310,7 @@ export default function OrganizerAdminsPage() {
                     disabled={saving || !canToggleOrganizerAdminAccountStatus(account.status)}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {account.status === 1 ? <ShieldOff className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                    {isEnabledOrganizerAdminAccountStatus(account.status) ? <ShieldOff className="h-4 w-4" /> : isKnownOrganizerAdminAccountStatus(account.status) ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
                     {formatOrganizerAdminStatusAction(account.status)}
                   </button>
                   <button

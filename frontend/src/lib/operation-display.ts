@@ -44,6 +44,7 @@ const OPERATION_ACTION_LABELS: Record<string, string> = {
 const OPERATION_TARGET_TYPE_LABELS: Record<string, string> = {
   activity: '活动',
   tour: '巡演',
+  artist: '艺人档案',
   user: '用户',
   phone: '手机号',
   support_account: '客服账号',
@@ -65,6 +66,12 @@ const ORGANIZER_OPS_FOLLOW_TYPE_LABELS: Record<string, string> = {
   material: '材料补充',
   audit: '审核处理',
   risk: '风险复核',
+}
+
+const ORGANIZER_OPS_RISK_LEVEL_LABELS: Record<string, string> = {
+  normal: '正常',
+  watch: '关注',
+  high: '高风险',
 }
 
 const EXCEPTION_TASK_TYPE_LABELS: Record<string, string> = {
@@ -92,17 +99,33 @@ const STATION_CONFIG_CHANGE_TYPE_LABELS: Record<string, string> = {
   delete_station: '删除站点',
 }
 
+const STATION_CONFIG_STATUS_LABELS: Record<string, string> = {
+  draft: '草稿',
+  submitted: '待审核',
+  approved: '已通过',
+  applied: '已应用',
+  rejected: '已驳回',
+  withdrawn: '已撤回',
+}
+
 const RECONCILIATION_SUMMARY_KEY_LABELS: Record<string, string> = {
   summary: '摘要',
   bizDate: '业务日期',
+  业务日期: '业务日期',
   paymentCount: '支付笔数',
+  支付笔数: '支付笔数',
   paymentAmount: '支付金额',
+  支付金额: '支付金额',
   refundCount: '退款笔数',
+  退款笔数: '退款笔数',
   refundAmount: '退款金额',
+  退款金额: '退款金额',
   netAmount: '净额',
+  净额: '净额',
   paidOrderCount: '已支付订单数',
   refundAbnormalCount: '退款异常数',
   diffCount: '差异数',
+  差异数: '差异数',
 }
 
 const RECONCILIATION_BATCH_STATUS_LABELS: Record<string, string> = {
@@ -116,6 +139,7 @@ const RECONCILIATION_DETAIL_STATUS_LABELS: Record<string, string> = {
   matched: '已匹配',
   unmatched: '未匹配',
   pending: '待处理',
+  different: '存在差异',
 }
 
 const RECONCILIATION_DIFFERENCE_STATUS_LABELS: Record<string, string> = {
@@ -130,6 +154,7 @@ const RECONCILIATION_SOURCE_LABELS: Record<string, string> = {
 }
 
 const RECONCILIATION_BUSINESS_TYPE_LABELS: Record<string, string> = {
+  order: '订单',
   payment: '支付',
   refund: '退款',
   ticket: '票务',
@@ -138,6 +163,7 @@ const RECONCILIATION_BUSINESS_TYPE_LABELS: Record<string, string> = {
 
 const RECONCILIATION_DIFF_TYPE_LABELS: Record<string, string> = {
   amount_mismatch: '金额不一致',
+  refund_amount_mismatch: '退款金额不一致',
   missing_local: '本地缺失',
   missing_channel: '渠道缺失',
   status_mismatch: '状态不一致',
@@ -156,6 +182,11 @@ const EXCEPTION_STATUS_LABELS: Record<string, string> = {
   closed: '已关闭',
 }
 
+export type OperationAuditFilterOption = {
+  value: string
+  label: string
+}
+
 function labelFrom(map: Record<string, string>, value: string | null | undefined, fallback = '-') {
   const key = value?.trim()
   if (!key) return fallback
@@ -166,6 +197,32 @@ function knownLabelFrom(map: Record<string, string>, value: string | null | unde
   const key = value?.trim()
   if (!key) return '-'
   return map[key] ?? unknownLabel
+}
+
+function knownLabelFromAnyCase(map: Record<string, string>, value: string | null | undefined, unknownLabel: string) {
+  const key = value?.trim()
+  if (!key) return '-'
+  const candidates = [key, key.toLowerCase(), key.toUpperCase()]
+  for (const candidate of candidates) {
+    if (Object.prototype.hasOwnProperty.call(map, candidate)) return map[candidate]
+  }
+  return unknownLabel
+}
+
+function buildFilterOptions(map: Record<string, string>): OperationAuditFilterOption[] {
+  return Object.entries(map).map(([value, label]) => ({ value, label }))
+}
+
+export function getOperationActionFilterOptions() {
+  return buildFilterOptions(OPERATION_ACTION_LABELS)
+}
+
+export function getOperationTargetTypeFilterOptions() {
+  return buildFilterOptions(OPERATION_TARGET_TYPE_LABELS)
+}
+
+export function getExceptionTaskTypeOptions() {
+  return buildFilterOptions(EXCEPTION_TASK_TYPE_LABELS)
 }
 
 export function formatOperatorRole(role: string | null | undefined) {
@@ -192,7 +249,10 @@ export function formatOperationTargetRef(
     if (type === 'phone') return `手机号：${ref}`
     if (type === 'user') return `账号：${ref}`
     if (type === 'organizer_ops_assignment') {
-      return /^\d+$/.test(ref) ? `负责人编号：${ref}` : `跟进类型：${formatOrganizerOpsFollowType(ref)}`
+      if (/^\d+$/.test(ref)) return `负责人编号：${ref}`
+      const riskLevel = formatOrganizerOpsRiskLevel(ref)
+      if (riskLevel !== '未知风险等级') return `风险等级：${riskLevel}`
+      return `跟进类型：${formatOrganizerOpsFollowType(ref)}`
     }
     if (type === 'organizer_ops_follow_up') return `跟进记录：${formatOrganizerOpsFollowType(ref)}`
     if (type === 'support_account') {
@@ -215,32 +275,53 @@ export function formatStationConfigChangeType(changeType: string | null | undefi
   return knownLabelFrom(STATION_CONFIG_CHANGE_TYPE_LABELS, changeType, '未知变更类型')
 }
 
+export function formatStationConfigStatus(status: string | null | undefined) {
+  return knownLabelFrom(STATION_CONFIG_STATUS_LABELS, status?.toLowerCase(), '未知配置状态')
+}
+
+export function isReviewableStationConfigStatus(status: string | null | undefined) {
+  return status?.trim().toLowerCase() === 'submitted'
+}
+
 export function formatReconciliationSummaryKey(summaryKey: string | null | undefined) {
   return knownLabelFrom(RECONCILIATION_SUMMARY_KEY_LABELS, summaryKey, '其他指标')
 }
 
 export function formatReconciliationBatchStatus(status: string | null | undefined) {
-  return knownLabelFrom(RECONCILIATION_BATCH_STATUS_LABELS, status, '未知对账批次状态')
+  return knownLabelFromAnyCase(RECONCILIATION_BATCH_STATUS_LABELS, status, '未知对账批次状态')
 }
 
 export function formatReconciliationDetailStatus(status: string | null | undefined) {
-  return knownLabelFrom(RECONCILIATION_DETAIL_STATUS_LABELS, status, '未知对账明细状态')
+  return knownLabelFromAnyCase(RECONCILIATION_DETAIL_STATUS_LABELS, status, '未知对账明细状态')
 }
 
 export function formatReconciliationDifferenceStatus(status: string | null | undefined) {
-  return knownLabelFrom(RECONCILIATION_DIFFERENCE_STATUS_LABELS, status, '未知对账差异状态')
+  return knownLabelFromAnyCase(RECONCILIATION_DIFFERENCE_STATUS_LABELS, status, '未知对账差异状态')
+}
+
+function normalizeReconciliationDifferenceStatus(status: string | null | undefined) {
+  return status?.trim().toLowerCase()
+}
+
+export function isKnownReconciliationDifferenceStatus(status: string | null | undefined) {
+  const normalized = normalizeReconciliationDifferenceStatus(status)
+  return normalized === 'open' || normalized === 'resolved' || normalized === 'ignored'
+}
+
+export function isOpenReconciliationDifferenceStatus(status: string | null | undefined) {
+  return normalizeReconciliationDifferenceStatus(status) === 'open'
 }
 
 export function formatReconciliationSource(source: string | null | undefined) {
-  return knownLabelFrom(RECONCILIATION_SOURCE_LABELS, source, '未知来源')
+  return knownLabelFromAnyCase(RECONCILIATION_SOURCE_LABELS, source, '未知来源')
 }
 
 export function formatReconciliationBusinessType(type: string | null | undefined) {
-  return knownLabelFrom(RECONCILIATION_BUSINESS_TYPE_LABELS, type, '未知业务类型')
+  return knownLabelFromAnyCase(RECONCILIATION_BUSINESS_TYPE_LABELS, type, '未知业务类型')
 }
 
 export function formatReconciliationDiffType(type: string | null | undefined) {
-  return knownLabelFrom(RECONCILIATION_DIFF_TYPE_LABELS, type, '未知差异类型')
+  return knownLabelFromAnyCase(RECONCILIATION_DIFF_TYPE_LABELS, type, '未知差异类型')
 }
 
 export function formatExceptionSeverity(severity: string | null | undefined) {
@@ -251,8 +332,33 @@ export function formatExceptionStatus(status: string | null | undefined) {
   return knownLabelFrom(EXCEPTION_STATUS_LABELS, status, '未知异常状态')
 }
 
+function normalizeExceptionStatus(status: string | null | undefined) {
+  return status?.trim().toLowerCase()
+}
+
+export function isOpenExceptionStatus(status: string | null | undefined) {
+  const normalized = normalizeExceptionStatus(status)
+  return normalized === 'pending' || normalized === 'processing'
+}
+
+export function isClaimableExceptionStatus(status: string | null | undefined) {
+  return normalizeExceptionStatus(status) === 'pending'
+}
+
+export function isResolvableExceptionStatus(status: string | null | undefined) {
+  return normalizeExceptionStatus(status) === 'processing'
+}
+
+export function isClosableExceptionStatus(status: string | null | undefined) {
+  return isOpenExceptionStatus(status)
+}
+
 export function formatOrganizerOpsFollowType(followType: string | null | undefined) {
   return labelFrom(ORGANIZER_OPS_FOLLOW_TYPE_LABELS, followType?.toLowerCase(), '其他')
+}
+
+export function formatOrganizerOpsRiskLevel(riskLevel: string | null | undefined) {
+  return knownLabelFrom(ORGANIZER_OPS_RISK_LEVEL_LABELS, riskLevel?.toLowerCase(), '未知风险等级')
 }
 
 export function formatOrganizerOpsAccountLabel(account: { id: number; nickname?: string | null; phone?: string | null }) {

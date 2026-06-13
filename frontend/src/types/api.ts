@@ -744,7 +744,20 @@ export interface PlatformOpsSummaryVO {
     latestBatch?: ReconciliationBatchVO | null
     latestAudit?: OperationAuditLogVO | null
   }
+  infrastructureHealth?: PlatformInfrastructureHealthVO | null
   errors: Array<{ source: string; message: string }>
+}
+
+export type PlatformInfrastructureHealthStatus = 'ok' | 'degraded' | 'not_configured' | string
+
+export interface PlatformInfrastructureHealthVO {
+  generatedAt?: string | null
+  items: Array<{
+    key: string
+    label: string
+    status: PlatformInfrastructureHealthStatus
+    message?: string | null
+  }>
 }
 
 export interface HelpFaqVO {

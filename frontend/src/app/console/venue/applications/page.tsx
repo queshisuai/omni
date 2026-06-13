@@ -12,6 +12,14 @@ function formatVenueApplicationStatus(status: number) {
   return statusText[status] || '未知场馆审核状态'
 }
 
+function isKnownVenueApplicationStatus(status?: number | null) {
+  return status === 0 || status === 1 || status === 2
+}
+
+function isReviewableVenueApplicationStatus(status?: number | null) {
+  return status === 0
+}
+
 function formatSize(size?: number | null) {
   if (size === null || size === undefined) return '-'
   if (size < 1024) return `${size} B`
@@ -65,12 +73,26 @@ export default function VenueApplicationsPage() {
     loadData(u.userId)
   }, [])
 
-  const openReview = (id: number) => {
-    setReviewingId(id)
+  const openReview = (item: VenueApplicationVO) => {
+    if (!isReviewableVenueApplicationStatus(item.status)) {
+      setReviewingId(null)
+      setMessage('场馆审核状态待核对，请刷新后再操作')
+      return
+    }
+    setReviewingId(item.id)
     setMode('create')
     setVenueId('')
     setReviewNote('')
     setMessage('')
+  }
+
+  const confirmReviewableStatus = () => {
+    const reviewingApplication = applications.find(item => item.id === reviewingId)
+    if (!reviewingApplication || !isReviewableVenueApplicationStatus(reviewingApplication.status)) {
+      setMessage('场馆审核状态待核对，请刷新后再操作')
+      return false
+    }
+    return true
   }
 
   const downloadProofAsset = async (proofAsset: PrivateAssetVO) => {
@@ -106,6 +128,7 @@ export default function VenueApplicationsPage() {
 
   const handleApprove = async () => {
     if (!reviewingId) return
+    if (!confirmReviewableStatus()) return
     if (mode === 'link' && !venueId) {
       setMessage('请选择要关联的已有场馆')
       return
@@ -126,6 +149,7 @@ export default function VenueApplicationsPage() {
 
   const handleReject = async () => {
     if (!reviewingId) return
+    if (!confirmReviewableStatus()) return
     if (!reviewNote.trim()) {
       setMessage('驳回必须填写原因')
       return
@@ -189,7 +213,8 @@ export default function VenueApplicationsPage() {
               </div>
               <div className="flex flex-col items-start gap-2 sm:items-end">
                 <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{formatVenueApplicationStatus(item.status)}</span>
-                {item.status === 0 && <button onClick={() => openReview(item.id)} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white">审核</button>}
+                {isReviewableVenueApplicationStatus(item.status) && <button onClick={() => openReview(item)} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white">审核</button>}
+                {!isKnownVenueApplicationStatus(item.status) && <span className="text-[12px] text-[#ad6800]">状态待核对</span>}
               </div>
             </div>
 

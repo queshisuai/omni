@@ -7,6 +7,7 @@ import { globalConfirm } from '@/components/GlobalDialog'
 import { getUserInfo, listRbacPermissions, listRbacRoles, updateRbacRolePermissions } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import { buildRbacPermissionDiff, formatRbacPermissionDiffList } from '@/lib/rbac-permission-diff'
+import { getRbacRoleTemplatesForRole } from '@/lib/rbac-role-templates'
 import type { RbacPermissionVO, RbacRoleVO } from '@/types/api'
 
 function groupPermission(code: string) {
@@ -73,6 +74,12 @@ export default function ConsoleRolesPage() {
   const permissionNameByCode = useMemo(() => {
     return new Map(permissions.map(permission => [permission.code, permission.name]))
   }, [permissions])
+  const availablePermissionCodes = useMemo(() => {
+    return permissions.map(permission => permission.code)
+  }, [permissions])
+  const roleTemplates = useMemo(() => {
+    return getRbacRoleTemplatesForRole(selectedRoleCode, availablePermissionCodes)
+  }, [availablePermissionCodes, selectedRoleCode])
   const permissionChangePreview = useMemo(() => {
     return buildRbacPermissionDiff(originalPermissionCodes, selectedPermissionCodes, permissionNameByCode, {
       roleCode: selectedRoleCode,
@@ -96,6 +103,13 @@ export default function ConsoleRolesPage() {
         : [...existing, permissionCode]
       return { ...current, [selectedRoleCode]: next }
     })
+  }
+
+  const applyRoleTemplate = (templateName: string, permissionCodes: string[]) => {
+    if (!selectedRoleCode) return
+    setSelectedByRole(current => ({ ...current, [selectedRoleCode]: permissionCodes }))
+    setError('')
+    setMessage(`已套用${templateName}，请核对权限变更预览后保存`)
   }
 
   const saveRole = async () => {
@@ -202,6 +216,32 @@ export default function ConsoleRolesPage() {
           </div>
 
           <div className="space-y-5 p-5">
+            {roleTemplates.length > 0 && (
+              <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-[13px]">
+                <div className="font-semibold text-[#111]">套用角色模板</div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {roleTemplates.map(template => (
+                    <div key={template.code} className="rounded-lg border border-gray-100 bg-white p-3">
+                      <div className="text-[14px] font-semibold text-[#111]">{template.name}</div>
+                      <div className="mt-1 text-[12px] leading-5 text-gray-500">{template.description}</div>
+                      <div className="mt-2 text-[12px] text-gray-500">
+                        包含 {template.permissionCodes.length} 项权限
+                        {template.missingPermissionCodes.length > 0 ? `，${template.missingPermissionCodes.length} 项暂未启用` : ''}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => applyRoleTemplate(template.name, template.permissionCodes)}
+                        className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-[#ff1268] px-3 text-[13px] font-medium text-[#ff1268] hover:bg-[#fff0f5]"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                        套用模板
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className={`rounded-lg border px-4 py-3 text-[13px] ${permissionChangePreview.hasSensitiveChanges ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-gray-50'}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="font-semibold text-[#111]">权限变更预览</div>

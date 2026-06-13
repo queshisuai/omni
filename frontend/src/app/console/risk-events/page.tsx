@@ -50,6 +50,12 @@ function formatRiskResolutionSubmitLabel(status?: string | null) {
   return '提交恢复申请'
 }
 
+function formatRiskResolutionSubmitBlockedMessage(status?: string | null) {
+  if (!isKnownResolutionStatus(status)) return '恢复售票审核状态待核对，请刷新后再操作'
+  if (status === 'pending') return '当前恢复售票申请正在审核中，请刷新后再操作'
+  return ''
+}
+
 function formatDate(value?: string | null): string {
   if (!value) return ''
   const date = new Date(value)
@@ -116,6 +122,8 @@ export default function OrganizerRiskEventsPage() {
 
   const submit = async () => {
     if (!target) return
+    const blockedMessage = formatRiskResolutionSubmitBlockedMessage(latestResolutionByActivity.get(target.id)?.status)
+    if (blockedMessage) { await globalAlert(blockedMessage); return }
     if (!resolutionNote.trim()) { await globalAlert('处理说明不能为空'); return }
     setSubmitting(true)
     try {
@@ -155,7 +163,12 @@ export default function OrganizerRiskEventsPage() {
         <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">暂无风险事件，所有活动状态正常。</div>
       ) : (
         <>
-          <RiskList suspended={pageSuspended} latestResolutionByActivity={latestResolutionByActivity} onOpenDialog={(a) => { setTarget(a); setResolutionType('explain'); setResolutionNote('') }} />
+          <RiskList
+            suspended={pageSuspended}
+            latestResolutionByActivity={latestResolutionByActivity}
+            onBlocked={(message) => { void globalAlert(message) }}
+            onOpenDialog={(a) => { setTarget(a); setResolutionType('explain'); setResolutionNote('') }}
+          />
           <Pagination page={page} total={suspended.length} loading={loading} onChange={setPage} />
         </>
       )}
@@ -175,7 +188,12 @@ export default function OrganizerRiskEventsPage() {
   )
 }
 
-function RiskList({ suspended, latestResolutionByActivity, onOpenDialog }: { suspended: ActivityEntity[]; latestResolutionByActivity: Map<number, ActivityRiskResolutionVO>; onOpenDialog: (a: ActivityEntity) => void }) {
+function RiskList({ suspended, latestResolutionByActivity, onBlocked, onOpenDialog }: {
+  suspended: ActivityEntity[]
+  latestResolutionByActivity: Map<number, ActivityRiskResolutionVO>
+  onBlocked: (message: string) => void
+  onOpenDialog: (a: ActivityEntity) => void
+}) {
   return (
     <div className="space-y-3">
       {suspended.map((activity) => {
@@ -208,7 +226,8 @@ function RiskList({ suspended, latestResolutionByActivity, onOpenDialog }: { sus
               <div className="flex flex-shrink-0 flex-col items-end gap-2">
                 <button
                   onClick={() => {
-                    if (!canSubmitResolution) return
+                    const blockedMessage = formatRiskResolutionSubmitBlockedMessage(latest?.status)
+                    if (blockedMessage) { onBlocked(blockedMessage); return }
                     onOpenDialog(activity)
                   }}
                   disabled={!canSubmitResolution}

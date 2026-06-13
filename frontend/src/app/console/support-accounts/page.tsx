@@ -21,6 +21,14 @@ function formatSupportRole(role: string | null | undefined) {
   return supportRoleOptions.find(option => option.value === role)?.label || '未知客服角色'
 }
 
+function isKnownSupportAccountStatus(status: number | null | undefined) {
+  return status === 1 || status === 0
+}
+
+function isEnabledSupportAccountStatus(status: number | null | undefined) {
+  return status === 1
+}
+
 function formatSupportAccountStatus(status: number | null | undefined) {
   if (status === 1) return '启用中'
   if (status === 0) return '已停用'
@@ -31,6 +39,10 @@ function formatSupportAccountStatusAction(status: number | null | undefined) {
   if (status === 1) return '停用'
   if (status === 0) return '启用'
   return '状态待核对'
+}
+
+function canToggleSupportAccountStatus(status: number | null | undefined) {
+  return isKnownSupportAccountStatus(status)
 }
 
 export default function SupportAccountsPage() {
@@ -90,13 +102,13 @@ export default function SupportAccountsPage() {
   const toggleStatus = async (account: SupportAccountVO) => {
     setMessage('')
     setError('')
-    if (account.status !== 1 && account.status !== 0) {
-      setError('账号状态未知，请先核对后再操作')
+    if (!canToggleSupportAccountStatus(account.status)) {
+      setError('账号状态待核对，请刷新后再操作')
       return
     }
     setSaving(true)
     try {
-      if (account.status === 1) {
+      if (isEnabledSupportAccountStatus(account.status)) {
         await deactivateSupportAccount(account.id)
         setMessage('客服账号已停用，历史会话仍保留')
       } else {
@@ -142,6 +154,10 @@ export default function SupportAccountsPage() {
   const startEdit = (account: SupportAccountVO) => {
     setMessage('')
     setError('')
+    if (!isKnownSupportAccountStatus(account.status)) {
+      setError('账号状态待核对，请刷新后再操作')
+      return
+    }
     setEditingId(account.id)
     setEditForm({
       phone: account.phone,
@@ -285,10 +301,10 @@ export default function SupportAccountsPage() {
                   </button>
                   <button
                     onClick={() => toggleStatus(account)}
-                    disabled={saving || (account.status !== 1 && account.status !== 0)}
+                    disabled={saving || !canToggleSupportAccountStatus(account.status)}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {account.status === 1 ? <ShieldOff className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                    {isEnabledSupportAccountStatus(account.status) ? <ShieldOff className="h-4 w-4" /> : isKnownSupportAccountStatus(account.status) ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
                     {formatSupportAccountStatusAction(account.status)}
                   </button>
                   <button

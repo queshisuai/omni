@@ -93,6 +93,18 @@ function reportStatusLabel(status: string) {
   return '未知举报状态'
 }
 
+function isKnownReportStatus(value?: string | null) {
+  return value === 'PENDING' || value === 'RESOLVED' || value === 'REJECTED'
+}
+
+function canResolveReport(value?: string | null) {
+  return value === 'PENDING'
+}
+
+function canRejectReport(value?: string | null) {
+  return value === 'PENDING'
+}
+
 export default function ActivityEngagementConsolePage() {
   const [activeTab, setActiveTab] = useState<TabKey>('reviews')
   const [reviews, setReviews] = useState<ActivityReviewVO[]>([])
@@ -157,11 +169,20 @@ export default function ActivityEngagementConsolePage() {
     questions: questions.length,
   }), [questions.length, reports.length, reviews.length])
 
-  const handleReviewAction = async (reviewId: number | null | undefined, action: 'APPROVE' | 'HIDE' | 'RESTORE') => {
-    if (!reviewId) return
-    setActingId(`review-${reviewId}`)
+  const handleReviewAction = async (review: ActivityReviewVO, action: 'APPROVE' | 'HIDE' | 'RESTORE') => {
+    if (!review.id) return
+    const canAct = action === 'APPROVE'
+      ? canApproveReview(review.status)
+      : action === 'HIDE'
+        ? canHideReview(review.status)
+        : canRestoreReview(review.status)
+    if (!canAct) {
+      await globalAlert('评价状态待核对，请刷新后再操作')
+      return
+    }
+    setActingId(`review-${review.id}`)
     try {
-      await moderateAdminActivityReview(reviewId, action)
+      await moderateAdminActivityReview(review.id, action)
       await loadReviews()
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '处理评价失败')
@@ -170,11 +191,16 @@ export default function ActivityEngagementConsolePage() {
     }
   }
 
-  const handleReportAction = async (reportId: number | null | undefined, action: 'RESOLVE' | 'REJECT') => {
-    if (!reportId) return
-    setActingId(`report-${reportId}`)
+  const handleReportAction = async (report: ActivityReviewReportVO, action: 'RESOLVE' | 'REJECT') => {
+    if (!report.id) return
+    const canAct = action === 'RESOLVE' ? canResolveReport(report.status) : canRejectReport(report.status)
+    if (!canAct) {
+      await globalAlert('举报状态待核对，请刷新后再操作')
+      return
+    }
+    setActingId(`report-${report.id}`)
     try {
-      await moderateAdminActivityReviewReport(reportId, action)
+      await moderateAdminActivityReviewReport(report.id, action)
       await loadReports()
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '处理举报失败')
@@ -185,6 +211,10 @@ export default function ActivityEngagementConsolePage() {
 
   const handleQuestionAnswer = async (question: ActivityQuestionVO) => {
     if (!question.id) return
+    if (!canAnswerQuestion(question.status)) {
+      await globalAlert('问答状态待核对，请刷新后再操作')
+      return
+    }
     const answer = (answerDrafts[question.id] || question.answer || '').trim()
     if (!answer) {
       await globalAlert('请填写回复内容')
@@ -202,11 +232,16 @@ export default function ActivityEngagementConsolePage() {
     }
   }
 
-  const handleQuestionAction = async (questionId: number | null | undefined, action: 'HIDE' | 'RESTORE') => {
-    if (!questionId) return
-    setActingId(`question-${questionId}`)
+  const handleQuestionAction = async (question: ActivityQuestionVO, action: 'HIDE' | 'RESTORE') => {
+    if (!question.id) return
+    const canAct = action === 'HIDE' ? canHideQuestion(question.status) : canRestoreQuestion(question.status)
+    if (!canAct) {
+      await globalAlert('问答状态待核对，请刷新后再操作')
+      return
+    }
+    setActingId(`question-${question.id}`)
     try {
-      await moderateAdminActivityQuestion(questionId, { action })
+      await moderateAdminActivityQuestion(question.id, { action })
       await loadQuestions()
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '处理问题失败')
@@ -277,9 +312,9 @@ export default function ActivityEngagementConsolePage() {
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[12px] text-gray-400">
                     <span>用户编号：{review.userId} · {formatTime(review.createTime)}</span>
                     <div className="flex flex-wrap gap-2">
-                      {canApproveReview(review.status) && <button disabled={actingId === `review-${review.id}`} onClick={() => void handleReviewAction(review.id, 'APPROVE')} className="rounded border border-[#ff1268] px-3 py-1 text-[#ff1268] disabled:opacity-60">通过</button>}
-                      {canHideReview(review.status) && <button disabled={actingId === `review-${review.id}`} onClick={() => void handleReviewAction(review.id, 'HIDE')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">隐藏</button>}
-                      {canRestoreReview(review.status) && <button disabled={actingId === `review-${review.id}`} onClick={() => void handleReviewAction(review.id, 'RESTORE')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">恢复展示</button>}
+                      {canApproveReview(review.status) && <button disabled={actingId === `review-${review.id}`} onClick={() => void handleReviewAction(review, 'APPROVE')} className="rounded border border-[#ff1268] px-3 py-1 text-[#ff1268] disabled:opacity-60">通过</button>}
+                      {canHideReview(review.status) && <button disabled={actingId === `review-${review.id}`} onClick={() => void handleReviewAction(review, 'HIDE')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">隐藏</button>}
+                      {canRestoreReview(review.status) && <button disabled={actingId === `review-${review.id}`} onClick={() => void handleReviewAction(review, 'RESTORE')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">恢复展示</button>}
                       {!isKnownReviewStatus(review.status) && <span className="rounded border border-[#ffd591] bg-[#fff7e6] px-3 py-1 text-[#ad6800]">状态待核对</span>}
                     </div>
                   </div>
@@ -312,12 +347,13 @@ export default function ActivityEngagementConsolePage() {
                   <p className="text-[13px] leading-6 text-gray-600">{report.reason}</p>
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[12px] text-gray-400">
                     <span>举报用户编号：{report.userId} · {formatTime(report.createTime)}</span>
-                    {report.status === 'PENDING' && (
+                    {(canResolveReport(report.status) || canRejectReport(report.status)) && (
                       <div className="flex flex-wrap gap-2">
-                        <button disabled={actingId === `report-${report.id}`} onClick={() => void handleReportAction(report.id, 'RESOLVE')} className="rounded border border-[#ff1268] px-3 py-1 text-[#ff1268] disabled:opacity-60">确认并隐藏评价</button>
-                        <button disabled={actingId === `report-${report.id}`} onClick={() => void handleReportAction(report.id, 'REJECT')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">驳回举报</button>
+                        {canResolveReport(report.status) && <button disabled={actingId === `report-${report.id}`} onClick={() => void handleReportAction(report, 'RESOLVE')} className="rounded border border-[#ff1268] px-3 py-1 text-[#ff1268] disabled:opacity-60">确认并隐藏评价</button>}
+                        {canRejectReport(report.status) && <button disabled={actingId === `report-${report.id}`} onClick={() => void handleReportAction(report, 'REJECT')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">驳回举报</button>}
                       </div>
                     )}
+                    {!isKnownReportStatus(report.status) && <span className="rounded border border-[#ffd591] bg-[#fff7e6] px-3 py-1 text-[#ad6800]">状态待核对</span>}
                   </div>
                 </article>
               ))}
@@ -356,8 +392,8 @@ export default function ActivityEngagementConsolePage() {
                     <span>{formatTime(question.createTime)}</span>
                     <div className="flex flex-wrap gap-2">
                       {canAnswerQuestion(question.status) && <button disabled={actingId === `question-${question.id}`} onClick={() => void handleQuestionAnswer(question)} className="rounded border border-[#ff1268] px-3 py-1 text-[#ff1268] disabled:opacity-60">保存回复</button>}
-                      {canHideQuestion(question.status) && <button disabled={actingId === `question-${question.id}`} onClick={() => void handleQuestionAction(question.id, 'HIDE')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">隐藏</button>}
-                      {canRestoreQuestion(question.status) && <button disabled={actingId === `question-${question.id}`} onClick={() => void handleQuestionAction(question.id, 'RESTORE')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">恢复</button>}
+                      {canHideQuestion(question.status) && <button disabled={actingId === `question-${question.id}`} onClick={() => void handleQuestionAction(question, 'HIDE')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">隐藏</button>}
+                      {canRestoreQuestion(question.status) && <button disabled={actingId === `question-${question.id}`} onClick={() => void handleQuestionAction(question, 'RESTORE')} className="rounded border border-gray-200 px-3 py-1 text-gray-600 disabled:opacity-60">恢复</button>}
                       {!isKnownQuestionStatus(question.status) && <span className="rounded border border-[#ffd591] bg-[#fff7e6] px-3 py-1 text-[#ad6800]">状态待核对</span>}
                     </div>
                   </div>

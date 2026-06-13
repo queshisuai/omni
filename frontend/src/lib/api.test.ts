@@ -308,6 +308,9 @@ test('loads platform operations summary through user console aggregate endpoint'
         refund: { totalCount: 2, abnormalCount: 1 },
         grab: { failureReasons: [], waitlist: { totalCount: 10, paidCount: 4, conversionRate: 0.4 } },
         workbench: { pendingExceptionCount: 1, latestBatch: null, latestAudit: null },
+        infrastructureHealth: {
+          items: [{ key: 'nacos', label: 'Nacos 注册中心', status: 'ok', message: 'Nacos 控制台可达' }],
+        },
         errors: [],
       },
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -319,6 +322,7 @@ test('loads platform operations summary through user console aggregate endpoint'
     assert.equal(requestedUrl, '/api/user/console/ops-summary')
     assert.equal(result.funnelSteps[0].key, 'paid')
     assert.equal(result.workbench.pendingExceptionCount, 1)
+    assert.equal(result.infrastructureHealth?.items[0].label, 'Nacos 注册中心')
   } finally {
     globalThis.fetch = originalFetch
   }

@@ -15,6 +15,14 @@ export function formatArtistListReviewStatus(status?: string | null) {
   }
 }
 
+export function isKnownArtistReviewStatus(status?: string | null) {
+  return status === 'pending' || status === 'approved' || status === 'rejected'
+}
+
+export function isReviewableArtistReviewStatus(status?: string | null) {
+  return status === 'pending'
+}
+
 export function getArtistListReviewTone(status?: string | null): ArtistListStatusTone {
   switch (status) {
     case 'approved':

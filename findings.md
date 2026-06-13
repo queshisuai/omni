@@ -1050,3 +1050,194 @@
 - 权限变更审计不能信任前端提交的差异摘要；更稳妥的口径是在 `java-user` 的 `RbacAdminService` 内部读取更新前 `rbac_role_permission`，再基于规范化后的新权限集合计算新增/移除，并由后端权限表补中文权限名。
 - `platform_super_admin` 的保存语义要继续以权限表全量为准，而不是以请求体为准；审计摘要也应展示强制归一后的更新后权限数，避免最高权限角色被部分请求体误导。
 - 最后一个 `rbac.manage` 角色保护仍必须发生在写入前；新增审计明细不能绕过既有权限边界保护，也不需要新增数据库字段或跨服务审计写入链路。
+
+## 2026-06-12 阶段 13 RBAC 模板发现：角色模板只能辅助选择，不能替代保存审计
+
+- 角色模板适合作为 `/console/roles` 的前端选择辅助，第一轮不需要新增模板表或后端模板 API；否则会把一个低频运营便利项扩大成新的权限配置持久化边界。
+- 模板权限必须按当前 `rbac_permission` 返回结果取交集，不能把迁移未启用、已下线或未来才存在的权限码写进保存请求。
+- `platform_super_admin` 不应套用模板；该角色由后端强制保存全部权限，前端模板如果允许部分套用，会制造“看似降权但后端归一”的误解。
+- 套用模板只能改变页面勾选状态，不能直接触发保存；管理员仍需要通过权限变更预览、敏感权限二次确认和后端真实差异审计完成最终授权。
+
+## 2026-06-12 阶段 13 操作审计发现：筛选入口应显示中文但保留后端码值
+
+- `/console/audit-logs` 的列表展示已经能把审计动作和对象类型映射为中文，但筛选区如果仍要求输入 `action` / `targetType` 自由文本，后台人员仍需要记住后端码值，中文化只完成了一半。
+- 更稳妥的做法是复用同一套 `operation-display` 映射生成筛选选项：下拉框显示“更新角色权限 / 创建票档 / 角色权限 / 票档”等中文业务标签，选中后仍把 `rbac.role_permission.update`、`ticket_type` 等原值传给后端，避免改变接口契约。
+- 审计筛选选项不应伪造未知动作；后端新增审计动作后，如果前端还没有中文映射，应先在展示层显示“未知操作 / 未知对象”，并在映射补齐后进入筛选下拉，避免把未解释码值重新暴露给后台人员。
+- 本机 Docker 前端开发服务可能继续渲染旧 `.next/dev` 产物；源码已包含下拉框但浏览器仍显示“动作”文本框时，可挪走 `omni-frontend` 容器内 `/app/.next/dev` 并重启容器后复测。
+
+## 2026-06-12 阶段 13 操作审计发现：同一 targetRef 字段可能承载不同业务语义
+
+- `organizer_ops_assignment` 的审计 `targetRef` 在当前主链路中可以是负责人编号，但历史/种子记录里也可能保存风险等级，例如 `high`、`watch`；前端如果只按“非数字就是跟进类型”处理，就会把风险等级误显示为“跟进类型：high / watch”。
+- 展示层应按业务语义从强到弱识别：纯数字显示“负责人编号”，已知风险等级显示“风险等级：高风险 / 关注 / 正常”，最后才把已知跟进类型显示为“跟进类型：内部备注 / 电话沟通”等。
+- 这种治理不应该反向修改历史审计数据，也不需要改后端写入链路；审计记录是事实留痕，前端负责把已知历史码值解释成稳定中文语境。
+
+## 2026-06-12 阶段 13 操作审计发现：对象类型映射要覆盖实际审核场景
+
+- 审计动作有中文映射不代表整行展示已经完成中文化；例如 `ARTIST_REVIEW` 已显示“审核艺人档案”，但 targetType `artist` 如果缺少映射，列表仍会显示“未知对象”。
+- 对象类型映射应覆盖实际审计数据里的 targetType，并同步进入筛选下拉；下拉 label 使用中文业务语境，value 仍保留后端原始码值，避免改变查询契约。
+- 历史或种子审计里的 `targetRef` 如果已经是“艺人档案审核”这类业务文本，可继续原样展示；本轮治理点是补齐 targetType label，而不是反向修改审计数据。
+
+## 2026-06-12 阶段 13 异常任务发现：新建入口应复用列表类型映射
+
+- 异常任务列表已经通过 `formatExceptionTaskType()` 能把 `PAYMENT_TIMEOUT`、`REFUND_UNKNOWN`、`TICKET_ISSUE` 等历史类型显示为中文，但新建任务下拉如果单独硬编码一组小写类型，就会和本地真实队列语义脱节。
+- 任务类型选项应从同一套 `EXCEPTION_TASK_TYPE_LABELS` 生成，既覆盖历史大写类型，也保留当前小写类型；展示中文标签，提交时仍使用后端码值，避免改动接口契约。
+- 这种入口治理不需要迁移历史异常任务数据；它解决的是后台人员创建任务时可选择的业务语义范围，而不是改变已有任务的事实记录。
+
+## 2026-06-12 阶段 13 对账发现：历史批次码值需要展示层兼容
+
+- 当前 `ReconciliationService` 新生成批次更多使用小写码值，例如 `payment/refund/matched/amount_mismatch`；但本地真实 seed 批次 `REAL-DEMO-20260603` 仍包含历史大写和旧状态码：`ORDER`、`REFUND`、`different`、`REFUND_AMOUNT_MISMATCH`。
+- 后台中文化不能只覆盖新生成码值；对账页详情和导出需要解释历史批次，否则真实演示数据会显示“未知业务类型 / 未知对账明细状态 / 未知差异类型”，影响运营复核。
+- 更稳妥的做法是在共享 `operation-display` formatter 里兼容大小写并补历史别名，页面和 CSV/Excel 导出继续复用同一套映射；不需要迁移历史对账数据，也不应反向修改审计或对账事实记录。
+- Docker 前端开发服务仍可能在 helper 修改后继续使用旧 `.next/dev` 产物；对账页详情如果源码已更新但页面仍显示未知文案，应挪走容器内 `/app/.next/dev` 并重启 `omni-frontend` 后复测。
+
+## 2026-06-12 阶段 13 对账发现：summary key 已存在中英文两套来源
+
+- `java-payment` 的对账 source summary 使用中文 key：`业务日期`、`支付笔数`、`支付金额`、`退款笔数`、`退款金额`、`净额`、`差异数`；`java-user` 在空数据 fallback 时也会生成同类中文 key。
+- 历史 real-demo seed 仍使用英文 key：`paidOrderCount`、`refundAbnormalCount`、`diffCount`。因此展示层必须同时兼容中英文 key，不能只把英文 camelCase 当作唯一来源。
+- 已经是中文的后端 summary key 不应被替换成“其他指标”；“其他指标”只适合未识别的新字段，真实已知字段应保留明确业务含义，方便后台人员快速判断支付、退款、净额和差异数量。
+
+## 2026-06-12 阶段 13 站点配置发现：审核页需要展示状态并保护非待审核记录
+
+- `station_config_version.status` 本地真实值包含 `draft`、`submitted`、`approved`、`rejected`、`applied` 等；审核页虽然当前只查询 `submitted`，但展示层此前没有共享状态 formatter，也没有对未来或非待审核状态的操作区保护。
+- 站点配置状态应和变更类型一样收口到 `operation-display`，已知值显示“草稿 / 待审核 / 已通过 / 已应用 / 已驳回 / 已撤回”，未知值显示“未知配置状态”，避免直接回显后端码值。
+- 审核写动作只应对 `submitted` 开放；非待审核或未来状态应显示“状态待核对”，事件入口也要阻断通过/驳回，避免后端新增状态时前端误开放高风险审核动作。
+
+## 2026-06-12 阶段 13 异常任务发现：操作区应显式处理未知状态
+
+- 异常任务列表已经能通过 `formatExceptionStatus()` 把已知状态显示为中文，但操作列如果只按 `pending/processing/resolved/closed` 写 JSX 分支，未来状态会落成空白操作区，后台人员无法判断是已结束、无权限还是状态异常。
+- 待处理和高优先级统计不应简单使用“不是 `resolved/closed`”作为未结束口径；未知状态应先进入“状态待核对”，不能被计入可处理任务数量，避免运营人员误判待办压力。
+- 认领、标记已处理和关闭入口都应复用共享状态 guard：`pending` 才可认领和关闭，`processing` 才可标记已处理和关闭，未知或未来状态在事件入口直接返回“任务状态待核对，请刷新后再操作”。这样后端新增状态时，前端默认不开放写动作。
+- 当前本地真实样本没有未知异常任务状态，浏览器页只能验证已知状态渲染与 console；未知状态保护应主要由单元测试和构建产物文案检查留证，不应为了演示去写入临时异常任务数据。
+
+## 2026-06-12 阶段 13 评价举报发现：中文状态映射不等于操作保护完成
+
+- `/console/activity-engagement` 的举报列表已有 `reportStatusLabel()`，未知状态会显示“未知举报状态”；但如果操作区仍只写 `report.status === 'PENDING'`，未知状态会静默没有操作说明，后台人员无法区分“已结束”和“状态异常”。
+- 举报处理和驳回属于写动作，不能只靠按钮显隐保护。事件入口应接收完整 report 并再次检查状态；只有 `PENDING` 可处理或驳回，未知或未来状态应弹出“举报状态待核对，请刷新后再操作”。
+- 评价、举报、问答三个 moderation 区块应保持一致：已知可操作状态显示对应按钮，未知状态显示“状态待核对”；不要只在部分 tab 做未知状态提示，避免同一管理页出现不一致治理口径。
+- 当前本地举报样本是 `PENDING`，浏览器可验证已知状态渲染、裸码隐藏和 console；未知状态保护仍以源代码测试和 `.next/dev` chunk 文案检查作为留证，不应为了验证去写入临时举报状态。
+
+## 2026-06-12 阶段 13 场馆资料审核发现：中文状态兜底不等于审核写动作保护
+
+- `/console/venue/applications` 已能对未知 `status` 显示“未知场馆审核状态”，但操作区此前仍直接用 `item.status === 0` 决定是否打开审核，`openReview()` 只收 `id`，`handleApprove()` 和 `handleReject()` 只检查 `reviewingId`。
+- 场馆资料审核会创建或关联场馆记录，属于平台写动作；未知或未来状态不应静默空操作区，也不应在状态变化后继续提交通过/驳回。
+- 更稳妥的口径是集中到 `isKnownVenueApplicationStatus()` 和 `isReviewableVenueApplicationStatus()`：只有 `status=0` 开放审核，未知状态显示“状态待核对”，事件入口和提交入口统一返回“场馆审核状态待核对，请刷新后再操作”。
+- 当前本地场馆审核样本只有已知 `待审核` 状态，浏览器只验证真实样本渲染和 console；未知状态保护用源代码测试和 `.next/dev` chunk 检查留证，不为演示写临时审核状态数据。
+
+## 2026-06-12 阶段 13 主办方入驻发现：按钮禁用不等于未知状态审核保护
+
+- `/console/organizer-applications` 已能对未知入驻申请 `status` 显示“未知入驻状态”，但通过/驳回按钮此前仍靠 `item.status !== 0` 禁用，事件入口只接收申请 `id`，没有在写动作入口复核状态。
+- 入驻审核会改变用户角色和主办方资格，属于高影响写动作；未知或未来状态不应只表现为按钮禁用，后台人员需要看到“状态待核对”，事件入口也要返回明确中文拦截文案。
+- 更稳妥的口径是集中到 `isKnownOrganizerApplicationStatus()` 和 `isReviewableOrganizerApplicationStatus()`：只有 `status=0` 开放通过/驳回，未知状态显示“状态待核对”，事件入口统一返回“入驻审核状态待核对，请刷新后再操作”。
+- 当前本地主办方入驻样本是已知状态组合，浏览器只验证真实列表渲染和 console；未知状态保护用源代码测试和 `.next/dev` chunk 检查留证，不为演示写临时入驻状态数据。
+
+## 2026-06-12 阶段 13 恢复售票审核发现：未知状态不能只靠待审核分支排除
+
+- `/console/risk-resolutions` 已能对未知恢复售票审核 `status` 显示“未知审核状态”，但操作区此前仍用 `item.status === 'pending'` 判断是否展示通过/拒绝入口，事件入口只接收申请 `id`。
+- 恢复售票审核会解除风险停售，属于高影响平台写动作；未知或未来状态应显示“状态待核对”，并在事件入口基于完整申请记录再次校验，不能只依赖 JSX 分支隐藏按钮。
+- 更稳妥的口径是集中到 `isKnownRiskResolutionStatus()` 和 `isReviewableRiskResolutionStatus()`：只有 `pending` 开放通过/拒绝，未知状态显示“状态待核对”，事件入口统一返回“恢复售票审核状态待核对，请刷新后再操作”。
+- 当前本地恢复售票审核样本是已知状态，浏览器只验证真实列表渲染和 console；未知状态保护用源代码测试和 `.next/dev` chunk 检查留证，不为演示写临时恢复申请状态数据。
+
+## 2026-06-12 阶段 13 主办方取消发现：入驻审核通过不等于主办方状态可取消
+
+- `/console/organizer-applications` 的“取消主办方”此前只检查入驻申请 `status === 1` 和是否已经降级为 `role=user`，但主办方账号自身 `organizerStatus` 已经有“未知主办方状态”兜底展示。
+- 取消主办方会下架活动、触发真实退款链路并降级角色，属于高影响写动作；如果 `organizerStatus` 是未来值或数据待同步，不能仅因为入驻申请已通过就开放取消入口。
+- 更稳妥的口径是集中到 `isKnownOrganizerStatus()` 和 `canDeactivateOrganizerAccount()`：只有入驻已通过且 `organizerStatus=1` 的有效主办方可取消，未知状态显示“状态待核对”，事件入口返回“主办方状态待核对，请刷新后再操作”。
+- 当前本地主办方入驻样本为已知主办方状态，浏览器只验证真实列表渲染和 console；未知状态保护用源代码测试和 `.next/dev` chunk 检查留证，不为演示写临时主办方状态数据。
+
+## 2026-06-12 阶段 13 对账差异发现：未知差异状态不能显示为已结束
+
+- `/console/reconciliation` 的差异状态已能通过 `formatReconciliationDifferenceStatus()` 显示“未知对账差异状态”，但操作列此前把非 `open` 的状态统一落到“已结束”，会把未来状态或数据待同步误解释为已完成处理。
+- 对账差异的“标记已处理 / 忽略”属于对账复核写动作；事件入口不应只收差异编号，应基于完整差异记录复核状态，只有 `open` 可写。
+- 更稳妥的口径是集中到 `isKnownReconciliationDifferenceStatus()` 和 `isOpenReconciliationDifferenceStatus()`：`open` 显示处理/忽略，`resolved/ignored` 显示“已结束”，未知或未来状态显示“状态待核对”，事件入口返回“对账差异状态待核对，请刷新后再操作”。
+- 当前本地对账差异样本为已知状态，浏览器只验证真实详情渲染和 console；未知状态保护用源代码测试和 `.next/dev` chunk 检查留证，不为演示写临时对账差异状态数据。
+
+## 2026-06-12 阶段 13 艺人档案审核发现：待审核接口不等于写动作状态保护
+
+- `/console/artists/pending` 虽然调用的是待审核艺人接口，但页面此前没有展示 `reviewStatus`，通过/拒绝/标记风险事件入口也只接收 `artistId`，默认信任列表来源永远只返回待审核记录。
+- 艺人审核和标记风险会影响活动上架与售票拦截，属于后台治理写动作；如果后端未来返回迁移中、已处理或未知审核状态，前端不能只靠接口名称假设可写。
+- 更稳妥的口径是复用 `console-artists` 中的 `isKnownArtistReviewStatus()` 和 `isReviewableArtistReviewStatus()`：只有 `pending` 开放通过、拒绝和标记风险；未知或未来状态显示“状态待核对”，事件入口返回“艺人审核状态待核对，请刷新后再操作”。
+- 当前本地艺人审核样本为已知 `待审核` 状态，浏览器只验证真实列表渲染、中文状态和 console；未知状态保护用源代码测试和 `.next/dev` chunk 检查留证，不为演示写临时艺人审核状态数据。
+
+## 2026-06-12 阶段 13 评价问答发现：按钮显隐不等于事件入口状态保护
+
+- `/console/activity-engagement` 的评价审核和购前问答已经通过 `canApproveReview()`、`canHideReview()`、`canRestoreReview()`、`canAnswerQuestion()`、`canHideQuestion()`、`canRestoreQuestion()` 控制按钮显隐，但事件入口此前仍只接收 `review.id` 或 `question.id`。
+- moderation 写动作不能只依赖 JSX 当前渲染分支；如果列表状态在渲染后被刷新、后端返回未来状态，或后续代码复用处理函数，按编号直接调用会绕过状态语义检查。
+- 更稳妥的口径是让评价和问答处理函数接收完整记录，在调用 `moderateAdminActivityReview()` / `moderateAdminActivityQuestion()` 前再次按 action 复核状态；未知或不可操作状态分别返回“评价状态待核对，请刷新后再操作”和“问答状态待核对，请刷新后再操作”。
+- 当前本地真实样本为已知 `待审核` 评价，浏览器验证真实渲染、tab、操作入口和 console；未知状态保护用源代码测试和 `.next/dev` chunk 文案检查留证，不为演示写临时评价或问答异常状态数据。
+
+## 2026-06-12 阶段 13 平台主办方运营员发现：未知账号状态不能进入编辑或启停
+
+- `/console/organizer-admins` 已能把未知账号状态显示为“未知账号状态”，启停按钮文案也会显示“状态待核对”，但编辑入口此前仍会把未知 `status` 放进编辑表单，启停入口的旧拦截文案也不是统一待核对口径。
+- 平台主办方运营员账号影响主办方管理权限边界；当账号状态是未来值或数据待同步时，不应允许编辑表单携带未知 status 保存，也不应把未知状态的启停按钮图标落到“启用”勾选图标。
+- 更稳妥的口径是集中到 `isKnownOrganizerAdminAccountStatus()`、`isEnabledOrganizerAdminAccountStatus()` 和 `canToggleOrganizerAdminAccountStatus()`：只有 `status=0/1` 可进入编辑和启停，未知状态返回“账号状态待核对，请刷新后再操作”。
+- 当前本地平台主办方运营员账号样本为已知 `启用中` 状态，浏览器验证真实列表和 console；未知状态保护用源代码测试和 `.next/dev` chunk 检查留证，不为演示写临时账号状态数据。
+
+## 2026-06-13 阶段 13 客服账号发现：未知账号状态不应进入编辑或启停
+
+- `/console/support-accounts` 已经能把未知客服账号 `status` 显示为“未知账号状态”，启停按钮文案也会显示“状态待核对”，但此前编辑入口仍可能把未知 `status` 带入编辑表单，启停入口的旧拦截文案也不是统一的待核对刷新口径。
+- 客服账号状态影响客服主管对账号启用、停用和资料维护的权限边界；当后端新增未来状态或数据正在同步时，不应允许编辑表单携带未知状态保存，也不应把未知状态按钮图标落到“启用”勾选图标。
+- 更稳妥的口径是集中到 `isKnownSupportAccountStatus()`、`isEnabledSupportAccountStatus()` 和 `canToggleSupportAccountStatus()`：只有 `status=0/1` 可进入编辑和启停，未知状态返回“账号状态待核对，请刷新后再操作”。
+- 当前本地客服账号样本均为已知状态，真实页面验证只覆盖已知状态渲染和登录态访问；未知状态保护用源代码测试和 `.next/dev` chunk 检查留证，不为演示写临时客服账号状态数据。
+
+## 2026-06-13 本地前端发现：127.0.0.1 访问会触发 Next dev HMR origin 拦截
+
+- 使用 `http://127.0.0.1:3000` 访问前端时，浏览器 console 会出现 `WebSocket connection to 'ws://127.0.0.1:3000/_next/webpack-hmr...' failed: Error during WebSocket handshake: net::ERR_INVALID_HTTP_RESPONSE`。
+- 根因不是业务接口失败，也不是 Docker 端口未转发：`curl`、容器内请求和 Node 原生 WebSocket 均能到达 `/_next/webpack-hmr`；`omni-frontend` 日志明确给出 `Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr from "127.0.0.1"`。
+- 本地浏览器验收如果使用 `127.0.0.1`，`next.config.ts` 需要设置 `allowedDevOrigins: ['127.0.0.1']` 并重启 dev server；否则 HMR WebSocket 错误会污染 console，并可能让页面验收状态判断失真。
+
+## 2026-06-13 阶段 13 退款审核发现：单条审核弹窗也需要提交前状态复核
+
+- `/console/refunds` 已经能显示未知退款状态、使用待核对样式，并且批量处理会过滤未知或不可处理状态；但单条审核此前的 draft 只保存 `id/action/note`，打开备注弹窗后如果列表状态变化，提交时仍可能按旧动作调用 `approveRefund()` 或 `rejectRefund()`。
+- 退款审核属于资金相关写动作，按钮显隐和打开弹窗时的状态判断不足以覆盖“打开后状态刷新 / 后端返回未来状态 / 代码复用 submitReview”这类路径。
+- 更稳妥的口径是集中到 `canApplyConsoleRefundReviewAction(status, action)`：待审核 `status=0` 可同意或拒绝，处理中 `status=4` 只可同意/重试，已退款、已拒绝、退款失败、未知或未来状态都不能进入对应单条审核动作。
+- 提交备注前应通过 `refunds.find(refund => refund.id === draft.id)` 找到当前记录再复核；记录不存在或状态不匹配时返回“退款状态待核对，请刷新后再操作”，并关闭 draft，不调用退款写接口。
+
+## 2026-06-13 阶段 13 帮助中心发现：C 端发送入口也需要未知会话状态保护
+
+- `/support` 客服工作台已经通过 `canEditSupportConversation()`、`canReplySupportConversation()` 和 `formatSupportConversationWriteBlockedMessage()` 保护未知会话状态，但 `/help` 此前仍直接用 `conversation?.status === 'CLOSED'` 控制输入框和发送按钮。
+- C 端在线客服发送会创建或追加客服消息，属于用户可见写动作；当后端新增未来会话状态或当前会话状态待同步时，不能只把非 `CLOSED` 都当作可发送。
+- 更稳妥的口径是 `/help` 没有会话时允许创建新会话；已有会话时复用 `canEditSupportConversation(status)`，仅允许已知且未结束状态继续发送，未知状态通过 `formatSupportConversationWriteBlockedMessage(status)` 返回“会话状态待核对，请刷新后再操作”。
+- 当前真实 `/help` 页面样本只适合做只读加载和 console 验证；未知会话状态保护用源码入口测试和共享 helper 测试留证，不为演示写入临时客服会话状态。
+
+## 2026-06-13 阶段 13 帮助中心发现：确认结束也不能只靠按钮显示条件保护
+
+- `/help` 的确认结束会话按钮此前只在 `conversation?.status === 'CLOSE_REQUESTED'` 时渲染，但 `confirmClose()` 事件入口只检查 `conversation` 和 `loading`，没有在调用 `confirmCloseSupportConversation()` 前复核当前会话状态。
+- 确认结束会改变客服会话状态，属于用户可见写动作；如果页面渲染后状态被轮询刷新、后端返回未来状态，或后续代码复用 `confirmClose()`，只靠 JSX 显隐不足以保护写接口。
+- 更稳妥的口径是新增 `canConfirmSupportConversationClose(status)`：只有 `CLOSE_REQUESTED` 可确认结束；未知状态复用“会话状态待核对，请刷新后再操作”，已知但不可确认状态显示“当前会话暂不能结束，请刷新后再操作”。
+- 当前真实 `/help` 页面验证只覆盖加载和 console；确认结束状态二次保护用 helper 单测与页面入口静态测试留证，验证过程中不点击确认结束写动作。
+
+## 2026-06-13 阶段 13 帮助中心发现：转人工入口也不能静默跳过不可写状态
+
+- `/help` 的转人工按钮已经通过 `formatSupportHandoffActionLabel()` 对未知状态显示“状态待核对”，按钮禁用条件也复用 `canRequestSupportHandoff()`；但 `handoff()` 事件入口此前在 `!conversation || !canRequestSupportHandoff(conversation)` 时直接静默返回。
+- 转人工会把会话从 AI 服务推进到人工介入，属于用户可见写动作；如果页面状态被轮询刷新、后端返回未来状态，或后续代码复用 `handoff()`，只靠按钮 disabled 不足以给用户明确反馈。
+- 更稳妥的口径是保留无会话时不处理；已有会话但不可转人工时，先复核 `canRequestSupportHandoff(conversation)`，未知状态复用“会话状态待核对，请刷新后再操作”，已知但不可转人工状态显示“当前会话暂不能转人工，请刷新后再操作”。
+- 当前真实 `/help` 页面验证只覆盖加载、HMR 和 console；转人工状态二次保护用页面入口静态测试留证，验证过程中不点击转人工写动作。
+
+## 2026-06-13 阶段 13 客服工作台发现：已知但不可执行状态也需要明确反馈
+
+- `/support` 已经通过 `canProceedWithActiveWrite()` 统一复核接入、回复、备注、标签、转接、升级和申请结束等写动作，但该守卫此前只在 `formatSupportConversationWriteBlockedMessage(active?.status)` 返回未知状态文案时设置错误提示。
+- 对 `WAITING_AGENT` 执行回复、对 `ASSIGNED` 执行接入、对 `CLOSE_REQUESTED` 执行申请结束等已知但当前动作不可执行的组合，事件入口会返回 false，但没有用户可见反馈。
+- 更稳妥的口径是保留未知状态专用“会话状态待核对，请刷新后再操作”，已知但不可执行状态统一返回“当前会话暂不能执行该操作，请刷新后再操作”，避免客服误以为按钮或接口无响应。
+- 当前真实 `/support` 页面验证只覆盖加载和 console；已知不可执行状态反馈用页面入口静态测试留证，验证过程中不点击客服工作台写动作。
+
+## 2026-06-13 阶段 13 风险事件发现：恢复申请阻断不能静默，主办方路径守卫不能被权限码模式吞掉
+
+- `/console/risk-events` 此前在最新恢复申请未知状态或审核中时会禁用提交按钮，但点击事件可能静默返回，用户只能看到按钮不可用，无法知道是“状态待核对”还是“正在审核中”。
+- 恢复售票申请会推动风险停售活动进入人工复核，属于主办方可见写动作；按钮显隐不足以覆盖页面刷新、列表状态变化或事件函数复用，提交前仍应按当前 `latestResolutionByActivity` 记录二次复核。
+- 更稳妥的口径是集中到 `formatRiskResolutionSubmitBlockedMessage(status)`：未知或未来状态返回“恢复售票审核状态待核对，请刷新后再操作”，`pending` 返回“当前恢复售票申请正在审核中，请刷新后再操作”，阻断后不调用提交接口。
+- 主办方账号可能同时带 `role=organizer` 和 `permissionCodes`；控制台 layout 必须先按主办方业务路径判断 `/console/risk-events` 等 organizer 路由，再进入权限码过滤，否则会被平台 RBAC 权限码表误重定向到 `/console`。
+- Next dev 运行态可能在源码更新后仍使用旧 layout 客户端 bundle；遇到页面守卫行为和源码不一致时，应确认容器内源码和 `.next/dev` 产物，必要时重启 `omni-frontend` 后再做浏览器验收。
+
+## 2026-06-13 阶段 13 平台健康看板发现：摘要链路健康不能替代真实基础设施探针
+
+- 控制台首页已有 `getPlatformOpsSummary()` 聚合平台运营摘要，后端异常会进入 `PlatformOpsSummaryVO.errors`，适合先展示 ticket/payment/grab/workbench 摘要链路的“正常 / 状态待核对”。
+- 这些错误来源是聚合摘要链路语义，不应把 `ticket`、`payment`、`grab`、`workbench` 等 source 原码直接暴露给平台管理员；页面应映射为“票务摘要链路 / 退款摘要链路 / 抢票摘要链路 / 工作台摘要链路”等中文标签，未知来源统一归入“其他摘要链路”。
+- Nacos、Redis、RabbitMQ、Seata、Gateway 5xx/超时等属于真实基础设施或网关探针，需要独立指标、日志或健康检查来源；不能因为运营摘要接口本身可用，就把这些基础设施状态伪装成“正常”。
+- 因此平台健康看板第一步只能声明“摘要聚合链路健康”，后续接入真实探针时再扩展指标项和验收命令。
+
+## 2026-06-13 阶段 13 平台健康看板发现：基础设施探针要覆盖 Spring 构造路径
+
+- Nacos、Redis、RabbitMQ、Seata 的健康状态已从摘要链路健康中拆出，后端通过 `PlatformOpsSummaryResponse.infrastructureHealth` 返回独立探针项；前端缺少该字段时必须显示“未配置 / 基础设施探针未配置”，不能默认显示正常。
+- `PlatformInfrastructureHealthProbe` 同时有生产构造函数和包内测试构造函数时，Spring 5 在未标注注入构造函数的情况下可能退回尝试无参构造，IDEA 启动会失败为 `No default constructor found`。
+- 后续新增带测试辅助构造函数的 `@Service` 时，应补 Spring 容器创建测试，或显式给生产构造函数加 `@Autowired`，避免普通单元测试只覆盖 `new` 路径而漏掉真实启动路径。
+- 后端代码变更后，IDEA 中运行的 Java 服务不会自动加载新 class；涉及 `java-user`、`java-ticket`、`java-order`、`java-payment`、`java-notification` 的运行态验收，需要用户在 IDEA 重启对应服务后再做接口和浏览器验证。

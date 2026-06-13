@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import * as consoleRefunds from './console-refunds.ts'
 import {
   buildConsoleRefundExportCsv,
   buildConsoleRefundExportExcelHtml,
@@ -164,4 +165,16 @@ test('filters batch refund targets by safe review status', () => {
 
   assert.deepEqual(getBatchRefundApproveTargets(refunds).map(refund => refund.id), [1, 2])
   assert.deepEqual(getBatchRefundRejectTargets(refunds).map(refund => refund.id), [1])
+})
+
+test('guards single refund review actions by action-specific status', () => {
+  assert.equal(typeof consoleRefunds.canApplyConsoleRefundReviewAction, 'function')
+  const canApplyConsoleRefundReviewAction = consoleRefunds.canApplyConsoleRefundReviewAction
+
+  assert.equal(canApplyConsoleRefundReviewAction(0, 'approve'), true)
+  assert.equal(canApplyConsoleRefundReviewAction(4, 'approve'), true)
+  assert.equal(canApplyConsoleRefundReviewAction(0, 'reject'), true)
+  assert.equal(canApplyConsoleRefundReviewAction(4, 'reject'), false)
+  assert.equal(canApplyConsoleRefundReviewAction(1, 'approve'), false)
+  assert.equal(canApplyConsoleRefundReviewAction(99 as RefundRequestVO['status'], 'approve'), false)
 })

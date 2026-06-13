@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { SupportContextVO, SupportConversationVO } from '@/types/api'
-import { appendQuickReply, buildCloseRequestMessage, buildSupportSubject, canClaimSupportConversation, canEditSupportConversation, canReplySupportConversation, canRequestSupportClose, canRequestSupportHandoff, filterSupportConversations, formatSupportAuditAction, formatSupportContextSectionCount, formatSupportConversationStatus, formatSupportConversationWriteBlockedMessage, formatSupportHandoffActionLabel, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getLoginRedirectForRole, getSupportConversationRecordsHref, getSupportQueueTabs, getSupportTagOptions, hasSupportContextData, isKnownSupportConversationStatus, isSupportHelpConversationPath, mergeSupportConversations, pickDefaultUserSupportConversation, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue } from './support-tools.ts'
+import { appendQuickReply, buildCloseRequestMessage, buildSupportSubject, canClaimSupportConversation, canConfirmSupportConversationClose, canEditSupportConversation, canReplySupportConversation, canRequestSupportClose, canRequestSupportHandoff, filterSupportConversations, formatSupportAuditAction, formatSupportContextSectionCount, formatSupportConversationStatus, formatSupportConversationWriteBlockedMessage, formatSupportHandoffActionLabel, formatSupportMessageSender, formatSupportSlaText, formatSupportTagLabel, getLoginRedirectForRole, getSupportConversationRecordsHref, getSupportQueueTabs, getSupportTagOptions, hasSupportContextData, isKnownSupportConversationStatus, isSupportHelpConversationPath, mergeSupportConversations, pickDefaultUserSupportConversation, pickLatestSupportConversation, shouldPollSupportConversation, sortSupportConversationsForQueue } from './support-tools.ts'
 
 test('routes users to role-specific entry after login', () => {
   assert.equal(getLoginRedirectForRole('support'), '/support')
@@ -127,6 +127,7 @@ test('blocks support workbench writes when conversation status is unknown', () =
   assert.equal(canReplySupportConversation('FUTURE_STATUS'), false)
   assert.equal(canEditSupportConversation('FUTURE_STATUS'), false)
   assert.equal(canRequestSupportClose('FUTURE_STATUS'), false)
+  assert.equal(canConfirmSupportConversationClose('FUTURE_STATUS'), false)
   assert.equal(formatSupportConversationWriteBlockedMessage('FUTURE_STATUS'), '会话状态待核对，请刷新后再操作')
 
   assert.equal(isKnownSupportConversationStatus('ASSIGNED'), true)
@@ -135,6 +136,8 @@ test('blocks support workbench writes when conversation status is unknown', () =
   assert.equal(canRequestSupportClose('ASSIGNED'), true)
   assert.equal(canClaimSupportConversation('WAITING_AGENT'), true)
   assert.equal(canClaimSupportConversation('ASSIGNED'), false)
+  assert.equal(canConfirmSupportConversationClose('CLOSE_REQUESTED'), true)
+  assert.equal(canConfirmSupportConversationClose('ASSIGNED'), false)
 })
 
 test('treats only the help page as the customer support conversation window', () => {

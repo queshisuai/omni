@@ -6,6 +6,13 @@ function source(path: string) {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
 }
 
+test('next dev allows local loopback hmr origin', () => {
+  const content = source('../../next.config.ts')
+
+  assert.match(content, /allowedDevOrigins/)
+  assert.match(content, /127\.0\.0\.1/)
+})
+
 test('console activity list does not expose unavailable relist copy', () => {
   const content = source('../app/console/activities/page.tsx')
 
@@ -19,6 +26,14 @@ test('console activity list keeps unknown sale status visible and protected', ()
   assert.doesNotMatch(content, /const newStatus = activity\.status === 1 \? 0 : 1/)
   assert.match(content, /未知活动状态/)
   assert.match(content, /状态待核对/)
+})
+
+test('console layout keeps organizer business paths before permission-code filtering', () => {
+  const content = source('../app/console/layout.tsx')
+
+  assert.match(content, /if \(role === 'organizer'\) return organizerMenuItems[\s\S]*if \(permissionCodes\.length > 0 \|\| role === 'organizer_admin'\)/)
+  assert.match(content, /if \(latest\.role === 'organizer'\) \{[\s\S]*isConsolePathAllowedForRole\(latest\.role, pathname\)/)
+  assert.match(content, /if \(cached\.role === 'organizer'\) \{[\s\S]*isConsolePathAllowedForRole\(cached\.role, pathname\)/)
 })
 
 test('console activity list supports batch deactivate with refund confirmation', () => {
@@ -67,6 +82,27 @@ test('console artist list keeps unknown review and risk statuses visible and pro
   assert.match(content, /状态待核对/)
 })
 
+test('console exception task create options use shared Chinese task labels', () => {
+  const content = source('../app/console/exception-tasks/page.tsx')
+
+  assert.match(content, /getExceptionTaskTypeOptions/)
+  assert.doesNotMatch(content, /const taskTypeOptions = \[/)
+  assert.match(content, /formatExceptionTaskType/)
+})
+
+test('console exception task actions show status review prompt and use shared guards', () => {
+  const content = source('../app/console/exception-tasks/page.tsx')
+
+  assert.match(content, /isOpenExceptionStatus/)
+  assert.match(content, /isClaimableExceptionStatus/)
+  assert.match(content, /isResolvableExceptionStatus/)
+  assert.match(content, /isClosableExceptionStatus/)
+  assert.match(content, /状态待核对/)
+  assert.doesNotMatch(content, /item\.status === 'pending'/)
+  assert.doesNotMatch(content, /item\.status === 'processing'/)
+  assert.doesNotMatch(content, /item\.status === 'resolved' \|\| item\.status === 'closed'/)
+})
+
 test('seat layout controls do not label the real minimap as placeholder UI', () => {
   const content = source('../components/seatcraft/SeatLayoutControls.tsx')
 
@@ -87,6 +123,30 @@ test('console home uses shared Chinese reconciliation status labels', () => {
   assert.match(content, /formatReconciliationBatchStatus/)
   assert.doesNotMatch(content, /function formatBatchStatus/)
   assert.doesNotMatch(content, /return status \|\| '-'/)
+})
+
+test('console home shows platform operation summary health without exposing raw downstream source codes', () => {
+  const content = source('../app/console/page.tsx')
+
+  assert.match(content, /buildPlatformOpsHealthItems/)
+  assert.match(content, /摘要链路健康/)
+  assert.match(content, /摘要链路正常/)
+  assert.match(content, /状态待核对/)
+  assert.doesNotMatch(content, /error\.source/)
+})
+
+test('console home shows real infrastructure health separately from summary health', () => {
+  const content = source('../app/console/page.tsx')
+  const helper = source('./console-ops.ts')
+
+  assert.match(content, /buildInfrastructureHealthItems/)
+  assert.match(content, /基础设施健康/)
+  assert.match(helper, /未配置/)
+  assert.match(helper, /Nacos 注册中心/)
+  assert.match(helper, /Redis 缓存/)
+  assert.match(helper, /RabbitMQ 消息队列/)
+  assert.match(helper, /Seata 事务协调器/)
+  assert.doesNotMatch(content, /Nacos\/Seata\/Redis\/RabbitMQ 状态正常/)
 })
 
 test('console sessions list gives fallback activity and venue ids Chinese context', () => {
@@ -182,6 +242,18 @@ test('console risk resolution status uses Chinese fallback for unknown codes', (
   assert.match(content, /未知审核状态/)
 })
 
+test('console risk resolution review protects unknown statuses from write actions', () => {
+  const content = source('../app/console/risk-resolutions/page.tsx')
+
+  assert.doesNotMatch(content, /const editable = item\.status === 'pending'/)
+  assert.doesNotMatch(content, /onClick=\{\(\) => review\(item\.id, 'approve'\)\}/)
+  assert.doesNotMatch(content, /onClick=\{\(\) => review\(item\.id, 'reject'\)\}/)
+  assert.match(content, /\bisKnownRiskResolutionStatus\b/)
+  assert.match(content, /\bisReviewableRiskResolutionStatus\b/)
+  assert.match(content, /状态待核对/)
+  assert.match(content, /恢复售票审核状态待核对，请刷新后再操作/)
+})
+
 test('console risk events keeps unknown resolution status visible in Chinese', () => {
   const content = source('../app/console/risk-events/page.tsx')
 
@@ -197,6 +269,17 @@ test('console risk events protects recovery submission when latest status is unk
   assert.match(content, /canSubmitRiskResolution/)
   assert.match(content, /formatRiskResolutionSubmitLabel/)
   assert.match(content, /状态待核对/)
+})
+
+test('console risk events gives feedback when recovery submission is blocked', () => {
+  const content = source('../app/console/risk-events/page.tsx')
+
+  assert.match(content, /formatRiskResolutionSubmitBlockedMessage/)
+  assert.match(content, /恢复售票审核状态待核对，请刷新后再操作/)
+  assert.doesNotMatch(content, /if \(!canSubmitResolution\) return\s+onOpenDialog\(activity\)/)
+  assert.match(content, /const blockedMessage = formatRiskResolutionSubmitBlockedMessage\(latest\?\.status\)/)
+  assert.match(content, /onBlocked\(blockedMessage\)/)
+  assert.match(content, /formatRiskResolutionSubmitBlockedMessage\(latestResolutionByActivity\.get\(target\.id\)\?\.status\)/)
 })
 
 test('console risk cases keeps unknown resolution status visible in Chinese', () => {
@@ -222,6 +305,16 @@ test('console venue application status uses Chinese fallback for unknown codes',
 
   assert.doesNotMatch(contents, /statusText\[item\.status\]/)
   assert.match(contents, /未知场馆审核状态/)
+})
+
+test('console venue application review protects unknown statuses from write actions', () => {
+  const content = source('../app/console/venue/applications/page.tsx')
+
+  assert.doesNotMatch(content, /item\.status === 0 && <button onClick=\{\(\) => openReview\(item\.id\)\}/)
+  assert.match(content, /\bisKnownVenueApplicationStatus\b/)
+  assert.match(content, /\bisReviewableVenueApplicationStatus\b/)
+  assert.match(content, /状态待核对/)
+  assert.match(content, /场馆审核状态待核对，请刷新后再操作/)
 })
 
 test('console route error messages use Chinese identifier context', () => {
@@ -265,6 +358,19 @@ test('console artist edit page maps review and risk statuses to Chinese fallback
   assert.match(content, /未知风险状态/)
 })
 
+test('console pending artist review protects unknown review statuses from write actions', () => {
+  const content = source('../app/console/artists/pending/page.tsx')
+
+  assert.doesNotMatch(content, /onClick=\{\(\) => review\(item\.id, 'approve'\)\}/)
+  assert.doesNotMatch(content, /onClick=\{\(\) => review\(item\.id, 'reject'\)\}/)
+  assert.doesNotMatch(content, /onClick=\{\(\) => markRisk\(item\.id\)\}/)
+  assert.match(content, /\bisKnownArtistReviewStatus\b/)
+  assert.match(content, /\bisReviewableArtistReviewStatus\b/)
+  assert.match(content, /formatArtistListReviewStatus/)
+  assert.match(content, /状态待核对/)
+  assert.match(content, /艺人审核状态待核对，请刷新后再操作/)
+})
+
 test('activity artist selector does not use artist id as fallback display name', () => {
   const content = source('../components/activity-artist/ActivityArtistSelector.tsx')
 
@@ -291,6 +397,15 @@ test('console roles page shows permission change preview before saving', () => {
   assert.doesNotMatch(content, /确认保存角色授权/)
 })
 
+test('console roles page offers role templates before saving', () => {
+  const content = source('../app/console/roles/page.tsx')
+
+  assert.match(content, /getRbacRoleTemplatesForRole/)
+  assert.match(content, /套用角色模板/)
+  assert.match(content, /套用模板/)
+  assert.match(content, /请核对权限变更预览后保存/)
+})
+
 test('console support account status uses Chinese fallback for unknown codes', () => {
   const content = source('../app/console/support-accounts/page.tsx')
 
@@ -300,6 +415,17 @@ test('console support account status uses Chinese fallback for unknown codes', (
   assert.match(content, /状态待核对/)
 })
 
+test('console support account status protects unknown statuses from edit and toggle actions', () => {
+  const content = source('../app/console/support-accounts/page.tsx')
+
+  assert.match(content, /\bisKnownSupportAccountStatus\b/)
+  assert.match(content, /!isKnownSupportAccountStatus\(account\.status\)/)
+  assert.match(content, /账号状态待核对，请刷新后再操作/)
+  assert.doesNotMatch(content, /账号状态未知，请先核对后再操作/)
+  assert.doesNotMatch(content, /account\.status === 1 \? <ShieldOff/)
+  assert.doesNotMatch(content, /disabled=\{saving \|\| \(account\.status !== 1 && account\.status !== 0\)\}/)
+})
+
 test('console organizer admin account status uses Chinese fallback for unknown codes', () => {
   const content = source('../app/console/organizer-admins/page.tsx')
 
@@ -307,6 +433,16 @@ test('console organizer admin account status uses Chinese fallback for unknown c
   assert.doesNotMatch(content, /account\.status === 1 \? '停用' : '启用'/)
   assert.match(content, /未知账号状态/)
   assert.match(content, /状态待核对/)
+})
+
+test('console organizer admin account status protects unknown statuses from edit and toggle actions', () => {
+  const content = source('../app/console/organizer-admins/page.tsx')
+
+  assert.match(content, /\bisKnownOrganizerAdminAccountStatus\b/)
+  assert.match(content, /!isKnownOrganizerAdminAccountStatus\(account\.status\)/)
+  assert.match(content, /账号状态待核对，请刷新后再操作/)
+  assert.doesNotMatch(content, /账号状态未知，请先核对后再操作/)
+  assert.doesNotMatch(content, /account\.status === 1 \? <ShieldOff/)
 })
 
 test('console organizer application status uses Chinese fallback for unknown codes', () => {
@@ -319,12 +455,35 @@ test('console organizer application status uses Chinese fallback for unknown cod
   }
 })
 
+test('console organizer application review protects unknown statuses from write actions', () => {
+  const content = source('../app/console/organizer-applications/page.tsx')
+
+  assert.doesNotMatch(content, /onClick=\{\(\) => handleApprove\(item\.id\)\}/)
+  assert.doesNotMatch(content, /onClick=\{\(\) => handleReject\(item\.id\)\}/)
+  assert.doesNotMatch(content, /disabled=\{savingId === item\.id \|\| item\.status !== 0\}/)
+  assert.match(content, /\bisKnownOrganizerApplicationStatus\b/)
+  assert.match(content, /\bisReviewableOrganizerApplicationStatus\b/)
+  assert.match(content, /状态待核对/)
+  assert.match(content, /入驻审核状态待核对，请刷新后再操作/)
+})
+
 test('console organizer account status keeps unknown values visible in Chinese', () => {
   const content = source('../app/console/organizer-applications/page.tsx')
 
   assert.doesNotMatch(content, /return null/)
   assert.doesNotMatch(content, /userStatusMeta \? \(/)
   assert.match(content, /未知主办方状态/)
+})
+
+test('console organizer deactivation protects unknown organizer account statuses', () => {
+  const content = source('../app/console/organizer-applications/page.tsx')
+
+  assert.doesNotMatch(content, /const isCancelled = item\.organizerStatus === 3 \|\| item\.role === 'user'/)
+  assert.doesNotMatch(content, /disabled=\{savingId === item\.id \|\| item\.status !== 1 \|\| isCancelled\}/)
+  assert.match(content, /\bisKnownOrganizerStatus\b/)
+  assert.match(content, /\bcanDeactivateOrganizerAccount\b/)
+  assert.match(content, /主办方状态待核对，请刷新后再操作/)
+  assert.match(content, /状态待核对/)
 })
 
 test('console profile account status uses Chinese fallback for unknown codes', () => {
@@ -364,4 +523,25 @@ test('console venue list labels venue identifier with Chinese context', () => {
 
   assert.doesNotMatch(content, /<th[^>]*>\s*ID\s*<\/th>/)
   assert.match(content, /场馆编号/)
+})
+
+test('console station config reviews show status in Chinese and protect non-reviewable states', () => {
+  const content = source('../app/console/station-config-reviews/page.tsx')
+
+  assert.match(content, /formatStationConfigStatus/)
+  assert.match(content, /isReviewableStationConfigStatus/)
+  assert.match(content, /状态待核对/)
+  assert.doesNotMatch(content, /disabled=\{processingId === item\.id\}/)
+})
+
+test('console reconciliation differences protect unknown statuses from write actions', () => {
+  const content = source('../app/console/reconciliation/page.tsx')
+
+  assert.doesNotMatch(content, /diff\.status === 'open' \? \(/)
+  assert.doesNotMatch(content, /handleDifferenceAction\(diff\.id, 'resolve'\)/)
+  assert.doesNotMatch(content, /handleDifferenceAction\(diff\.id, 'ignore'\)/)
+  assert.match(content, /isKnownReconciliationDifferenceStatus/)
+  assert.match(content, /isOpenReconciliationDifferenceStatus/)
+  assert.match(content, /状态待核对/)
+  assert.match(content, /对账差异状态待核对，请刷新后再操作/)
 })

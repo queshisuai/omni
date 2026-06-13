@@ -26,6 +26,14 @@ function formatResolutionStatus(status: string) {
   return STATUS_LABEL[status] || '未知审核状态'
 }
 
+function isKnownRiskResolutionStatus(status?: string | null) {
+  return status === 'pending' || status === 'approved' || status === 'rejected'
+}
+
+function isReviewableRiskResolutionStatus(status?: string | null) {
+  return status === 'pending'
+}
+
 export default function RiskResolutionsPage() {
   return (
     <Suspense fallback={<div className="text-[#999]">加载中...</div>}>
@@ -82,15 +90,19 @@ function RiskResolutionsContent() {
 
   const pageItems = useMemo(() => items.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [items, page])
 
-  const review = async (id: number, action: 'approve' | 'reject') => {
-    setProcessingId(id)
+  const review = async (item: ActivityRiskResolutionVO, action: 'approve' | 'reject') => {
+    if (!isReviewableRiskResolutionStatus(item.status)) {
+      setError('恢复售票审核状态待核对，请刷新后再操作')
+      return
+    }
+    setProcessingId(item.id)
     setError('')
     try {
-      const note = notes[id] || ''
-      await reviewActivityRiskResolution(id, { userId, action, reviewNote: note.trim() || null })
+      const note = notes[item.id] || ''
+      await reviewActivityRiskResolution(item.id, { userId, action, reviewNote: note.trim() || null })
       setNotes(current => {
         const next = { ...current }
-        delete next[id]
+        delete next[item.id]
         return next
       })
       await loadData(status)
@@ -128,7 +140,7 @@ function RiskResolutionsContent() {
       {loading ? <div className="text-[#999]">加载中...</div> : items.length === 0 ? <div className="rounded-xl bg-white p-8 text-center text-[#999]">暂无恢复申请记录</div> : (
         <div className="space-y-3">
           {pageItems.map(item => {
-            const editable = item.status === 'pending'
+            const reviewable = isReviewableRiskResolutionStatus(item.status)
             return (
               <div key={item.id} className="rounded-xl border border-[#eee] bg-white p-4">
                 <div className="flex flex-wrap items-center gap-2">
@@ -138,7 +150,7 @@ function RiskResolutionsContent() {
                 <div className="mt-1 text-[12px] text-[#999]">活动编号：{item.activityId}</div>
                 <div className="mt-1 text-[13px] text-[#666]">处理说明：{item.resolutionNote || '未填写'}</div>
                 {item.reviewNote && <div className="mt-1 text-[13px] text-[#666]">审核备注：{item.reviewNote}</div>}
-                {editable ? (
+                {reviewable ? (
                   <>
                     <textarea
                       value={notes[item.id] || ''}
@@ -147,12 +159,12 @@ function RiskResolutionsContent() {
                       placeholder="审核备注"
                     />
                     <div className="mt-3 flex gap-2">
-                      <button disabled={processingId === item.id} onClick={() => review(item.id, 'approve')} className="rounded-full bg-[#16a34a] px-4 py-2 text-[13px] text-white disabled:opacity-60">通过恢复</button>
-                      <button disabled={processingId === item.id} onClick={() => review(item.id, 'reject')} className="rounded-full bg-[#ef4444] px-4 py-2 text-[13px] text-white disabled:opacity-60">拒绝</button>
+                      <button disabled={processingId === item.id} onClick={() => review(item, 'approve')} className="rounded-full bg-[#16a34a] px-4 py-2 text-[13px] text-white disabled:opacity-60">通过恢复</button>
+                      <button disabled={processingId === item.id} onClick={() => review(item, 'reject')} className="rounded-full bg-[#ef4444] px-4 py-2 text-[13px] text-white disabled:opacity-60">拒绝</button>
                     </div>
                   </>
                 ) : (
-                  <div className="mt-3 text-[12px] text-[#999]">历史记录仅供查看。</div>
+                  <div className="mt-3 text-[12px] text-[#999]">{isKnownRiskResolutionStatus(item.status) ? '历史记录仅供查看。' : '状态待核对'}</div>
                 )}
               </div>
             )

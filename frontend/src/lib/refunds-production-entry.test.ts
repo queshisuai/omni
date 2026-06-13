@@ -42,3 +42,12 @@ test('console refunds page supports audited batch refund review through existing
   assert.match(source, /rejectRefund\(refund\.id/)
   assert.match(source, /canReviewConsoleRefund\(refund\.status\)/)
 })
+
+test('console refunds page protects single review submission with current refund status', () => {
+  assert.match(source, /canApplyConsoleRefundReviewAction/)
+  assert.match(source, /退款状态待核对，请刷新后再操作/)
+  assert.match(source, /refunds\.find\(refund => refund\.id === draft\.id\)/)
+  assert.doesNotMatch(source, /setDraft\(\{ id, action, note: '' \}\)/)
+  assert.doesNotMatch(source, /startReview\(refund\.id, 'approve'\)/)
+  assert.doesNotMatch(source, /startReview\(refund\.id, 'reject'\)/)
+})

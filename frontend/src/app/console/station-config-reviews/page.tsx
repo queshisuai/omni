@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { getUser, updateStoredUser } from '@/lib/auth'
 import { approveStationConfigVersion, getUserInfo, listStationConfigReviews, rejectStationConfigVersion } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
-import { formatStationConfigChangeType } from '@/lib/operation-display'
+import { formatStationConfigChangeType, formatStationConfigStatus, isReviewableStationConfigStatus } from '@/lib/operation-display'
 import { globalPrompt } from '@/components/GlobalDialog'
 import type { StationConfigVersionVO } from '@/types/api'
 
@@ -52,6 +52,10 @@ export default function StationConfigReviewsPage() {
   }, [])
 
   const handleReview = async (item: StationConfigVersionVO, action: 'approve' | 'reject') => {
+    if (!isReviewableStationConfigStatus(item.status)) {
+      setError('站点配置状态待核对，请刷新后再操作')
+      return
+    }
     const reviewNote = await globalPrompt({
       title: action === 'approve' ? '通过备注' : '驳回原因',
       content: action === 'approve' ? '请输入通过备注（可留空）' : '请输入驳回原因（可留空）',
@@ -102,6 +106,7 @@ export default function StationConfigReviewsPage() {
                 <tr>
                   <th className="px-4 py-3 font-medium">版本号</th>
                   <th className="px-4 py-3 font-medium">变更类型</th>
+                  <th className="px-4 py-3 font-medium">状态</th>
                   <th className="px-4 py-3 font-medium">城市</th>
                   <th className="px-4 py-3 font-medium">站点名</th>
                   <th className="px-4 py-3 font-medium">场馆</th>
@@ -110,22 +115,32 @@ export default function StationConfigReviewsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#f0f0f0]">
-                {items.map(item => (
-                  <tr key={item.id} className="text-[#333]">
-                    <td className="px-4 py-3">{item.versionNo ? `v${item.versionNo}` : '-'}</td>
-                    <td className="px-4 py-3">{formatStationConfigChangeType(item.changeType)}</td>
-                    <td className="px-4 py-3">{item.city || '城市待定'}</td>
-                    <td className="px-4 py-3">{item.stationName || (item.city ? `${item.city}站` : '未命名站点')}</td>
-                    <td className="px-4 py-3">{item.venueName || '未绑定场馆'}</td>
-                    <td className="px-4 py-3">{item.reason || '-'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <button onClick={() => handleReview(item, 'approve')} disabled={processingId === item.id} className="rounded-lg bg-[#22c55e] px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-60">通过</button>
-                        <button onClick={() => handleReview(item, 'reject')} disabled={processingId === item.id} className="rounded-lg bg-[#ff1268] px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-60">驳回</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {items.map(item => {
+                  const reviewable = isReviewableStationConfigStatus(item.status)
+                  return (
+                    <tr key={item.id} className="text-[#333]">
+                      <td className="px-4 py-3">{item.versionNo ? `v${item.versionNo}` : '-'}</td>
+                      <td className="px-4 py-3">{formatStationConfigChangeType(item.changeType)}</td>
+                      <td className="px-4 py-3">{formatStationConfigStatus(item.status)}</td>
+                      <td className="px-4 py-3">{item.city || '城市待定'}</td>
+                      <td className="px-4 py-3">{item.stationName || (item.city ? `${item.city}站` : '未命名站点')}</td>
+                      <td className="px-4 py-3">{item.venueName || '未绑定场馆'}</td>
+                      <td className="px-4 py-3">{item.reason || '-'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          {reviewable ? (
+                            <>
+                              <button onClick={() => handleReview(item, 'approve')} disabled={processingId === item.id || !reviewable} className="rounded-lg bg-[#22c55e] px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-60">通过</button>
+                              <button onClick={() => handleReview(item, 'reject')} disabled={processingId === item.id || !reviewable} className="rounded-lg bg-[#ff1268] px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-60">驳回</button>
+                            </>
+                          ) : (
+                            <span className="rounded border border-[#ffd591] bg-[#fff7e6] px-3 py-1.5 text-[12px] text-[#ad6800]">状态待核对</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

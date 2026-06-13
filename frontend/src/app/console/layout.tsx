@@ -77,12 +77,12 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     if (isPlatformAdminRole(role)) {
       return menuItems.filter((item) => canAccessConsolePath(item.href, permissionCodes))
     }
+    if (role === 'organizer') return organizerMenuItems
     if (permissionCodes.length > 0 || role === 'organizer_admin') {
       return menuItems.filter((item) => {
         return canAccessConsolePath(item.href, permissionCodes)
       })
     }
-    if (role === 'organizer') return organizerMenuItems
     return menuItems.filter((item) => {
       if (!('roles' in item) || !item.roles) return true
       return item.roles.includes(role as 'admin' | 'organizer')
@@ -121,7 +121,13 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setAvatar(latest.avatar || '')
         setRole(latest.role)
         setPermissionCodes(latestPermissions)
-        if (latestPermissions.length > 0 || latest.role === 'organizer_admin' || isPlatformAdminRole(latest.role)) {
+        if (latest.role === 'organizer') {
+          if (!isConsolePathAllowedForRole(latest.role, pathname)) {
+            setRedirecting(true)
+            router.replace(getDefaultConsolePath(latest.role, latestPermissions))
+            return
+          }
+        } else if (latestPermissions.length > 0 || latest.role === 'organizer_admin' || isPlatformAdminRole(latest.role)) {
           if (!canAccessConsolePath(pathname, latestPermissions)) {
             setRedirecting(true)
             router.replace(getDefaultConsolePath(latest.role, latestPermissions))
@@ -142,7 +148,13 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setNickname(cached.nickname || cached.phone || '')
         setRole(cached.role || '')
         setPermissionCodes(cachedPermissions)
-        if (cachedPermissions.length > 0 || cached.role === 'organizer_admin' || isPlatformAdminRole(cached.role)) {
+        if (cached.role === 'organizer') {
+          if (!isConsolePathAllowedForRole(cached.role, pathname)) {
+            setRedirecting(true)
+            router.replace(getDefaultConsolePath(cached.role, cachedPermissions))
+            return
+          }
+        } else if (cachedPermissions.length > 0 || cached.role === 'organizer_admin' || isPlatformAdminRole(cached.role)) {
           if (!canAccessConsolePath(pathname, cachedPermissions)) {
             setRedirecting(true)
             router.replace(getDefaultConsolePath(cached.role, cachedPermissions))

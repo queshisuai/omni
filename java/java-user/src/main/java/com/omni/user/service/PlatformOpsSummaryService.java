@@ -25,19 +25,22 @@ public class PlatformOpsSummaryService {
     private final ExceptionWorkbenchService exceptionWorkbenchService;
     private final ReconciliationService reconciliationService;
     private final OperationAuditService operationAuditService;
+    private final PlatformInfrastructureHealthProbe infrastructureHealthProbe;
 
     public PlatformOpsSummaryService(TicketOpsSummaryClient ticketClient,
                                      PaymentOpsSummaryClient paymentClient,
                                      GrabOpsSummaryClient grabClient,
                                      ExceptionWorkbenchService exceptionWorkbenchService,
                                      ReconciliationService reconciliationService,
-                                     OperationAuditService operationAuditService) {
+                                     OperationAuditService operationAuditService,
+                                     PlatformInfrastructureHealthProbe infrastructureHealthProbe) {
         this.ticketClient = ticketClient;
         this.paymentClient = paymentClient;
         this.grabClient = grabClient;
         this.exceptionWorkbenchService = exceptionWorkbenchService;
         this.reconciliationService = reconciliationService;
         this.operationAuditService = operationAuditService;
+        this.infrastructureHealthProbe = infrastructureHealthProbe;
     }
 
     public PlatformOpsSummaryResponse load(String authorization) {
@@ -51,6 +54,7 @@ public class PlatformOpsSummaryService {
         response.setRefund(refund);
         response.setGrab(grab);
         response.setWorkbench(loadWorkbench(response));
+        response.setInfrastructureHealth(loadInfrastructureHealth());
         response.setFunnelSteps(List.of(
                 new PlatformOpsSummaryResponse.FunnelStep("interest", "想看/候补", safe(ticket.getInterestCount())),
                 new PlatformOpsSummaryResponse.FunnelStep("reminder", "开售提醒", safe(ticket.getReminderCount())),
@@ -63,6 +67,22 @@ public class PlatformOpsSummaryService {
                 new PlatformOpsSummaryResponse.FunnelStep("waitlist_paid", "候补支付", safe(grab.getWaitlist().getPaidCount()))
         ));
         return response;
+    }
+
+    private PlatformOpsSummaryResponse.InfrastructureHealth loadInfrastructureHealth() {
+        try {
+            return infrastructureHealthProbe.probe();
+        } catch (RuntimeException ignored) {
+            PlatformOpsSummaryResponse.InfrastructureHealth health = new PlatformOpsSummaryResponse.InfrastructureHealth();
+            health.setGeneratedAt(LocalDateTime.now());
+            health.setItems(List.of(new PlatformOpsSummaryResponse.InfrastructureHealthItem(
+                    "infrastructure",
+                    "基础设施探针",
+                    "degraded",
+                    "基础设施健康状态暂不可用"
+            )));
+            return health;
+        }
     }
 
     private PlatformOpsSummaryResponse.TicketSummary loadTicket(PlatformOpsSummaryResponse response, String authorization) {

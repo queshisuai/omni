@@ -69,6 +69,10 @@ export function canRequestSupportClose(status: SupportConversationStatus | null 
   return isKnownSupportConversationStatus(status) && status !== 'CLOSED' && status !== 'CLOSE_REQUESTED'
 }
 
+export function canConfirmSupportConversationClose(status: SupportConversationStatus | null | undefined) {
+  return status === 'CLOSE_REQUESTED'
+}
+
 export function formatSupportConversationWriteBlockedMessage(status: SupportConversationStatus | null | undefined) {
   return isKnownSupportConversationStatus(status) ? '' : '会话状态待核对，请刷新后再操作'
 }

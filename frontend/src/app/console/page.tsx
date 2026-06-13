@@ -4,13 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { getAdminSummary, getPlatformOpsSummary } from '@/lib/api'
 import { captureAnalyticsEvent } from '@/lib/analytics'
-import { canLoadPlatformOpsSummary } from '@/lib/console-ops'
+import { buildInfrastructureHealthItems, buildPlatformOpsHealthItems, canLoadPlatformOpsSummary, getInfrastructureHealthClassName } from '@/lib/console-ops'
 import { getConsoleQuickActions } from '@/lib/console-paths'
 import { getConsoleBrandLabel, hasConsolePermission } from '@/lib/console-auth'
 import { buildDashboardBars, summarizeOpsMetric } from '@/lib/marketing-tools'
 import { formatOperationAction, formatReconciliationBatchStatus } from '@/lib/operation-display'
 import { ConsoleDashboardSkeleton } from '@/components/Skeleton'
-import { Activity, AlertTriangle, CalendarDays, ClipboardList, FileSearch, Gauge, RotateCcw, ShieldAlert, ShoppingCart, Ticket, TrendingUp, Users } from 'lucide-react'
+import { Activity, AlertTriangle, CalendarDays, ClipboardList, FileSearch, Gauge, RotateCcw, Server, ShieldAlert, ShoppingCart, Ticket, TrendingUp, Users } from 'lucide-react'
 import type { AdminSummaryVO, PlatformOpsSummaryVO } from '@/types/api'
 
 function DashboardBarList({ items, emptyText = '暂无数据' }: { items: Array<{ label: string; value: number }>; emptyText?: string }) {
@@ -132,6 +132,8 @@ export default function ConsoleHome() {
   const userPermissions = user?.permissionCodes || []
   const canShowBusinessStats = user?.role === 'organizer'
     || ['activity.manage', 'tour.manage', 'session.manage', 'order.view'].some(permission => hasConsolePermission(user?.role, userPermissions, permission))
+  const platformOpsHealthItems = buildPlatformOpsHealthItems(platformOps?.errors ?? [])
+  const infrastructureHealthItems = buildInfrastructureHealthItems(platformOps?.infrastructureHealth)
 
   return (
     <div>
@@ -226,11 +228,42 @@ export default function ConsoleHome() {
                 <div className="mt-2 text-[12px] text-gray-500">{formatDateTime(platformOps?.workbench.latestAudit?.createTime)}</div>
               </a>
             </div>
-            {platformOps?.errors?.length ? (
-              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
-                {platformOps.errors.map(error => error.message).join('，')}
+            <div className="mb-4 rounded-xl border border-gray-200 bg-white p-5">
+              <div className="mb-4 flex items-center gap-2 text-[14px] font-medium text-gray-700">
+                <Gauge className="h-4 w-4 text-[#2563eb]" /> 摘要链路健康
               </div>
-            ) : null}
+              <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+                {platformOpsHealthItems.map(item => (
+                  <div key={item.key} className="min-w-0">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <span className="truncate text-[13px] font-medium text-gray-700">{item.label}</span>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium ${item.status === 'ok' ? 'bg-[#f0fff4] text-[#15803d]' : 'bg-[#fff7e6] text-[#ad6800]'}`}>
+                        {item.status === 'ok' ? '正常' : '状态待核对'}
+                      </span>
+                    </div>
+                    <div className={`truncate text-[13px] ${item.status === 'ok' ? 'text-gray-500' : 'text-amber-700'}`}>{item.message || '摘要链路正常'}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mb-4 rounded-xl border border-gray-200 bg-white p-5">
+              <div className="mb-4 flex items-center gap-2 text-[14px] font-medium text-gray-700">
+                <Server className="h-4 w-4 text-[#16a34a]" /> 基础设施健康
+              </div>
+              <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+                {infrastructureHealthItems.map(item => (
+                  <div key={item.key} className="min-w-0">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <span className="truncate text-[13px] font-medium text-gray-700">{item.label}</span>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium ${getInfrastructureHealthClassName(item.status)}`}>
+                        {item.statusLabel}
+                      </span>
+                    </div>
+                    <div className={`truncate text-[13px] ${item.status === 'ok' ? 'text-gray-500' : 'text-amber-700'}`}>{item.message}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-xl border border-gray-200 bg-white p-5">
                 <div className="mb-3 flex items-center gap-2 text-[14px] font-medium text-gray-700">

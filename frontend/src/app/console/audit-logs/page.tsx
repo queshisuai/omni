@@ -5,10 +5,19 @@ import { useRouter } from 'next/navigation'
 import { ClipboardList, RefreshCw, Search } from 'lucide-react'
 import { getUserInfo, listOperationAuditLogs } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
-import { formatOperationAction, formatOperationTargetRef, formatOperationTargetType, formatOperatorRole } from '@/lib/operation-display'
+import {
+  formatOperationAction,
+  formatOperationTargetRef,
+  formatOperationTargetType,
+  formatOperatorRole,
+  getOperationActionFilterOptions,
+  getOperationTargetTypeFilterOptions,
+} from '@/lib/operation-display'
 import type { OperationAuditLogVO } from '@/types/api'
 
 type SuccessFilter = '' | 'true' | 'false'
+const operationActionFilterOptions = getOperationActionFilterOptions()
+const operationTargetTypeFilterOptions = getOperationTargetTypeFilterOptions()
 
 function formatSuccess(success: boolean) {
   return success ? '成功' : '失败'
@@ -96,18 +105,28 @@ export default function AuditLogsPage() {
             placeholder="操作人编号"
             className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
           />
-          <input
+          <select
             value={filters.action}
             onChange={event => setFilters({ ...filters, action: event.target.value })}
-            placeholder="动作"
             className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
-          />
-          <input
+            aria-label="操作类型"
+          >
+            <option value="">全部操作类型</option>
+            {operationActionFilterOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <select
             value={filters.targetType}
             onChange={event => setFilters({ ...filters, targetType: event.target.value })}
-            placeholder="对象类型"
             className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
-          />
+            aria-label="对象类型"
+          >
+            <option value="">全部对象类型</option>
+            {operationTargetTypeFilterOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
           <select
             value={filters.success}
             onChange={event => setFilters({ ...filters, success: event.target.value as SuccessFilter })}
@@ -142,8 +161,8 @@ export default function AuditLogsPage() {
                 <tr>
                   <th className="px-4 py-3 font-medium">时间</th>
                   <th className="px-4 py-3 font-medium">操作人编号</th>
-                  <th className="px-4 py-3 font-medium">动作</th>
-                  <th className="px-4 py-3 font-medium">对象</th>
+                  <th className="px-4 py-3 font-medium">操作类型</th>
+                  <th className="px-4 py-3 font-medium">对象类型</th>
                   <th className="px-4 py-3 font-medium">结果</th>
                   <th className="px-4 py-3 font-medium">说明</th>
                   <th className="px-4 py-3 font-medium">追踪编号</th>

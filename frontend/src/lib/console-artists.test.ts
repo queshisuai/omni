@@ -6,6 +6,8 @@ import {
   formatArtistListReviewStatus,
   formatArtistListRiskStatus,
   getArtistListRiskTone,
+  isKnownArtistReviewStatus,
+  isReviewableArtistReviewStatus,
 } from './console-artists.ts'
 
 test('formats artist list review and risk statuses with Chinese unknown fallbacks', () => {
@@ -24,4 +26,15 @@ test('protects artist risk write action when risk status is unknown', () => {
   assert.equal(canToggleArtistRiskStatus('normal'), true)
   assert.equal(canToggleArtistRiskStatus('risky'), true)
   assert.equal(canToggleArtistRiskStatus('future_status'), false)
+})
+
+test('protects artist review write actions when review status is unknown', () => {
+  assert.equal(isKnownArtistReviewStatus('pending'), true)
+  assert.equal(isKnownArtistReviewStatus('approved'), true)
+  assert.equal(isKnownArtistReviewStatus('rejected'), true)
+  assert.equal(isKnownArtistReviewStatus('future_status'), false)
+
+  assert.equal(isReviewableArtistReviewStatus('pending'), true)
+  assert.equal(isReviewableArtistReviewStatus('approved'), false)
+  assert.equal(isReviewableArtistReviewStatus('future_status'), false)
 })

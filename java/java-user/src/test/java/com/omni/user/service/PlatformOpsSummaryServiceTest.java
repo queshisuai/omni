@@ -29,6 +29,7 @@ class PlatformOpsSummaryServiceTest {
     private ExceptionWorkbenchService exceptionWorkbenchService;
     private ReconciliationService reconciliationService;
     private OperationAuditService operationAuditService;
+    private PlatformInfrastructureHealthProbe infrastructureHealthProbe;
     private PlatformOpsSummaryService service;
 
     @BeforeEach
@@ -39,13 +40,15 @@ class PlatformOpsSummaryServiceTest {
         exceptionWorkbenchService = mock(ExceptionWorkbenchService.class);
         reconciliationService = mock(ReconciliationService.class);
         operationAuditService = mock(OperationAuditService.class);
+        infrastructureHealthProbe = mock(PlatformInfrastructureHealthProbe.class);
         service = new PlatformOpsSummaryService(
                 ticketClient,
                 paymentClient,
                 grabClient,
                 exceptionWorkbenchService,
                 reconciliationService,
-                operationAuditService
+                operationAuditService,
+                infrastructureHealthProbe
         );
     }
 
@@ -87,6 +90,11 @@ class PlatformOpsSummaryServiceTest {
         audit.setAction("exception_task.claim");
         audit.setCreateTime(LocalDateTime.of(2026, 6, 9, 9, 0));
         when(operationAuditService.list(null, null, null, null, null, 5)).thenReturn(List.of(audit));
+        PlatformOpsSummaryResponse.InfrastructureHealth infrastructureHealth = new PlatformOpsSummaryResponse.InfrastructureHealth();
+        infrastructureHealth.setItems(List.of(new PlatformOpsSummaryResponse.InfrastructureHealthItem(
+                "nacos", "Nacos 注册中心", "ok", "Nacos 控制台可达"
+        )));
+        when(infrastructureHealthProbe.probe()).thenReturn(infrastructureHealth);
 
         PlatformOpsSummaryResponse response = service.load(authorization);
 
@@ -103,6 +111,10 @@ class PlatformOpsSummaryServiceTest {
         assertEquals(1, response.getWorkbench().getPendingExceptionCount());
         assertEquals("REAL-DEMO-20260603", response.getWorkbench().getLatestBatch().getBatchNo());
         assertEquals("exception_task.claim", response.getWorkbench().getLatestAudit().getAction());
+        assertEquals(1, response.getInfrastructureHealth().getItems().size());
+        assertEquals("nacos", response.getInfrastructureHealth().getItems().get(0).getKey());
+        assertEquals("Nacos 注册中心", response.getInfrastructureHealth().getItems().get(0).getLabel());
+        assertEquals("ok", response.getInfrastructureHealth().getItems().get(0).getStatus());
     }
 
     @Test
@@ -117,6 +129,7 @@ class PlatformOpsSummaryServiceTest {
         when(exceptionWorkbenchService.listByStatus(null)).thenReturn(List.of());
         when(reconciliationService.listBatches()).thenReturn(List.of());
         when(operationAuditService.list(null, null, null, null, null, 5)).thenReturn(List.of());
+        when(infrastructureHealthProbe.probe()).thenThrow(new RuntimeException("probe unavailable"));
 
         PlatformOpsSummaryResponse response = service.load(authorization);
 
@@ -125,6 +138,10 @@ class PlatformOpsSummaryServiceTest {
         assertEquals(1, response.getErrors().size());
         assertEquals("grab", response.getErrors().get(0).getSource());
         assertEquals("抢票运营摘要暂不可用", response.getErrors().get(0).getMessage());
+        assertEquals("infrastructure", response.getInfrastructureHealth().getItems().get(0).getKey());
+        assertEquals("基础设施探针", response.getInfrastructureHealth().getItems().get(0).getLabel());
+        assertEquals("degraded", response.getInfrastructureHealth().getItems().get(0).getStatus());
+        assertEquals("基础设施健康状态暂不可用", response.getInfrastructureHealth().getItems().get(0).getMessage());
     }
 
     private PlatformOpsSummaryResponse.RefundRequestItem refund(Integer status) {

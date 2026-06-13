@@ -13,8 +13,10 @@ import {
   formatReconciliationDiffType,
   formatReconciliationSource,
   formatReconciliationSummaryKey,
+  isKnownReconciliationDifferenceStatus,
+  isOpenReconciliationDifferenceStatus,
 } from '@/lib/operation-display'
-import type { ReconciliationBatchDetailVO, ReconciliationBatchVO } from '@/types/api'
+import type { ReconciliationBatchDetailVO, ReconciliationBatchVO, ReconciliationDifferenceVO } from '@/types/api'
 
 function todayText() {
   const now = new Date()
@@ -114,18 +116,22 @@ export default function ReconciliationPage() {
     }
   }
 
-  const handleDifferenceAction = async (differenceId: number, action: 'resolve' | 'ignore') => {
+  const handleDifferenceAction = async (difference: ReconciliationDifferenceVO, action: 'resolve' | 'ignore') => {
     if (!selectedDetail) return
+    if (!isOpenReconciliationDifferenceStatus(difference.status)) {
+      setDetailError('对账差异状态待核对，请刷新后再操作')
+      return
+    }
     setError('')
     setDetailError('')
     setMessage('')
-    setActingDifferenceId(differenceId)
+    setActingDifferenceId(difference.id)
     try {
       if (action === 'resolve') {
-        await resolveReconciliationDifference(selectedDetail.batch.batchNo, differenceId)
+        await resolveReconciliationDifference(selectedDetail.batch.batchNo, difference.id)
         setMessage('对账差异已标记为已处理')
       } else {
-        await ignoreReconciliationDifference(selectedDetail.batch.batchNo, differenceId)
+        await ignoreReconciliationDifference(selectedDetail.batch.batchNo, difference.id)
         setMessage('对账差异已忽略')
       }
       const refreshed = await getReconciliationBatchDetail(selectedDetail.batch.batchNo)
@@ -381,39 +387,42 @@ export default function ReconciliationPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {selectedDetail.differences.map(diff => (
-                          <tr key={diff.id}>
-                            <td className="px-4 py-3">{diff.businessNo || '-'}</td>
-                            <td className="px-4 py-3">{formatReconciliationDiffType(diff.diffType)}</td>
-                            <td className="px-4 py-3">{formatAmount(diff.diffAmount)}</td>
-                            <td className="px-4 py-3">{formatReconciliationDifferenceStatus(diff.status)}</td>
-                            <td className="max-w-[320px] px-4 py-3 text-gray-600">{diff.reason || '-'}</td>
-                            <td className="min-w-[220px] px-4 py-3">
-                              {diff.status === 'open' ? (
-                                <div className="flex flex-wrap gap-2">
-                                  <button
-                                    onClick={() => handleDifferenceAction(diff.id, 'resolve')}
-                                    disabled={actingDifferenceId === diff.id}
-                                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
-                                  >
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
-                                    标记已处理
-                                  </button>
-                                  <button
-                                    onClick={() => handleDifferenceAction(diff.id, 'ignore')}
-                                    disabled={actingDifferenceId === diff.id}
-                                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
-                                  >
-                                    <CircleSlash className="h-3.5 w-3.5" />
-                                    忽略
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-[12px] text-gray-400">已结束</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                        {selectedDetail.differences.map(diff => {
+                          const open = isOpenReconciliationDifferenceStatus(diff.status)
+                          return (
+                            <tr key={diff.id}>
+                              <td className="px-4 py-3">{diff.businessNo || '-'}</td>
+                              <td className="px-4 py-3">{formatReconciliationDiffType(diff.diffType)}</td>
+                              <td className="px-4 py-3">{formatAmount(diff.diffAmount)}</td>
+                              <td className="px-4 py-3">{formatReconciliationDifferenceStatus(diff.status)}</td>
+                              <td className="max-w-[320px] px-4 py-3 text-gray-600">{diff.reason || '-'}</td>
+                              <td className="min-w-[220px] px-4 py-3">
+                                {open ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      onClick={() => handleDifferenceAction(diff, 'resolve')}
+                                      disabled={actingDifferenceId === diff.id}
+                                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+                                    >
+                                      <CheckCircle2 className="h-3.5 w-3.5" />
+                                      标记已处理
+                                    </button>
+                                    <button
+                                      onClick={() => handleDifferenceAction(diff, 'ignore')}
+                                      disabled={actingDifferenceId === diff.id}
+                                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+                                    >
+                                      <CircleSlash className="h-3.5 w-3.5" />
+                                      忽略
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-[12px] text-gray-400">{isKnownReconciliationDifferenceStatus(diff.status) ? '已结束' : '状态待核对'}</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

@@ -8,6 +8,7 @@ const configDir = path.dirname(fileURLToPath(import.meta.url))
 const nextConfig: NextConfig = {
   output: 'standalone',
   devIndicators: false,
+  allowedDevOrigins: ['127.0.0.1'],
   turbopack: {
     root: configDir,
   },

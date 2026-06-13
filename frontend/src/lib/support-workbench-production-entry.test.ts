@@ -35,3 +35,9 @@ test('support workbench disables write actions when conversation status is unkno
   assert.doesNotMatch(source, /disabled=\{active\.status === 'CLOSED' \|\| !transferTarget\}/)
   assert.doesNotMatch(source, /disabled=\{active\.status === 'CLOSED' \|\| active\.status === 'CLOSE_REQUESTED'\}/)
 })
+
+test('support workbench reports blocked writes for known but non-actionable conversation status', () => {
+  assert.match(source, /formatSupportConversationWriteBlockedMessage\(active\?\.status\) \|\| '当前会话暂不能执行该操作，请刷新后再操作'/)
+  assert.match(source, /当前会话暂不能执行该操作，请刷新后再操作/)
+  assert.doesNotMatch(source, /if \(message\) setError\(message\)\s+return false/)
+})

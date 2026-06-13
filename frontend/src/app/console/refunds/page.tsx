@@ -8,6 +8,7 @@ import { isPlatformAdminRole } from '@/lib/console-auth'
 import {
   buildConsoleRefundExportCsv,
   buildConsoleRefundExportExcelHtml,
+  canApplyConsoleRefundReviewAction,
   canReviewConsoleRefund,
   formatConsoleRefundActionLabel,
   formatConsoleRefundStatus,
@@ -109,12 +110,23 @@ export default function ConsoleRefundsPage() {
     setSelectedRefundIds([])
   }
 
-  const startReview = (id: number, action: ReviewAction) => {
-    setDraft({ id, action, note: '' })
+  const startReview = (refund: RefundRequestVO, action: ReviewAction) => {
+    if (!canApplyConsoleRefundReviewAction(refund.status, action)) {
+      setError('退款状态待核对，请刷新后再操作')
+      return
+    }
+    setError('')
+    setDraft({ id: refund.id, action, note: '' })
   }
 
   const submitReview = async () => {
     if (!draft) return
+    const currentRefund = refunds.find(refund => refund.id === draft.id)
+    if (!currentRefund || !canApplyConsoleRefundReviewAction(currentRefund.status, draft.action)) {
+      setError('退款状态待核对，请刷新后再操作')
+      setDraft(null)
+      return
+    }
     const note = draft.note.trim() || undefined
     setSubmittingId(draft.id)
     setError('')
@@ -390,14 +402,14 @@ export default function ConsoleRefundsPage() {
                         {canReview && !reviewing && (
                           <div className="flex flex-wrap gap-2">
                             <button
-                              onClick={() => startReview(refund.id, 'approve')}
+                              onClick={() => startReview(refund, 'approve')}
                               className="text-[13px] bg-[#ff1268] text-white px-3 py-1.5 rounded-lg border-none cursor-pointer hover:bg-[#e0105a]"
                             >
                               {refund.status === 4 ? '重试退款' : '同意退款'}
                             </button>
                             {refund.status === 0 && (
                               <button
-                                onClick={() => startReview(refund.id, 'reject')}
+                                onClick={() => startReview(refund, 'reject')}
                                 className="text-[13px] bg-white text-[#666] border border-[#ddd] px-3 py-1.5 rounded-lg cursor-pointer hover:border-[#ff1268] hover:text-[#ff1268]"
                               >
                                 拒绝退款

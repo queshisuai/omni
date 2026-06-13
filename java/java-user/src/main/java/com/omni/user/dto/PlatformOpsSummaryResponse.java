@@ -13,6 +13,7 @@ public class PlatformOpsSummaryResponse {
     private RefundSummary refund = new RefundSummary();
     private GrabSummary grab = new GrabSummary();
     private WorkbenchSummary workbench = new WorkbenchSummary();
+    private InfrastructureHealth infrastructureHealth = new InfrastructureHealth();
     private List<DownstreamError> errors = new ArrayList<>();
 
     public LocalDateTime getGeneratedAt() { return generatedAt; }
@@ -27,6 +28,8 @@ public class PlatformOpsSummaryResponse {
     public void setGrab(GrabSummary grab) { this.grab = grab != null ? grab : new GrabSummary(); }
     public WorkbenchSummary getWorkbench() { return workbench; }
     public void setWorkbench(WorkbenchSummary workbench) { this.workbench = workbench != null ? workbench : new WorkbenchSummary(); }
+    public InfrastructureHealth getInfrastructureHealth() { return infrastructureHealth; }
+    public void setInfrastructureHealth(InfrastructureHealth infrastructureHealth) { this.infrastructureHealth = infrastructureHealth != null ? infrastructureHealth : new InfrastructureHealth(); }
     public List<DownstreamError> getErrors() { return errors; }
     public void setErrors(List<DownstreamError> errors) { this.errors = errors != null ? errors : new ArrayList<>(); }
 
@@ -72,6 +75,41 @@ public class PlatformOpsSummaryResponse {
 
         public String getSource() { return source; }
         public void setSource(String source) { this.source = source; }
+        public String getMessage() { return message; }
+        public void setMessage(String message) { this.message = message; }
+    }
+
+    public static class InfrastructureHealth {
+        private LocalDateTime generatedAt;
+        private List<InfrastructureHealthItem> items = new ArrayList<>();
+
+        public LocalDateTime getGeneratedAt() { return generatedAt; }
+        public void setGeneratedAt(LocalDateTime generatedAt) { this.generatedAt = generatedAt; }
+        public List<InfrastructureHealthItem> getItems() { return items; }
+        public void setItems(List<InfrastructureHealthItem> items) { this.items = items != null ? items : new ArrayList<>(); }
+    }
+
+    public static class InfrastructureHealthItem {
+        private String key;
+        private String label;
+        private String status;
+        private String message;
+
+        public InfrastructureHealthItem() {}
+
+        public InfrastructureHealthItem(String key, String label, String status, String message) {
+            this.key = key;
+            this.label = label;
+            this.status = status;
+            this.message = message;
+        }
+
+        public String getKey() { return key; }
+        public void setKey(String key) { this.key = key; }
+        public String getLabel() { return label; }
+        public void setLabel(String label) { this.label = label; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
         public String getMessage() { return message; }
         public void setMessage(String message) { this.message = message; }
     }

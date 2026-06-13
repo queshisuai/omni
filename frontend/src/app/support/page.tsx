@@ -261,8 +261,7 @@ export default function SupportWorkbenchPage() {
 
   const canProceedWithActiveWrite = (allowed: boolean) => {
     if (allowed) return true
-    const message = formatSupportConversationWriteBlockedMessage(active?.status)
-    if (message) setError(message)
+    setError(formatSupportConversationWriteBlockedMessage(active?.status) || '当前会话暂不能执行该操作，请刷新后再操作')
     return false
   }
 

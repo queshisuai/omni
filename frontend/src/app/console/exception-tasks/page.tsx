@@ -3,7 +3,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Plus, RefreshCw, ShieldAlert, XCircle } from 'lucide-react'
 import { claimExceptionTask, closeExceptionTask, createExceptionTask, listExceptionTasks, resolveExceptionTask } from '@/lib/api'
-import { formatExceptionSeverity, formatExceptionStatus, formatExceptionTaskType } from '@/lib/operation-display'
+import {
+  formatExceptionSeverity,
+  formatExceptionStatus,
+  formatExceptionTaskType,
+  getExceptionTaskTypeOptions,
+  isClaimableExceptionStatus,
+  isClosableExceptionStatus,
+  isOpenExceptionStatus,
+  isResolvableExceptionStatus,
+} from '@/lib/operation-display'
 import type { ExceptionTaskCreatePayload, ExceptionTaskVO } from '@/types/api'
 
 const severityOptions = [
@@ -20,13 +29,7 @@ const statusOptions = [
   { value: 'closed', label: '已关闭' },
 ]
 
-const taskTypeOptions = [
-  { value: 'payment_abnormal', label: '支付异常' },
-  { value: 'refund_failed', label: '退款失败' },
-  { value: 'ticket_issue_failed', label: '出票失败' },
-  { value: 'stock_deduct_failed', label: '库存扣减失败' },
-  { value: 'duplicate_payment', label: '重复支付' },
-]
+const taskTypeOptions = getExceptionTaskTypeOptions()
 
 function formatTime(value?: string | null) {
   if (!value) return '-'
@@ -50,7 +53,7 @@ export default function ExceptionTasksPage() {
   const [items, setItems] = useState<ExceptionTaskVO[]>([])
   const [statusFilter, setStatusFilter] = useState('')
   const [form, setForm] = useState<ExceptionTaskCreatePayload>(initialForm())
-  const [actionTarget, setActionTarget] = useState<{ taskId: number; action: 'resolve' | 'close' } | null>(null)
+  const [actionTarget, setActionTarget] = useState<{ taskId: number; status: string; action: 'resolve' | 'close' } | null>(null)
   const [actionResult, setActionResult] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -80,8 +83,8 @@ export default function ExceptionTasksPage() {
     return items.filter(item => item.status === statusFilter)
   }, [items, statusFilter])
 
-  const pendingCount = items.filter(item => item.status !== 'resolved' && item.status !== 'closed').length
-  const highCount = items.filter(item => item.severity === 'high' && item.status !== 'resolved' && item.status !== 'closed').length
+  const pendingCount = items.filter(item => isOpenExceptionStatus(item.status)).length
+  const highCount = items.filter(item => item.severity === 'high' && isOpenExceptionStatus(item.status)).length
 
   const changeStatus = (status: string) => {
     setStatusFilter(status)
@@ -116,9 +119,14 @@ export default function ExceptionTasksPage() {
     }
   }
 
-  const handleClaim = async (taskId: number) => {
+  const handleClaim = async (item: ExceptionTaskVO) => {
     setError('')
     setMessage('')
+    if (!isClaimableExceptionStatus(item.status)) {
+      setError('任务状态待核对，请刷新后再操作')
+      return
+    }
+    const taskId = item.id
     setActingId(taskId)
     try {
       await claimExceptionTask(taskId)
@@ -131,15 +139,30 @@ export default function ExceptionTasksPage() {
     }
   }
 
-  const startAction = (taskId: number, action: 'resolve' | 'close') => {
+  const startAction = (item: ExceptionTaskVO, action: 'resolve' | 'close') => {
     setError('')
     setMessage('')
-    setActionTarget({ taskId, action })
+    const canStart = action === 'resolve' ? isResolvableExceptionStatus(item.status) : isClosableExceptionStatus(item.status)
+    if (!canStart) {
+      setError('任务状态待核对，请刷新后再操作')
+      return
+    }
+    setActionTarget({ taskId: item.id, status: item.status, action })
     setActionResult('')
   }
 
   const submitAction = async () => {
     if (!actionTarget) return
+    const currentStatus = items.find(item => item.id === actionTarget.taskId)?.status ?? actionTarget.status
+    const canSubmit = actionTarget.action === 'resolve'
+      ? isResolvableExceptionStatus(currentStatus)
+      : isClosableExceptionStatus(currentStatus)
+    if (!canSubmit) {
+      setActionTarget(null)
+      setActionResult('')
+      setError('任务状态待核对，请刷新后再操作')
+      return
+    }
     const normalizedResult = actionResult.trim()
     if (!normalizedResult) {
       setError('请填写处理结果')
@@ -164,6 +187,60 @@ export default function ExceptionTasksPage() {
     } finally {
       setActingId(null)
     }
+  }
+
+  const renderTaskActions = (item: ExceptionTaskVO) => {
+    if (isClaimableExceptionStatus(item.status)) {
+      return (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => handleClaim(item)}
+            disabled={actingId === item.id}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+          >
+            <ShieldAlert className="h-3.5 w-3.5" />
+            认领
+          </button>
+          <button
+            onClick={() => startAction(item, 'close')}
+            disabled={actingId === item.id}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            关闭
+          </button>
+        </div>
+      )
+    }
+
+    if (isResolvableExceptionStatus(item.status)) {
+      return (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => startAction(item, 'resolve')}
+            disabled={actingId === item.id}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            标记已处理
+          </button>
+          <button
+            onClick={() => startAction(item, 'close')}
+            disabled={actingId === item.id}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            关闭
+          </button>
+        </div>
+      )
+    }
+
+    if (formatExceptionStatus(item.status) === '未知异常状态') {
+      return <span className="text-[12px] text-amber-600">状态待核对</span>
+    }
+
+    return <span className="text-[12px] text-gray-400">已结束</span>
   }
 
   return (
@@ -277,47 +354,7 @@ export default function ExceptionTasksPage() {
                     <td className="px-4 py-3 font-mono text-[12px] text-gray-500">{item.traceId || '-'}</td>
                     <td className="whitespace-nowrap px-4 py-3">{formatTime(item.createTime)}</td>
                     <td className="min-w-[260px] px-4 py-3">
-                      {item.status === 'pending' && (
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => handleClaim(item.id)}
-                            disabled={actingId === item.id}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
-                          >
-                            <ShieldAlert className="h-3.5 w-3.5" />
-                            认领
-                          </button>
-                          <button
-                            onClick={() => startAction(item.id, 'close')}
-                            disabled={actingId === item.id}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
-                          >
-                            <XCircle className="h-3.5 w-3.5" />
-                            关闭
-                          </button>
-                        </div>
-                      )}
-                      {item.status === 'processing' && (
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => startAction(item.id, 'resolve')}
-                            disabled={actingId === item.id}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            标记已处理
-                          </button>
-                          <button
-                            onClick={() => startAction(item.id, 'close')}
-                            disabled={actingId === item.id}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60"
-                          >
-                            <XCircle className="h-3.5 w-3.5" />
-                            关闭
-                          </button>
-                        </div>
-                      )}
-                      {(item.status === 'resolved' || item.status === 'closed') && <span className="text-[12px] text-gray-400">已结束</span>}
+                      {renderTaskActions(item)}
                     </td>
                   </tr>
                 ))}
