@@ -121,6 +121,8 @@ tmp/
 
 # 生成的分析报告
 graphify-out/
+generated/
+outputs/
 
 # Superpowers 工作目录
 .superpowers/
@@ -128,6 +130,8 @@ graphify-out/
 # 本地代理/工作区工具产物
 .claude/
 .worktrees/
+.codex-logs/
+.playwright-mcp/
 artifacts/
 
 # 前端包管理缓存
@@ -138,3 +142,12 @@ seata-dependency-baseline.txt
 
 # Claude Code 本地设置（项目级配置除外）
 .claude/settings.local.json
+
+# 测试/验收一次性报告
+unit-test/
+
+# 本地运行时上传、日志和进程文件
+runtime/
+
+# 旧原型归档，不进入生产交付面
+vue-archive/

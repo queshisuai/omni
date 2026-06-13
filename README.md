@@ -1,306 +1,64 @@
-# 🎫 Omni 万象抢票平台
+# Omni 万象抢票平台
 
-> 类大麦网风格的通用票务平台，为演唱会、体育赛事、戏剧等各类活动提供一站式票务解决方案。
+Omni 是一个类大麦网票务平台，当前交付口径是 **B 端主导、C 端参与**：平台管理员和主办方在后台完成活动、场次、票档、座位图、订单、退款、风控、客服和核验管理，普通用户在前台完成浏览、购票、抢票、候补、支付、评价和票夹查看。
 
-**Omni** 是一套面向真实业务的在线票务系统。项目以 **"B端主导、C端参与"** 的双层模式运作——主办方通过后台管理活动、场次与票档，普通用户则在前台浏览、选座、下单和支付。系统采用微服务架构，前后端分离，适合学习和二次开发。
+本文只保留生产前最后阶段需要的信息。历史计划、一次性验收记录、浏览器会话、演示稿构建产物、本地上传文件和旧前端归档不再作为项目交付面。
 
----
+## 当前生产前状态
 
-## 📑 目录
+- 推荐运行方式是 `prod-split`：Java 业务服务按服务拆分 PostgreSQL database，`java-gateway` 不连接业务数据库。
+- `grab-service` 独立使用 `omni_grab`，Redis 负责抢票库存、幂等、用户 hold 和座位 hold。
+- `omni_ticket` 仅保留为历史共享库、迁移源或 local-schema disposable 实验库；当前票务运行库必须是 `omni_ticket_split`。
+- Sentinel 已覆盖网关、用户、票务、订单、支付关键链路。
+- Seata 已覆盖订单、票务、支付核心跨服务写链路，事务组为 `omni_tx_group`。
+- 评价系统当前允许迭代：`activity_review` / `activity_question`；动态系统仍禁止恢复。
+- 前端使用 Next.js 代理 `/api/**` 到后端网关，用户可见文案必须是中文。
 
-- [核心功能](#-核心功能)
-- [技术栈](#-技术栈)
-- [项目结构](#-项目结构)
-- [环境要求](#-环境要求)
-- [快速开始](#-快速开始)
-- [使用指南](#-使用指南)
-- [配置说明](#-配置说明)
-- [常见问题 FAQ](#-常见问题-faq)
-- [贡献指南](#-贡献指南)
-- [许可证](#-许可证)
-- [致谢](#-致谢)
+## 技术栈
 
----
-
-## ✨ 核心功能
-
-### 👤 用户端（C 端）
-
-| 功能 | 说明 |
+| 层级 | 技术 |
 |:---|:---|
-| 用户注册/登录 | 支持密码登录和短信验证码登录 |
-| 活动浏览 | 首页轮播、分类筛选、关键词搜索 |
-| 活动详情 | 查看活动介绍、艺人阵容、场次与票档 |
-| 在线选座 | 基于 SeatCraft 画布的可视化座位图选座 |
-| 实名购票 | 实名活动下可新增、选择、删除实名观演人，订单保存观演人快照 |
-| 下单购票 | 选择场次、票档、座位和观演人后创建待支付订单 |
-| 抢票排队 | 支持高并发抢票提交、进度透明展示和失败原因中文说明 |
-| 组队抢票 | 支持创建小队、加入小队、统一锁票和成员支付同步 |
-| 候补排队 | 票档售罄后可加入候补，释放库存后按顺序生成待支付订单 |
-| 支付宝支付 | 支付宝沙盒环境扫码支付 |
-| 订单管理 | 查看历史订单、待支付订单及订单状态 |
-| 个人信息 | 修改密码、更新个人资料 |
-| AI 客服 | 基于本地 FAQ 索引 + Ollama Qwen2.5:7b 的智能问答 |
-| 评价与问答 | 购后对活动评分评价、购前向主办方提问 |
-| 电子票与验票 | 查看电子票详情、入场验票码、转票操作 |
+| Java 后端 | Spring Boot 2.7.18 + Spring Cloud 2021.0.8 + Spring Cloud Alibaba 2021.0.5.0 |
+| 网关 | Spring Cloud Gateway + Netty |
+| 数据库 | PostgreSQL 17 |
+| 缓存 / 抢票状态 | Redis 7 |
+| MQ | RabbitMQ 3.13 |
+| ORM | MyBatis-Plus 3.5.3.1 |
+| 注册 / 配置中心 | Nacos 2.4.3 |
+| 分布式事务 | Seata 1.6.1 |
+| 前端 | Next.js 16.2.1 + React 19.2.4 + TypeScript |
+| 抢票服务 | NestJS + Redis Lua + PostgreSQL |
+| 构建 | Maven / pnpm / npm |
 
-### 🏢 管理端（B 端）
+## 目录结构
 
-| 功能 | 说明 |
-|:---|:---|
-| 数据概览 | B端首页展示关键业务数据汇总 |
-| 活动管理 | 创建/编辑/上架/下架/删除活动 |
-| 场次管理 | 为活动创建多个演出场次 |
-| 票档管理 | 设定票价、库存及区域绑定 |
-| 座位图设计 | SeatCraft 可视化座位布局编辑器（模板/布局/版本/发布/回滚） |
-| 场馆管理 | 场馆创建、座位模板管理、区域划分 |
-| 订单查看 | 查看订单、支付状态、座位信息和实名观演人快照 |
-| 退款审核 | 处理用户退款申请 |
-| 主办方申请 | 用户可申请成为主办方，管理员审批 |
-| 场馆申请 | 主办方可申请新场馆，管理员审批 |
-| 艺人管理 | 艺人信息维护与巡演关联 |
-| 风险管控 | 活动风险等级评估与处置 |
-| 站点配置 | 巡演站点管理 |
-| 客服工作台 | 异常任务处理、对账工单、审计日志、FAQ 管理 |
-| RBAC 权限 | 角色-用户-权限三级管理，支持细粒度接口权限 |
-| 评价审核 | 审核用户评价，处理评价举报 |
-| 验票入场 | 验票设备管理、验票记录查询 |
-
-### 🔔 通知系统
-
-- 订单支付成功通知
-- 候补名额释放通知、候补过期通知
-- 活动状态变更通知（取消/延期等风险处置）
-- 退款进度通知
-
-### ⚡ 抢票与候补
-
-- NestJS 抢票服务已接入用户抢票、组队抢票、抢票进度透明度层和候补排队
-- Redis Lua 负责库存扣减、幂等、用户 hold 和座位 hold，最终事实源仍以订单和座位数据库状态为准
-- 候补队列只管理排队资格和自动分配，库存释放后复用订单服务创建待支付订单
-- 未付款订单超时释放、退款释放均可触发候补递补
-
----
-
-## 🛠 技术栈
-
-| 层级 | 技术选型 | 版本 |
-|:---|:---|:---|
-| **后端框架** | Spring Boot + Spring Cloud Alibaba | Boot 2.7.18 / Cloud 2021.0.8 / Alibaba 2021.0.5.0 |
-| **API 网关** | Spring Cloud Gateway + Netty | — |
-| **数据库** | PostgreSQL | 17 |
-| **缓存/抢票状态** | Redis | 7 |
-| **ORM** | MyBatis-Plus | 3.5.3.1 |
-| **连接池** | Druid | 1.2.18 |
-| **认证** | JWT | jjwt 0.11.5 |
-| **注册中心** | Nacos | 2.4.3 |
-| **服务调用** | OpenFeign | — |
-| **分布式保护** | Sentinel | — |
-| **分布式事务** | Seata | 1.6.1 |
-| **前端框架** | Next.js + React | Next 16.2.1 / React 19.2.4 |
-| **UI 组件库** | shadcn/ui + Tailwind CSS 4 | — |
-| **抢票服务** | NestJS + Redis Lua + PostgreSQL | — |
-| **构建工具** | Maven（后端）/ pnpm（前端） | — |
-
----
-
-## 📁 项目结构
-
-```
+```text
 Omni/
-├── java/                          # ☕ Java 微服务集群
-│   ├── java-common/               #   公共模块（统一响应、异常、JWT）
-│   ├── java-gateway/              #   API 网关（端口 8088）
-│   ├── java-user/                 #   用户服务（端口 8081）
-│   ├── java-ticket/               #   票务服务（端口 8082）
-│   ├── java-order/                #   订单服务（端口 8083）
-│   ├── java-payment/              #   支付服务（端口 8084）
-│   └── java-notification/         #   通知服务（端口 8085）
-│
-├── frontend/                      # 🌐 Next.js 前端（端口 3000）
-│   ├── src/
-│   │   ├── app/                   #   页面路由（App Router）
-│   │   ├── components/            #   通用组件与 SeatCraft 选座组件
-│   │   ├── lib/                   #   工具库（API 封装、认证、工具函数）
-│   │   └── types/                 #   TypeScript 类型定义
-│   └── public/                    #   静态资源
-│
-├── nestjs/grab-service/           # ⚡ NestJS 抢票、组队抢票、候补排队服务（端口 3001）
-│
-├── sql/                           # 🗄️ 数据库脚本
-│   ├── init.sql                   #   历史共享库初始化
-│   ├── seed.sql                   #   测试种子数据
-│   ├── local/                     #   本地开发用 disposable 数据库 SQL
-│   ├── migrations/shared/         #   历史共享库增量迁移归档
-│   └── production-split/          #   生产物理拆库迁移资产
-│
-├── scripts/                       # 🔧 运维脚本（边界检查、拆库导出导入、运行时验证）
-├── docs/                          # 📚 设计文档与运维手册
-│   ├── microservices/             #   微服务边界与表所有权文档
-│   ├── operations/                #   运维手册、拆库设计、SLA、RBAC 等
-│   ├── specs/                     #   总体设计规格
-│   ├── production-readiness/      #   生产就绪审计
-│   ├── runbooks/                  #   运行时验证手册
-│   └── project-defense-responsibility-and-qna.md  # 项目答辩问答
-├── docker/                        # 🐳 Docker 基础设施配置
-│   └── seata/                     #   Seata Server 配置与 Nacos 导入脚本
-├── runtime/                       # 📁 运行时目录
-│   ├── uploads/                   #   本地公开上传文件
-│   ├── logs/                      #   运行时日志
-│   └── private-uploads/           #   私有上传文件
-├── start-project.ps1              # 🚀 一键启动脚本
-└── CLAUDE.md                      #   开发者运行手册
+├── java/                          # Java 微服务父工程
+│   ├── java-common/               # 公共模块
+│   ├── java-gateway/              # 网关 :8088
+│   ├── java-user/                 # 用户/客服/权限服务 :8081
+│   ├── java-ticket/               # 票务/活动/座位图服务 :8082
+│   ├── java-order/                # 订单/票夹服务 :8083
+│   ├── java-payment/              # 支付/退款服务 :8084
+│   └── java-notification/         # 通知服务 :8085
+├── frontend/                      # Next.js 前端 :3000
+├── nestjs/grab-service/           # 抢票/候补服务 :3001
+├── docker/                        # Docker 中间件配置
+├── sql/                           # 数据库脚本
+│   ├── production-split/          # 生产物理拆库迁移资产
+│   ├── migrations/shared/         # 历史共享库迁移归档
+│   ├── local/                     # 仅本地 disposable DB 使用
+│   └── seeds/prod-split-real-demo/# 本地真实演示数据
+├── scripts/                       # 启动、边界检查、拆库导入导出、runtime verifier
+├── docs/                          # 保留的设计、边界、运维和生产就绪文档
+├── runtime/                       # 本地运行时目录，不应提交内容
+└── start-project.ps1              # 推荐本机启动脚本
 ```
 
----
+## 数据库拓扑
 
-## 📋 环境要求
-
-在开始之前，请确保你的开发环境满足以下条件：
-
-| 依赖项 | 最低版本 | 说明 |
-|:---|:---|:---|
-| **JDK** | 11+ | 后端 Java 运行环境 |
-| **Maven** | 3.8+ | Java 项目构建工具 |
-| **Node.js** | >=24 | 前端运行环境 |
-| **pnpm** | 最新版 | 前端包管理器 |
-| **PostgreSQL** | 17 | 主数据库 |
-| **Redis** | 7+ | 抢票库存、幂等、用户 hold、座位 hold |
-| **Nacos** | 2.4.3 | 注册中心/配置中心 |
-| **Seata** | 1.6.1 | 订单、票务、支付核心写链路事务协调 |
-| **PowerShell** | 5+ | 运行启动脚本 |
-
-> 💡 **提示**：Nacos 建议安装在 `C:\nacos\` 目录。若安装在其他位置，请自行修改启动命令。
-
----
-
-## 🚀 快速开始
-
-### 第一步：安装基础环境
-
-1. **安装 JDK 11**（可从 [Adoptium](https://adoptium.net/) 下载）
-2. **安装 Maven**（可从 [Maven 官网](https://maven.apache.org/download.cgi) 下载）
-3. **安装 Node.js 24+**（可从 [Node.js 官网](https://nodejs.org/) 下载）
-4. **安装 pnpm**：
-   ```powershell
-   npm install -g pnpm
-   ```
-5. **安装 PostgreSQL**（可从 [PostgreSQL 官网](https://www.postgresql.org/download/) 下载）
-6. **安装并启动 Nacos**：
-   ```powershell
-   C:\nacos\bin\startup.cmd -m standalone
-   ```
-
-### 第二步：初始化数据库
-
-使用 PostgreSQL 客户端（如 pgAdmin 或 `psql`）创建当前物理拆库所需数据库：
-
-```sql
-CREATE DATABASE omni_user;
-CREATE DATABASE omni_ticket_split;
-CREATE DATABASE omni_order;
-CREATE DATABASE omni_payment;
-CREATE DATABASE omni_notification;
-CREATE DATABASE omni_grab;
-```
-
-> 📌 数据库连接信息：主机 `localhost`、端口 `5432`、用户 `postgres`、密码 `123456`。
-> 当前票务运行库是 `omni_ticket_split`，`omni_ticket` 仅作为历史共享库或迁移源使用。
-
-### 第三步：安装项目依赖
-
-**安装前端依赖：**
-
-```powershell
-cd frontend
-pnpm install
-```
-
-**编译公共模块并安装后端依赖：**
-
-```powershell
-cd java
-mvn clean install -pl java-common
-```
-
-### 第四步：一键启动（推荐）
-
-项目提供了一键启动脚本，自动完成服务检查与启动：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File start-project.ps1
-```
-
-Docker 中间件模式会通过 Docker Compose 启动 PostgreSQL、Redis 和 Nacos，业务服务仍在宿主机运行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File start-project.ps1 -UseDockerInfra
-```
-
-只启动中间件容器：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start-infra.ps1
-```
-
-Docker 中间件会把 PostgreSQL `5432`、Redis `6379` 和 Nacos `8848` 发布到 `localhost`，现有业务服务配置无需修改。
-
-该脚本会自动：
-- 检查 PostgreSQL、Redis 和 Nacos 是否已在运行
-- 以 `prod-split` 模式启动 Java 业务服务，网关使用默认 profile
-- 为每个服务注入其专属数据库的数据源配置
-- 启动 NestJS 抢票服务并连接 `omni_grab` 与 Redis
-- 启动前端开发服务器
-
-启动完成后，访问以下地址：
-
-| 入口 | 地址 |
-|:---|:---|
-| 🖥️ 用户前台 | [http://localhost:3000](http://localhost:3000) |
-| 🏢 管理后台 | [http://localhost:3000/console](http://localhost:3000/console) |
-| 🔌 API 网关 | [http://localhost:8088](http://localhost:8088) |
-
-### 第四步（备选）：手动启动
-
-如果不想使用启动脚本，也可以逐个启动服务。以用户服务为例：
-
-```powershell
-cd java\java-user
-mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments="--spring.datasource.url=jdbc:postgresql://localhost:5432/omni_user --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=omni-local-internal-token"
-```
-
-> ⚠️ Java 业务服务必须统一使用 `prod-split` profile，不可混用默认 profile；`java-gateway` 不连接业务数据库。
-
-启动前端：
-
-```powershell
-cd frontend
-pnpm dev
-```
-
----
-
-## 📖 使用指南
-
-### 服务端口一览
-
-| 服务名称 | 端口 | 职能 |
-|:---|:---|:---|
-| Nacos | 8848 | 服务注册与配置中心 |
-| java-gateway | 8088 | API 网关，统一入口 |
-| java-user | 8081 | 用户注册、登录、资料管理 |
-| java-ticket | 8082 | 活动管理、场次、票档、座位图 |
-| java-order | 8083 | 订单创建、状态管理、超时取消 |
-| java-payment | 8084 | 支付处理、支付宝对接、退款 |
-| java-notification | 8085 | 异步通知推送 |
-| frontend | 3000 | Next.js 前端应用 |
-| grab-service | 3001 | 抢票、组队抢票、候补排队入口服务 |
-
-### 数据库拓扑
-
-每个业务服务拥有独立的数据库，实现物理隔离：
-
-| 服务 | 专属数据库 |
+| 服务 | 数据库 |
 |:---|:---|
 | `java-user` | `omni_user` |
 | `java-ticket` | `omni_ticket_split` |
@@ -310,339 +68,160 @@ pnpm dev
 | `grab-service` | `omni_grab` |
 | `java-gateway` | 不连接业务数据库 |
 
-### 测试账号
+本机默认连接：`localhost:5432` / `postgres` / `123456`。生产环境必须通过环境变量或部署平台注入真实凭据，不要写入仓库。
 
-| 手机号 | 密码 | 角色 | 用户 ID | 能做什么 |
-|:---|:---|:---|:---|:---|
-| `13800000001` | `123456` | admin（平台管理员） | 2002 | 管理后台全部功能、审批主办方和场馆申请 |
-| `13800000002` | `123456` | organizer（主办方） | 2003 | 创建管理活动、设置场次和票档、查看订单 |
-| `13900000001` | `123456` | user（普通用户） | 2004 | 浏览活动、购票下单、查看订单 |
+## 本机启动
 
-### 用户端操作流程
+推荐：
 
-完整的购票流程如下：
-
-```
-注册/登录 → 浏览首页/搜索活动 → 查看活动详情
-    → 选择场次与票档/选座 → 选择或新增实名观演人 → 确认下单
-    → 支付宝扫码支付 → 支付结果确认
-    → 查看订单详情
+```powershell
+powershell -ExecutionPolicy Bypass -File start-project.ps1
 ```
 
-票档售罄后的候补流程如下：
+脚本会检查 Java、Maven、Node、pnpm/npm，注入本地默认 `JWT_SECRET` 和 `INTERNAL_API_TOKEN`，以 `prod-split` 启动五个 Java 业务服务，启动 `grab-service` 和前端。
 
+Docker 中间件模式：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File start-project.ps1 -UseDockerInfra
 ```
-选择售罄票档 → 加入候补 → 等待库存释放
-    → 系统按候补顺序生成待支付订单
-    → 用户限时支付或超时释放给下一位候补用户
+
+注意：当前 `scripts/start-infra.ps1` 只检查本机 PostgreSQL 并启动 Docker Redis、Nacos；不会启动 PostgreSQL 容器，也不会启动 RabbitMQ。需要 RabbitMQ 时运行：
+
+```powershell
+docker compose up -d rabbitmq
 ```
 
-### 关键 API 接口
+Seata 本地刷新：
 
-以下是常用的 C 端 API，所有请求通过网关 `http://localhost:8088` 访问：
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-seata-docker.ps1
+```
 
-| 接口说明 | 方法 | 路径 |
-|:---|:---|:---|
-| 密码登录 | `POST` | `/api/user/login` |
-| 活动列表 | `GET` | `/api/ticket/activities` |
-| 活动详情 | `GET` | `/api/ticket/activities/{id}` |
-| 场次座位图 | `GET` | `/api/ticket/sessions/{id}/seat-map` |
-| 创建订单 | `POST` | `/api/order/create` |
-| 带选座下单 | `POST` | `/api/order/create-with-seats` |
-| 新增实名观演人 | `POST` | `/api/user/attendees` |
-| 删除实名观演人 | `DELETE` | `/api/user/attendees/{id}` |
-| 加入候补 | `POST` | `/api/waitlist/entries` |
-| 我的候补 | `GET` | `/api/waitlist/my` |
-| 取消候补 | `DELETE` | `/api/waitlist/entries/{id}` |
-| 提交抢票 | `POST` | `/api/grab/requests` |
-| 抢票进度 | `GET` | `/api/grab/requests/{requestId}` |
-| 支付宝扫码支付 | `POST` | `/api/payment/alipay/qr-pay` |
-| 支付结果同步 | `GET` | `/api/payment/alipay/sync/{orderId}` |
-| 我的订单 | `GET` | `/api/order/user/{userId}` |
+网络环境变化后先刷新 Seata，再重启 `java-ticket`、`java-order`、`java-payment`。
 
-**登录示例（PowerShell）：**
+## 入口与账号
+
+| 入口 | 地址 |
+|:---|:---|
+| 用户前台 | http://localhost:3000 |
+| 管理后台 | http://localhost:3000/console |
+| API 网关 | http://localhost:8088 |
+| Nacos | http://localhost:8848/nacos |
+| RabbitMQ 管理台 | http://localhost:15672 |
+| Seata 控制台 | http://localhost:7091 |
+
+| 手机号 | 密码 | 角色 | userId |
+|:---|:---|:---|:---|
+| `13800000001` | `123456` | admin | `2002` |
+| `13800000002` | `123456` | organizer | `2003` |
+| `13900000001` | `123456` | user | `2004` |
+
+登录字段使用 `account`，不要使用旧字段 `phone`：
 
 ```powershell
 curl.exe --% -s -m 10 -X POST http://localhost:8088/api/user/login -H "Content-Type: application/json" -d "{\"loginType\":\"password\",\"account\":\"13900000001\",\"password\":\"123456\"}"
 ```
 
-> 💡 在 PowerShell 中调用 `curl.exe` 时，务必使用 `--%` 参数，避免 JSON 引号被 PowerShell 转义导致服务器返回 500 错误。
+## 核心业务链路
 
-### 订单状态说明
+```text
+登录 -> 浏览/搜索活动 -> 活动详情
+-> 选择场次、票档、座位或提交抢票
+-> 创建订单 / 候补递补生成订单
+-> 支付宝沙盒 QR 或 page pay
+-> 支付同步/回调
+-> order 标记已支付 -> ticket 确认售出/占座 -> 票夹出票
+```
 
-| 状态码 | 后端常量 | 含义 |
-|:---|:---|:---|
-| `1` | `STATUS_PENDING` | 待支付：订单已创建，等待用户付款 |
-| `2` | `STATUS_PAID` | 已支付：付款成功，出票完成 |
-| `3` | `STATUS_CANCELLED` | 已取消：用户或系统取消订单 |
-| `4` | `STATUS_REFUNDED` | 已退款：订单已退款处理完毕 |
+关键接口：
 
----
+- `POST /api/user/login`
+- `GET /api/ticket/activities`
+- `GET /api/ticket/activities/{id}`
+- `POST /api/order/create`
+- `POST /api/order/create-with-seats`
+- `POST /api/grab/requests`
+- `POST /api/waitlist/entries`
+- `POST /api/payment/alipay/qr-pay`
+- `GET /api/payment/alipay/sync/{orderId}`
+- `GET /api/order/user/{userId}`
 
-## ⚙️ 配置说明
+订单状态：`1=待支付`、`2=已支付`、`3=已取消`、`4=已退款`。
 
-### 数据库连接
+## 微服务边界
 
-所有服务的数据库连接配置通过启动参数注入，不使用默认的 `application.yml` 中的静态配置：
+- 禁止新增跨服务 Mapper、Entity、XML mapper 或 SQL join。
+- `java-order` 不直接访问 user/ticket 表，通过 `java-user` 和 `java-ticket` internal API 完成校验、报价、库存/座位锁定、确认售出和释放。
+- `java-payment` 不直接访问 order/user/ticket 表，通过 internal API 获取/更新订单和做退款校验。
+- `java-notification` 的 `userId`、`orderId` 是 copied id，不拥有 user/order 数据。
+- `grab-service` 不直接写 ticket/order/user DB，抢票成功后通过 Gateway 调用 order internal API。
+- 所有新增 internal API 必须校验 `X-Internal-Token`。
+
+## 验收命令
+
+边界验收：
 
 ```powershell
---spring.datasource.url=jdbc:postgresql://localhost:5432/omni_user
---spring.datasource.username=postgres
---spring.datasource.password=123456
+powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1
 ```
 
-### 服务间认证
+生产拆库 runtime verifier：
 
-微服务之间通过 internal API 通信，所有内部接口需要在请求头中携带 Token：
-
-```
-X-Internal-Token: omni-local-internal-token
-```
-
-配置项 `internal.api.token` 或环境变量 `INTERNAL_API_TOKEN` 控制该值。
-
-### 前端代理与 API 超时
-
-前端通过 Next.js 路由代理解决跨域问题：浏览器请求先打到 Next.js `/api/**`，由 `frontend/src/app/api/[...path]/route.ts` 转发到后端网关（默认 `http://localhost:8088`，可用 `API_PROXY_TARGET` 环境变量覆盖）。代理会自动转发 `authorization` 请求头。
-
-统一请求封装 `request<T>()` 的超时时间在 `frontend/src/lib/api.ts` 中配置：
-
-| 场景 | 超时时间 |
-|:---|:---|
-| 普通 API | 5000ms |
-| 支付宝 QR 支付创建 | 15000ms |
-| 客服 SSE | 70000ms |
-
-### Profile 说明
-
-| Profile | 用途 | 适用场景 |
-|:---|:---|:---|
-| `prod-split`（推荐） | Java 业务库物理隔离，抢票服务独立使用 `omni_grab` | 日常开发联调 |
-| `local-schema` | 本地 disposable 数据库 | 快速实验，禁止用于生产 |
-| 默认（无 profile） | 历史共享库 `omni_ticket` | 仅兼容旧阶段，不推荐使用 |
-
-### 分布式限流（Sentinel）
-
-Sentinel 已在网关和核心业务服务中接入限流、熔断或降级保护：
-
-| 服务 | 保护范围 |
-|:---|:---|
-| `java-gateway` | `/api/grab/**`、下单、支付关键接口、登录/验证码、票务热点读接口 |
-| `java-user` | 密码登录、发送验证码 |
-| `java-ticket` | 库存锁定、座位锁定、确认售出、座位图读取 |
-| `java-order` | 订单创建（普通/带座）、标记已支付；user/ticket Feign 调用熔断 |
-| `java-payment` | 支付同步、异步通知、退款申请；order/支付宝渠道熔断 |
-
-Gateway 限流触发时返回 `429` JSON：
-```json
-{"code":429,"message":"系统繁忙，请稍后重试","data":null}
+```powershell
+$env:PGPASSWORD='123456'
+powershell -ExecutionPolicy Bypass -File scripts/verify-production-split-runtime.ps1 -UserHost localhost -TicketHost localhost -OrderHost localhost -PaymentHost localhost -NotificationHost localhost -TargetDatabaseByService 'ticket=omni_ticket_split'
 ```
 
-### 分布式事务（Seata）
-
-Seata AT 模式覆盖订单-票务-支付核心写链路：
-
-- 事务组：`omni_tx_group`，vgroup 映射 `service.vgroupMapping.omni_tx_group=default`
-- 已接入服务：`java-order`、`java-ticket`、`java-payment`
-- 全局事务覆盖：创建订单、带座创建订单、取消订单、全额/部分退款标记、支付确认
-- 注意事项：
-  - `omni_order`、`omni_ticket_split`、`omni_payment` 必须存在 `undo_log` 表
-  - 支付宝真实退款、Redis、通知等外部副作用不由 Seata AT 回滚
-  - 外部副作用成功但内部落库失败时，继续走补偿或人工处理
-
-### 抢票服务配置
-
-抢票服务运行在端口 3001，通过 Gateway 路由 `/api/grab/**` 和 `/api/waitlist/**` 接入：
-
-| 环境变量 | 说明 |
-|:---|:---|
-| `GRAB_DB_HOST` | 数据库主机；必须显式配置 |
-| `GRAB_DB_PORT` | 数据库端口；必须显式配置 |
-| `GRAB_DB_NAME` | 数据库名；必须显式配置 |
-| `GRAB_DB_USER` | 数据库用户；必须显式配置 |
-| `GRAB_DB_PASSWORD` | 数据库密码；必须显式配置 |
-| `REDIS_HOST` | Redis 主机；必须显式配置 |
-| `REDIS_PORT` | Redis 端口；必须显式配置 |
-| `ORDER_SERVICE_URL` | 订单服务网关地址；必须显式配置 |
-| `TICKET_SERVICE_URL` | 票务服务网关地址；必须显式配置 |
-| `NOTIFICATION_SERVICE_URL` | 通知服务网关地址；必须显式配置 |
-| `INTERNAL_API_TOKEN` | 内部服务认证 Token |
-| `JWT_SECRET` | JWT 密钥（需与 Java 服务一致） |
-
-> ⚠️ **重要**：不要将默认 `application.yml` 修改为 local-schema 或生产专用配置，推荐统一使用 `prod-split` profile。
-
----
-
-## ❓ 常见问题 FAQ
-
-<details>
-<summary><strong>Q: 服务启动后连接到错误的数据库（omni_ticket）怎么办？</strong></summary>
-
-**原因**：启动时使用了默认 profile，导致连回了历史共享库。
-
-**解决**：确保 Java 业务服务使用 `prod-split` profile 启动，并显式传入各自数据源配置。推荐使用一键启动脚本 `start-project.ps1`。
-</details>
-
-<details>
-<summary><strong>Q: Internal API 返回 403 Forbidden 怎么办？</strong></summary>
-
-**原因**：内部调用缺少 `X-Internal-Token` 或 Token 值不一致。
-
-**解决**：确保所有服务使用相同的 internal token。本地开发推荐值为 `omni-local-internal-token`。
-</details>
-
-<details>
-<summary><strong>Q: 在 PowerShell 中使用 curl 调用 API 返回 500 错误？</strong></summary>
-
-**原因**：PowerShell 会改写 JSON 中的双引号，导致请求体格式错误。
-
-**解决**：使用 `curl.exe --%` 调用来阻止 PowerShell 转义。
-</details>
-
-<details>
-<summary><strong>Q: 访问 API 网关返回 503 服务暂不可用？</strong></summary>
-
-**原因**：后端服务未注册到 Nacos 或未启动成功。
-
-**解决**：检查 Nacos 控制台（http://localhost:8848/nacos）确认所有服务实例已注册，再检查各服务启动日志。
-</details>
-
-<details>
-<summary><strong>Q: AI 客服回答慢，一直显示“客服正在思考”怎么办？</strong></summary>
-
-**原因**：前端已使用 SSE 流式接口；后端会先命中本地 FAQ/关键词索引，未命中时再调用本机 Ollama。当前默认模型为 `Qwen2.5:7b`，接口为 `http://localhost:11434/api/chat`。如果 Ollama 未启动或模型未准备好，未命中索引的问题会等到模型调用失败后再兜底。
-
-**解决**：确认本机 Ollama 已启动且存在 `Qwen2.5:7b`。需要临时只走本地 FAQ/规则时，可将 `OMNI_SUPPORT_AI_LOCAL_ENABLED=false` 后重启 `java-user`；常见问题会直接从本地索引返回，不依赖模型首包。
-</details>
-
-<details>
-<summary><strong>Q: 候补加入成功后为什么没有立即生成订单？</strong></summary>
-
-**原因**：候补队列只代表排队资格。只有未付款订单超时释放、退款释放等事件恢复库存后，候补分配器才会按顺序尝试生成待支付订单。
-
-**解决**：确认 `grab-service` 正常运行并连接 `omni_grab` 和 RabbitMQ，同时检查订单服务是否已向 `omni.waitlist` exchange 发送 `waitlist.released` 释放事件。
-</details>
-
-<details>
-<summary><strong>Q: 实名购票下单提示请选择实名观演人？</strong></summary>
-
-**原因**：活动开启实名购票后，下单数量必须与已选择的实名观演人数量一致。
-
-**解决**：在确认订单弹窗中新增或选择对应数量的实名观演人；不再使用的观演人可在弹窗内删除。
-</details>
-
-<details>
-<summary><strong>Q: 下单时提示用户不存在？</strong></summary>
-
-**原因**：`java-order` 创建订单前会通过 `java-user` 的 internal API 校验用户是否存在。
-
-**解决**：确保使用的下单用户是测试账号中已存在的用户（如 `13900000001`）。
-</details>
-
-<details>
-<summary><strong>Q: 抢票返回 401 或 "JWT 未配置"？</strong></summary>
-
-**原因**：`grab-service` 缺少 `JWT_SECRET` 环境变量，或前端请求未携带 token。
-
-**解决**：确保 `grab-service` 设置了 `JWT_SECRET`（与 Java 服务一致），并重新登录获取有效 token。
-</details>
-
-<details>
-<summary><strong>Q: 座位一直显示"生成中"？</strong></summary>
-
-**原因**：场次 SeatCraft 布局未发布，或支付后确认售出未更新 `session_seat` 状态。
-
-**解决**：检查场次 SeatCraft 版本状态、票档区域绑定、`session_seat` 和 `order_seat` 数据一致性。
-</details>
-
-<details>
-<summary><strong>Q: Druid 报 url 为占位符 ${SPRING_DATASOURCE_URL}？</strong></summary>
-
-**原因**：启动参数未注入，配置占位符原样进入运行时。
-
-**解决**：使用 `start-project.ps1` 启动，或手动传入 `--spring.datasource.url=jdbc:postgresql://localhost:5432/<db>`。
-</details>
-
-<details>
-<summary><strong>Q: 修改 java-common 后出现 NoSuchMethodError？</strong></summary>
-
-**原因**：公共模块更新后未重新安装，其他服务使用了旧的 class。
-
-**解决**：先执行 `mvn clean install -pl java-common -am`，然后重启所有相关服务。
-</details>
-
-<details>
-<summary><strong>Q: 支付同步后订单仍为待支付状态？</strong></summary>
-
-**原因**：支付宝沙盒环境中的交易未实际完成支付，或回调未触发。
-
-**解决**：确保在支付宝沙盒中完成扫码支付，然后调用 `/api/payment/alipay/sync/{orderId}` 同步支付状态。
-</details>
-
-<details>
-<summary><strong>Q: SeatCraft 座位图编辑器无法加载？</strong></summary>
-
-**原因**：场馆未创建座位图模板。
-
-**解决**：在管理后台为场馆创建默认座位图模板，活动创建时会从模板复制座位布局。
-</details>
-
----
-
-## 🤝 贡献指南
-
-我们欢迎任何形式的贡献！在参与之前，请阅读以下指引。
-
-### 代码规范
-
-- **后端**：遵循 MyBatis-Plus 编码规范，优先使用 `LambdaQueryWrapper` 构建查询
-- **前端**：使用 `src/lib/api.ts` 中的 `request<T>()` 统一请求封装
-- **命名**：遵循前端 TypeScript + 后端 Java 驼峰命名规范
-- **注释**：所有函数、复杂逻辑及类/模块必须有中文注释
-- **文案**：用户可见的提示、警告、错误、按钮反馈和状态说明必须使用中文
-
-### 开发流程
-
-1. **Fork** 本仓库
-2. 创建特性分支：`git checkout -b feature/你的功能描述`
-3. 编写代码并自测
-4. **关键检查**：任何涉及服务边界的改动后，必须运行：
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1
-   ```
-5. 确保前端类型检查通过：
-   ```powershell
-   cd frontend
-   pnpm typecheck
-   ```
-6. 提交代码并发起 Pull Request
-
-### 重要约束
-
-- ❌ **禁止**新增跨服务的 Mapper、Entity 或 SQL JOIN 查询
-- ❌ **禁止**恢复已删除的评价系统和动态系统
-- ❌ **禁止**将 `sql/local/*` 目录的 SQL 用于 staging / production 环境
-- ✅ 所有新增 internal API 必须校验 `X-Internal-Token`
-
----
-
-## 📄 许可证
-
-本项目采用 [MIT License](LICENSE) 开源协议。
-
----
-
-## 🙏 致谢
-
-Omni 万象抢票平台的诞生离不开以下优秀开源项目：
-
-- [Spring Cloud Alibaba](https://github.com/alibaba/spring-cloud-alibaba) — 微服务基础设施
-- [Nacos](https://github.com/alibaba/nacos) — 服务注册与配置中心
-- [MyBatis-Plus](https://github.com/baomidou/mybatis-plus) — 强大的 ORM 增强工具
-- [Next.js](https://github.com/vercel/next.js) — React 全栈框架
-- [shadcn/ui](https://ui.shadcn.com/) — 高质量 UI 组件库
-- [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss) — 实用优先的 CSS 框架
-- [PostgreSQL](https://www.postgresql.org/) — 强大的开源关系型数据库
-- [Alipay Sandbox](https://open.alipay.com/) — 支付宝沙盒支付环境
-
-**特别感谢**所有参与项目开发和测试的贡献者们！
+前端检查：
+
+```powershell
+cd frontend
+pnpm typecheck
+```
+
+当前数据库连接检查：
+
+```powershell
+$env:PGPASSWORD='123456'
+psql -h localhost -p 5432 -U postgres -d postgres -t -A -c "SELECT datname, application_name, state FROM pg_stat_activity WHERE datname LIKE 'omni%' ORDER BY datname, application_name, state;"
+```
+
+正常情况下不应出现业务 JDBC 连接到 `omni_ticket`。
+
+## 保留文档
+
+- `CLAUDE.md`：开发者/AI 运行手册。
+- `AGENTS.md`：Codex 项目规则。
+- `docs/microservices/`：微服务边界和拆库约束。
+- `docs/operations/2026-05-20-production-physical-db-split-design.md`
+- `docs/operations/2026-05-20-production-physical-db-split-implementation.md`
+- `docs/operations/production-db-split-cutover-checklist.md`
+- `docs/operations/seata-local-verification.md`
+- `docs/production-readiness/production-env-vars.md`
+- `docs/production-readiness/production-defaults-audit.md`
+- `docs/production-readiness/sentry-evaluation-and-trial-plan.md`
+- `docs/production-readiness/posthog-evaluation-and-trial-plan.md`
+
+## 生产前清理结论
+
+以下内容不应进入生产交付面，已在本轮清理或列为可删除对象：
+
+- 浏览器/Agent 会话产物：`.playwright-mcp/`、`.superpowers/`、`.codex-logs/`。
+- 一次性计划和流水文档：`task_plan.md`、`progress.md`、`findings.md`、`docs/superpowers/`、已完成的 `*-implementation-plan.md`。
+- 旧扫描报告和过期索引：`docs/test-file-cleanup-report.md`、`PROJECT_INDEX.md`。
+- 演示稿/答辩构建产物：`outputs/`、`unit-test/`、项目报告 `.docx`。
+- 本地运行文件：`runtime/` 下的上传文件、预览图、日志、pids、service-env。
+- 旧实现归档：`vue-archive/`。
+- 临时依赖分析文件：`seata-dependency-baseline.txt`。
+
+后续如果需要保留验收证据，应放到外部归档或 issue/发布记录，不再堆在源码根目录。
+
+## 操作纪律
+
+- 不要提交真实密钥、token、数据库 dump、运行 artifact 或上传文件。
+- 不要把 `sql/local/*` 用于 staging / production。
+- 不要把默认 `application.yml` 改成 local-schema 或生产拆库专用配置。
+- 后端改动后必须重新编译并重启对应服务才会生效。
+- 涉及边界、拆库、Seata、Sentinel 的改动必须同步测试和文档。
+- 前端页面和入口按钮必须与后端能力对接，不能只让后端测试通过。

@@ -780,8 +780,8 @@ git commit -m "docs: add production split cutover checklist"
 
 生产物理拆库实施资产位于：
 
-- `docs/superpowers/specs/2026-05-20-production-physical-db-split-design.md`
-- `docs/superpowers/plans/2026-05-20-production-physical-db-split-implementation.md`
+- `docs/operations/2026-05-20-production-physical-db-split-design.md`
+- `docs/operations/2026-05-20-production-physical-db-split-implementation.md`
 - `sql/production-split/manifest.json`
 - `sql/production-split/*/001_same_owner_constraints.sql`
 - `scripts/check-production-split-sql.ps1`
@@ -802,8 +802,8 @@ git commit -m "docs: add production split cutover checklist"
 ### 生产物理拆库
 
 - 目标拓扑：五个业务服务分别连接五个独立 PostgreSQL 实例。
-- 已批准设计：`docs/superpowers/specs/2026-05-20-production-physical-db-split-design.md`。
-- 实施计划：`docs/superpowers/plans/2026-05-20-production-physical-db-split-implementation.md`。
+- 已批准设计：`docs/operations/2026-05-20-production-physical-db-split-design.md`。
+- 实施计划：`docs/operations/2026-05-20-production-physical-db-split-implementation.md`。
 - 生产拆库 SQL 只能放在 `sql/production-split/`，禁止使用 `sql/local/*`。
 - 生产拆库配置优先使用 `SPRING_PROFILES_ACTIVE=prod-split` 加 `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`。
 - 切换期间五个业务服务必须统一连接拆分库，禁止部分服务继续写共享库。
@@ -857,7 +857,7 @@ Expected: `artifacts/production-split-local` 不应被 staged。若显示为 unt
 - [ ] **Step 6: 最终 Commit**
 
 ```powershell
-git add docs/superpowers/plans/2026-05-20-production-physical-db-split-implementation.md
+git add docs/operations/2026-05-20-production-physical-db-split-implementation.md
 git commit -m "docs: add production split implementation plan"
 ```
 
