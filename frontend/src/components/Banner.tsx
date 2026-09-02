@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { SafeImage } from '@/components/SafeImage'
 
 export interface BannerSlide {
   id: string
@@ -85,7 +86,7 @@ export function Banner({ slides }: BannerProps) {
               backgroundColor: slide.bgColor,
             }}
           >
-            <img
+            <SafeImage
               src={slide.imageUrl}
               alt={slide.title || ''}
               className="w-full h-full object-cover"

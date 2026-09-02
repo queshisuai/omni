@@ -6,6 +6,7 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { Pagination, DEFAULT_PAGE_SIZE } from '@/components/Pagination'
+import { SafeImage } from '@/components/SafeImage'
 import { listOrders, listTrashOrders, cancelOrder, hideOrder, restoreOrder, createAlipayPagePay, syncAlipayPayment, listMyRefunds, applyRefund, getRefundOptions, createActivityReview, startSupportConversation } from '@/lib/api'
 import { captureAnalyticsEvent } from '@/lib/analytics'
 import { getUser, isAuthenticated } from '@/lib/auth'
@@ -540,8 +541,8 @@ export default function OrdersPage() {
                       href={order.activityId ? `/activity/${order.activityId}` : '#'}
                       className="flex-shrink-0 relative group rounded-2xl overflow-hidden shadow-sm"
                     >
-                      <img
-                        src={order.activityPoster || '/background.png'}
+                      <SafeImage
+                        src={order.activityPoster}
                         alt={order.activityName}
                         className="w-[110px] h-[146px] object-cover transition-transform duration-300 group-hover:scale-105"
                       />

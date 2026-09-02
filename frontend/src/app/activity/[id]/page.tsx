@@ -2,13 +2,14 @@
 
 import { useState, useEffect, use, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CalendarDays, Heart, MessageCircle, Star, UserRound } from 'lucide-react'
+import { Ban, Bell, CalendarDays, Check, Info, Clock3, Heart, MapPin, MessageCircle, ShieldCheck, Star, Ticket, UserCheck, UserRound, UsersRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
-import { cancelGrabRequest, cancelSubscription, createActivityQuestion, createActivityReview, createAlipayPagePay, createSubscription, createSubscriptionCalendar, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listActivities, listActivityQuestions, listActivityReviews, listSubscriptions, listUserAttendees, recordUserBrowseHistory, reportActivityReview, submitGrabRequest } from '@/lib/api'
+import { SafeImage } from '@/components/SafeImage'
+import { cancelGrabRequest, cancelSubscription, createActivityQuestion, createAlipayPagePay, createSubscription, createTeamGrab, createUserAttendee, createWaitlistEntry, deleteUserAttendee, getActivityDetail, getGrabProgress, getGrabVisibleStock, getSeatMap, joinTeamGrab, listActivities, listActivityQuestions, listActivityReviews, listSubscriptions, listUserAttendees, recordUserBrowseHistory, reportActivityReview, submitGrabRequest } from '@/lib/api'
 import { captureAnalyticsEvent } from '@/lib/analytics'
 import { getUser, isAuthenticated } from '@/lib/auth'
 import { buildGrabIdempotencyIntent, buildSeatAllocationPayload, canShowPurchaseEntry, canShowWaitlistEntry, getPurchaseConfirmCopy, getPurchaseQuantityMax, getWaitlistQuantityMax, shouldResetGrabIdempotencyForStatus, type PurchaseConfirmMode } from '@/lib/purchase-intent'
@@ -73,6 +74,45 @@ function getActivityDetailMinPrice(detail: ActivityDetailVO) {
   return prices.length > 0 ? Math.min(...prices) : null
 }
 
+function formatCompactDateTime(value?: string | null) {
+  return value ? value.replace('T', ' ').slice(0, 16) : '时间待公布'
+}
+
+function formatPriceText(value: number) {
+  return Number.isInteger(value) ? `¥${value}` : `¥${value.toFixed(2)}`
+}
+
+function getTicketPriceRange(sessions: SessionDetail[]) {
+  const prices = sessions.flatMap(session => session.ticketTypes.map(ticket => ticket.price)).filter(price => price > 0)
+  if (!prices.length) return '票档待公布'
+  const min = Math.min(...prices)
+  const max = Math.max(...prices)
+  return min === max ? formatPriceText(min) : `${formatPriceText(min)} - ${formatPriceText(max)}`
+}
+
+function getVenueAddressText(session?: SessionDetail | null) {
+  if (!session?.venue) return '场馆地址待公布'
+  const parts = [session.venue.city, session.venue.name].filter(Boolean)
+  const location = parts.length ? parts.join(' · ') : '场馆待公布'
+  return session.venue.address ? `${location}，${session.venue.address}` : location
+}
+
+function getRatingStars(rating?: number | null) {
+  const normalized = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)))
+  return normalized || 5
+}
+
+function parseCalendarReminderIds(value: string | null) {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) return []
+    return parsed.map(Number).filter(item => Number.isSafeInteger(item) && item > 0)
+  } catch {
+    return []
+  }
+}
+
 function dedupeActivityCandidates(candidates: ActivityVO[]) {
   const map = new Map<number, ActivityVO>()
   for (const candidate of candidates) {
@@ -122,19 +162,21 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [attendeeForm, setAttendeeForm] = useState({ realName: '', idNo: '', phone: '' })
   const [reviewData, setReviewData] = useState<ActivityReviewListVO | null>(null)
   const [questions, setQuestions] = useState<ActivityQuestionVO[]>([])
-  const [reviewForm, setReviewForm] = useState({ rating: 5, content: '', images: '' })
   const [questionContent, setQuestionContent] = useState('')
+  const [questionComposerOpen, setQuestionComposerOpen] = useState(false)
   const [activeDetailTab, setActiveDetailTab] = useState<ActivityDetailTabKey>('project')
   const [recommendations, setRecommendations] = useState<ActivityDetailRecommendation[]>([])
-  const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [questionSubmitting, setQuestionSubmitting] = useState(false)
   const [reportingReviewId, setReportingReviewId] = useState<number | null>(null)
+  const [centerToast, setCenterToast] = useState<{ id: number; message: string } | null>(null)
   const seatMapRequestIdRef = useRef(0)
   const progressPaymentOrderIdRef = useRef<number | null>(null)
   const progressPaymentInFlightOrderIdRef = useRef<number | null>(null)
   const hydratedGrabRequestRef = useRef<string | null>(null)
   const loadDetailRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
+  const toastTimerRef = useRef<number | null>(null)
+  const actionLockRef = useRef<Set<ActivitySubscriptionActionType>>(new Set())
 
   const seatCraftSelectionModel = useMemo(() => seatMap ? toSeatCraftSelectionModel(seatMap) : null, [seatMap])
   const seatCraftFocusTarget = useMemo(() => {
@@ -216,6 +258,23 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const forgetActiveGrabRequest = () => {
     const key = getActiveGrabStorageKey()
     if (key) window.localStorage.removeItem(key)
+  }
+  const getCalendarReminderStorageKey = () => {
+    const user = getUser()
+    return user ? `activity-calendar-reminders:${user.userId}` : null
+  }
+  const persistCalendarReminderIds = (activityIds: number[]) => {
+    const key = getCalendarReminderStorageKey()
+    if (!key) return
+    window.localStorage.setItem(key, JSON.stringify(activityIds))
+  }
+  const showCenterToast = (message: string) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+    setCenterToast({ id: Date.now(), message })
+    toastTimerRef.current = window.setTimeout(() => {
+      setCenterToast(null)
+      toastTimerRef.current = null
+    }, 1500)
   }
 
   const loadRecommendations = async (data: ActivityDetailVO) => {
@@ -318,6 +377,24 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     void loadDetail()
   }, [id])
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current)
+        toastTimerRef.current = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!detail || !isAuthenticated()) {
+      setCalendarJoinedActivityIds([])
+      return
+    }
+    const key = getCalendarReminderStorageKey()
+    setCalendarJoinedActivityIds(key ? parseCalendarReminderIds(window.localStorage.getItem(key)) : [])
+  }, [detail?.activity.id])
 
   useEffect(() => {
     let cancelled = false
@@ -948,9 +1025,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     }
     if (!detail) return
     if (targetType === 'ARTIST_FOLLOW' && !detail.artist?.id) {
-      await globalAlert('当前活动暂无可关注艺人')
+      showCenterToast('当前活动暂无可关注艺人')
       return
     }
+    if (actionLockRef.current.has(targetType)) return
+    actionLockRef.current.add(targetType)
     setSubscriptionLoading(targetType)
     try {
       if (existingSubscription?.id) {
@@ -961,7 +1040,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           : targetType === 'SALE_REMINDER'
             ? '开售提醒已关闭'
             : '已取消关注'
-        await globalAlert(message)
+        showCenterToast(message)
         return
       }
 
@@ -984,70 +1063,42 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         })
       }
       const message = targetType === 'ACTIVITY_WANT'
-        ? '已加入想看'
+        ? '已标记想看'
         : targetType === 'SALE_REMINDER'
           ? '开售提醒已开启'
-          : '已关注艺人'
-      await globalAlert(message)
+          : '关注成功'
+      showCenterToast(message)
     } catch (err) {
-      await globalAlert(err instanceof Error ? err.message : '操作失败')
+      showCenterToast(err instanceof Error ? err.message : '操作失败')
     } finally {
+      actionLockRef.current.delete(targetType)
       setSubscriptionLoading(null)
     }
   }
 
-  const handleCalendarDownload = async () => {
+  const handleCalendarReminder = () => {
     if (!isAuthenticated()) {
       router.push(`/login?ru=/activity/${id}`)
       return
     }
+    if (!detail) return
+    if (actionLockRef.current.has('CALENDAR')) return
+    actionLockRef.current.add('CALENDAR')
     setSubscriptionLoading('CALENDAR')
     try {
-      const activityId = Number(id)
-      const subscription = await createSubscription({ targetType: 'ACTIVITY_WANT', targetId: activityId, activityId, artistId: detail?.artist?.id ?? null })
-      setSubscriptions(prev => upsertActivitySubscription(prev, subscription))
-      const calendar = await createSubscriptionCalendar()
-      const blob = new Blob([calendar.content], { type: 'text/calendar;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = calendar.fileName
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
-      setCalendarJoinedActivityIds(prev => prev.includes(activityId) ? prev : [...prev, activityId])
-    } catch (err) {
-      await globalAlert(err instanceof Error ? err.message : '生成日历失败')
+      const activityId = detail.activity.id
+      const exists = calendarJoinedActivityIds.includes(activityId)
+      const next = exists
+        ? calendarJoinedActivityIds.filter(item => item !== activityId)
+        : [...calendarJoinedActivityIds, activityId]
+      setCalendarJoinedActivityIds(next)
+      persistCalendarReminderIds(next)
+      showCenterToast(exists ? '已移出日程提醒' : '已添加至日程提醒')
+    } catch {
+      showCenterToast('日程提醒更新失败')
     } finally {
+      actionLockRef.current.delete('CALENDAR')
       setSubscriptionLoading(null)
-    }
-  }
-
-  const handleSubmitReview = async () => {
-    if (!isAuthenticated()) {
-      router.push(`/login?ru=/activity/${id}`)
-      return
-    }
-    const content = reviewForm.content.trim()
-    if (!content) {
-      await globalAlert('请填写评价内容')
-      return
-    }
-    setReviewSubmitting(true)
-    try {
-      await createActivityReview(Number(id), {
-        rating: reviewForm.rating,
-        content,
-        images: reviewForm.images.trim() || null,
-      })
-      setReviewForm({ rating: 5, content: '', images: '' })
-      await loadReviewsAndQuestions()
-      await globalAlert('评价已提交')
-    } catch (err) {
-      await globalAlert(err instanceof Error ? err.message : '提交评价失败')
-    } finally {
-      setReviewSubmitting(false)
     }
   }
 
@@ -1065,8 +1116,9 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     try {
       await createActivityQuestion(Number(id), content)
       setQuestionContent('')
+      setQuestionComposerOpen(false)
       await loadReviewsAndQuestions()
-      await globalAlert('问题已提交，等待主办方回复')
+      showCenterToast('问题已提交，等待主办方回复')
     } catch (err) {
       await globalAlert(err instanceof Error ? err.message : '提交问题失败')
     } finally {
@@ -1122,29 +1174,74 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     ? detail.artists.map(item => item.roleName ? `${item.name}（${item.roleName}）` : item.name).filter(Boolean).join('、')
     : artist?.name
   const subscriptionActions = getActivitySubscriptionActions(activity)
+  const primarySession = selectedSession ?? sessions[0] ?? null
+  const projectIntro = activity.description?.trim()
+    || activeDetailContent?.sections.find(section => section.title === '演出介绍')?.items[0]
+    || `${activity.name} 的演出信息正在同步，请以现场安排和票面信息为准。`
+  const projectInfoCards = [
+    { title: '场馆地址', value: getVenueAddressText(primarySession), icon: MapPin },
+    { title: '演出时间', value: formatCompactDateTime(primarySession?.session.startTime), icon: Clock3 },
+    { title: '演出阵容 / 类型', value: `${artistSummary || '演出阵容待公布'} · ${category?.name || '暂未分类'}`, icon: UsersRound },
+    { title: '票档区间', value: getTicketPriceRange(sessions), icon: Ticket },
+  ]
+  const purchaseRulePills = [
+    { title: '限购政策', value: activity.perUserLimit && activity.perUserLimit > 0 ? `每单限 ${activity.perUserLimit} 张` : '以提交订单为准' },
+    { title: '实名规则', value: activity.realNameRequired ? '强制实名' : '非强制实名' },
+    { title: '转赠支持', value: activity.ticketTransferAllowed ? '支持电子转赠' : '暂不支持转赠' },
+    { title: '退换说明', value: '不支持退换' },
+  ]
+  const purchaseRuleRows = [
+    {
+      title: '购票规则',
+      value: activity.perUserLimit && activity.perUserLimit > 0
+        ? `同一账号当前每单最多购买 ${activity.perUserLimit} 张，实名要求以提交订单时校验为准。`
+        : '下单前请确认场次、票档、数量和观演人信息，实际限购以提交订单时校验为准。',
+    },
+    {
+      title: '票档库存',
+      value: `当前票档区间为 ${getTicketPriceRange(sessions)}，库存实时变化，以锁票结果和订单确认为准。`,
+    },
+    {
+      title: '支付出票',
+      value: '订单提交后请在支付时限内完成支付，支付成功后可在订单详情或票夹查看电子票信息。',
+    },
+    {
+      title: '转赠规则',
+      value: activity.ticketTransferAllowed
+        ? '本项目支持电子票转赠，具体可操作时间和限制以票夹页面提示为准。'
+        : '本项目当前不支持电子票转赠，请确认观演人信息后再提交订单。',
+    },
+  ]
+  const attendanceTimeline = [
+    { title: '提前 60 分钟到达', value: '预留取票、验票、安检和寻位时间，避免高峰排队影响入场。' },
+    { title: '入场核验', value: activity.realNameRequired ? '请准备电子票二维码和一致身份证件，配合现场核验。' : '请出示电子票二维码，并按现场要求配合核验。' },
+    { title: '迟到观众安排', value: '演出开始后可能根据现场秩序分批入场，请服从工作人员安排。' },
+  ]
+  const averageRating = reviewData?.summary.averageRating
+  const averageRatingText = averageRating ? Number(averageRating).toFixed(1) : '暂无'
 
   return (
     <>
       <Header />
-      <main className="max-w-[1200px] mx-auto px-5 py-8">
-        <div className="grid gap-5 items-start lg:grid-cols-[minmax(0,1fr)_300px]">
+      <main className="bg-[#F8F9FA] px-5 py-8">
+        <div className="mx-auto grid max-w-[1200px] gap-5 items-start lg:grid-cols-[minmax(0,1fr)_300px]">
           {/* 左侧：占比约 2/3 */}
           <div className="flex-1 flex flex-col gap-5 min-w-0">
             {/* 顶部：活动基本信息与购票 */}
-            <div className="bg-white rounded-lg p-6 border border-[#e5e5e5]">
-              <div className="flex gap-8 mb-10">
+            <div className="rounded-2xl border border-[#f0f1f3] bg-white p-6 shadow-[0_4px_12px_rgba(0,0,0,0.03)]">
+              <div className="mb-10 flex flex-col gap-8 md:flex-row">
           {/* 海报 */}
-          <div className="flex-shrink-0" style={{ width: 280, height: 373 }}>
-            <img
-              src={activity.poster || '/background.png'}
+          <div className="aspect-[3/4] w-full max-w-[280px] flex-shrink-0 overflow-hidden rounded-2xl bg-gray-100">
+            <SafeImage
+              src={activity.poster}
               alt={activity.name}
-              className="w-full h-full object-cover rounded-lg"
+              className="h-full w-full object-cover"
             />
           </div>
 
           {/* 信息 */}
           <div className="flex-1">
-            <h1 className="text-[24px] text-[#111] font-medium mb-3">{activity.name}</h1>
+            <h1 className="mb-3 text-[24px] font-semibold text-[#111]">{activity.name}</h1>
             {artistSummary && (
               <p className="text-[14px] text-[#666] mb-2">
                 艺人：<span className="text-[#ff1268]">{artistSummary}</span>
@@ -1158,14 +1255,6 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             )}
             <div className="mt-5 flex flex-wrap items-center gap-2">
               {subscriptionActions.map((action) => {
-                const Icon = action.type === 'ACTIVITY_WANT'
-                  ? Heart
-                  : action.type === 'SALE_REMINDER'
-                    ? Bell
-                    : action.type === 'ARTIST_FOLLOW'
-                      ? UserRound
-                      : CalendarDays
-                const isPrimary = action.tone === 'primary'
                 const activeSubscription = action.type === 'CALENDAR'
                   ? null
                   : findActivitySubscriptionAction(action.type, subscriptions, {
@@ -1176,27 +1265,35 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                   ? calendarJoinedActivityIds.includes(activity.id)
                   : Boolean(activeSubscription)
                 const isActionLoading = subscriptionLoading === action.type
+                const Icon = action.type === 'ACTIVITY_WANT'
+                  ? Heart
+                  : action.type === 'SALE_REMINDER'
+                    ? Bell
+                    : action.type === 'ARTIST_FOLLOW'
+                      ? (isActive ? UserCheck : UserRound)
+                      : CalendarDays
+                const actionClass = action.type === 'ACTIVITY_WANT'
+                  ? isActive
+                    ? 'border-[#FF1475] bg-[#FF1475] text-white shadow-sm hover:bg-[#E00D65]'
+                    : 'border-[#FF1475] bg-white text-[#FF1475] hover:bg-[#FFF0F5]'
+                  : isActive
+                    ? 'border-[#FFD6E4] bg-[#FFF0F5] text-[#E6005C] shadow-sm hover:border-[#FF1475]'
+                    : 'border-gray-200 bg-white text-[#666] hover:border-[#FFD6E4] hover:bg-[#FFF0F5] hover:text-[#E6005C]'
                 return (
                   <button
                     key={action.type}
                     type="button"
                     onClick={() => {
                       if (action.type === 'CALENDAR') {
-                        void handleCalendarDownload()
+                        handleCalendarReminder()
                       } else {
                         void handleSubscription(action.type, activeSubscription)
                       }
                     }}
                     disabled={isActionLoading}
-                    className={`inline-flex h-10 min-w-[112px] items-center justify-center gap-2 rounded-lg border px-4 text-[14px] font-medium disabled:cursor-not-allowed disabled:opacity-60 ${
-                      isPrimary
-                        ? 'border-[#ff1268] bg-[#ff1268] text-white'
-                        : isActive
-                          ? 'border-[#ff1268] bg-[#fff0f5] text-[#ff1268]'
-                        : 'border-[#e5e5e5] bg-white text-[#666] hover:border-[#ff1268] hover:text-[#ff1268]'
-                    }`}
+                    className={`inline-flex h-10 min-w-[112px] items-center justify-center gap-2 rounded-full border px-4 text-[14px] font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${actionClass}`}
                   >
-                    <Icon className="h-4 w-4" />
+                    <Icon className={`h-4 w-4 ${action.type === 'ACTIVITY_WANT' && isActive ? 'fill-current' : ''}`} />
                     {getActivitySubscriptionActionLabel(action, { active: isActive, loading: isActionLoading })}
                   </button>
                 )
@@ -1285,32 +1382,45 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                   </div>
                   <div className="mb-6 text-[12px] text-[#999]">库存变化较快，以锁票结果为准。</div>
 
+                  {selectedTicket && (
+                    <div className="mb-6">
+                      {seatMapPublished && seatMapLoading ? (
+                        <div className="rounded-2xl border border-[#eef0f3] bg-[#FAFBFD] p-5 text-center text-[13px] text-[#999]">正在加载座位图...</div>
+                      ) : seatMapPublished && showsSeatCraftSelection && seatCraftSelectionModel && showPurchaseEntry ? (
+                        <div className="rounded-2xl border border-[#eef0f3] bg-[#FAFBFD] p-4">
+                          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <div className="text-[14px] font-medium text-[#333]">选座区域</div>
+                              <div className="mt-1 text-[12px] text-[#888]">可预览座位图并选择本次购买座位，已选 {validSelectedSeatIds.length} / {quantity} 座。</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleAutoSelectSeats}
+                              className="rounded-full border border-[#FF1475] bg-white px-4 py-1.5 text-[13px] font-medium text-[#FF1475] transition-colors hover:bg-[#FFF0F5]"
+                            >
+                              自动分配
+                            </button>
+                          </div>
+                          <SeatCraftSelector
+                            selectionModel={seatCraftSelectionModel}
+                            selectedSeatIds={validSelectedSeatIds}
+                            onChange={(ids) => { setSelectedSeatIds(ids); resetGrabIdempotencyKey() }}
+                            maxSelectable={quantity}
+                            focusTarget={seatCraftFocusTarget}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-2 rounded-2xl border border-[#eef0f3] bg-[#FAFBFD] px-4 py-3 text-[13px] leading-relaxed text-[#666]">
+                          <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#9aa3af]" />
+                          <span>座位暂不公布，座位将在下单后由系统自动分配。</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* 数量选择 + 购买按钮 */}
                   {selectedTicket && showPurchaseEntry && (
                     <>
-                      <div className="mb-5">
-                        {seatMapPublished && seatMapLoading ? (
-                          <div className="rounded-lg border border-[#e5e5e5] p-6 text-center text-[13px] text-[#999]">正在加载座位图...</div>
-                        ) : seatMapPublished && showsSeatCraftSelection && seatCraftSelectionModel ? (
-                          <div>
-                            <div className="mb-3 flex items-center justify-between">
-                              <div className="text-[14px] text-[#666]">已选 {validSelectedSeatIds.length} / {quantity} 座</div>
-                              <button onClick={handleAutoSelectSeats} className="rounded-lg border border-[#ff1268] px-3 py-1.5 text-[13px] text-[#ff1268] hover:bg-[#fff0f3]">自动分配</button>
-                            </div>
-                            <SeatCraftSelector
-                              selectionModel={seatCraftSelectionModel}
-                              selectedSeatIds={validSelectedSeatIds}
-                              onChange={(ids) => { setSelectedSeatIds(ids); resetGrabIdempotencyKey() }}
-                              maxSelectable={quantity}
-                              focusTarget={seatCraftFocusTarget}
-                            />
-                          </div>
-                        ) : (
-                          <div className="rounded-lg border border-[#e5e5e5] p-6 text-center text-[13px] text-[#999]">
-                            座位图暂不公布，座位将在下单后由系统自动分配。
-                          </div>
-                        )}
-                      </div>
                       <div className="flex flex-col gap-4 border-t border-[#f0f0f0] pt-4 sm:flex-row sm:items-center">
                         <div className="flex items-center gap-3">
                           <span className="text-[14px] text-[#666]">数量</span>
@@ -1431,95 +1541,148 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             </div>
             </div>
 
-            {/* 下方：项目详情 */}
-            <div className="bg-white rounded-lg overflow-hidden border border-[#e5e5e5]">
-            {/* 标签栏 */}
-            <div className="flex items-center overflow-x-auto px-6 border-b border-[#e5e5e5]">
-              {detailTabItems.map(([key, tab]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setActiveDetailTab(key)}
-                  className={`mr-10 shrink-0 border-b-2 px-2 py-4 text-[15px] font-medium outline-none transition-colors last:mr-0 ${
-                    activeDetailTab === key
-                      ? 'border-[#ff1268] text-[#ff1268]'
-                      : 'border-transparent text-[#333] hover:text-[#ff1268]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            
-            {/* 详情内容 */}
-            <div className="p-8">
-              <div className="space-y-8">
-                {activeDetailContent?.sections.map(section => (
-                  <section key={section.title}>
-                    <h2 className="mb-4 text-[18px] font-medium text-[#111]">{section.title}</h2>
-                    <div className="rounded-lg border border-[#eee] bg-[#f8f8f8] p-6">
-                      <ul className="space-y-3">
-                        {section.items.map(item => (
-                          <li key={item} className="flex gap-3 text-[15px] leading-7 text-[#333]">
-                            <span className="mt-[11px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff1268]" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </section>
-                ))}
+            {/* 下方：项目详情 / 购票须知 / 观演须知 */}
+            <div className="overflow-hidden rounded-2xl border border-[#f0f1f3] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.03)]">
+              <div className="px-6 pt-6">
+                <div className="inline-flex w-full gap-1 overflow-x-auto rounded-full bg-[#F4F5F7] p-1 sm:w-auto">
+                  {detailTabItems.map(([key, tab]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setActiveDetailTab(key)}
+                      className={`shrink-0 rounded-full px-5 py-2 text-[14px] font-medium outline-none transition-all duration-200 ${
+                        activeDetailTab === key
+                          ? 'bg-white text-[#E6005C] shadow-sm'
+                          : 'text-[#666] hover:text-[#E6005C]'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
               </div>
+
+              <div className="p-6 transition-opacity duration-200">
+                {activeDetailTab === 'project' && (
+                  <div className="space-y-6">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {projectInfoCards.map(({ title, value, icon: Icon }) => (
+                        <div key={title} className="rounded-2xl border border-[#eef0f3] bg-[#FAFBFD] p-4">
+                          <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-[#FFF0F5] text-[#E6005C]">
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="text-[12px] font-medium text-[#999]">{title}</div>
+                          <div className="mt-1 text-[14px] leading-6 text-[#333]">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <section>
+                      <h2 className="mb-3 text-[18px] font-semibold text-[#111]">演出介绍</h2>
+                      <p className="whitespace-pre-line text-[13px] leading-[1.7] text-[#444]">{projectIntro}</p>
+                      <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-[13px] leading-6 text-amber-700">
+                        重要提示：演出阵容、入场时间、座位分配及现场安排可能随主办方通知调整，请以订单页和现场指引为准。
+                      </div>
+                    </section>
+                  </div>
+                )}
+
+                {activeDetailTab === 'purchase' && (
+                  <div className="space-y-6">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {purchaseRulePills.map(rule => (
+                        <div key={rule.title} className="rounded-full border border-[#FFD6E4] bg-[#FFF0F5] px-4 py-3 text-center">
+                          <div className="text-[12px] font-medium text-[#E6005C]">{rule.title}</div>
+                          <div className="mt-1 text-[13px] font-semibold text-[#333]">{rule.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="divide-y divide-[#eef0f3]">
+                      {purchaseRuleRows.map(row => (
+                        <div key={row.title} className="grid gap-2 py-4 sm:grid-cols-[120px_minmax(0,1fr)]">
+                          <div className="text-[14px] font-semibold text-[#111]">{row.title}</div>
+                          <div className="text-[13px] leading-6 text-[#555]">{row.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeDetailTab === 'attendance' && (
+                  <div className="space-y-6">
+                    <div className="relative space-y-5 pl-5 before:absolute before:left-[7px] before:top-2 before:h-[calc(100%-16px)] before:w-px before:bg-[#FFD6E4]">
+                      {attendanceTimeline.map((item, index) => (
+                        <div key={item.title} className="relative">
+                          <span className="absolute -left-5 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#E6005C] text-[10px] font-semibold text-white">{index + 1}</span>
+                          <div className="text-[14px] font-semibold text-[#111]">{item.title}</div>
+                          <div className="mt-1 text-[13px] leading-6 text-[#555]">{item.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-2xl border border-red-100 bg-red-50 p-4">
+                        <div className="mb-2 flex items-center gap-2 text-[14px] font-semibold text-red-600">
+                          <Ban className="h-4 w-4" />
+                          严禁携带物品
+                        </div>
+                        <p className="text-[13px] leading-6 text-red-700">易燃易爆、管制器具、专业摄影摄像设备等现场禁止物品请勿带入。</p>
+                      </div>
+                      <div className="rounded-2xl border border-[#FFD6E4] bg-[#FFF0F5] p-4">
+                        <div className="mb-2 flex items-center gap-2 text-[14px] font-semibold text-[#E6005C]">
+                          <ShieldCheck className="h-4 w-4" />
+                          安全文明观演
+                        </div>
+                        <p className="text-[13px] leading-6 text-[#9f1746]">请保管好随身物品，遵守场馆秩序和现场安全提示。</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
-          <div className="bg-white rounded-lg overflow-hidden border border-[#e5e5e5]">
-            <div className="flex items-center justify-between border-b border-[#e5e5e5] px-6 py-4">
+          <div className="overflow-hidden rounded-2xl border border-[#f0f1f3] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.03)]">
+            <div className="flex flex-col gap-3 border-b border-[#eef0f3] px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-[18px] font-medium text-[#111]">评价与问答</h2>
-                <p className="mt-1 text-[13px] text-[#999]">看真实观演反馈，购票前也可以提问</p>
+                <h2 className="text-[18px] font-semibold text-[#111]">观众热评</h2>
+                <p className="mt-1 text-[13px] text-[#999]">精选真实观演反馈，购票前可查看常见问答</p>
               </div>
-              <div className="flex items-center gap-2 text-[#ff1268]">
-                <Star className="h-5 w-5 fill-[#ff1268]" />
-                <span className="text-[22px] font-bold">{reviewData?.summary.averageRating ?? '0.0'}</span>
-                <span className="text-[13px] text-[#999]">/ 5</span>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#FFF0F5] px-4 py-2 text-[#E6005C]">
+                <Star className="h-4 w-4 fill-current" />
+                <span className="text-[18px] font-bold">{averageRatingText}</span>
+                <span className="text-[13px] text-[#E6005C]">分</span>
               </div>
             </div>
 
-            <div className="grid gap-0 lg:grid-cols-2">
+            <div className="grid gap-0 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
               <section className="border-b border-[#f0f0f0] p-6 lg:border-b-0 lg:border-r">
                 <div className="mb-5 flex items-center justify-between">
-                  <h3 className="text-[16px] font-medium text-[#111]">观演评价</h3>
+                  <h3 className="text-[16px] font-semibold text-[#111]">观众精选热评</h3>
                   <span className="text-[13px] text-[#999]">{reviewData?.summary.reviewCount ?? 0} 条评价</span>
                 </div>
 
-                <div className="mb-5 rounded-lg bg-[#fafafa] p-4">
-                  <div className="text-[13px] leading-6 text-[#666]">
-                    购后评价需要绑定已支付订单。请从“我的订单”选择对应订单发起评价，提交后会进入平台审核。
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => router.push('/orders')}
-                    className="mt-3 rounded-lg border border-[#ff1268] bg-white px-4 py-2 text-[13px] font-medium text-[#ff1268]"
-                  >
-                    去订单页评价
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {(reviewData?.reviews || []).slice(0, 5).map(item => (
-                    <div key={item.id || `${item.userId}-${item.content}`} className="rounded-lg border border-[#f0f0f0] p-4">
-                      <div className="mb-2 flex items-center justify-between">
-                        <div className="flex items-center gap-1 text-[#ff1268]">
-                          {Array.from({ length: item.rating }).map((_, index) => <Star key={index} className="h-3.5 w-3.5 fill-[#ff1268]" />)}
+                <div className="columns-1 gap-4 xl:columns-2">
+                  {(reviewData?.reviews || []).slice(0, 6).map((item, index) => (
+                    <div key={item.id || `${index}-${item.createTime || item.content}`} className="mb-4 break-inside-avoid rounded-2xl border border-[#eef0f3] bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.03)]">
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#FFF0F5] text-[14px] font-semibold text-[#E6005C]">匿</div>
+                          <div>
+                            <div className="text-[14px] font-semibold text-[#333]">匿名用户</div>
+                            <div className="mt-1 flex items-center gap-1 text-[#FF1475]">
+                              {Array.from({ length: getRatingStars(item.rating) }).map((_, starIndex) => <Star key={starIndex} className="h-3.5 w-3.5 fill-current" />)}
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-[12px] text-[#aaa]">匿名用户</span>
+                        <span className="rounded-full bg-[#E8F8EE] px-2.5 py-1 text-[12px] font-medium text-[#28C76F]">{item.orderId ? '已购实名票' : '观演用户'}</span>
+                      </div>
+                      <div className="mb-3 rounded-xl bg-[#FAFBFD] px-3 py-2 text-[12px] text-[#777]">
+                        观演场次：{formatCompactDateTime(primarySession?.session.startTime)} · {primarySession?.venue?.name || '场馆待公布'}
                       </div>
                       <p className="text-[13px] leading-6 text-[#555]">{item.content || '用户未填写文字评价'}</p>
                       {item.images && (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {item.images.split(',').map(url => url.trim()).filter(Boolean).slice(0, 3).map(url => (
-                            <img key={url} src={url} alt="评价图片" className="h-16 w-16 rounded object-cover" />
+                            <SafeImage key={url} src={url} alt="评价图片" className="h-16 w-16 rounded-xl object-cover" />
                           ))}
                         </div>
                       )}
@@ -1529,7 +1692,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                             type="button"
                             onClick={() => void handleReportReview(item.id)}
                             disabled={reportingReviewId === item.id}
-                            className="rounded border border-gray-200 px-3 py-1 text-[12px] text-gray-500 disabled:opacity-60"
+                            className="rounded-full border border-gray-200 px-3 py-1 text-[12px] text-gray-500 transition-colors hover:border-[#FFD6E4] hover:text-[#E6005C] disabled:opacity-60"
                           >
                             {reportingReviewId === item.id ? '提交中...' : '举报'}
                           </button>
@@ -1537,53 +1700,67 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       )}
                     </div>
                   ))}
-                  {(!reviewData || reviewData.reviews.length === 0) && (
-                    <div className="rounded-lg bg-[#fafafa] py-8 text-center text-[13px] text-[#999]">暂无评价，购票观演后可以来分享体验</div>
-                  )}
                 </div>
+                {(!reviewData || reviewData.reviews.length === 0) && (
+                  <div className="rounded-2xl bg-[#FAFBFD] py-8 text-center text-[13px] text-[#999]">暂无热评，完成观演后的评价会在这里展示</div>
+                )}
               </section>
 
               <section className="p-6">
-                <div className="mb-5 flex items-center justify-between">
-                  <h3 className="text-[16px] font-medium text-[#111]">问答区</h3>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] text-[#999]">{questions.length} 条问答</span>
-                    <MessageCircle className="h-5 w-5 text-[#ff1268]" />
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-[#111]">演出问答区</h3>
+                    <p className="mt-1 text-[12px] text-[#999]">检票时间、儿童入场政策等问题会在这里同步</p>
                   </div>
+                  <MessageCircle className="h-5 w-5 text-[#E6005C]" />
                 </div>
-                <div className="mb-5 rounded-lg bg-[#fafafa] p-4">
-                  <textarea
-                    value={questionContent}
-                    onChange={event => setQuestionContent(event.target.value)}
-                    placeholder="例如：几点检票、是否可带相机、儿童是否需购票"
-                    className="mb-3 h-20 w-full resize-none rounded-lg border border-[#e5e5e5] bg-white p-3 text-[13px] outline-none focus:border-[#ff1268]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleSubmitQuestion()}
-                    disabled={questionSubmitting}
-                    className="rounded-lg border border-[#ff1268] bg-white px-4 py-2 text-[13px] font-medium text-[#ff1268] disabled:opacity-60"
-                  >
-                    {questionSubmitting ? '提交中...' : '我要提问'}
-                  </button>
-                </div>
-                <div className="space-y-4">
-                  {questions.slice(0, 6).map(item => (
-                    <div key={item.id || `${item.userId}-${item.content}`} className="rounded-lg border border-[#f0f0f0] p-4">
-                      <div className="mb-2 text-[13px] font-medium text-[#333]">问：{item.content}</div>
-                      <div className="text-[13px] leading-6 text-[#666]">
-                        答：{item.answer || formatActivityQuestionAnswerFallback(item.status)}
-                      </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isAuthenticated()) {
+                      router.push(`/login?ru=/activity/${id}`)
+                      return
+                    }
+                    setQuestionComposerOpen(open => !open)
+                  }}
+                  className="mb-4 w-full rounded-full border border-[#FF1475] bg-white px-4 py-2 text-[13px] font-semibold text-[#FF1475] transition-colors hover:bg-[#FFF0F5]"
+                >
+                  我要提问
+                </button>
+                {questionComposerOpen && (
+                  <div className="mb-5 rounded-2xl border border-[#FFD6E4] bg-[#FFF0F5] p-4">
+                    <textarea
+                      value={questionContent}
+                      onChange={event => setQuestionContent(event.target.value)}
+                      placeholder="例如：几点检票、是否可带相机、儿童是否需购票"
+                      className="mb-3 h-20 w-full resize-none rounded-xl border border-[#FFD6E4] bg-white p-3 text-[13px] outline-none focus:border-[#FF1475]"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => void handleSubmitQuestion()}
+                        disabled={questionSubmitting}
+                        className="rounded-full border border-[#FF1475] bg-[#FF1475] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-60"
+                      >
+                        {questionSubmitting ? '提交中...' : '提交问题'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-3">
+                  {questions.slice(0, 6).map((item, index) => (
+                    <div key={item.id || `${index}-${item.createTime || item.content}`} className="rounded-2xl border border-[#eef0f3] bg-[#FAFBFD] p-4">
+                      <div className="mb-2 text-[13px] font-semibold text-[#333]">问：{item.content}</div>
+                      <div className="text-[13px] leading-6 text-[#666]">答：{item.answer || formatActivityQuestionAnswerFallback(item.status)}</div>
                     </div>
                   ))}
                   {questions.length === 0 && (
-                    <div className="rounded-lg bg-[#fafafa] py-8 text-center text-[13px] text-[#999]">暂无问答，购票前可以先提一个问题</div>
+                    <div className="rounded-2xl bg-[#FAFBFD] py-8 text-center text-[13px] text-[#999]">暂无问答，购票前可以先提一个问题</div>
                   )}
                 </div>
               </section>
             </div>
           </div>
-
           </div>
 
           {/* 右侧：占比约 1/3 */}
@@ -1664,7 +1841,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                       className="group flex w-full gap-3 text-left"
                     >
                       <div className="h-[106px] w-[80px] flex-shrink-0 overflow-hidden rounded bg-gray-100">
-                        <img src={item.poster} alt={item.title} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                        <SafeImage src={item.poster} alt={item.title} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
                       </div>
                       <div className="flex flex-1 flex-col">
                         <div className="line-clamp-2 text-[14px] font-medium leading-snug text-[#333] transition-colors group-hover:text-[#ff1268]">{item.title}</div>
@@ -1683,6 +1860,25 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         </div>
       </main>
       <Footer />
+
+      {centerToast && (
+        <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center bg-black/30">
+          <div key={centerToast.id} className="flex min-w-[180px] animate-[activity-center-toast_1.5s_ease-in-out_forwards] flex-col items-center rounded-2xl bg-black/80 px-6 py-4 text-white shadow-2xl">
+            <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
+              <Check className="h-5 w-5" />
+            </div>
+            <div className="text-[14px] font-medium">{centerToast.message}</div>
+          </div>
+        </div>
+      )}
+      <style jsx global>{`
+        @keyframes activity-center-toast {
+          0% { opacity: 0; transform: scale(0.92); }
+          12% { opacity: 1; transform: scale(1); }
+          82% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(0.96); }
+        }
+      `}</style>
 
       {(() => {
         const modals = (

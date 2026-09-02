@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Building2, Loader2, ShieldCheck, UserRound, Mail, Phone, CalendarDays, ClipboardList } from 'lucide-react'
+import { SafeImage } from '@/components/SafeImage'
 import { getMyOrganizerApplication, getUserInfo } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { canEnterConsole, getConsoleRoleLabel, isPlatformAdminRole } from '@/lib/console-auth'
@@ -106,7 +107,7 @@ export default function ConsoleProfilePage() {
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[#fff0f5] text-[#ff1268]">
                 {user.avatar ? (
-                  <img src={user.avatar} alt="Avatar" className="h-full w-full object-cover" />
+                  <SafeImage src={user.avatar} alt="用户头像" className="h-full w-full object-cover" />
                 ) : isPlatformAdminRole(role) ? (
                   <ShieldCheck className="h-6 w-6" />
                 ) : (
@@ -191,7 +192,7 @@ export default function ConsoleProfilePage() {
                     <ActionLink href="/console/orders" title="订单查看" desc="查看商户相关订单" />
                   </>
                 )}
-                <ActionLink href="/profile/account" title="账号设置" desc="修改昵称、邮箱、头像和密码" />
+                <ActionLink href="/profile" title="个人中心" desc="修改昵称、邮箱、头像和密码" />
               </div>
             </section>
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
+import { SafeImage } from '@/components/SafeImage'
 import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
 import { canAccessConsolePath, canEnterConsole, getConsoleBrandLabel, getConsoleRoleLabel, getDefaultConsolePath, isPlatformAdminRole } from '@/lib/console-auth'
@@ -265,7 +266,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             <span className="text-[12px] text-gray-500 font-medium mb-2">{roleLabel}</span>
             <div className="flex items-center gap-2.5">
               {avatar ? (
-                <img src={avatar} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                <SafeImage src={avatar} alt="用户头像" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 flex-shrink-0">
                   <UserCircle2 className="w-5 h-5" />

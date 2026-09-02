@@ -1,4 +1,5 @@
 import type { ActivityViewSignal } from './personalized-recommendations'
+import { resolveImageSrc } from './image-url'
 
 const RECOMMENDABLE_STATUSES = new Set([1, 2])
 
@@ -108,7 +109,7 @@ function scoreCandidate(candidate: ActivityRecommendationCandidate, context: Act
       id,
       itemType: candidate.itemType || 'activity',
       title: candidate.name,
-      poster: candidate.poster || '/background.png',
+      poster: resolveImageSrc(candidate.poster),
       categoryName: candidate.categoryName || '',
       artistName: candidate.artistName || '',
       city: candidate.venueCity || '待定',

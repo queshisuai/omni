@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Edit, Search } from 'lucide-react'
 import { globalAlert } from '@/components/GlobalDialog'
+import { SafeImage } from '@/components/SafeImage'
 import { getUser } from '@/lib/auth'
 import { listAdminArtists, updateAdminArtistRisk } from '@/lib/api'
 import {
@@ -203,7 +204,7 @@ function ArtistCard({ item, canManageAllArtists, onUpdate }: { item: ArtistEntit
         {updating && <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/60 text-[13px] text-[#ff1268]">更新中...</div>}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex min-w-0 gap-3">
-            {item.avatar ? <img src={item.avatar} alt={item.name} className="h-16 w-16 shrink-0 rounded-xl object-cover" /> : <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-[#f5f5f5] text-[13px] font-semibold text-[#999]">艺人</div>}
+            {item.avatar ? <SafeImage src={item.avatar} alt={item.name} className="h-16 w-16 shrink-0 rounded-xl object-cover" /> : <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-[#f5f5f5] text-[13px] font-semibold text-[#999]">艺人</div>}
             <div className="min-w-0">
               <div className="text-[16px] font-semibold text-[#1a1a2e]">{item.name}{item.alias ? ` / ${item.alias}` : ''}</div>
               <div className="mt-1 text-[13px] text-[#666]">{[item.countryOrRegion, item.artistType, item.categoryTags].filter(Boolean).join(' · ') || '暂无身份信息'}</div>

@@ -9,30 +9,33 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.URI;
+import java.net.HttpURLConnection;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
 
 @Service
 public class OllamaSupportLocalModelClient implements SupportLocalModelClient {
 
     private static final Logger log = LoggerFactory.getLogger(OllamaSupportLocalModelClient.class);
+    private static final int DEFAULT_CONTEXT_WINDOW = 2048;
 
     private final boolean enabled;
     private final String endpoint;
     private final String model;
     private final int timeoutMillis;
+    private final int contextWindow;
     private final String apiKey;
-    private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
     @Autowired
@@ -41,17 +44,16 @@ public class OllamaSupportLocalModelClient implements SupportLocalModelClient {
             @Value("${omni.support.ai.endpoint:${omni.support.ai.local.endpoint:${OMNI_SUPPORT_AI_ENDPOINT:${OMNI_SUPPORT_AI_LOCAL_ENDPOINT:http://localhost:11434/api/chat}}}}") String endpoint,
             @Value("${omni.support.ai.model:${omni.support.ai.local.model:${OMNI_SUPPORT_AI_MODEL:${OMNI_SUPPORT_AI_LOCAL_MODEL:Qwen2.5:7b}}}}") String model,
             @Value("${omni.support.ai.timeout-ms:${omni.support.ai.local.timeout-ms:${OMNI_SUPPORT_AI_TIMEOUT_MS:${OMNI_SUPPORT_AI_LOCAL_TIMEOUT_MS:30000}}}}") int timeoutMillis,
+            @Value("${omni.support.ai.context-window:${omni.support.ai.local.context-window:${OMNI_SUPPORT_AI_CONTEXT_WINDOW:${OMNI_SUPPORT_AI_LOCAL_CONTEXT_WINDOW:2048}}}}") int contextWindow,
             @Value("${omni.support.ai.api-key:${OMNI_SUPPORT_AI_API_KEY:}}") String apiKey,
             ObjectMapper objectMapper) {
-        this(
-                enabled,
-                endpoint,
-                model,
-                timeoutMillis,
-                apiKey,
-                HttpClient.newBuilder().connectTimeout(Duration.ofMillis(Math.max(timeoutMillis, 1000))).build(),
-                objectMapper
-        );
+        this.enabled = enabled;
+        this.endpoint = endpoint;
+        this.model = model;
+        this.timeoutMillis = timeoutMillis;
+        this.contextWindow = contextWindow;
+        this.apiKey = apiKey;
+        this.objectMapper = objectMapper;
     }
 
     OllamaSupportLocalModelClient(
@@ -76,8 +78,8 @@ public class OllamaSupportLocalModelClient implements SupportLocalModelClient {
         this.endpoint = endpoint;
         this.model = model;
         this.timeoutMillis = timeoutMillis;
+        this.contextWindow = DEFAULT_CONTEXT_WINDOW;
         this.apiKey = apiKey;
-        this.httpClient = httpClient;
         this.objectMapper = objectMapper;
     }
 
@@ -88,14 +90,16 @@ public class OllamaSupportLocalModelClient implements SupportLocalModelClient {
         }
 
         try {
-            HttpRequest request = buildRequest(objectMapper.writeValueAsString(buildPayload(question, projectKnowledge, false)));
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.warn("客服模型网关调用失败: status={}", response.statusCode());
+            String requestBody = objectMapper.writeValueAsString(buildPayload(question, projectKnowledge, false));
+            HttpURLConnection connection = openConnection(requestBody);
+            int statusCode = connection.getResponseCode();
+            String responseBody = readConnectionBody(connection, statusCode);
+            if (statusCode < 200 || statusCode >= 300) {
+                log.warn("客服模型网关调用失败: status={}", statusCode);
                 return Optional.empty();
             }
 
-            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode root = objectMapper.readTree(responseBody);
             Optional<String> answer = extractAnswer(root);
             if (answer.isPresent()) {
                 return answer;
@@ -113,24 +117,27 @@ public class OllamaSupportLocalModelClient implements SupportLocalModelClient {
         }
 
         try {
-            HttpRequest request = buildRequest(objectMapper.writeValueAsString(buildPayload(question, projectKnowledge, true)));
-            HttpResponse<Stream<String>> response = httpClient.send(request, HttpResponse.BodyHandlers.ofLines());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.info("客服模型网关流式调用不可用，尝试普通模型回复: status={}", response.statusCode());
-                Stream<String> body = response.body();
-                if (body != null) {
-                    body.close();
-                }
+            String requestBody = objectMapper.writeValueAsString(buildPayload(question, projectKnowledge, true));
+            HttpURLConnection connection = openConnection(requestBody);
+            int statusCode = connection.getResponseCode();
+            if (statusCode < 200 || statusCode >= 300) {
+                readConnectionBody(connection, statusCode);
+                log.info("客服模型网关流式调用不可用，尝试普通模型回复: status={}", statusCode);
                 return answerAndEmitBuffered(question, projectKnowledge, onChunk);
             }
 
             StringBuilder answer = new StringBuilder();
             ThinkTagFilter thinkTagFilter = new ThinkTagFilter();
-            try (Stream<String> lines = response.body()) {
-                lines.forEach(line -> extractStreamingChunk(line).ifPresent(chunk -> {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    extractStreamingChunk(line).ifPresent(chunk -> {
                     String visibleChunk = thinkTagFilter.accept(chunk);
                     appendAndEmit(answer, visibleChunk, onChunk);
-                }));
+                    });
+                }
+            } finally {
+                connection.disconnect();
             }
             appendAndEmit(answer, thinkTagFilter.flush(), onChunk);
 
@@ -156,19 +163,43 @@ public class OllamaSupportLocalModelClient implements SupportLocalModelClient {
                 Map.of("role", "system", "content", projectKnowledge),
                 Map.of("role", "user", "content", question)
         ));
+        if (contextWindow > 0) {
+            payload.put("options", Map.of("num_ctx", contextWindow));
+        }
         return payload;
     }
 
-    private HttpRequest buildRequest(String requestBody) {
-        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(endpoint))
-                .timeout(Duration.ofMillis(Math.max(timeoutMillis, 1000)))
-                .header("Content-Type", "application/json");
+    private HttpURLConnection openConnection(String requestBody) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) URI.create(endpoint).toURL().openConnection();
+        int effectiveTimeoutMillis = Math.max(timeoutMillis, 1000);
+        connection.setConnectTimeout(effectiveTimeoutMillis);
+        connection.setReadTimeout(effectiveTimeoutMillis);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Content-Type", "application/json");
         if (StringUtils.hasText(apiKey)) {
-            requestBuilder.header("Authorization", "Bearer " + apiKey.trim());
+            connection.setRequestProperty("Authorization", "Bearer " + apiKey.trim());
         }
-        return requestBuilder
-                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                .build();
+        byte[] bytes = requestBody.getBytes(StandardCharsets.UTF_8);
+        connection.setRequestProperty("Content-Length", String.valueOf(bytes.length));
+        try (OutputStream outputStream = connection.getOutputStream()) {
+            outputStream.write(bytes);
+        }
+        return connection;
+    }
+
+    private String readConnectionBody(HttpURLConnection connection, int statusCode) throws Exception {
+        try {
+            InputStream stream = statusCode >= 400 ? connection.getErrorStream() : connection.getInputStream();
+            if (stream == null) {
+                return "";
+            }
+            try (InputStream body = stream) {
+                return new String(body.readAllBytes(), StandardCharsets.UTF_8);
+            }
+        } finally {
+            connection.disconnect();
+        }
     }
 
     private Optional<String> extractStreamingChunk(String line) {

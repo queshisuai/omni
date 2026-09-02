@@ -8,6 +8,7 @@ import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import { TicketWalletSkeleton } from '@/components/Skeleton'
+import { SafeImage } from '@/components/SafeImage'
 import { claimTicketTransfer, createTicketEntryCode, createTicketTransfer, listMyTickets, revokeTicketTransfer } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { getTicketWalletStatusCopy } from '@/lib/ticket-wallet-experience'
@@ -267,8 +268,8 @@ export default function TicketsPage() {
               return (
                 <div key={ticket.ticketId} className="rounded-lg border border-[#eee] bg-white p-4 shadow-sm">
                   <div className="grid gap-4 md:grid-cols-[88px_1fr_auto]">
-                    <img
-                      src={ticket.activityPoster || '/background.png'}
+                    <SafeImage
+                      src={ticket.activityPoster}
                       alt={ticket.activityName || '演出海报'}
                       className="h-[118px] w-[88px] rounded-lg object-cover"
                     />

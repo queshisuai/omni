@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Bell, CalendarDays, Heart, Loader2, MapPin, RefreshCw, Trash2, UserRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
+import { SafeImage } from '@/components/SafeImage'
 import { cancelSubscription, createSubscription, createSubscriptionCalendar, listSubscriptions } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { buildSubscriptionEmptyGuides, formatSubscriptionTargetType, formatSubscriptionTime, getCountdownText, type SubscriptionEmptyGuide } from '@/lib/subscription'
@@ -209,8 +210,8 @@ export default function SubscriptionsPage() {
                       onClick={() => router.push(guide.href)}
                       className="group grid min-h-[132px] grid-cols-[72px_1fr] gap-3 rounded-lg border border-[#eee] bg-[#fafafa] p-3 text-left outline-none hover:border-[#ff1268] hover:bg-white"
                     >
-                      <img
-                        src={guide.poster || '/background.png'}
+                      <SafeImage
+                        src={guide.poster}
                         alt={guide.title}
                         className="h-[96px] w-[72px] rounded-md object-cover"
                       />
@@ -231,8 +232,8 @@ export default function SubscriptionsPage() {
             {filtered.map(item => (
               <div key={item.id} className="rounded-lg border border-[#eee] bg-white p-4 shadow-sm">
                 <div className="grid gap-4 md:grid-cols-[88px_1fr_auto]">
-                  <img
-                    src={item.activityPoster || '/background.png'}
+                  <SafeImage
+                    src={item.activityPoster}
                     alt={item.activityName || item.targetName || '演出海报'}
                     className="h-[118px] w-[88px] rounded-lg object-cover"
                   />

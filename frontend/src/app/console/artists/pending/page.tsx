@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { SafeImage } from '@/components/SafeImage'
 import { getUserInfo, listPendingAdminArtists, reviewAdminArtist, updateAdminArtistRisk } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { canUseConsoleAction } from '@/lib/console-auth'
@@ -112,7 +113,7 @@ export default function PendingArtistsPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex min-w-0 gap-3">
                   {item.avatar ? (
-                    <img src={item.avatar} alt={item.name} className="h-14 w-14 shrink-0 rounded-xl object-cover" />
+                    <SafeImage src={item.avatar} alt={item.name} className="h-14 w-14 shrink-0 rounded-xl object-cover" />
                   ) : (
                     <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#f5f5f5] text-[13px] font-semibold text-[#999]">艺人</div>
                   )}

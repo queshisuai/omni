@@ -11,6 +11,7 @@ import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -111,6 +112,23 @@ class OllamaSupportLocalModelClientTest {
         );
 
         assertTrue(client.answer("票夹在哪里？", "平台规则").isEmpty());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void includesDefaultContextWindowLimitInPayload() throws Exception {
+        OllamaSupportLocalModelClient client = new OllamaSupportLocalModelClient(
+                true,
+                "http://localhost:11434/api/chat",
+                "Qwen2.5:7b",
+                2000,
+                (HttpClient) null,
+                objectMapper
+        );
+
+        Map<String, Object> payload = (Map<String, Object>) invokeBuildPayload(client, "票夹在哪里？", "平台规则", false);
+
+        assertEquals(2048, ((Map<String, Object>) payload.get("options")).get("num_ctx"));
     }
 
     @Test
@@ -219,5 +237,15 @@ class OllamaSupportLocalModelClientTest {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         return field.get(target);
+    }
+
+    private Object invokeBuildPayload(OllamaSupportLocalModelClient client,
+                                      String question,
+                                      String projectKnowledge,
+                                      boolean stream) throws Exception {
+        java.lang.reflect.Method method = OllamaSupportLocalModelClient.class
+                .getDeclaredMethod("buildPayload", String.class, String.class, boolean.class);
+        method.setAccessible(true);
+        return method.invoke(client, question, projectKnowledge, stream);
     }
 }

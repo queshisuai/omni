@@ -1,5 +1,6 @@
 import { Activity } from "@/types/omni";
 import { MapPin, Calendar } from "lucide-react";
+import { SafeImage } from "@/components/SafeImage";
 
 interface TicketCardProps {
   activity: Activity;
@@ -13,7 +14,7 @@ export function TicketCard({ activity }: TicketCardProps) {
     >
       {/* Poster */}
       <div className="relative aspect-[3/4] overflow-hidden bg-gray-100">
-        <img
+        <SafeImage
           src={activity.poster}
           alt={activity.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"

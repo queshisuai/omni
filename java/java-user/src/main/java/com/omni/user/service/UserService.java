@@ -6,6 +6,7 @@ import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
+import com.omni.user.dto.ChangePhoneRequest;
 import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
@@ -238,6 +239,31 @@ public class UserService {
      * 修改密码
      */
     public void changePassword(ChangePasswordRequest request) {
+        User user = verifyPasswordIdentity(request);
+        String newPassword = trimToNull(request.getNewPassword());
+        String confirmPassword = trimToNull(request.getConfirmPassword());
+
+        if (newPassword == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码不能为空");
+        }
+        if (confirmPassword == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "确认密码不能为空");
+        }
+        if (newPassword.length() < 6) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码长度不能少于6位");
+        }
+        if (!newPassword.equals(confirmPassword)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "两次密码输入不一致");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userMapper.updateById(user);
+    }
+
+    /**
+     * 校验修改密码前的原身份凭证
+     */
+    public User verifyPasswordIdentity(ChangePasswordRequest request) {
         if (request == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "修改密码参数不能为空");
         }
@@ -255,31 +281,71 @@ public class UserService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "原密码错误");
         }
 
-        String smsCode = trimToNull(request.getSmsCode());
-        String newPassword = trimToNull(request.getNewPassword());
-        String confirmPassword = trimToNull(request.getConfirmPassword());
+        requireValidSmsCode(request.getSmsCode(), "验证码不能为空", "验证码错误");
+        return user;
+    }
 
+    /**
+     * 校验当前安全手机号
+     */
+    public void verifyCurrentPhone(Long userId, String smsCode) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+        requireValidSmsCode(smsCode, "验证码不能为空", "验证码错误");
+    }
+
+    /**
+     * 更换安全手机号
+     */
+    public UserInfoResponse changePhone(ChangePhoneRequest request) {
+        if (request == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "更换手机号参数不能为空");
+        }
+        if (request.getUserId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        User user = userMapper.selectById(request.getUserId());
+        if (user == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+
+        requireValidSmsCode(request.getCurrentSmsCode(), "原手机验证码不能为空", "原手机验证码错误");
+        String newPhone = trimToNull(request.getNewPhone());
+        if (newPhone == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新手机号不能为空");
+        }
+        if (!newPhone.matches("^1[3-9]\\d{9}$")) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新手机号格式不正确");
+        }
+        if (newPhone.equals(user.getPhone())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "新手机号不能与当前手机号相同");
+        }
+        requireValidSmsCode(request.getNewSmsCode(), "新手机验证码不能为空", "新手机验证码错误");
+
+        LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(User::getPhone, newPhone);
+        if (userMapper.selectCount(wrapper) > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "该手机号已被绑定");
+        }
+
+        user.setPhone(newPhone);
+        userMapper.updateById(user);
+        return toUserInfoResponse(user);
+    }
+
+    private void requireValidSmsCode(String rawSmsCode, String blankMessage, String invalidMessage) {
+        String smsCode = trimToNull(rawSmsCode);
         if (smsCode == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "验证码不能为空");
+            throw new BusinessException(ResultCode.BAD_REQUEST, blankMessage);
         }
         if (!isValidMockSmsCode(smsCode)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "验证码错误");
+            throw new BusinessException(ResultCode.BAD_REQUEST, invalidMessage);
         }
-        if (newPassword == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码不能为空");
-        }
-        if (confirmPassword == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "确认密码不能为空");
-        }
-        if (newPassword.length() < 6) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "新密码长度不能少于6位");
-        }
-        if (!newPassword.equals(confirmPassword)) {
-            throw new BusinessException(ResultCode.BAD_REQUEST, "两次密码输入不一致");
-        }
-
-        user.setPassword(passwordEncoder.encode(newPassword));
-        userMapper.updateById(user);
     }
 
     /**
@@ -386,6 +452,9 @@ public class UserService {
     }
 
     private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }

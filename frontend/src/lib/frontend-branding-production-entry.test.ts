@@ -84,4 +84,5 @@ test('auth storage migrates legacy browser keys to Omni keys', async () => {
   removeToken()
   assert.equal(storage.getItem('omni_token'), null)
   assert.equal(storage.getItem('omni_user'), null)
+  assert.deepEqual(events, [AUTH_UPDATED_EVENT, AUTH_UPDATED_EVENT])
 })

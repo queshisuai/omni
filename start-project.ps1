@@ -81,9 +81,14 @@ function Write-Step {
     Write-Host "========================================`n" -ForegroundColor Cyan
 }
 
+function Quote-PowerShellString {
+    param([string]$Value)
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
 function Start-Service-InBackground {
     param([string]$Name, [string]$Command, [string]$WorkDir)
-    $proc = Start-Process powershell -ArgumentList "-NoExit", "-Command", $Command -WorkingDirectory $WorkDir -PassThru
+    $proc = Start-Process powershell -ArgumentList "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $Command -WorkingDirectory $WorkDir -PassThru
     Write-Host "[$Name] Started (PID: $($proc.Id))" -ForegroundColor Green
     return $proc
 }
@@ -117,6 +122,20 @@ function Import-DotEnv {
 
 Write-Host "`n  Omni Ticket Platform - Startup`n" -ForegroundColor Magenta
 Import-DotEnv -Path (Join-Path $projectRoot ".env")
+
+$javaUnixDomainTempPath = Join-Path $projectRoot "runtime\java-tmp"
+try {
+    if (-not (Test-Path -LiteralPath $javaUnixDomainTempPath)) {
+        New-Item -ItemType Directory -Path $javaUnixDomainTempPath -Force | Out-Null
+    }
+    [Environment]::SetEnvironmentVariable("TEMP", $javaUnixDomainTempPath, "Process")
+    [Environment]::SetEnvironmentVariable("TMP", $javaUnixDomainTempPath, "Process")
+    $env:TEMP = $javaUnixDomainTempPath
+    $env:TMP = $javaUnixDomainTempPath
+    Write-Host "[本地临时目录] $javaUnixDomainTempPath" -ForegroundColor Green
+} catch {
+    Write-Host "[本地临时目录] 配置失败，Java selector 可能无法启动: $($_.Exception.Message)" -ForegroundColor Yellow
+}
 
 # 1. Check Environment
 Write-Step "Checking Environment..."
@@ -161,6 +180,29 @@ if ([string]::IsNullOrWhiteSpace($env:INTERNAL_API_TOKEN)) {
 if ([string]::IsNullOrWhiteSpace($env:OMNI_ID_NO_KEY)) {
     $env:OMNI_ID_NO_KEY = "omni-local-dev-id-no-key-change-me"
 }
+$localRuntimeDefaults = @{
+    RABBITMQ_HOST = "localhost"
+    RABBITMQ_PORT = "5672"
+    RABBITMQ_USER = "admin"
+    RABBITMQ_PASSWORD = "123456"
+    GRAB_SERVICE_URL = "http://localhost:3001"
+    SEATA_ENABLED = "true"
+    OMNI_SEARCH_PROVIDER = "db"
+    OMNI_SEARCH_REQUIRE_ES = "false"
+    OMNI_SUPPORT_AI_CONTEXT_WINDOW = "2048"
+    ALIPAY_GATEWAY_URL = "http://localhost:8084/local-alipay-disabled"
+    ALIPAY_APP_ID = "omni-local-placeholder"
+    ALIPAY_MERCHANT_PRIVATE_KEY = "omni-local-placeholder"
+    ALIPAY_PUBLIC_KEY = "omni-local-placeholder"
+    ALIPAY_RETURN_URL = "http://localhost:3000/payment/result"
+    ALIPAY_NOTIFY_URL = "http://localhost:8088/api/payment/alipay/notify"
+    API_PROXY_TARGET = "http://localhost:8088"
+}
+foreach ($entry in $localRuntimeDefaults.GetEnumerator()) {
+    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($entry.Key, "Process"))) {
+        [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process")
+    }
+}
 
 if ($UseDockerInfra) {
     Write-Step "启动 Docker 中间件..."
@@ -184,12 +226,12 @@ if ($UseDockerInfra) {
 }
 
 # 3. Start Nacos
+$nacosPort = 8848
 if ($UseDockerInfra) {
     Write-Step "Using Docker Nacos..."
     Write-Host "[Nacos] Docker infrastructure selected" -ForegroundColor Green
 } else {
     Write-Step "Starting Nacos..."
-    $nacosPort = 8848
     try {
         $nacosCheck = Invoke-WebRequest -Uri "http://localhost:$nacosPort/nacos" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
         Write-Host "[Nacos] Already Running" -ForegroundColor Green
@@ -275,10 +317,13 @@ if (-not $SkipJava) {
         Write-Host "Starting $($svc.Name) on port $($svc.Port)..." -ForegroundColor Cyan
         $smsMockArg = if ($svc.Name -eq "java-user") { " --omni.sms.mock.enabled=true" } else { "" }
         $grabServiceUrlArg = if ($svc.Name -eq "java-user") { " --omni.grab-service.url=http://localhost:3001" } else { "" }
-        $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.arguments=`"--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg`""
+        $servicePathArg = Quote-PowerShellString $fullPath
+        $defaultRunArguments = "--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg"
+        $command = "Set-Location -LiteralPath $servicePathArg; mvn spring-boot:run $(Quote-PowerShellString "-Dspring-boot.run.arguments=$defaultRunArguments")"
         if (-not $UseSharedDatabase -and $svc.Database) {
             $seataArg = if ($svc.Name -in @("java-ticket", "java-order", "java-payment")) { " --seata.enabled=true" } else { "" }
-            $command = "cd $fullPath; mvn spring-boot:run -Dspring-boot.run.profiles=prod-split -Dspring-boot.run.arguments=`"--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=$internalApiToken --jwt.secret=$jwtSecret --NACOS_HOST=localhost --NACOS_PORT=$nacosPort --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg$grabServiceUrlArg$seataArg`""
+            $prodSplitRunArguments = "--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=$internalApiToken --jwt.secret=$jwtSecret --NACOS_HOST=localhost --NACOS_PORT=$nacosPort --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg$grabServiceUrlArg$seataArg"
+            $command = "Set-Location -LiteralPath $servicePathArg; mvn spring-boot:run $(Quote-PowerShellString "-Dspring-boot.run.profiles=prod-split") $(Quote-PowerShellString "-Dspring-boot.run.arguments=$prodSplitRunArguments")"
         }
         Start-Service-InBackground -Name $svc.Name -Command $command -WorkDir $fullPath
         Start-Sleep -Seconds 5
@@ -291,7 +336,8 @@ if (-not $SkipFrontend) {
     Write-Step "Starting Grab Service..."
 
     $grabPath = Join-Path $projectRoot "nestjs\grab-service"
-    $grabCommand = "cd $grabPath; `$env:GRAB_SERVICE_PORT='3001'; `$env:GRAB_SERVICE_HOST='127.0.0.1'; `$env:GRAB_DB_HOST='localhost'; `$env:GRAB_DB_PORT='5432'; `$env:GRAB_DB_NAME='omni_grab'; `$env:GRAB_DB_USER='postgres'; `$env:GRAB_DB_PASSWORD='123456'; `$env:REDIS_HOST='localhost'; `$env:REDIS_PORT='6379'; `$env:ORDER_SERVICE_URL='http://localhost:8083'; `$env:TICKET_SERVICE_URL='http://localhost:8082'; `$env:NOTIFICATION_SERVICE_URL='http://localhost:8088'; `$env:INTERNAL_API_TOKEN='$env:INTERNAL_API_TOKEN'; `$env:JWT_SECRET='$env:JWT_SECRET'; `$env:RABBITMQ_HOST='localhost'; `$env:RABBITMQ_PORT='5672'; `$env:RABBITMQ_USER='admin'; `$env:RABBITMQ_PASSWORD='123456'; npm run start:dev"
+    $grabPathArg = Quote-PowerShellString $grabPath
+    $grabCommand = "Set-Location -LiteralPath $grabPathArg; `$env:GRAB_SERVICE_PORT='3001'; `$env:GRAB_SERVICE_HOST='127.0.0.1'; `$env:GRAB_DB_HOST='localhost'; `$env:GRAB_DB_PORT='5432'; `$env:GRAB_DB_NAME='omni_grab'; `$env:GRAB_DB_USER='postgres'; `$env:GRAB_DB_PASSWORD='123456'; `$env:REDIS_HOST='localhost'; `$env:REDIS_PORT='6379'; `$env:ORDER_SERVICE_URL='http://localhost:8083'; `$env:TICKET_SERVICE_URL='http://localhost:8082'; `$env:NOTIFICATION_SERVICE_URL='http://localhost:8088'; `$env:INTERNAL_API_TOKEN='$env:INTERNAL_API_TOKEN'; `$env:JWT_SECRET='$env:JWT_SECRET'; `$env:RABBITMQ_HOST='localhost'; `$env:RABBITMQ_PORT='5672'; `$env:RABBITMQ_USER='admin'; `$env:RABBITMQ_PASSWORD='123456'; npm run start:dev"
     Start-Service-InBackground -Name "grab-service" -Command $grabCommand -WorkDir $grabPath
     Write-Host "`n[Info] Grab service access through gateway /api/grab" -ForegroundColor Yellow
 }
@@ -303,7 +349,8 @@ if (-not $SkipFrontend) {
     $frontendPath = Join-Path $projectRoot "frontend"
     $devCmd = if ($npmCmd -eq "pnpm") { "pnpm dev" } else { "npm run dev" }
 
-    Start-Service-InBackground -Name "Next.js Frontend" -Command "cd $frontendPath; $devCmd" -WorkDir $frontendPath
+    $frontendPathArg = Quote-PowerShellString $frontendPath
+    Start-Service-InBackground -Name "Next.js Frontend" -Command "Set-Location -LiteralPath $frontendPathArg; $devCmd" -WorkDir $frontendPath
     Write-Host "`n[Info] Access http://localhost:3000 after startup" -ForegroundColor Yellow
 }
 

@@ -3,6 +3,8 @@
 import { ChangeEvent, useId, useRef, useState, useCallback } from 'react'
 import { Loader2, UploadCloud, Link as LinkIcon, X } from 'lucide-react'
 import Cropper from 'react-easy-crop'
+import { SafeImage } from '@/components/SafeImage'
+import { isRenderableImageSrc } from '@/lib/image-url'
 
 type LocalFileUploadProps = {
   label: string
@@ -53,10 +55,6 @@ async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<File> {
       }
     }, 'image/jpeg', 0.9)
   })
-}
-
-function isImageUrl(url: string) {
-  return url.startsWith('/uploads/') && /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(url)
 }
 
 export function LocalFileUpload({ label, value, accept, uploading, onUpload, onChange, hint, cropImage }: LocalFileUploadProps) {
@@ -136,9 +134,9 @@ export function LocalFileUpload({ label, value, accept, uploading, onUpload, onC
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-        {value && isImageUrl(value) ? (
+        {value && isRenderableImageSrc(value) ? (
           <div className="relative h-[100px] w-[100px] shrink-0 overflow-hidden rounded-2xl border border-gray-100 bg-gray-50 shadow-sm group">
-            <img src={value} alt={`${label}预览`} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+            <SafeImage src={value} alt={`${label}预览`} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <button 
                 type="button" 
@@ -176,7 +174,7 @@ export function LocalFileUpload({ label, value, accept, uploading, onUpload, onC
             className="hidden"
           />
           
-          {!(value && isImageUrl(value)) && (
+          {!(value && isRenderableImageSrc(value)) && (
             <div className="relative w-full">
               <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input

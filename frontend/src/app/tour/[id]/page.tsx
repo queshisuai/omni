@@ -4,6 +4,8 @@ import { use, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
+import { SafeImage } from '@/components/SafeImage'
+import { resolveImageSrc } from '@/lib/image-url'
 import { getTourDetail } from '@/lib/api'
 import type { StationPurchaseDetail, TourDetailVO } from '@/types/api'
 
@@ -113,7 +115,7 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
   const primarySession = selectedStation?.sessions[0]
   const canBuy = selectedStation?.primaryAction === 'buy' && !!selectedStation.activity
   const actionText = hideStationDetail ? '时间未公布' : canBuy ? '立即购票' : selectedStatusText
-  const selectedStationPoster = selectedStation?.station.poster || detail?.tour.poster || '/background.png'
+  const selectedStationPoster = resolveImageSrc(selectedStation?.station.poster || detail?.tour.poster)
 
   return (
     <>
@@ -127,7 +129,7 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
           <div className="space-y-6">
             <section className="grid gap-6 rounded-2xl border border-[#e5e5e5] bg-white p-5 shadow-sm lg:grid-cols-[300px_1fr] lg:p-6">
               <div className="overflow-hidden rounded-xl bg-[#f5f5f5]">
-                <img src={detail.tour.poster || '/background.png'} alt={detail.tour.title} className="h-[400px] w-full object-cover" />
+                <SafeImage src={detail.tour.poster} alt={detail.tour.title} className="h-[400px] w-full object-cover" />
               </div>
               <div className="flex flex-col justify-center">
                 <div className="mb-3 text-[13px] font-medium text-[#ff1268]">巡演详情</div>
@@ -147,7 +149,7 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
                     <div className="rounded-full bg-[#f7f7f7] px-5 py-3 text-[14px] text-[#999]">暂无站点</div>
                   ) : stationDetails.map(item => {
                     const active = selectedStation?.station.id === item.station.id
-                    const stationPoster = item.station.poster || detail.tour.poster || '/background.png'
+                    const stationPoster = item.station.poster || detail.tour.poster
                     const stationName = item.station.stationName || '未命名站点'
                     const stationCity = item.station.city || '城市待定'
                     return (
@@ -162,7 +164,7 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
                           background: active ? '#fff0f5' : '#fff',
                         }}
                       >
-                        <img src={stationPoster} alt={stationName} className="h-10 w-10 rounded-xl object-cover" />
+                        <SafeImage src={stationPoster} alt={stationName} className="h-10 w-10 rounded-xl object-cover" />
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{stationCity}</span>
                           <span className="mt-0.5 block truncate text-[12px] opacity-80">{formatStationStatus(item)}</span>
@@ -177,7 +179,7 @@ export default function TourDetailPage({ params }: { params: Promise<{ id: strin
                 <div className="mt-5 rounded-xl bg-[#fafafa] p-5 text-[14px] text-[#555]">
                   <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
                     <div className="overflow-hidden rounded-xl bg-[#f0f0f0]">
-                      <img src={selectedStationPoster} alt={`${selectedStation.station.city} ${selectedStation.station.stationName}`} className="h-44 w-full object-cover lg:h-full" />
+                      <SafeImage src={selectedStationPoster} alt={`${selectedStation.station.city} ${selectedStation.station.stationName}`} className="h-44 w-full object-cover lg:h-full" />
                     </div>
                     <div>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

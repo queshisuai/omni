@@ -260,8 +260,29 @@ export async function clearUserBrowseHistory() {
   return request<void>('/api/user/browse-history', { method: 'DELETE' })
 }
 
+export async function verifyPasswordIdentity(params: { oldPassword: string; smsCode: string }) {
+  return request<void>('/api/user/password/verify', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
 export async function changePassword(params: ChangePasswordRequest) {
   return request<void>('/api/user/password', {
+    method: 'PUT',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function verifyCurrentPhone(params: { smsCode: string }) {
+  return request<void>('/api/user/phone/verify-current', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function changePhone(params: { currentSmsCode: string; newPhone: string; newSmsCode: string }) {
+  return request<UserInfo>('/api/user/phone', {
     method: 'PUT',
     body: JSON.stringify(params),
   })

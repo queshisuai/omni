@@ -11,6 +11,7 @@ import { ALL_CITY_VALUE, resolveActivityCityParam } from '@/lib/city-selection'
 import { createHomeResumeRefreshHandlers, createLatestRequestGate } from '@/lib/home-resume-refresh'
 import { ACTIVITY_VIEW_SIGNAL_KEY, buildPersonalizedActivities, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
 import { toActivitySaleStatus } from '@/lib/activity-sale-status'
+import { resolveImageSrc } from '@/lib/image-url'
 import type { CategoryVO, ActivityVO } from '@/types/api'
 import type { SectionData, Activity } from '@/types/omni'
 
@@ -20,7 +21,7 @@ function toActivity(vo: ActivityVO): Activity {
     itemType: vo.itemType || 'activity',
     title: vo.name,
     categoryId: vo.categoryName,
-    poster: vo.poster || '/background.png',
+    poster: resolveImageSrc(vo.poster),
     venue: vo.venueCity || '待定',
     showTime: vo.startTime ? vo.startTime.slice(0, 10) : '待定',
     priceRange: vo.minPrice ? `¥${vo.minPrice}起` : '待定',

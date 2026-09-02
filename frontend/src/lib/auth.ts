@@ -60,6 +60,7 @@ export function removeToken() {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
     removeLegacyAuth()
+    dispatchAuthUpdated()
   }
 }
 

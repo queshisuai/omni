@@ -6,6 +6,7 @@ import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
 import com.omni.user.config.UserSentinelConfig;
+import com.omni.user.dto.ChangePhoneRequest;
 import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.dto.LoginRequest;
@@ -18,6 +19,7 @@ import com.omni.user.dto.ResolveAttendeesRequest;
 import com.omni.user.dto.ResolvedAttendeeResponse;
 import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UpdateProfileRequest;
+import com.omni.user.dto.VerifyCurrentPhoneRequest;
 import com.omni.user.dto.UserAttendeeExportResponse;
 import com.omni.user.dto.UserAttendeeRequest;
 import com.omni.user.dto.UserAttendeeResponse;
@@ -248,6 +250,36 @@ public class UserController {
         }
         userService.changePassword(request);
         return Result.success();
+    }
+
+    @PostMapping("/password/verify")
+    public Result<Void> verifyPasswordIdentity(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                                @RequestBody ChangePasswordRequest request) {
+        Long userId = requireAuthUserId(authorization);
+        if (request != null) {
+            request.setUserId(userId);
+        }
+        userService.verifyPasswordIdentity(request);
+        return Result.success();
+    }
+
+    @PostMapping("/phone/verify-current")
+    public Result<Void> verifyCurrentPhone(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                            @RequestBody VerifyCurrentPhoneRequest request) {
+        Long userId = requireAuthUserId(authorization);
+        userService.verifyCurrentPhone(userId, request == null ? null : request.getSmsCode());
+        return Result.success();
+    }
+
+    @PutMapping("/phone")
+    public Result<UserInfoResponse> changePhone(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                                 @RequestBody ChangePhoneRequest request) {
+        Long userId = requireAuthUserId(authorization);
+        if (request != null) {
+            request.setUserId(userId);
+        }
+        UserInfoResponse response = userService.changePhone(request);
+        return Result.success(response);
     }
 
     /**

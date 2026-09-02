@@ -2,11 +2,13 @@ package com.omni.user.service;
 
 import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.exception.BusinessException;
+import com.omni.user.dto.ChangePhoneRequest;
 import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
 import com.omni.user.dto.ResetPasswordRequest;
+import com.omni.user.dto.UserInfoResponse;
 import com.omni.user.entity.User;
 import com.omni.user.mapper.UserMapper;
 import org.junit.jupiter.api.Test;
@@ -302,6 +304,68 @@ class UserServiceTest {
     }
 
     @Test
+    void verifyPasswordIdentityAcceptsOldPasswordAndSmsCode() {
+        User user = existingUser();
+        user.setPassword("encoded-oldpass");
+        when(userMapper.selectById(2004L)).thenReturn(user);
+        when(passwordEncoder.matches("oldpass", "encoded-oldpass")).thenReturn(true);
+
+        mockSmsUserService.verifyPasswordIdentity(changePasswordRequest("oldpass", "666666", null, null));
+
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void verifyCurrentPhoneAcceptsCurrentPhoneSmsCode() {
+        when(userMapper.selectById(2004L)).thenReturn(existingUser());
+
+        mockSmsUserService.verifyCurrentPhone(2004L, "666666");
+
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void changePhoneUpdatesPhoneWhenBothCodesAreValid() {
+        User user = existingUser();
+        when(userMapper.selectById(2004L)).thenReturn(user);
+        when(userMapper.selectCount(any())).thenReturn(0L);
+
+        UserInfoResponse response = mockSmsUserService.changePhone(changePhoneRequest("666666", "13800000002", "666666"));
+
+        assertEquals("13800000002", user.getPhone());
+        assertEquals("13800000002", response.getPhone());
+        verify(userMapper).updateById(user);
+    }
+
+    @Test
+    void changePhoneRejectsDuplicatePhoneWithoutUpdatingUser() {
+        when(userMapper.selectById(2004L)).thenReturn(existingUser());
+        when(userMapper.selectCount(any())).thenReturn(1L);
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> mockSmsUserService.changePhone(changePhoneRequest("666666", "13800000002", "666666"))
+        );
+
+        assertEquals("该手机号已被绑定", exception.getMessage());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
+    void changePhoneRejectsInvalidNewPhoneBeforeUpdatingUser() {
+        when(userMapper.selectById(2004L)).thenReturn(existingUser());
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> mockSmsUserService.changePhone(changePhoneRequest("666666", "12345", "666666"))
+        );
+
+        assertEquals("新手机号格式不正确", exception.getMessage());
+        verify(userMapper, never()).selectCount(any());
+        verify(userMapper, never()).updateById(any());
+    }
+
+    @Test
     void internalUserRefReturnsOnlyAuthorizationFields() {
         User user = existingUser();
         user.setRole("organizer");
@@ -360,6 +424,15 @@ class UserServiceTest {
         request.setSmsCode(smsCode);
         request.setNewPassword(newPassword);
         request.setConfirmPassword(confirmPassword);
+        return request;
+    }
+
+    private ChangePhoneRequest changePhoneRequest(String currentSmsCode, String newPhone, String newSmsCode) {
+        ChangePhoneRequest request = new ChangePhoneRequest();
+        request.setUserId(2004L);
+        request.setCurrentSmsCode(currentSmsCode);
+        request.setNewPhone(newPhone);
+        request.setNewSmsCode(newSmsCode);
         return request;
     }
 

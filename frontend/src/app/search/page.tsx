@@ -6,12 +6,14 @@ import { Header, HOT_CITIES, OTHER_CITIES } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { TicketCard } from '@/components/TicketCard'
 import { SearchResultsSkeleton } from '@/components/Skeleton'
+import { SafeImage } from '@/components/SafeImage'
 import { listActivities, listCategories } from '@/lib/api'
 import { captureAnalyticsEvent } from '@/lib/analytics'
 import { resolveActivityCityParam, resolveInitialCity } from '@/lib/city-selection'
 import { ACTIVITY_VIEW_SIGNAL_KEY, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
 import { toActivitySaleStatus } from '@/lib/activity-sale-status'
 import { DEFAULT_POPULAR_SEARCHES, SEARCH_HISTORY_KEY, addSearchHistoryTerm, buildEmptySearchRecommendations, buildSearchSidebarRecommendations, buildSearchSuggestions, formatSearchLoadFailure, parseSearchHistory } from '@/lib/search-experience'
+import { resolveImageSrc } from '@/lib/image-url'
 import type { CategoryVO, ActivityVO } from '@/types/api'
 import type { Activity } from '@/types/omni'
 
@@ -43,7 +45,7 @@ function toActivity(vo: ActivityVO): Activity {
     itemType: vo.itemType || 'activity',
     title: vo.name,
     categoryId: vo.categoryName,
-    poster: vo.poster || '/background.png',
+    poster: resolveImageSrc(vo.poster),
     venue: vo.venueCity || '待定',
     showTime: vo.startTime ? vo.startTime.slice(0, 10) : '待定',
     priceRange: vo.minPrice ? `¥${vo.minPrice}起` : '待定',
@@ -787,7 +789,7 @@ function SearchContent() {
                   className="flex gap-4 group"
                 >
                   <div className="w-[84px] h-[112px] shrink-0 bg-gray-100 rounded-xl overflow-hidden relative shadow-sm">
-                    <img
+                    <SafeImage
                       src={a.poster}
                       alt={a.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useSearchParams } from 'next/navigation'
+import { SafeImage } from '@/components/SafeImage'
 import { getUser } from '@/lib/auth'
 import { getAdminTourDetail, publishStation } from '@/lib/api'
 import type { StationPurchaseDetail, TourAdminDetailVO } from '@/types/api'
@@ -242,7 +243,7 @@ export default function TourDetailPage() {
         {stationDetails.length === 0 ? (
           <div className="rounded-xl border border-[#e5e5e5] bg-white py-16 text-center text-[14px] text-[#999]">暂无城市站点，先新增一个站点草稿。</div>
         ) : stationDetails.map(item => {
-          const posterUrl = item.station.poster || detail.tour.poster || '/background.png'
+          const posterUrl = item.station.poster || detail.tour.poster
           const stationName = item.station.stationName || (item.station.city ? `${item.station.city}站` : '未命名站点')
           const stationCity = item.station.city || '城市待定'
           const stationConfigStatus = formatConfigStatus((item.station as { configStatus?: string | null }).configStatus)
@@ -254,7 +255,7 @@ export default function TourDetailPage() {
           return <div key={item.station.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex min-w-0 flex-col gap-4 sm:flex-row">
-                <img src={posterUrl} alt={stationName} className="h-32 w-full rounded-xl object-cover sm:w-48" />
+                <SafeImage src={posterUrl} alt={stationName} className="h-32 w-full rounded-xl object-cover sm:w-48" />
                 <div>
                   <div className="text-[16px] font-bold text-[#333]">{stationCity} · {stationName}</div>
                   <div className="mt-2 grid gap-1 text-[13px] text-[#666] sm:grid-cols-2">

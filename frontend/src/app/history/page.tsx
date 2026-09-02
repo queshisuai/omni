@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Clock3, MapPin, Trash2, UserRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
+import { SafeImage } from '@/components/SafeImage'
 import { clearUserBrowseHistory, listUserBrowseHistory } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { ACTIVITY_VIEW_SIGNAL_KEY, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
@@ -93,8 +94,8 @@ export default function HistoryPage() {
                 onClick={() => router.push(`/activity/${item.activityId}`)}
                 className="grid cursor-pointer grid-cols-[88px_minmax(0,1fr)] gap-4 rounded-lg border border-[#eee] bg-white p-4 text-left outline-none transition hover:border-[#ff1268]/40 hover:shadow-[0_8px_24px_rgba(255,18,104,0.08)] sm:grid-cols-[104px_minmax(0,1fr)_auto]"
               >
-                <img
-                  src={item.poster || '/background.png'}
+                <SafeImage
+                  src={item.poster}
                   alt={item.title || '演出海报'}
                   className="h-[116px] w-[88px] rounded object-cover sm:h-[138px] sm:w-[104px]"
                 />

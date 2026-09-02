@@ -141,8 +141,9 @@ services:
     volumes:
       - ./frontend:/app
       - frontend-node-modules:/app/node_modules
-      - frontend-next-cache:/app/.next
-    command: ["sh", "-c", "corepack enable && pnpm install && pnpm dev --hostname 0.0.0.0"]
+    tmpfs:
+      - /app/.next
+    command: ["sh", "-c", "corepack enable && pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com && pnpm dev --hostname 0.0.0.0"]
 
 volumes:
   omni-redis-data:
@@ -150,5 +151,4 @@ volumes:
   omni-nacos-data:
   omni-nacos-logs:
   frontend-node-modules:
-  frontend-next-cache:
   grab-node-modules:

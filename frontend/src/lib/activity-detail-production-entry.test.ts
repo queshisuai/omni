@@ -67,3 +67,49 @@ test('activity detail question answer fallback keeps unknown statuses visible', 
   assert.match(source, /formatActivityQuestionAnswerFallback/)
   assert.match(source, /问答状态同步中/)
 })
+
+test('activity detail top actions use lightweight toast states without calendar file download', () => {
+  const source = readSource('app/activity/[id]/page.tsx')
+
+  assert.doesNotMatch(source, /createSubscriptionCalendar/)
+  assert.doesNotMatch(source, /new Blob\(/)
+  assert.doesNotMatch(source, /URL\.createObjectURL/)
+  assert.doesNotMatch(source, /\.download =/)
+  assert.match(source, /showCenterToast/)
+  assert.match(source, /关注成功/)
+  assert.match(source, /已标记想看/)
+  assert.match(source, /已添加至日程提醒/)
+  assert.match(source, /bg-black\/30/)
+  assert.match(source, /bg-black\/80/)
+})
+
+test('activity detail seat area and tabs use compact modern detail layout', () => {
+  const source = readSource('app/activity/[id]/page.tsx')
+
+  assert.match(source, /座位暂不公布，座位将在下单后由系统自动分配。/)
+  assert.match(source, /#FAFBFD/)
+  assert.match(source, /#F4F5F7/)
+  assert.match(source, /限购政策/)
+  assert.match(source, /实名规则/)
+  assert.match(source, /转赠支持/)
+  assert.match(source, /退换说明/)
+  assert.match(source, /提前 60 分钟到达/)
+  assert.match(source, /入场核验/)
+  assert.match(source, /迟到观众安排/)
+  assert.match(source, /严禁携带物品/)
+  assert.match(source, /安全文明观演/)
+})
+
+test('activity detail comments are audience hot reviews without write review entry', () => {
+  const source = readSource('app/activity/[id]/page.tsx')
+
+  assert.match(source, /观众热评/)
+  assert.match(source, /已购实名票/)
+  assert.match(source, /演出问答区/)
+  assert.match(source, /我要提问/)
+  assert.doesNotMatch(source, /评价与问答/)
+  assert.doesNotMatch(source, /去订单页评价/)
+  assert.doesNotMatch(source, /写评价/)
+  assert.doesNotMatch(source, /handleSubmitReview/)
+  assert.doesNotMatch(source, /createActivityReview/)
+})

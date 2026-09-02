@@ -8,6 +8,7 @@ import { AUTH_UPDATED_EVENT, getUser, isAuthenticated, logout } from "@/lib/auth
 import { CITY_KEY, filterCityOptions, formatCityDisplay, resolveRouteCity, resolveStoredCity, ALL_CITY_VALUE } from "@/lib/city-selection";
 import { canEnterConsole, getDefaultConsolePath } from "@/lib/console-auth";
 import { NotificationBell } from "@/components/NotificationBell";
+import { SafeImage } from "@/components/SafeImage";
 import type { UserRole } from "@/types/api";
 
 export const HOT_CITIES = ['北京', '上海', '广州', '深圳', '杭州', '南京', '成都', '武汉', '天津', '沈阳', '西安', '苏州'];
@@ -272,11 +273,11 @@ export function Header() {
           {loggedIn ? (
             <button
               onMouseEnter={() => setShowUserDropdown(true)}
-              onClick={() => router.push("/orders")}
+              onClick={() => setShowUserDropdown(open => !open)}
               className="flex items-center gap-1 text-sm text-[#111] hover:text-[#ff1268] bg-transparent border-none cursor-pointer outline-none h-full"
             >
               {avatar ? (
-                <img src={avatar} alt={nickname || '用户头像'} className="h-8 w-8 rounded-full object-cover" />
+                <SafeImage src={avatar} alt={nickname || '用户头像'} className="h-8 w-8 rounded-full object-cover" />
               ) : (
                 <User className="w-5 h-5" />
               )}
@@ -321,13 +322,7 @@ export function Header() {
                     onClick={() => { setShowUserDropdown(false); router.push("/profile") }}
                     className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
                   >
-                    个人信息
-                  </button>
-                  <button
-                    onClick={() => { setShowUserDropdown(false); router.push("/profile/account") }}
-                    className="block w-full px-5 py-3 text-[13px] font-medium text-gray-700 hover:bg-[#fff4f8] hover:text-[#ff1268] border-none bg-transparent outline-none transition-colors"
-                  >
-                    账号设置
+                    个人中心
                   </button>
                   <button
                     onClick={() => { setShowUserDropdown(false); router.push("/profile/attendees") }}

@@ -6,11 +6,13 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Check, Clock, Ticket } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
+import { SafeImage } from '@/components/SafeImage'
 import { listMyRefunds, listOrders, listTrashOrders } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { formatOrderAttendees } from '@/lib/console-orders'
 import { buildOrderDetailTimeline, formatOrderSeatLabel, getOrderDetailStatusCopy, type TimelineState } from '@/lib/orders-experience'
 import { buildRefundTimeline } from '@/lib/refund-flow'
+import { resolveImageSrc } from '@/lib/image-url'
 import type { OrderEntity, RefundRequestVO } from '@/types/api'
 
 const STATUS_COLOR: Record<TimelineState, string> = {
@@ -24,7 +26,7 @@ function enrich(order: OrderEntity) {
   return {
     ...order,
     activityName: order.activityName || '活动信息待同步',
-    activityPoster: order.activityPoster || '/background.png',
+    activityPoster: resolveImageSrc(order.activityPoster),
     activityId: order.activityId ?? null,
     venueName: order.venueName || '场馆信息待同步',
     sessionTime: order.sessionTime || '',
@@ -142,7 +144,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
         <section className="mb-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
           <div className="flex gap-5">
-            <img src={order.activityPoster} alt={order.activityName} className="h-[160px] w-[120px] shrink-0 rounded-xl object-cover" />
+            <SafeImage src={order.activityPoster} alt={order.activityName} className="h-[160px] w-[120px] shrink-0 rounded-xl object-cover" />
             <div className="min-w-0 flex-1">
               <h2 className="line-clamp-2 text-[20px] font-bold text-[#111]">{order.activityName}</h2>
               <div className="mt-4 grid gap-3 text-[14px] text-gray-500 md:grid-cols-2">
