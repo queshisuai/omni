@@ -12,7 +12,6 @@ import com.omni.ticket.entity.*;
 import com.omni.ticket.mapper.*;
 import com.omni.ticket.search.ActivitySearchProvider;
 import com.omni.ticket.search.ActivitySearchRequest;
-import com.omni.ticket.search.DbActivitySearchProvider;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -98,9 +97,7 @@ public class ActivityService {
         this.tourMapper = tourMapper;
         this.stationMapper = stationMapper;
         this.sessionSeatMapper = sessionSeatMapper;
-        this.activitySearchProvider = activitySearchProvider == null
-                ? new DbActivitySearchProvider(this::listActivities)
-                : activitySearchProvider;
+        this.activitySearchProvider = activitySearchProvider;
     }
 
     @Autowired
@@ -188,6 +185,8 @@ public class ActivityService {
             vo.setItemType("activity");
             vo.setName(activity.getName());
             vo.setPoster(activity.getPoster());
+            vo.setCategoryId(activity.getCategoryId());
+            vo.setOrganizerId(activity.getOrganizerId());
             vo.setSeatMapVisibility(activity.getSeatMapVisibility());
             vo.setStatus(activity.getStatus());
             vo.setRealNameRequired(Boolean.TRUE.equals(activity.getRealNameRequired()));
@@ -213,18 +212,30 @@ public class ActivityService {
                 Session firstSession = sessions.get(0);
                 vo.setStartTime(firstSession.getStartTime());
                 Venue venue = venueMap.get(firstSession.getVenueId());
-                if (venue != null) vo.setVenueCity(venue.getCity());
+                if (venue != null) {
+                    vo.setVenueCity(venue.getCity());
+                    vo.setVenueName(venue.getName());
+                }
 
                 BigDecimal minPrice = null;
+                BigDecimal maxPrice = null;
                 for (Session s : sessions) {
                     List<TicketType> tickets = finalSessionTicketMap.getOrDefault(s.getId(), Collections.emptyList());
                     for (TicketType t : tickets) {
-                        if (minPrice == null || t.getPrice().compareTo(minPrice) < 0) {
-                            minPrice = t.getPrice();
+                        BigDecimal price = t.getPrice();
+                        if (price == null) {
+                            continue;
+                        }
+                        if (minPrice == null || price.compareTo(minPrice) < 0) {
+                            minPrice = price;
+                        }
+                        if (maxPrice == null || price.compareTo(maxPrice) > 0) {
+                            maxPrice = price;
                         }
                     }
                 }
                 vo.setMinPrice(minPrice);
+                vo.setMaxPrice(maxPrice);
             }
             return vo;
         }).collect(Collectors.toList());
@@ -248,6 +259,9 @@ public class ActivityService {
                                              Boolean seatMapOnly,
                                              Boolean realNameRequired,
                                              String sort) {
+        if (activitySearchProvider == null) {
+            throw new BusinessException(503, "搜索服务暂时不可用，请稍后重试");
+        }
         return activitySearchProvider.search(ActivitySearchRequest.builder()
                 .page(page)
                 .size(size)
@@ -323,6 +337,17 @@ public class ActivityService {
         }
         Map<Long, List<Session>> sessionsByActivity = sessions.stream()
                 .collect(Collectors.groupingBy(Session::getActivityId));
+        Set<Long> tourVenueIds = sessions.stream()
+                .map(Session::getVenueId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<Venue> tourVenues = tourVenueIds.isEmpty() ? Collections.emptyList()
+                : venueMapper.selectBatchIds(tourVenueIds);
+        if (tourVenues == null) {
+            tourVenues = Collections.emptyList();
+        }
+        Map<Long, Venue> venueById = tourVenues.stream()
+                .collect(Collectors.toMap(Venue::getId, Function.identity()));
         Set<Long> sessionIds = sessions.stream()
                 .map(Session::getId)
                 .filter(Objects::nonNull)
@@ -339,6 +364,7 @@ public class ActivityService {
         final Map<Long, List<Station>> finalStationsByTour = stationsByTour;
         final Map<Long, Activity> finalActivityByStation = activityByStation;
         final Map<Long, List<Session>> finalSessionsByActivity = sessionsByActivity;
+        final Map<Long, Venue> finalVenueById = venueById;
         final Map<Long, List<TicketType>> finalTicketTypesBySession = ticketTypesBySession;
         return tourPage.getRecords().stream().map(tour -> {
             ActivityVO vo = new ActivityVO();
@@ -346,6 +372,8 @@ public class ActivityService {
             vo.setItemType("tour");
             vo.setName(tour.getTitle());
             vo.setPoster(tour.getPoster());
+            vo.setCategoryId(tour.getCategoryId());
+            vo.setOrganizerId(tour.getOrganizerId());
             Category category = tour.getCategoryId() == null ? null : categoryMapper.selectById(tour.getCategoryId());
             if (category != null) vo.setCategoryName(category.getName());
             Artist artist = tour.getArtistId() == null ? null : artistMapper.selectById(tour.getArtistId());
@@ -360,6 +388,14 @@ public class ActivityService {
                     .filter(Objects::nonNull)
                     .flatMap(activity -> finalSessionsByActivity.getOrDefault(activity.getId(), Collections.emptyList()).stream())
                     .collect(Collectors.toList());
+            vo.setVenueName(tourSessions.stream()
+                    .map(Session::getVenueId)
+                    .map(finalVenueById::get)
+                    .filter(Objects::nonNull)
+                    .map(Venue::getName)
+                    .filter(StringUtils::hasText)
+                    .distinct()
+                    .collect(Collectors.joining(" / ")));
             LocalDateTime firstStartTime = tourSessions.stream()
                     .map(Session::getStartTime)
                     .filter(Objects::nonNull)
@@ -372,7 +408,14 @@ public class ActivityService {
                     .filter(Objects::nonNull)
                     .min(BigDecimal::compareTo)
                     .orElse(null);
+            BigDecimal maxPrice = tourSessions.stream()
+                    .flatMap(session -> finalTicketTypesBySession.getOrDefault(session.getId(), Collections.emptyList()).stream())
+                    .map(TicketType::getPrice)
+                    .filter(Objects::nonNull)
+                    .max(BigDecimal::compareTo)
+                    .orElse(null);
             vo.setMinPrice(minPrice);
+            vo.setMaxPrice(maxPrice);
             vo.setStatus(minPrice == null ? 2 : 1);
             return vo;
         }).collect(Collectors.toList());

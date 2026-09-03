@@ -7,12 +7,14 @@ import com.omni.ticket.search.ActivitySearchIndexService;
 import com.omni.ticket.search.ActivitySearchRebuildResult;
 import com.omni.ticket.service.UserAccessService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@ConditionalOnProperty(prefix = "omni.search", name = "provider", havingValue = "elasticsearch")
 @RequestMapping("/api/ticket/admin/search-index")
 public class ActivitySearchIndexController {
 

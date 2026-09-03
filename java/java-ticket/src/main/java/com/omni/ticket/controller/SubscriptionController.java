@@ -3,7 +3,6 @@ package com.omni.ticket.controller;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
-import com.omni.ticket.dto.SubscriptionCalendarResponse;
 import com.omni.ticket.dto.SubscriptionRequest;
 import com.omni.ticket.dto.SubscriptionResponse;
 import com.omni.ticket.service.PerformanceSubscriptionService;
@@ -55,14 +54,6 @@ public class SubscriptionController {
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         subscriptionService.cancelSubscription(userId, id);
         return Result.success();
-    }
-
-    @GetMapping("/calendar")
-    public Result<SubscriptionCalendarResponse> createCalendar(
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-        Long userId = parseUserId(authorization);
-        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
-        return Result.success(subscriptionService.createCalendar(userId));
     }
 
     private Long parseUserId(String authorization) {

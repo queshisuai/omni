@@ -23,7 +23,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -39,14 +38,14 @@ import static org.mockito.Mockito.when;
 
 class ActivitySearchIndexServiceTest {
 
-    private final ActivitySearchProvider dbProvider = mock(ActivitySearchProvider.class);
+    private final ActivitySearchIndexService.RebuildPageSource pageSource = mock(ActivitySearchIndexService.RebuildPageSource.class);
     private final ElasticsearchOperations operations = mock(ElasticsearchOperations.class);
     private final IndexOperations indexOperations = mock(IndexOperations.class);
     private final ActivityService activityService = mock(ActivityService.class);
     private final ActivitySearchDocumentBuilder documentBuilder = new ActivitySearchDocumentBuilder();
     private final ActivitySearchProperties properties = new ActivitySearchProperties();
     private final ActivitySearchIndexService indexService =
-            new ActivitySearchIndexService(dbProvider, operations, documentBuilder, properties);
+            new ActivitySearchIndexService(pageSource, operations, documentBuilder, properties);
 
     @Test
     void rebuildCreatesIndexWritesDocumentsAndSwitchesAlias() {
@@ -56,7 +55,7 @@ class ActivitySearchIndexServiceTest {
         when(indexOperations.create(anyMap(), any(Document.class))).thenReturn(true);
         when(indexOperations.getAliases("omni_activity_current")).thenReturn(Collections.emptyMap());
         when(indexOperations.alias(any(AliasActions.class))).thenReturn(true);
-        when(dbProvider.search(any(ActivitySearchRequest.class)))
+        when(pageSource.listActivities(any(), any(), any()))
                 .thenReturn(pageWith(activity(900001L), activity(900002L)));
 
         ActivitySearchRebuildResult result = indexService.rebuildAll();
@@ -78,7 +77,7 @@ class ActivitySearchIndexServiceTest {
         when(indexOperations.create(anyMap(), any(Document.class))).thenReturn(true);
         when(indexOperations.getAliases("omni_activity_current")).thenReturn(Collections.emptyMap());
         when(indexOperations.alias(any(AliasActions.class))).thenReturn(true);
-        when(dbProvider.search(any(ActivitySearchRequest.class))).thenReturn(pageWith(activity(900001L)));
+        when(pageSource.listActivities(any(), any(), any())).thenReturn(pageWith(activity(900001L)));
 
         ActivitySearchRebuildResult result = indexService.rebuildAll();
 
@@ -88,22 +87,21 @@ class ActivitySearchIndexServiceTest {
 
     @Test
     void rebuildUsesRawActivityPagesInsteadOfSearchProviderPagination() {
-        DbActivitySearchProvider.ActivityPageSource pageSource = mock(DbActivitySearchProvider.ActivityPageSource.class);
+        ActivitySearchIndexService.RebuildPageSource rawPageSource = mock(ActivitySearchIndexService.RebuildPageSource.class);
         ActivitySearchIndexService rawPageIndexService =
-                new ActivitySearchIndexService(dbProvider, pageSource, operations, documentBuilder, properties);
+                new ActivitySearchIndexService(rawPageSource, operations, documentBuilder, properties);
         when(operations.indexOps(any(IndexCoordinates.class))).thenReturn(indexOperations);
         when(indexOperations.create(anyMap(), any(Document.class))).thenReturn(true);
         when(indexOperations.getAliases("omni_activity_current")).thenReturn(Collections.emptyMap());
         when(indexOperations.alias(any(AliasActions.class))).thenReturn(true);
-        when(pageSource.listActivities(1, 100, null)).thenReturn(pageWith(activities(900001L, 100)));
-        when(pageSource.listActivities(2, 100, null)).thenReturn(pageWith(activities(900101L, 42)));
+        when(rawPageSource.listActivities(1, 100, null)).thenReturn(pageWith(activities(900001L, 100)));
+        when(rawPageSource.listActivities(2, 100, null)).thenReturn(pageWith(activities(900101L, 42)));
 
         ActivitySearchRebuildResult result = rawPageIndexService.rebuildAll();
 
         assertEquals(142, result.getIndexedCount());
-        verify(dbProvider, never()).search(any(ActivitySearchRequest.class));
-        verify(pageSource).listActivities(1, 100, null);
-        verify(pageSource).listActivities(2, 100, null);
+        verify(rawPageSource).listActivities(1, 100, null);
+        verify(rawPageSource).listActivities(2, 100, null);
     }
 
     @Test
@@ -111,7 +109,7 @@ class ActivitySearchIndexServiceTest {
         properties.setIndexName("omni_activity_v20260606");
         when(operations.indexOps(any(IndexCoordinates.class))).thenReturn(indexOperations);
         when(indexOperations.create(anyMap(), any(Document.class))).thenReturn(true);
-        when(dbProvider.search(any(ActivitySearchRequest.class))).thenReturn(pageWith(activity(900001L)));
+        when(pageSource.listActivities(any(), any(), any())).thenReturn(pageWith(activity(900001L)));
         when(operations.save(any(ActivitySearchDocument.class), any(IndexCoordinates.class)))
                 .thenThrow(new RuntimeException("write failed"));
 
@@ -121,27 +119,24 @@ class ActivitySearchIndexServiceTest {
     }
 
     @Test
-    void rebuildReadsDbProviderWithSafePaging() {
+    void rebuildReadsPageSourceWithSafePaging() {
         properties.setIndexName("omni_activity_v20260606");
         when(operations.indexOps(any(IndexCoordinates.class))).thenReturn(indexOperations);
         when(indexOperations.create(anyMap(), any(Document.class))).thenReturn(true);
         when(indexOperations.getAliases("omni_activity_current")).thenReturn(Collections.emptyMap());
         when(indexOperations.alias(any(AliasActions.class))).thenReturn(true);
-        when(dbProvider.search(any(ActivitySearchRequest.class))).thenReturn(pageWith(activity(900001L)));
+        when(pageSource.listActivities(any(), any(), any())).thenReturn(pageWith(activity(900001L)));
 
         indexService.rebuildAll();
 
-        ArgumentCaptor<ActivitySearchRequest> requestCaptor = ArgumentCaptor.forClass(ActivitySearchRequest.class);
-        verify(dbProvider).search(requestCaptor.capture());
-        assertEquals(1, requestCaptor.getValue().getPage());
-        assertEquals(100, requestCaptor.getValue().getSize());
+        verify(pageSource).listActivities(1, 100, null);
     }
 
     @Test
     void upsertActivityWritesDocumentToAlias() {
         properties.setAliasName("omni_activity_current");
         ActivitySearchIndexService singleIndexService =
-                new ActivitySearchIndexService(dbProvider, activityService, operations, documentBuilder, properties);
+                new ActivitySearchIndexService(pageSource, activityService, operations, documentBuilder, properties);
         when(activityService.getActivityDetail(900001L)).thenReturn(activityDetail(900001L));
 
         singleIndexService.upsertActivity(900001L);
@@ -149,14 +144,19 @@ class ActivitySearchIndexServiceTest {
         ArgumentCaptor<ActivitySearchDocument> documentCaptor = ArgumentCaptor.forClass(ActivitySearchDocument.class);
         verify(operations).save(documentCaptor.capture(), any(IndexCoordinates.class));
         assertEquals("activity:900001", documentCaptor.getValue().getId());
+        assertEquals(1001L, documentCaptor.getValue().getCategoryId());
+        assertEquals(2002L, documentCaptor.getValue().getOrganizerId());
+        assertEquals("国家体育场", documentCaptor.getValue().getVenueName());
         assertEquals("北京", documentCaptor.getValue().getCity());
+        assertEquals(new BigDecimal("580"), documentCaptor.getValue().getMinPrice());
+        assertEquals(new BigDecimal("1880"), documentCaptor.getValue().getMaxPrice());
     }
 
     @Test
     void upsertActivityDeletesDocumentWhenActivityIsNoLongerPublic() {
         properties.setAliasName("omni_activity_current");
         ActivitySearchIndexService singleIndexService =
-                new ActivitySearchIndexService(dbProvider, activityService, operations, documentBuilder, properties);
+                new ActivitySearchIndexService(pageSource, activityService, operations, documentBuilder, properties);
         when(activityService.getActivityDetail(900001L))
                 .thenThrow(new BusinessException(ResultCode.NOT_FOUND, "活动不存在"));
 
@@ -169,7 +169,7 @@ class ActivitySearchIndexServiceTest {
     void deleteActivityDeletesDocumentFromAlias() {
         properties.setAliasName("omni_activity_current");
         ActivitySearchIndexService singleIndexService =
-                new ActivitySearchIndexService(dbProvider, activityService, operations, documentBuilder, properties);
+                new ActivitySearchIndexService(pageSource, activityService, operations, documentBuilder, properties);
 
         singleIndexService.deleteActivity(900001L);
 
@@ -211,12 +211,15 @@ class ActivitySearchIndexServiceTest {
         Activity activity = new Activity();
         activity.setId(id);
         activity.setName("Activity " + id);
+        activity.setCategoryId(1001L);
+        activity.setOrganizerId(2002L);
         activity.setSeatMapVisibility("published");
         activity.setRealNameRequired(true);
         activity.setTicketTransferAllowed(false);
         activity.setStatus(1);
 
         Category category = new Category();
+        category.setId(1001L);
         category.setName("演唱会");
 
         Session session = new Session();
@@ -224,14 +227,17 @@ class ActivitySearchIndexServiceTest {
 
         Venue venue = new Venue();
         venue.setCity("北京");
+        venue.setName("国家体育场");
 
         TicketType ticketType = new TicketType();
         ticketType.setPrice(new BigDecimal("580"));
+        TicketType vipTicketType = new TicketType();
+        vipTicketType.setPrice(new BigDecimal("1880"));
 
         ActivityDetailVO.SessionDetail sessionDetail = new ActivityDetailVO.SessionDetail();
         sessionDetail.setSession(session);
         sessionDetail.setVenue(venue);
-        sessionDetail.setTicketTypes(List.of(ticketType));
+        sessionDetail.setTicketTypes(List.of(ticketType, vipTicketType));
 
         ActivityDetailVO detail = new ActivityDetailVO();
         detail.setActivity(activity);
@@ -240,3 +246,4 @@ class ActivitySearchIndexServiceTest {
         return detail;
     }
 }
+

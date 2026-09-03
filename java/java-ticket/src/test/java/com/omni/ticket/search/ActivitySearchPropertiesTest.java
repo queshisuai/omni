@@ -9,19 +9,18 @@ import org.springframework.core.env.StandardEnvironment;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ActivitySearchPropertiesTest {
 
     @Test
-    void defaultsToDbProviderForLocalSafety() {
+    void defaultsToRequiredElasticsearchProvider() {
         ActivitySearchProperties properties = new ActivitySearchProperties();
 
-        assertEquals("db", properties.getProvider());
+        assertEquals("elasticsearch", properties.getProvider());
         assertEquals("omni_activity_v1", properties.getIndexName());
         assertEquals("omni_activity_current", properties.getAliasName());
-        assertFalse(properties.isRequireElasticsearch());
+        assertTrue(properties.isRequireElasticsearch());
     }
 
     @Test

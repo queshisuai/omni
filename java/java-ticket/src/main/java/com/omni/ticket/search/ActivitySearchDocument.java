@@ -14,6 +14,7 @@ public class ActivitySearchDocument {
     private Long organizerId;
     private String itemType;
     private String activityName;
+    private String poster;
     private String artistName;
     private Long categoryId;
     private String categoryName;
@@ -43,6 +44,8 @@ public class ActivitySearchDocument {
     public void setItemType(String itemType) { this.itemType = itemType; }
     public String getActivityName() { return activityName; }
     public void setActivityName(String activityName) { this.activityName = activityName; }
+    public String getPoster() { return poster; }
+    public void setPoster(String poster) { this.poster = poster; }
     public String getArtistName() { return artistName; }
     public void setArtistName(String artistName) { this.artistName = artistName; }
     public Long getCategoryId() { return categoryId; }

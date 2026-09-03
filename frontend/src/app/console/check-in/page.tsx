@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Download, Search } from 'lucide-react'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { getUser } from '@/lib/auth'
 import { getCheckInOverview, listCheckInRecords } from '@/lib/api'
 import { hasConsolePermission } from '@/lib/console-auth'
@@ -45,6 +46,7 @@ export default function ConsoleCheckInPage() {
   const [error, setError] = useState('')
   const [exportMessage, setExportMessage] = useState('')
   const [queried, setQueried] = useState(false)
+  const [page, setPage] = useState(1)
 
   const sessionId = useMemo(() => {
     const trimmed = sessionIdInput.trim()
@@ -52,6 +54,7 @@ export default function ConsoleCheckInPage() {
     const value = Number(trimmed)
     return Number.isSafeInteger(value) && value > 0 ? value : null
   }, [sessionIdInput])
+  const pageRecords = useMemo(() => records.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [records, page])
 
   const loadCheckInData = async () => {
     if (!sessionId) {
@@ -70,6 +73,7 @@ export default function ConsoleCheckInPage() {
       ])
       setOverview(overviewData)
       setRecords(recordData)
+      setPage(1)
     } catch (err) {
       setOverview(null)
       setRecords([])
@@ -170,7 +174,10 @@ export default function ConsoleCheckInPage() {
                 <button
                   key={tab.value || 'ALL'}
                   type="button"
-                  onClick={() => setResultFilter(tab.value)}
+                  onClick={() => {
+                    setResultFilter(tab.value)
+                    setPage(1)
+                  }}
                   className={`h-10 rounded-lg border px-3 text-[13px] transition ${
                     resultFilter === tab.value
                       ? 'border-[#ff1268] bg-[#fff1f6] text-[#ff1268]'
@@ -255,7 +262,7 @@ export default function ConsoleCheckInPage() {
             </tr>
           </thead>
           <tbody>
-            {records.map(record => (
+            {pageRecords.map(record => (
               <tr key={record.id ?? record.requestId} className="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
                 <td className="p-3 font-medium text-[#333]">{formatNullable(record.requestId)}</td>
                 <td className="p-3 text-[#333]">{formatNullable(record.ticketNo)}</td>
@@ -280,6 +287,11 @@ export default function ConsoleCheckInPage() {
         ) : null}
         {loading ? (
           <div className="py-16 text-center text-[14px] text-[#999]">正在加载核验记录</div>
+        ) : null}
+        {!loading && records.length > 0 ? (
+          <div className="border-t border-[#f0f0f0] px-4 pb-4">
+            <GlobalPagination page={page} total={records.length} loading={loading} onChange={setPage} />
+          </div>
         ) : null}
       </div>
     </div>

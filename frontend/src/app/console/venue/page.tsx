@@ -6,7 +6,7 @@ import { getUser } from '@/lib/auth'
 import { createAdminVenue, deleteAdminVenue, listAdminVenues, updateAdminVenue } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
-import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { ClipboardList, Plus, Trash2 } from 'lucide-react'
 import type { VenueEntity } from '@/types/api'
 
@@ -198,7 +198,7 @@ export default function VenuePage() {
           </tbody>
         </table>
         <div className="px-4 pb-4">
-          <Pagination page={page} total={venues.length} loading={loading} onChange={setPage} />
+          <GlobalPagination page={page} total={venues.length} loading={loading} onChange={setPage} />
         </div>
       </div>
       )}

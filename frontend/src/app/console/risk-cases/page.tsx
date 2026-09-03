@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { listAdminRiskCases } from '@/lib/api'
-import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import type { ActivityRiskCaseVO } from '@/types/api'
 
@@ -161,7 +161,7 @@ export default function RiskCasesPage() {
               </div>
             )
           })}
-          <Pagination page={page} total={visible.length} loading={loading} onChange={setPage} />
+          <GlobalPagination page={page} total={visible.length} loading={loading} onChange={setPage} />
         </div>
       )}
     </div>

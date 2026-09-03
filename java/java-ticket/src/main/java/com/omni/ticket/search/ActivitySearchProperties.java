@@ -7,8 +7,8 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "omni.search")
 public class ActivitySearchProperties {
 
-    private String provider = "db";
-    private boolean requireElasticsearch = false;
+    private String provider = "elasticsearch";
+    private boolean requireElasticsearch = true;
     private String indexName = "omni_activity_v1";
     private String aliasName = "omni_activity_current";
 

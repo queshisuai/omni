@@ -1018,6 +1018,7 @@ public class AdminController {
         activity.setOrganizerId(userId); // 记录创建者
         activityMapper.insert(activity);
         if (!artists.isEmpty()) activityArtistService.saveLineup(activity.getId(), artists);
+        publishSearchUpsert(activity.getId());
         return Result.success(activity);
     }
 
@@ -1090,6 +1091,7 @@ public class AdminController {
             activity.setTicketTransferAllowed(!Boolean.FALSE.equals(parseBooleanFlag(body.get("ticketTransferAllowed"))));
         }
         activityMapper.updateById(activity);
+        publishSearchUpsert(activity.getId());
         return Result.success(activity);
     }
 

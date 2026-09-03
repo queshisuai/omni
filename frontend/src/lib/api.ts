@@ -825,6 +825,7 @@ export async function listActivities(params: {
   maxPrice?: number
   saleStatus?: string
   seatMapOnly?: boolean
+  isSupportSeat?: boolean
   realNameRequired?: boolean
   sort?: string
 }) {
@@ -839,7 +840,8 @@ export async function listActivities(params: {
   if (params.minPrice != null) searchParams.set('minPrice', String(params.minPrice))
   if (params.maxPrice != null) searchParams.set('maxPrice', String(params.maxPrice))
   if (params.saleStatus) searchParams.set('saleStatus', params.saleStatus)
-  if (params.seatMapOnly !== undefined) searchParams.set('seatMapOnly', String(params.seatMapOnly))
+  const isSupportSeat = params.isSupportSeat ?? params.seatMapOnly
+  if (isSupportSeat !== undefined) searchParams.set('isSupportSeat', String(isSupportSeat))
   if (params.realNameRequired !== undefined) searchParams.set('realNameRequired', String(params.realNameRequired))
   if (params.sort) searchParams.set('sort', params.sort)
   const qs = searchParams.toString()
@@ -942,6 +944,25 @@ export async function getSeatMap(sessionId: number, ticketTypeId: number) {
 
 export async function listCategories() {
   return request<import('@/types/api').CategoryVO[]>('/api/ticket/categories')
+}
+
+export async function getSearchHistory() {
+  return request<string[]>('/api/v1/search/history')
+}
+
+export async function addSearchHistory(keyword: string) {
+  return request<string[]>('/api/v1/search/history', {
+    method: 'POST',
+    body: JSON.stringify({ keyword }),
+  })
+}
+
+export async function clearSearchHistory() {
+  return request<void>('/api/v1/search/history', { method: 'DELETE' })
+}
+
+export async function getSearchTrending() {
+  return request<import('@/types/api').SearchTrendingItem[]>('/api/v1/search/trending')
 }
 
 export async function searchAdminArtists(keyword: string) {
@@ -1140,10 +1161,6 @@ export async function listSubscriptions() {
 export async function cancelSubscription(id: number) {
   assertPositiveInteger(id, '订阅ID')
   return request<void>(`/api/ticket/subscriptions/${id}`, { method: 'DELETE' })
-}
-
-export async function createSubscriptionCalendar() {
-  return request<import('@/types/api').SubscriptionCalendarVO>('/api/ticket/subscriptions/calendar')
 }
 
 // ========== 订单服务 ==========

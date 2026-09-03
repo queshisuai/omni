@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { listConsoleOrders } from '@/lib/api'
-import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { ConsoleTableSkeleton } from '@/components/Skeleton'
 import { CheckSquare, Download, Square } from 'lucide-react'
 import {
@@ -238,7 +238,7 @@ export default function ConsoleOrdersPage() {
             </tbody>
           </table>
           <div className="px-4 pb-4">
-            <Pagination page={currentPage} total={filteredOrders.length} loading={loading} onChange={setPage} />
+            <GlobalPagination page={currentPage} total={filteredOrders.length} loading={loading} onChange={setPage} />
           </div>
         </div>
       )}

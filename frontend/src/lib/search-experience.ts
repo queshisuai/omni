@@ -1,6 +1,7 @@
 import type { ActivityViewSignal } from './personalized-recommendations'
 
-export const SEARCH_HISTORY_KEY = 'omni_search_history'
+export const SEARCH_HISTORY_KEY = 'search_history_records'
+export const LEGACY_SEARCH_HISTORY_KEY = 'omni_search_history'
 
 export const DEFAULT_POPULAR_SEARCHES = ['演唱会', '音乐节', '话剧', '脱口秀', '周末演出', '亲子剧']
 
@@ -26,6 +27,24 @@ export function addSearchHistoryTerm(history: string[], term: string, limit = 10
   return next.slice(0, limit)
 }
 
+export function readSearchHistoryFromStorage(storage: Pick<Storage, 'getItem'>) {
+  const current = parseSearchHistory(storage.getItem(SEARCH_HISTORY_KEY))
+  if (current.length > 0) return current
+  return parseSearchHistory(storage.getItem(LEGACY_SEARCH_HISTORY_KEY))
+}
+
+export function writeSearchHistoryToStorage(storage: Pick<Storage, 'setItem'>, history: string[]) {
+  storage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history.slice(0, 10)))
+}
+
+export function getSearchTrendingTagMeta(tagType?: string | null) {
+  const normalized = String(tagType || 'NONE').toUpperCase()
+  if (normalized === 'BURST') return { label: '爆', className: 'bg-[#FFF0F5] text-[#E6005C]' }
+  if (normalized === 'HOT') return { label: '热', className: 'bg-orange-50 text-orange-500' }
+  if (normalized === 'NEW') return { label: '新', className: 'bg-blue-50 text-blue-500' }
+  return { label: '', className: '' }
+}
+
 export function formatSearchLoadFailure(error: unknown) {
   const message = error instanceof Error ? error.message.trim() : ''
   return {
@@ -33,6 +52,16 @@ export function formatSearchLoadFailure(error: unknown) {
     description: message || '搜索服务暂时不可用，请稍后重试',
     retryLabel: '重新搜索',
   }
+}
+
+export function shouldRenderSearchSuggestionStrip(input: {
+  pathname: string
+  keyword: string
+  suggestionCount: number
+}) {
+  return input.pathname === '/search'
+    && input.keyword.trim().length > 0
+    && input.suggestionCount > 0
 }
 
 export function buildSearchSuggestions(input: {

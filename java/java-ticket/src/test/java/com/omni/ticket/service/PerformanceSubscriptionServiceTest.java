@@ -1,13 +1,13 @@
 package com.omni.ticket.service;
 
-import com.omni.ticket.dto.SubscriptionCalendarResponse;
 import com.omni.ticket.dto.SubscriptionRequest;
 import com.omni.ticket.dto.SubscriptionResponse;
+import com.omni.common.result.Result;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Artist;
 import com.omni.ticket.entity.PerformanceSubscription;
-import com.omni.ticket.entity.Session;
-import com.omni.ticket.entity.Venue;
+import com.omni.ticket.entity.Tour;
+import com.omni.ticket.client.NotificationInternalClient;
 import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.PerformanceSubscriptionMapper;
@@ -15,16 +15,16 @@ import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.mapper.VenueMapper;
+import com.omni.ticket.mq.NotificationMqProducer;
+import com.omni.common.mq.message.NotificationEventMessage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -47,6 +47,10 @@ class PerformanceSubscriptionServiceTest {
     private TicketTypeMapper ticketTypeMapper;
     @Mock
     private TourMapper tourMapper;
+    @Mock
+    private NotificationMqProducer notificationProducer;
+    @Mock
+    private NotificationInternalClient notificationInternalClient;
 
     @Test
     void createActivityWantStoresActivitySnapshot() {
@@ -99,42 +103,55 @@ class PerformanceSubscriptionServiceTest {
     }
 
     @Test
-    void createCalendarIncludesWatchedActivitySessions() {
+    void createTourCityReminderNotifiesTourOrganizerAboutExtraCityWish() {
         PerformanceSubscriptionService service = service();
-        PerformanceSubscription subscription = new PerformanceSubscription();
-        subscription.setId(99L);
-        subscription.setUserId(2004L);
-        subscription.setTargetType("ACTIVITY_WANT");
-        subscription.setActivityId(7L);
-        subscription.setTargetName("周末演唱会");
-        subscription.setStatus(1);
-        Activity activity = activity();
-        Session session = new Session();
-        session.setId(33L);
-        session.setActivityId(7L);
-        session.setVenueId(5L);
-        session.setStartTime(LocalDateTime.of(2026, 6, 20, 19, 30));
-        session.setEndTime(LocalDateTime.of(2026, 6, 20, 22, 0));
-        Venue venue = new Venue();
-        venue.setId(5L);
-        venue.setName("上海体育馆");
-        venue.setCity("上海");
-        when(subscriptionMapper.selectList(any())).thenReturn(List.of(subscription));
-        when(activityMapper.selectBatchIds(List.of(7L))).thenReturn(List.of(activity));
-        when(sessionMapper.selectList(any())).thenReturn(List.of(session));
-        when(venueMapper.selectBatchIds(List.of(5L))).thenReturn(List.of(venue));
+        Tour tour = new Tour();
+        tour.setId(88L);
+        tour.setTitle("夏日巡回演唱会");
+        tour.setOrganizerId(2003L);
+        when(tourMapper.selectById(88L)).thenReturn(tour);
+        when(subscriptionMapper.selectOne(any())).thenReturn(null);
+        when(subscriptionMapper.insert(any())).thenAnswer(invocation -> {
+            PerformanceSubscription subscription = invocation.getArgument(0);
+            subscription.setId(101L);
+            return 1;
+        });
+        when(notificationInternalClient.createInternalEvent(any(), any())).thenReturn(Result.success());
 
-        SubscriptionCalendarResponse response = service.createCalendar(2004L);
+        SubscriptionRequest request = new SubscriptionRequest();
+        request.setTargetType("TOUR_CITY_REMINDER");
+        request.setTargetId(88L);
+        request.setCity("成都");
+        SubscriptionResponse response = service.createSubscription(2004L, request);
 
-        assertEquals("omni-calendar-2004.ics", response.getFileName());
-        assertTrue(response.getContent().contains("SUMMARY:周末演唱会"));
-        assertTrue(response.getContent().contains("DTSTART;TZID=Asia/Shanghai:20260620T193000"));
-        assertTrue(response.getContent().contains("LOCATION:上海体育馆"));
+        assertEquals("TOUR_CITY_REMINDER", response.getTargetType());
+        assertEquals("成都", response.getCity());
+        ArgumentCaptor<NotificationEventMessage> captor = ArgumentCaptor.forClass(NotificationEventMessage.class);
+        verify(notificationProducer).sendNotificationEvent(captor.capture());
+        NotificationEventMessage event = captor.getValue();
+        verify(notificationInternalClient).createInternalEvent(event, "test-internal-token");
+        assertEquals("TOUR_CITY_WISH", event.getEventType());
+        assertEquals(2003L, event.getUserId());
+        assertEquals("/console/tours/88", event.getActionHref());
+        assertEquals("查看巡演", event.getActionLabel());
+        assertTrue(event.getAggregateKey().startsWith("TOUR_CITY_WISH:88:成都:"));
+        assertTrue(event.getContent().contains("夏日巡回演唱会"));
+        assertTrue(event.getContent().contains("成都"));
+    }
+
+    @Test
+    void performanceSubscriptionServiceDoesNotGenerateLocalCalendarFiles() {
+        assertThrows(NoSuchMethodException.class,
+                () -> PerformanceSubscriptionService.class.getDeclaredMethod("createCalendar", Long.class));
     }
 
     private PerformanceSubscriptionService service() {
-        return new PerformanceSubscriptionService(subscriptionMapper, activityMapper, artistMapper, sessionMapper,
+        PerformanceSubscriptionService service = new PerformanceSubscriptionService(subscriptionMapper, activityMapper, artistMapper, sessionMapper,
                 venueMapper, ticketTypeMapper, tourMapper);
+        service.setNotificationProducer(notificationProducer);
+        service.setNotificationInternalClient(notificationInternalClient);
+        service.setInternalApiToken("test-internal-token");
+        return service;
     }
 
     private Activity activity() {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Plus, RefreshCw, ShieldAlert, XCircle } from 'lucide-react'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { claimExceptionTask, closeExceptionTask, createExceptionTask, listExceptionTasks, resolveExceptionTask } from '@/lib/api'
 import {
   formatExceptionSeverity,
@@ -60,6 +61,7 @@ export default function ExceptionTasksPage() {
   const [actingId, setActingId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [page, setPage] = useState(1)
 
   const load = async (status = statusFilter) => {
     setLoading(true)
@@ -82,12 +84,19 @@ export default function ExceptionTasksPage() {
     if (!statusFilter) return items
     return items.filter(item => item.status === statusFilter)
   }, [items, statusFilter])
+  const pageItems = useMemo(() => filteredItems.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [filteredItems, page])
+
+  useEffect(() => {
+    const pages = Math.max(1, Math.ceil(filteredItems.length / DEFAULT_PAGE_SIZE))
+    if (page > pages) setPage(pages)
+  }, [filteredItems.length, page])
 
   const pendingCount = items.filter(item => isOpenExceptionStatus(item.status)).length
   const highCount = items.filter(item => item.severity === 'high' && isOpenExceptionStatus(item.status)).length
 
   const changeStatus = (status: string) => {
     setStatusFilter(status)
+    setPage(1)
     void load(status)
   }
 
@@ -341,7 +350,7 @@ export default function ExceptionTasksPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredItems.map(item => (
+                {pageItems.map(item => (
                   <tr key={item.id} className="text-[#333]">
                     <td className="px-4 py-3">{formatExceptionTaskType(item.taskType)}</td>
                     <td className="px-4 py-3">
@@ -362,6 +371,11 @@ export default function ExceptionTasksPage() {
             </table>
           </div>
         )}
+        {!loading && filteredItems.length > 0 ? (
+          <div className="border-t border-gray-100 px-5 pb-4">
+            <GlobalPagination page={page} total={filteredItems.length} loading={loading} onChange={setPage} />
+          </div>
+        ) : null}
       </section>
 
       {actionTarget && (

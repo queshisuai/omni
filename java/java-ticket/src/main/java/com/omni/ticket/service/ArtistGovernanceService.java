@@ -7,14 +7,22 @@ import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.dto.ArtistUpdateRequest;
+import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.ActivityArtist;
 import com.omni.ticket.entity.Artist;
+import com.omni.ticket.mapper.ActivityArtistMapper;
+import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ArtistMapper;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 @Service
 public class ArtistGovernanceService {
@@ -27,6 +35,9 @@ public class ArtistGovernanceService {
     private final ArtistMapper artistMapper;
     private final UserAccessService userAccessService;
     private final ActivityRiskResponseService activityRiskResponseService;
+    private ActivityMapper activityMapper;
+    private ActivityArtistMapper activityArtistMapper;
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     public ArtistGovernanceService(ArtistMapper artistMapper, UserAccessService userAccessService) {
         this(artistMapper, userAccessService, null);
@@ -38,6 +49,15 @@ public class ArtistGovernanceService {
         this.artistMapper = artistMapper;
         this.userAccessService = userAccessService;
         this.activityRiskResponseService = activityRiskResponseService;
+    }
+
+    @Autowired(required = false)
+    public void setSearchIndexDependencies(ActivityMapper activityMapper,
+                                           ActivityArtistMapper activityArtistMapper,
+                                           ActivitySearchIndexEventPublisher searchIndexEventPublisher) {
+        this.activityMapper = activityMapper;
+        this.activityArtistMapper = activityArtistMapper;
+        this.searchIndexEventPublisher = searchIndexEventPublisher;
     }
 
     public Artist submit(ArtistSubmissionRequest request) {
@@ -96,6 +116,7 @@ public class ArtistGovernanceService {
         artist.setAvatar(trimToNull(request.getAvatar()));
         artist.setUpdateTime(now);
         artistMapper.updateById(artist);
+        publishAffectedActivitySearchUpserts(artistId);
         return artist;
     }
 
@@ -174,5 +195,33 @@ public class ArtistGovernanceService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private void publishAffectedActivitySearchUpserts(Long artistId) {
+        if (searchIndexEventPublisher == null || artistId == null || artistId <= 0) {
+            return;
+        }
+        Set<Long> activityIds = new LinkedHashSet<>();
+        if (activityMapper != null) {
+            List<Activity> directActivities = activityMapper.selectList(new LambdaQueryWrapper<Activity>()
+                    .eq(Activity::getArtistId, artistId));
+            if (directActivities != null) {
+                directActivities.stream()
+                        .map(Activity::getId)
+                        .filter(Objects::nonNull)
+                        .forEach(activityIds::add);
+            }
+        }
+        if (activityArtistMapper != null) {
+            List<ActivityArtist> lineupRows = activityArtistMapper.selectList(new LambdaQueryWrapper<ActivityArtist>()
+                    .eq(ActivityArtist::getArtistId, artistId));
+            if (lineupRows != null) {
+                lineupRows.stream()
+                        .map(ActivityArtist::getActivityId)
+                        .filter(Objects::nonNull)
+                        .forEach(activityIds::add);
+            }
+        }
+        activityIds.forEach(searchIndexEventPublisher::publishUpsert);
     }
 }

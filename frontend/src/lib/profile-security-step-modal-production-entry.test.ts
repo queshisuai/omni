@@ -17,7 +17,7 @@ test('profile security card uses step modals instead of inline password form', (
   assert.match(page, /登录密码/)
   assert.match(page, /定期更换密码有助于保护账号安全/)
   assert.match(page, /安全手机/)
-  assert.match(page, /用于接收验证码及安全登录/)
+  assert.match(page, /用于验证码校验/)
   assert.match(page, /安全防护等级：高/)
   assert.match(page, /最近安全操作/)
   assert.match(page, /openPasswordModal/)

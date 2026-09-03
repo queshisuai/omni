@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { listActivityRiskResolutions, reviewActivityRiskResolution } from '@/lib/api'
-import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import type { ActivityRiskResolutionVO } from '@/types/api'
 
 type ResolutionStatus = 'pending' | 'approved' | 'rejected' | ''
@@ -169,7 +169,7 @@ function RiskResolutionsContent() {
               </div>
             )
           })}
-          <Pagination page={page} total={items.length} loading={loading} onChange={setPage} />
+          <GlobalPagination page={page} total={items.length} loading={loading} onChange={setPage} />
         </div>
       )}
     </div>

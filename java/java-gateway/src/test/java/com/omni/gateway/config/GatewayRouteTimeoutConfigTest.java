@@ -29,11 +29,13 @@ class GatewayRouteTimeoutConfigTest {
 
         assertRouteDefault(properties, routeIndexes, "user-auth-service", "response-timeout", "3000");
         assertRouteDefault(properties, routeIndexes, "ticket-hot-read-service", "response-timeout", "3000");
+        assertRouteDefault(properties, routeIndexes, "search-service", "response-timeout", "3000");
         assertRouteDefault(properties, routeIndexes, "order-read-service", "response-timeout", "3000");
         assertRouteDefault(properties, routeIndexes, "notification-service", "response-timeout", "3000");
 
         assertRoutePredicate(properties, routeIndexes, "user-auth-service", "Path=/api/user/login,/api/user/send-code");
         assertRoutePredicate(properties, routeIndexes, "ticket-hot-read-service", "Path=/api/ticket/activities,/api/ticket/sessions/**");
+        assertRoutePredicate(properties, routeIndexes, "search-service", "Path=/api/v1/search/**");
         assertRoutePredicate(properties, routeIndexes, "order-read-service", "Path=/api/order/user/**");
     }
 
@@ -57,6 +59,7 @@ class GatewayRouteTimeoutConfigTest {
         Map<String, Integer> routeIndexes = routeIndexes(properties);
 
         assertRoutePredicate(properties, routeIndexes, "user-service", "Path=/api/user/**");
+        assertRoutePredicate(properties, routeIndexes, "search-service", "Path=/api/v1/search/**");
         assertRoutePredicate(properties, routeIndexes, "ticket-service", "Path=/api/ticket/**");
         assertRoutePredicate(properties, routeIndexes, "order-service", "Path=/api/order/**");
         assertRoutePredicate(properties, routeIndexes, "payment-service", "Path=/api/payment/**");

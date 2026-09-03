@@ -13,6 +13,7 @@ import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.service.ActivityService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.IndexOperations;
 import org.springframework.data.elasticsearch.core.document.Document;
@@ -40,14 +41,14 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@ConditionalOnProperty(prefix = "omni.search", name = "provider", havingValue = "elasticsearch")
 public class ActivitySearchIndexService {
 
     private static final int REBUILD_PAGE_SIZE = 100;
     private static final String MAPPING_RESOURCE = "search/omni_activity_v1_mapping.json";
     private static final DateTimeFormatter INDEX_SUFFIX_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
 
-    private final ActivitySearchProvider dbProvider;
-    private final DbActivitySearchProvider.ActivityPageSource rebuildPageSource;
+    private final RebuildPageSource rebuildPageSource;
     private final ActivityService activityService;
     private final ElasticsearchOperations operations;
     private final ActivitySearchDocumentBuilder documentBuilder;
@@ -58,49 +59,35 @@ public class ActivitySearchIndexService {
                                       ElasticsearchOperations operations,
                                       ActivitySearchDocumentBuilder documentBuilder,
                                       ActivitySearchProperties properties) {
-        this(new DbActivitySearchProvider(activityService::listActivities),
-                activityService::listActivities,
+        this(activityService::listActivities,
                 activityService,
                 operations,
                 documentBuilder,
                 properties);
     }
 
-    public ActivitySearchIndexService(ActivitySearchProvider dbProvider,
+    public ActivitySearchIndexService(RebuildPageSource rebuildPageSource,
                                       ElasticsearchOperations operations,
                                       ActivitySearchDocumentBuilder documentBuilder,
                                       ActivitySearchProperties properties) {
-        this(dbProvider, null, null, operations, documentBuilder, properties);
+        this(rebuildPageSource, null, operations, documentBuilder, properties);
     }
 
-    public ActivitySearchIndexService(ActivitySearchProvider dbProvider,
-                                      DbActivitySearchProvider.ActivityPageSource rebuildPageSource,
-                                      ElasticsearchOperations operations,
-                                      ActivitySearchDocumentBuilder documentBuilder,
-                                      ActivitySearchProperties properties) {
-        this(dbProvider, rebuildPageSource, null, operations, documentBuilder, properties);
-    }
-
-    public ActivitySearchIndexService(ActivitySearchProvider dbProvider,
+    public ActivitySearchIndexService(RebuildPageSource rebuildPageSource,
                                       ActivityService activityService,
                                       ElasticsearchOperations operations,
                                       ActivitySearchDocumentBuilder documentBuilder,
                                       ActivitySearchProperties properties) {
-        this(dbProvider, null, activityService, operations, documentBuilder, properties);
-    }
-
-    public ActivitySearchIndexService(ActivitySearchProvider dbProvider,
-                                      DbActivitySearchProvider.ActivityPageSource rebuildPageSource,
-                                      ActivityService activityService,
-                                      ElasticsearchOperations operations,
-                                      ActivitySearchDocumentBuilder documentBuilder,
-                                      ActivitySearchProperties properties) {
-        this.dbProvider = dbProvider;
         this.rebuildPageSource = rebuildPageSource;
         this.activityService = activityService;
         this.operations = operations;
         this.documentBuilder = documentBuilder;
         this.properties = properties == null ? new ActivitySearchProperties() : properties;
+    }
+
+    @FunctionalInterface
+    public interface RebuildPageSource {
+        Page<ActivityVO> listActivities(Integer page, Integer size, Long categoryId);
     }
 
     public ActivitySearchRebuildResult rebuildAll() {
@@ -150,10 +137,7 @@ public class ActivitySearchIndexService {
         if (rebuildPageSource != null) {
             return rebuildPageSource.listActivities(pageNumber, REBUILD_PAGE_SIZE, null);
         }
-        return dbProvider.search(ActivitySearchRequest.builder()
-                .page(pageNumber)
-                .size(REBUILD_PAGE_SIZE)
-                .build());
+        throw new BusinessException(ResultCode.INTERNAL_ERROR, "活动搜索索引重建未配置活动分页数据源");
     }
 
     public void upsertActivity(Long activityId) {
@@ -197,6 +181,8 @@ public class ActivitySearchIndexService {
         vo.setItemType("activity");
         vo.setName(activity.getName());
         vo.setPoster(activity.getPoster());
+        vo.setCategoryId(activity.getCategoryId());
+        vo.setOrganizerId(activity.getOrganizerId());
         vo.setSeatMapVisibility(activity.getSeatMapVisibility());
         vo.setRealNameRequired(Boolean.TRUE.equals(activity.getRealNameRequired()));
         vo.setTicketTransferAllowed(!Boolean.FALSE.equals(activity.getTicketTransferAllowed()));
@@ -226,7 +212,16 @@ public class ActivitySearchIndexService {
                 .filter(StringUtils::hasText)
                 .findFirst()
                 .ifPresent(vo::setVenueCity);
+        sessions.stream()
+                .filter(Objects::nonNull)
+                .map(ActivityDetailVO.SessionDetail::getVenue)
+                .filter(Objects::nonNull)
+                .map(Venue::getName)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .ifPresent(vo::setVenueName);
         vo.setMinPrice(resolveMinPrice(sessions));
+        vo.setMaxPrice(resolveMaxPrice(sessions));
         return vo;
     }
 
@@ -260,6 +255,22 @@ public class ActivitySearchIndexService {
                 .map(TicketType::getPrice)
                 .filter(Objects::nonNull)
                 .min(BigDecimal::compareTo)
+                .orElse(null);
+    }
+
+    private BigDecimal resolveMaxPrice(List<ActivityDetailVO.SessionDetail> sessions) {
+        return sessions.stream()
+                .filter(Objects::nonNull)
+                .flatMap(session -> {
+                    List<TicketType> ticketTypes = session.getTicketTypes() == null
+                            ? Collections.emptyList()
+                            : session.getTicketTypes();
+                    return ticketTypes.stream();
+                })
+                .filter(Objects::nonNull)
+                .map(TicketType::getPrice)
+                .filter(Objects::nonNull)
+                .max(BigDecimal::compareTo)
                 .orElse(null);
     }
 

@@ -24,6 +24,10 @@
 | `NACOS_PORT` | Java Gateway、需要注册发现的 Java 服务、Seata 配置 | 生产必须显式声明，默认通常为 `8848`。 |
 | `GATEWAY_GRAB_SERVICE_URI` | `java-gateway` | 必填；生产 `/api/grab/**` 路由目标，不得使用本地 `localhost:3001`。 |
 | `GATEWAY_WAITLIST_SERVICE_URI` | `java-gateway` | 必填；生产 `/api/waitlist/**` 路由目标，不得使用本地 `localhost:3001`。 |
+| `ELASTICSEARCH_URIS` | `java-ticket` | 必填；活动搜索唯一查询目标，生产不得回退 PostgreSQL 搜索。 |
+| `SPRING_ELASTICSEARCH_URIS` | `java-ticket` | 兼容 Spring 标准变量；未使用 `ELASTICSEARCH_URIS` 时必须显式注入。 |
+| `ELASTICSEARCH_USERNAME` | `java-ticket` | Elasticsearch 启用认证时必填；不写入仓库或镜像。 |
+| `ELASTICSEARCH_PASSWORD` | Elasticsearch、`java-ticket` | Elasticsearch 启用认证时必填；通过密钥管理注入。 |
 
 ## Java 服务
 
@@ -31,7 +35,7 @@
 |:---|:---|:---|
 | `java-gateway` | `SPRING_PROFILES_ACTIVE`、`NACOS_HOST`、`NACOS_PORT`、`GATEWAY_GRAB_SERVICE_URI`、`GATEWAY_WAITLIST_SERVICE_URI` | 网关不连接业务库；生产建议同时显式注入 Gateway timeout 和 Sentinel dashboard 变量。 |
 | `java-user` | `SPRING_PROFILES_ACTIVE`、`SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`、`INTERNAL_API_TOKEN`、`GRAB_SERVICE_URL`、`NACOS_HOST`、`NACOS_PORT`、`RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USER`、`RABBITMQ_PASSWORD` | datasource 指向 `omni_user`；本地短信 mock 开关不得在生产开启，抢票/候补上下文地址必须显式注入。 |
-| `java-ticket` | `SPRING_PROFILES_ACTIVE`、`SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`、`INTERNAL_API_TOKEN`、`SEATA_ENABLED`、`NACOS_HOST`、`NACOS_PORT`、`OMNI_SEARCH_PROVIDER`、`OMNI_SEARCH_REQUIRE_ES`、`RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USER`、`RABBITMQ_PASSWORD` | datasource 指向 `omni_ticket_split`；生产搜索默认应要求 Elasticsearch 可用。 |
+| `java-ticket` | `SPRING_PROFILES_ACTIVE`、`SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`、`INTERNAL_API_TOKEN`、`SEATA_ENABLED`、`NACOS_HOST`、`NACOS_PORT`、`ELASTICSEARCH_URIS` 或 `SPRING_ELASTICSEARCH_URIS`、`OMNI_SEARCH_PROVIDER`、`OMNI_SEARCH_REQUIRE_ES`、`RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USER`、`RABBITMQ_PASSWORD` | datasource 指向 `omni_ticket_split`；搜索链路固定使用 Elasticsearch，PostgreSQL 仅作为活动详情、库存、订单等业务数据源。 |
 | `java-order` | `SPRING_PROFILES_ACTIVE`、`SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`、`INTERNAL_API_TOKEN`、`JWT_SECRET`、`SEATA_ENABLED`、`NACOS_HOST`、`NACOS_PORT`、`RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USER`、`RABBITMQ_PASSWORD` | datasource 指向 `omni_order`；公共订单接口依赖 JWT。 |
 | `java-payment` | `SPRING_PROFILES_ACTIVE`、`SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`、`INTERNAL_API_TOKEN`、`ALIPAY_GATEWAY_URL`、`ALIPAY_APP_ID`、`ALIPAY_MERCHANT_PRIVATE_KEY`、`ALIPAY_PUBLIC_KEY`、`ALIPAY_RETURN_URL`、`ALIPAY_NOTIFY_URL`、`SEATA_ENABLED`、`NACOS_HOST`、`NACOS_PORT`、`RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USER`、`RABBITMQ_PASSWORD` | datasource 指向 `omni_payment`；`prod-split` 已强制关闭 QR mock 和自动确认，退款通知事件使用 RabbitMQ。 |
 | `java-notification` | `SPRING_PROFILES_ACTIVE`、`SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`、`INTERNAL_API_TOKEN`、`JWT_SECRET`、`NACOS_HOST`、`NACOS_PORT`、`RABBITMQ_HOST`、`RABBITMQ_PORT`、`RABBITMQ_USER`、`RABBITMQ_PASSWORD` | datasource 指向 `omni_notification`；internal 通知接口必须校验 `X-Internal-Token`。 |
@@ -52,8 +56,15 @@
 | 变量 | 注入位置 | 生产要求 |
 |:---|:---|:---|
 | `SEATA_ENABLED` | `java-ticket`、`java-order`、`java-payment` | 生产必须显式声明；启用时同时确认 Seata registry/config 已指向生产 Nacos。 |
-| `OMNI_SEARCH_PROVIDER` | `java-ticket` | 生产建议固定为 `elasticsearch`。 |
-| `OMNI_SEARCH_REQUIRE_ES` | `java-ticket` | 生产应为 `true`，避免搜索静默降级。 |
+| `OMNI_SEARCH_PROVIDER` | `java-ticket` | 必须固定为 `elasticsearch`，不得使用 `db`。 |
+| `OMNI_SEARCH_REQUIRE_ES` | `java-ticket` | 必须固定为 `true`；ES 不可用时搜索接口明确失败，不允许 DB fallback。 |
+| `ELASTICSEARCH_URIS` | `java-ticket` | 必填；示例：`https://es.internal:9200`，可配置多个逗号分隔地址。 |
+| `SPRING_ELASTICSEARCH_URIS` | `java-ticket` | 兼容变量；与 `ELASTICSEARCH_URIS` 二选一显式注入，推荐统一使用 `ELASTICSEARCH_URIS`。 |
+| `ELASTICSEARCH_USERNAME` | `java-ticket` | ES 认证开启时必填；未开启认证时可留空。 |
+| `ELASTICSEARCH_PASSWORD` | Elasticsearch、`java-ticket` | ES 认证开启时必填；不得使用本地默认或空密码。 |
+| `ELASTICSEARCH_IMAGE_TAG` | `docker-compose.production.example.yml` | 生产 compose 示例必填；指定 Elasticsearch 镜像版本。 |
+| `ELASTICSEARCH_SECURITY_ENABLED` | `docker-compose.production.example.yml` | 生产 compose 示例必填；建议为 `true` 并配合密码注入。 |
+| `ELASTICSEARCH_JAVA_OPTS` | `docker-compose.production.example.yml` | 生产 compose 示例必填；按机器内存设置 ES JVM 堆。 |
 
 ## RabbitMQ
 

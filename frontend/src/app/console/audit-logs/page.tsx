@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ClipboardList, RefreshCw, Search } from 'lucide-react'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { getUserInfo, listOperationAuditLogs } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import {
@@ -40,6 +41,8 @@ export default function AuditLogsPage() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [page, setPage] = useState(1)
+  const pageItems = useMemo(() => items.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [items, page])
 
   const load = async () => {
     setLoading(true)
@@ -53,6 +56,7 @@ export default function AuditLogsPage() {
         traceId: filters.traceId,
         limit: 100,
       }))
+      setPage(1)
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载操作审计日志失败')
     } finally {
@@ -169,7 +173,7 @@ export default function AuditLogsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {items.map(item => (
+                {pageItems.map(item => (
                   <tr key={item.id} className="text-[#333]">
                     <td className="whitespace-nowrap px-4 py-3">{formatTime(item.createTime)}</td>
                     <td className="px-4 py-3">
@@ -195,6 +199,11 @@ export default function AuditLogsPage() {
             </table>
           </div>
         )}
+        {!loading && items.length > 0 ? (
+          <div className="border-t border-gray-100 px-5 pb-4">
+            <GlobalPagination page={page} total={items.length} loading={loading} onChange={setPage} />
+          </div>
+        ) : null}
       </section>
     </div>
   )

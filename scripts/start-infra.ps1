@@ -53,6 +53,26 @@ function Test-RedisPing {
     }
 }
 
+function Get-ElasticsearchHeaders {
+    $headers = @{}
+    if (-not [string]::IsNullOrWhiteSpace($env:ELASTICSEARCH_USERNAME)) {
+        $pair = "$($env:ELASTICSEARCH_USERNAME):$($env:ELASTICSEARCH_PASSWORD)"
+        $bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
+        $headers["Authorization"] = "Basic " + [Convert]::ToBase64String($bytes)
+    }
+    return $headers
+}
+
+function Test-ElasticsearchHealthy {
+    param([string]$Uri)
+    try {
+        $health = Invoke-RestMethod -Uri "$Uri/_cluster/health?wait_for_status=yellow&timeout=1s" -Headers (Get-ElasticsearchHeaders) -TimeoutSec 3
+        return $health.status -in @("green", "yellow")
+    } catch {
+        return $false
+    }
+}
+
 function Wait-Port {
     param([string]$Name, [string]$HostName, [int]$Port, [int]$TimeoutSeconds)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -64,6 +84,19 @@ function Wait-Port {
         Start-Sleep -Seconds 2
     }
     throw "等待 $Name 超时：localhost:$Port 不可连接"
+}
+
+function Wait-ElasticsearchHealthy {
+    param([string]$Uri, [int]$TimeoutSeconds)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-ElasticsearchHealthy -Uri $Uri) {
+            Write-Host "[Elasticsearch] $Uri 已就绪" -ForegroundColor Green
+            return
+        }
+        Start-Sleep -Seconds 2
+    }
+    throw "等待 Elasticsearch 超时：$Uri 未达到 green/yellow 健康状态"
 }
 
 function Assert-DockerAvailable {
@@ -111,6 +144,26 @@ if (Test-PortOpen -HostName "localhost" -Port 6379) {
     }
 }
 Assert-PortAvailableOrOwned -Name "Nacos" -Port 8848 -ContainerName "omni-nacos"
+$useExistingRabbitMq = $false
+if (Test-PortOpen -HostName "localhost" -Port 5672) {
+    $runningRabbitMqContainer = docker ps --filter "name=^/omni-rabbitmq$" --format "{{.Names}}"
+    if ($runningRabbitMqContainer -ne "omni-rabbitmq") {
+        $useExistingRabbitMq = $true
+        Write-Host "[RabbitMQ] localhost:5672 已有服务监听，跳过 Docker RabbitMQ" -ForegroundColor Green
+    }
+}
+$useExistingElasticsearch = $false
+$elasticsearchUri = if ([string]::IsNullOrWhiteSpace($env:ELASTICSEARCH_URIS)) { "http://localhost:9200" } else { ($env:ELASTICSEARCH_URIS -split ",")[0].Trim().TrimEnd("/") }
+if (Test-PortOpen -HostName "localhost" -Port 9200) {
+    $runningElasticsearchContainer = docker ps --filter "name=^/omni-elasticsearch$" --format "{{.Names}}"
+    if ($runningElasticsearchContainer -ne "omni-elasticsearch") {
+        if (-not (Test-ElasticsearchHealthy -Uri $elasticsearchUri)) {
+            throw "Elasticsearch 需要使用 localhost:9200，但端口已被非健康 ES 服务或其他进程占用。请停止冲突服务或修正 ELASTICSEARCH_URIS 后重试。"
+        }
+        $useExistingElasticsearch = $true
+        Write-Host "[Elasticsearch] localhost:9200 已有可用 ES，跳过 Docker Elasticsearch" -ForegroundColor Green
+    }
+}
 
 Write-Step "启动 Docker 中间件..."
 Push-Location $projectRoot
@@ -118,6 +171,12 @@ try {
     $composeServices = @("nacos")
     if (-not $useExistingRedis) {
         $composeServices = @("redis") + $composeServices
+    }
+    if (-not $useExistingRabbitMq) {
+        $composeServices = $composeServices + @("rabbitmq")
+    }
+    if (-not $useExistingElasticsearch) {
+        $composeServices = $composeServices + @("elasticsearch")
     }
     docker compose up -d @composeServices
 } finally {
@@ -127,6 +186,10 @@ try {
 Write-Step "等待中间件端口..."
 Wait-Port -Name "Redis" -HostName "localhost" -Port 6379 -TimeoutSeconds $TimeoutSeconds
 Wait-Port -Name "Nacos" -HostName "localhost" -Port 8848 -TimeoutSeconds $TimeoutSeconds
+Wait-Port -Name "RabbitMQ" -HostName "localhost" -Port 5672 -TimeoutSeconds $TimeoutSeconds
+Wait-ElasticsearchHealthy -Uri $elasticsearchUri -TimeoutSeconds $TimeoutSeconds
 
 $redisProvider = if ($useExistingRedis) { "本机 Redis 6379" } else { "Docker Redis 6379" }
-Write-Host "`n[Docker Infra] 已就绪：本机 PostgreSQL 5432，$redisProvider，Docker Nacos 8848" -ForegroundColor Green
+$rabbitMqProvider = if ($useExistingRabbitMq) { "本机 RabbitMQ 5672" } else { "Docker RabbitMQ 5672" }
+$esProvider = if ($useExistingElasticsearch) { "本机 Elasticsearch 9200" } else { "Docker Elasticsearch 9200" }
+Write-Host "`n[Docker Infra] 已就绪：本机 PostgreSQL 5432，$redisProvider，Docker Nacos 8848，$rabbitMqProvider，$esProvider" -ForegroundColor Green

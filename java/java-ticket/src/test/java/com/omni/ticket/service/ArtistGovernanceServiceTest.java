@@ -7,8 +7,13 @@ import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.dto.ArtistUpdateRequest;
 import com.omni.ticket.dto.InternalUserRefResponse;
+import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.ActivityArtist;
 import com.omni.ticket.entity.Artist;
+import com.omni.ticket.mapper.ActivityArtistMapper;
+import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ArtistMapper;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -18,6 +23,7 @@ import org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostP
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -25,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,6 +40,12 @@ class ArtistGovernanceServiceTest {
     private ArtistMapper artistMapper;
     @Mock
     private UserAccessService userAccessService;
+    @Mock
+    private ActivityMapper activityMapper;
+    @Mock
+    private ActivityArtistMapper activityArtistMapper;
+    @Mock
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     @Test
     void springCanCreateArtistGovernanceServiceWithConstructorInjection() {
@@ -249,6 +262,34 @@ class ArtistGovernanceServiceTest {
         assertEquals("歌手", updated.getArtistType());
         assertNotNull(updated.getUpdateTime());
         verify(artistMapper).updateById(artist);
+    }
+
+    @Test
+    void updateArtistProfilePublishesSearchIndexEventsForAffectedActivities() {
+        ArtistGovernanceService service = service();
+        service.setSearchIndexDependencies(activityMapper, activityArtistMapper, searchIndexEventPublisher);
+        Artist artist = artist(99L);
+        artist.setSubmittedBy(2003L);
+        artist.setReviewStatus("approved");
+        Activity directActivity = new Activity();
+        directActivity.setId(5001L);
+        ActivityArtist lineupActivity = new ActivityArtist();
+        lineupActivity.setActivityId(5002L);
+        ActivityArtist duplicateDirect = new ActivityArtist();
+        duplicateDirect.setActivityId(5001L);
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2002L, "artist.manage")).thenReturn(user(2002L, "admin"));
+        when(userAccessService.hasPlatformPermission(2002L, "artist.manage")).thenReturn(true);
+        when(artistMapper.selectById(99L)).thenReturn(artist);
+        when(activityMapper.selectList(any())).thenReturn(List.of(directActivity));
+        when(activityArtistMapper.selectList(any())).thenReturn(List.of(lineupActivity, duplicateDirect));
+        ArtistUpdateRequest request = updateRequest(2002L);
+        request.setName("更新后的艺人");
+
+        service.updateProfile(99L, request);
+
+        verify(searchIndexEventPublisher).publishUpsert(5001L);
+        verify(searchIndexEventPublisher).publishUpsert(5002L);
+        verify(searchIndexEventPublisher, times(2)).publishUpsert(any());
     }
 
     @Test

@@ -82,6 +82,24 @@ services:
       timeout: 5s
       retries: 20
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTICSEARCH_IMAGE_TAG:?ELASTICSEARCH_IMAGE_TAG is required}
+    container_name: omni-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: ${ELASTICSEARCH_SECURITY_ENABLED:?ELASTICSEARCH_SECURITY_ENABLED is required}
+      ELASTIC_PASSWORD: ${ELASTICSEARCH_PASSWORD:?ELASTICSEARCH_PASSWORD is required}
+      ES_JAVA_OPTS: ${ELASTICSEARCH_JAVA_OPTS:?ELASTICSEARCH_JAVA_OPTS is required}
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - omni-elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u elastic:\"$${ELASTICSEARCH_PASSWORD}\" 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=1s' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
   grab-service:
     image: ${GRAB_SERVICE_IMAGE:?GRAB_SERVICE_IMAGE is required}
     container_name: omni-grab-service
@@ -130,5 +148,6 @@ services:
 volumes:
   omni-redis-data:
   omni-rabbitmq-data:
+  omni-elasticsearch-data:
   omni-nacos-data:
   omni-nacos-logs:

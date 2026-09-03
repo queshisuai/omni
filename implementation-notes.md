@@ -1,5 +1,40 @@
 # Implementation Notes
 
+## 2026-09-03 顶栏搜索输入联想与模糊搜索
+
+- 根因：后端 ES 搜索已支持 `keyword=孙` 返回「孙燕姿」相关巡演，但顶栏搜索 Popover 只展示历史搜索和热门榜单，用户输入过程中没有把实时搜索结果展示出来。
+- 修复：`Header` 在用户输入关键词时通过 260ms 防抖调用既有 `/api/ticket/activities` 搜索接口，展示「相关推荐」联想区，最多返回 6 条活动/巡演；点击联想项直接进入 `/activity/:id` 或 `/tour/:id`，点击「搜索 "关键词" 相关结果」进入搜索结果页。
+- 保留：空输入状态仍展示历史搜索和动态热门榜单；placeholder 恢复为中立短文案「搜索演出、艺人、场馆...」，`Enter ↵` 继续使用 `shrink-0 whitespace-nowrap` 防遮挡。
+- 视觉优化：移除右上角红色「模糊搜索」药丸和首行重粉色底；输入框与直达行统一使用 `Search` 单色线框图标，直达行和联想结果仅在 hover 时显示浅灰底，命中的用户输入词用品牌主色局部高亮。
+- 验证：`keyword=孙` 通过 Gateway 返回「2026就在日落以后 / 孙燕姿」巡演；Docker 前端首页 HTTP 输出包含新 placeholder 与 `shrink-0 whitespace-nowrap`；`node --test src\lib\header-search-popover-production-entry.test.ts` 和 `pnpm typecheck` 均通过。
+
+## 2026-09-03 搜索框提示词与 Enter 标识布局修复
+
+- 根因：顶栏搜索框固定宽度为 `320px`，长 placeholder 与右侧 `Enter ↵` 快捷提示争用横向空间，快捷提示未设置 `shrink-0`，窄视口下容易出现视觉遮挡。
+- 修复：将 placeholder 缩短为「搜索演出、艺人、场馆...」；搜索框在中等桌面宽度使用 `340px`、大屏使用 `380px`；输入框启用 `truncate`，`Enter ↵` 标识启用 `shrink-0 whitespace-nowrap`，避免互相覆盖。
+- 验证：更新 `header-search-popover-production-entry.test.ts`，并执行前端类型检查与该入口测试。
+
+## 2026-09-03 全局搜索热搜与详情返回优化
+
+- 全局搜索：`Header` 搜索框升级为聚焦弹出的历史搜索 + 动态热门榜单 Popover；占位文案当前为「搜索演出、艺人、场馆...」，未登录历史使用 `search_history_records` localStorage，登录态调用 `/api/v1/search/history`。
+- 动态热榜：新增 `/api/v1/search/trending`，后端优先从 `search_history` 聚合 Top 10，再通过 `ElasticsearchActivitySearchProvider` 按 `relevance` 解析活动/巡演目标；无历史数据时从 ES 推荐搜索生成榜单，不保留前端硬编码热榜词条。
+- 搜索链路：新增 `SearchController`、`SearchHistoryService`、`SearchHistoryMapper` 和 `search_history` 表；Gateway 新增 `/api/v1/search/** -> java-ticket` 短读路由。搜索仍由 ES provider 执行，ES 不可用时返回搜索服务异常，不回退 DB 搜索。
+- 详情返回：新增共享 `FloatingBackButton`，活动详情和巡演详情页均展示左侧悬浮「返回上一页」；优先恢复搜索页缓存 URL 与滚动位置，其次站内 `router.back()`，外链直达回退首页，并上报 `omni_activity_detail_back_clicked` / `omni_tour_detail_back_clicked`。
+- 搜索页缓存：搜索结果卡片和右侧推荐点击前保存 `/search` 当前 URL 与滚动位置，返回时通过 `restoreSearchScrollIfPending()` 恢复，不强制重置第一页。
+- 本地迁移：已对 `omni_ticket_split` 执行 `sql/production-split/ticket/20260609_search_history.sql`，创建 `search_history` 及用户历史、关键词热度索引。
+- 本轮联调：前端已按用户口径运行在 `omni-frontend` Docker 容器；`java-ticket`、`java-gateway` 已重启加载新接口；`/api/v1/search/trending` 通过 Gateway、`java-ticket` 直连和前端代理均返回 `code=200`。
+- 索引重建：通过后台管理员 token 执行 `scripts/rebuild-activity-search-index.ps1`，返回 `code=200`，新索引 `omni_activity_v1_20260903121556938_924ed371` 原子切换到 `omni_activity_current`，`_count=145`。
+- 断开验证：短暂停止 `omni-elasticsearch` 后，搜索接口返回 `code=503` 与「搜索服务暂时不可用，请稍后重试」，未返回 DB 搜索结果；恢复 ES 后同一关键词搜索重新返回 `code=200`。
+- 启动偏离：手动单独启动 `java-ticket` 时，`application-prod-split.yml` 要求显式 RabbitMQ 环境；本轮临时启动通过命令行传入 `spring.rabbitmq.*` 参数。推荐继续使用 `start-project.ps1`，脚本已内置本地 RabbitMQ 与强制 ES 默认值。
+- 验证：前端目标 Node 测试 18/18 通过，`pnpm typecheck` 通过；Java 搜索/ES 配置/MQ/网关路由测试共 57 项通过；`check-production-runtime-defaults.ps1`、production-split SQL 安全检查与 cross-owner FK 检查通过。
+
+## 2026-09-03 活动推荐海报回传修复
+
+- 根因：活动详情页主图来自详情接口，可以正常显示；底部推荐活动来自 Elasticsearch 搜索结果，但 `ActivitySearchDocument`、mapping、文档构建和搜索结果转换均未携带 `poster`，前端因此按 `SafeImage` 规则回退到 `/background.png`。
+- 修复：为 `ActivitySearchDocument` 增加 `poster` 字段；`ActivitySearchDocumentBuilder` 写入活动海报；`ElasticsearchActivitySearchProvider` 回传 `ActivityVO.poster`；索引 mapping 增加不可搜索的 `poster` 字段。
+- 回填：重启 `java-ticket` 后执行 `scripts/rebuild-activity-search-index.ps1`，成功回填 145 条，通过新版本索引原子切换 `omni_activity_current` alias；活动 `27` 文档已包含 `/seed-posters/activity-27.jpg`。
+- 验证：`ActivitySearchDocumentBuilderTest` 与 `ElasticsearchActivitySearchProviderTest` 共 10 项通过；直连 `java-ticket`、Gateway、前端代理的 `/api/ticket/activities?page=1&size=20` 均返回 200，20/20 条记录带 `poster`；浏览器刷新 `/activity/27` 后主图和推荐区 3 张海报均加载成功，图片有效尺寸，浏览器错误日志为 0。
+
 ## 2026-08-13 开题报告第1稿
 
 - 输入模板：`C:\Users\Administrator\Desktop\开题报告\广州工商学院本科毕业论文（设计）开题报告 .docx`。
@@ -54,7 +89,7 @@
 - 大模型根因：`Qwen2.5:7b` 默认 32768 上下文加载时 Ollama 日志报 `failed to allocate compute pp buffers`，`/api/chat` 返回 500；同一请求显式 `options.num_ctx=2048` 后返回 `模型连通`。
 - 代码修复：`java-user` 的 `OllamaSupportLocalModelClient` 默认在请求 payload 写入 `options.num_ctx=2048`，并通过 `OMNI_SUPPORT_AI_CONTEXT_WINDOW` / `OMNI_SUPPORT_AI_LOCAL_CONTEXT_WINDOW` 可调。
 - 运行态修复：`OllamaSupportLocalModelClient` 不再在 Spring bean 构造期创建 `java.net.http.HttpClient`，避免本机 JDK 抛出 `Unable to establish loopback connection` 导致 `java-user` 启动失败；实际请求改用 `HttpURLConnection`。
-- 启动脚本修复：`start-project.ps1` 为本地 `prod-split` 注入 RabbitMQ、Grab、Seata、搜索 DB fallback、本地 Alipay 占位、AI context-window 和前端 `API_PROXY_TARGET` 默认值；生产配置文件仍保持无 fallback 的安全口径。
+- 启动脚本修复：`start-project.ps1` 为本地 `prod-split` 注入 RabbitMQ、Grab、Seata、本地 Alipay 占位、AI context-window 和前端 `API_PROXY_TARGET` 默认值；搜索默认已在 2026-09-02 调整为强制 Elasticsearch，见下方记录。
 - 运行态修复补充：本机 `TEMP` 为 `C:\Users\ADMINI~1\AppData\Local\Temp` 短路径时，JDK 17+ 自动 Unix domain socket pipe 会触发 `Invalid argument: connect`，导致 Netty/Spring Cloud Gateway `Selector.open()` 失败；`start-project.ps1` 现在将本次启动进程及子进程的 `TEMP/TMP` 指向 `runtime\java-tmp`。
 - 中间件脚本修复：`scripts/start-infra.ps1` 在 `localhost:6379` 已被非 `omni-redis` 容器占用时，先用 RESP `PING` 校验是否为可用 Redis/Memurai；可用则跳过 Docker Redis，只启动/确认 Docker Nacos。
 - 启动脚本修复补充：`start-project.ps1` 将子 PowerShell 的 Maven `-Dspring-boot.run.*` 参数整体单引号传入，避免 PowerShell 将 `spring-boot.run.arguments` 拆坏为 Maven 插件前缀；`-UseDockerInfra` 分支提前初始化 `NACOS_PORT=8848`，Seata 配置发布可访问 `localhost:8848`。
@@ -116,3 +151,73 @@
 - 评论模块：原 `评价与问答` 更名为 `观众热评`，移除活动详情页内 `写评价/去订单页评价` 入口和 `createActivityReview` 调用；评价入口保持由已完成订单业务路径触发。问答区继续调用真实 `createActivityQuestion` 接口。
 - 运行偏离：本次容器验证前发现 8088 网关未监听，已先启动 Docker Seata，再通过 `start-project.ps1 -SkipFrontend -SkipInstall -UseDockerInfra` 只拉起 Java 后端，前端继续由 Docker 容器 `omni-frontend` 提供。
 - 验证记录：宿主机通过 `node --test src\lib\activity-detail-production-entry.test.ts` 与 `pnpm typecheck`；容器内通过同一入口测试与 `pnpm typecheck`；浏览器自动化登录测试用户后访问 `/activity/900120`，确认核心文案、Tab 切换、日历 Toast、无 `.ics` 下载链接且无旧评价入口。
+
+## 2026-09-02 个人设置中心三合一重构
+
+- 页面重构：`frontend/src/app/profile/page.tsx` 将顶部概览、基础资料和安全认证合并为单个「个人设置中心」主卡片，保留页面 Header 快捷入口与底部账户提示横幅。
+- 头像管理：移除下方重复头像上传区，改为主卡片顶部 80x80 圆角头像就地管理；「更换头像」触发隐藏文件选择并继续调用 `uploadUserAvatar`，仅允许 JPG、PNG、WebP；「清除」先更新表单，保存资料时统一提交。
+- 信息去重：移除三列概览中的独立「角色身份」小卡片，只在用户条右侧保留唯一粉色权限徽章；注册时间和当前账号/手机号收敛为头像右侧单行元信息。
+- 安全逻辑：保留 `verifyPasswordIdentity`、`verifyCurrentPhone`、`changePassword`、`changePhone`、`sendSmsCode` 两步弹窗流程，页面安全列表文案更新为「用于验证码校验」。
+- 测试记录：新增页面源码结构断言，覆盖「个人设置中心」、就地头像操作、移除 `LocalFileUpload` / `CardHeader` / `InfoItem` / `profile-avatar-upload` / `scrollToAvatarUpload` 和重复角色文案。
+- 头像排版微调：头像下方「更换头像 / 清除」操作容器增加 `whitespace-nowrap`，避免窄容器下文字纵向折行。
+
+## 2026-09-02 活动详情页巡演/单场分流重构
+
+- 巡演兼容：`frontend/src/app/activity/[id]/page.tsx` 通过 `isTour`、`eventType`、`tour` 和 `stationDetails` 识别巡演项目；单场活动继续走原 `detail.sessions` 购买链路。
+- 站点联动：新增 `selectedStationId`、`selectedStationDetail`、`stationPurchaseState`、`activePurchaseSessions`，城市切换会清空旧座位、票档、实名观演人选择和抢票幂等键。
+- 巡演 UI：顶部主卡片展示「巡演项目」标签、当前选站与分类角标；巡演模式下新增横向 `Tour Stations Selector`，支持售票中、预约中、待公布、缺货登记与「+ 求加场」。
+- 待公布分支：`PENDING` 站点隐藏场次、票档、数量和座位提示，改为居中空态卡片，提供「开启开售提醒」和「登记想看意向」并复用真实订阅接口。
+- 交互文案：`加入日历` 只更新前端日程提醒状态，Toast 改为「已加入日程提醒」；开售提醒空态成功文案为「已成功订阅，开票前将短信提醒！」。
+- 验证偏离：相邻推荐测试在 Node ESM 下暴露 `activity-recommendations.ts` 对 `image-url` 的扩展名解析问题，已改为显式 `.ts` 导入以兼容现有测试运行方式。
+- 验证偏离：`subscription.test.ts` 的目标时间未带时区，宿主机与 Docker UTC 环境结果不一致；已给测试输入补 `+08:00`，不改倒计时业务函数。
+
+## 2026-09-02 活动搜索 Elasticsearch 强制切换
+
+- 切换原因：活动搜索必须使用 Elasticsearch 全文检索、filter、分页与排序；PostgreSQL 继续作为活动详情、订单、库存、座位等业务数据真实源，不再承担搜索接口或内存过滤 fallback。
+- 搜索 Provider：`ActivitySearchProperties` 默认 `provider=elasticsearch`、`requireElasticsearch=true`；`ActivityService.searchActivities()` 只调用注入的 `ActivitySearchProvider`，未注入时返回 503「搜索服务暂时不可用，请稍后重试」，不再实例化 `DbActivitySearchProvider`。
+- 启动配置：`java-ticket` base 与 `prod-split` profile 固定 `omni.search.provider=elasticsearch`、`omni.search.require-elasticsearch=true`；`start-project.ps1` 注入 `ELASTICSEARCH_URIS` / `SPRING_ELASTICSEARCH_URIS`，并在 Java 启动前等待 ES yellow/green。
+- Docker 基础设施：`docker-compose.yml` 和 `docker-compose.production.example.yml` 均声明 `omni-elasticsearch`、健康检查和持久化卷；`scripts/start-infra.ps1` 会同时确保 RabbitMQ 与 ES 就绪；生产示例要求 `ELASTICSEARCH_IMAGE_TAG`、`ELASTICSEARCH_SECURITY_ENABLED`、`ELASTICSEARCH_PASSWORD`、`ELASTICSEARCH_JAVA_OPTS` 显式注入。
+- 索引结构：沿用 `ActivitySearchDocument` 与 `search/omni_activity_v1_mapping.json`，字段覆盖活动名称、艺人名称、分类、场馆、城市、演出时间、价格区间、售卖状态、实名要求和选座可见性；查询使用 `omni_activity_current` alias，不依赖固定版本索引。
+- 索引字段补齐：`ActivityVO`、全量列表装配、单条 upsert 装配和 ES provider 返回映射均补齐 `categoryId`、`organizerId`、`venueName`、`maxPrice`，避免全量回填与实时同步字段不一致。
+- 历史回填：继续使用 `scripts/rebuild-activity-search-index.ps1` 调用 `POST /api/ticket/admin/search-index/rebuild`；重建服务从 PostgreSQL 业务数据分页读取，写入新索引 `omni_activity_v1_<timestamp>_<suffix>` 后原子切换 alias，失败不会切走当前查询索引。
+- 实时同步：活动新增/修改、发布/下架/删除、场次增删改、票档增删改、艺人阵容变更和场馆名称/城市变更都会发布活动搜索索引事件；艺人基础资料更新会批量刷新直接关联与阵容关联活动。
+- MQ 处理：搜索索引事件继续走 RabbitMQ `omni.search-index`，消费者幂等执行 ES upsert/delete；处理失败进入 retry queue，超过 3 次转入 `search.activity.changed.dlq`；Rabbit JSON converter 已注册 `JavaTimeModule`，确保 `ActivitySearchIndexMessage.occurredAt` 可序列化；发布端不再吞掉 RabbitMQ 发送异常。
+- 本机回填验证：`POST /api/ticket/admin/search-index/rebuild` 成功回填 145 条，alias 切换到 `omni_activity_v1_20260902200446642_9024a7ec`；ES 样本文档确认活动名称、艺人、分类 ID/名称、主办方、场馆、城市、票价区间、售卖状态、实名要求和座位图状态均可读取。
+- 本机联调验证：临时活动 `ES-sync-smoke-20260902202953` 通过后台 API 新增、加场次、加票档、改名、改票价、下架、删除；ES 文档新增、字段更新、下架删除、删除后无遗留均通过，临时活动已逻辑删除且 ES 无 `ES*` 临时文档。
+- 失败场景验证：停止 `omni-elasticsearch` 后搜索接口返回 503「搜索服务暂时不可用，请稍后重试」，未返回 PostgreSQL 搜索结果；恢复 ES 后网关和前端容器代理搜索恢复 200。
+- 收尾命令验证：2026-09-02 20:35 重新执行搜索相关 Java 测试、RabbitMQ 消息测试、前端 `pnpm typecheck`、容器内前端 `pnpm typecheck`、`docker compose config --quiet`、`scripts/check-production-runtime-defaults.ps1` 和 `scripts/verify-microservice-boundaries.ps1`，均通过。
+- 收尾运行态验证：`omni_activity_current` alias 指向 `omni_activity_v1_20260902200446642_9024a7ec`，当前 ES 文档数 145；前端容器代理搜索返回 200，短暂停止 ES 时搜索接口返回业务 `code=503`，恢复 ES 后搜索重新返回 200。
+
+## 2026-09-02 巡演求加场联调闭环
+
+- 前端状态：`frontend/src/app/tour/[id]/page.tsx` 已完成巡演城市栏细节修复，横向容器使用 `overflow-y-visible` 与 `py-2`，角标定位为卡片内右上角，卡片使用 `pt-5` 避免「待公布 / 售票中」文字被裁切。
+- 城市弹窗：`+ 求加场` 已唤起「我想看的城市」弹窗，复用项目城市数据 `HOT_CITIES`、`OTHER_CITIES`、`filterCityOptions` 和 `CITY_KEY`，包含当前定位城市、热门城市、搜索、按字母分组和右侧字母导航。
+- 提交流程：点击城市会通过前端代理调用 `POST /api/ticket/subscriptions`，提交 `targetType=TOUR_CITY_REMINDER`、`targetId=tourId`、`targetValue/city=城市名`，成功后关闭弹窗并显示居中 Toast「已提交【城市】加场心愿，主办方会收到您的期待！」。
+- 后端补齐：新增 `NotificationInternalClient`，`PerformanceSubscriptionService` 在创建 `TOUR_CITY_REMINDER` 后直接调用 `java-notification` 的 `/api/notification/internal/events`，同时保留 RabbitMQ 通知事件；`NotificationService` 依据 `aggregateKey` 去重，避免 direct + MQ 重复消息。
+- 启动修复：`start-project.ps1` 将 `TEMP/TMP` 固定到项目 `runtime/tmp`，规避本机 Windows Java `Selector.open()` 在 `ADMINI~1` 临时目录下报 `Unable to establish loopback connection` 导致 `java-ticket` 无法重启的问题。
+- 联调验证：登录测试用户 `13900000001` 后经前端容器代理提交巡演 `5` 的「厦门」加场心愿，接口返回 200，`performance_subscription` 写入 `id=29`，`notification_delivery` 写入 `tour-city-wish:5:厦门:29` 且状态 `SENT`，主办方 `user_id=2002` 的 `notification` 写入 `TOUR_CITY_WISH`，入口 `/console/tours/5`。随后将 `java-ticket` 恢复为 `--seata.enabled=true` 正常口径，再提交「宁波」加场心愿，`performance_subscription` 写入 `id=30`，主办方通知写入 `notification.id=988011`，`notification_delivery.id=4` 状态 `SENT`。
+- 测试记录：`mvn -pl java-ticket "-Dtest=ElasticsearchClientConfigTest,PerformanceSubscriptionServiceTest" test` 通过 5 项；`node --test src\lib\tour-detail-production-entry.test.ts src\lib\subscription.test.ts` 通过 3 项；`pnpm typecheck` 通过。
+
+## 2026-09-03 分类页搜索体验与分页修复
+
+- 分类页历史条：`frontend/src/app/search/page.tsx` 仍作为分类页入口 `/search?category=...` 使用，但搜索联想/历史标签条改为仅在 `/search` 且存在 `keyword` 时显示；分类浏览不再展示「搜索历史」横条。
+- 可选座筛选：前端 `listActivities()` 增加公开查询参数 `isSupportSeat=true`，并保留旧入参 `seatMapOnly` 的调用兼容；后端 `/api/ticket/activities` 同时接收 `seatMapOnly` 与 `isSupportSeat`，统一归一后传入 ES provider 的 `seatMapVisibility=published` filter。
+- 分页交互：`frontend/src/lib/pagination.ts` 新增 `buildPaginationItems()`，搜索页分页与通用 `Pagination` 组件都接入可点击省略号；点击 `...` 后原地输入页码，非法/越界页码按 `normalizePageRequest()` 归一，当前页高亮改为 `#ff2d55`。
+- 运行偏离：手动重启 `java-ticket` 时首次漏传 `RABBITMQ_PORT` 等 prod-split 环境变量导致启动失败；补齐 RabbitMQ、ES、Nacos、Seata 和数据库环境变量后服务恢复并重新注册到 Nacos。
+- 验证记录：新增/更新前端 `search-experience.test.ts`、`pagination.test.ts`、`api.test.ts` 和后端 `ActivityControllerCEndTest` 覆盖上述行为；宿主机与 `omni-frontend` 容器内前端目标 Node 测试均 51/51 通过，宿主机与容器 `pnpm typecheck` 通过，Java 搜索/控制器目标测试 39/39 通过；前端代理与网关直连 `isSupportSeat=true` 均返回 20 条样本且 `badSeatMapVisibility=0`。
+
+## 2026-09-03 后台全局分页组件统一
+
+- 公共组件：`frontend/src/components/Pagination.tsx` 正式导出 `GlobalPagination`，保留 `Pagination` 兼容别名；统一页码和省略号原地输入跳转的品牌玫红样式，并按最新 UI 要求移除尾部 `跳至 [X] 页 跳转` Quick Jumper 模块，分页器最右侧停在「下一页」。
+- 活动/场次/艺人管理：`frontend/src/app/console/activities/page.tsx`、`frontend/src/app/console/sessions/page.tsx`、`frontend/src/app/console/artists/page.tsx` 移除本地「上一页 / 下一页」分页块，改用 `GlobalPagination`，原服务端/本地切片数据逻辑保持不变。
+- 草稿箱：`frontend/src/app/console/tours/page.tsx` 新增 `DEFAULT_PAGE_SIZE` 本地分页切片与分页容器，避免草稿列表无分页导致页面过长。
+- 已有后台分页入口：订单、退款、风险事件、风险工单、风险恢复申请、场馆记录、场馆资料审核统一改为 `<GlobalPagination />` 调用，保持各自原有数据筛选和分页切片。
+- 其他后台表格页：操作审计、异常任务、入场核验、日结对账、站点变更审核、平台主办方运营工作台补齐本地分页切片和 `GlobalPagination` 容器；导出、详情、跟进等原业务动作保持原完整数据或当前业务状态。
+- 验证记录：新增 `frontend/src/lib/console-pagination-production-entry.test.ts` 覆盖标准组件导出、Quick Jumper 移除、后台页面统一入口、活动/场次/艺人本地分页块移除、草稿箱分页补齐和主要后台表格页统一入口。
+
+## 2026-09-03 想看与提醒通知收拢
+
+- 页面精简：`frontend/src/app/subscriptions/page.tsx` 右上角移除「导出日历」按钮，仅保留「刷新」；同时删除前端 `Blob` / `URL.createObjectURL` / `.ics` 下载逻辑，避免用户误以为需要同步第三方日历。
+- API 收口：前端 `createSubscriptionCalendar()` 与 `SubscriptionCalendarVO` 已移除；后端 `GET /api/ticket/subscriptions/calendar`、`PerformanceSubscriptionService.createCalendar()` 和 `SubscriptionCalendarResponse` 已移除，生产链路不再生成本地日历文件。
+- 通知口径：开售提醒、想看状态、候补释放、支付提醒、艺人/城市上新与巡演加场心愿统一进入站内消息中心/顶部通知图标；后续短信、App Push 或浏览器 Push 也应通过消息服务下发，不恢复本地日历方案。
+- 后端机制：订阅仍写入 `performance_subscription`；需要触达用户或主办方的场景继续通过 MQ/延迟任务投递通知事件，由通知服务写入站内信通知列表。

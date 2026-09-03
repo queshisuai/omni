@@ -8,6 +8,7 @@ import { getRealNameRequirementLabel, getTicketTransferAllowedLabel } from '@/li
 import { canUseConsoleAction, hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
 import { Bell, Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
+import { GlobalPagination } from '@/components/Pagination'
 import type { ActivityBuyerNotificationResponse, ActivityEntity, PageResult, RefundImpactResponse, TourEntity, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
@@ -143,7 +144,6 @@ export default function ActivitiesPage() {
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
-  const [pages, setPages] = useState(1)
   const [publishingKey, setPublishingKey] = useState<string | null>(null)
   const [selectedActivityKeys, setSelectedActivityKeys] = useState<Set<string>>(() => new Set())
   const loadDataRef = useRef(() => {})
@@ -217,7 +217,6 @@ export default function ActivitiesPage() {
       setActivities(pageRecords)
       setSelectedActivityKeys(previous => new Set([...previous].filter(key => pageKeys.has(key))))
       setTotal(nextTotal)
-      setPages(nextPages)
       setPage(safePage)
       setLoading(false)
     }).catch(err => {
@@ -880,24 +879,8 @@ export default function ActivitiesPage() {
               )})}
             </tbody>
           </table>
-          <div className="flex flex-col gap-3 border-t border-[#f0f0f0] px-4 py-3 text-[13px] text-[#666] sm:flex-row sm:items-center sm:justify-between">
-            <span>共 {total} 条，当前第 {page} / {pages} 页</span>
-            <div className="flex items-center gap-2">
-              <button
-                disabled={page <= 1}
-                onClick={() => loadData(page - 1)}
-                className="rounded-lg border border-[#e5e5e5] px-3 py-1.5 disabled:cursor-not-allowed disabled:text-[#bbb]"
-              >
-                上一页
-              </button>
-              <button
-                disabled={page >= pages}
-                onClick={() => loadData(page + 1)}
-                className="rounded-lg border border-[#e5e5e5] px-3 py-1.5 disabled:cursor-not-allowed disabled:text-[#bbb]"
-              >
-                下一页
-              </button>
-            </div>
+          <div className="border-t border-[#f0f0f0] px-4 pb-4">
+            <GlobalPagination page={page} total={total} pageSize={PAGE_SIZE} loading={loading} onChange={loadData} />
           </div>
         </div>
         </>

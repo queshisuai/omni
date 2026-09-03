@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getUser, updateStoredUser } from '@/lib/auth'
 import { approveStationConfigVersion, getUserInfo, listStationConfigReviews, rejectStationConfigVersion } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import { formatStationConfigChangeType, formatStationConfigStatus, isReviewableStationConfigStatus } from '@/lib/operation-display'
 import { globalPrompt } from '@/components/GlobalDialog'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import type { StationConfigVersionVO } from '@/types/api'
 
 export default function StationConfigReviewsPage() {
@@ -14,12 +15,15 @@ export default function StationConfigReviewsPage() {
   const [error, setError] = useState('')
   const [forbidden, setForbidden] = useState(false)
   const [processingId, setProcessingId] = useState<number | null>(null)
+  const [page, setPage] = useState(1)
+  const pageItems = useMemo(() => items.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [items, page])
 
   const loadReviews = async () => {
     setLoading(true)
     setError('')
     try {
       setItems(await listStationConfigReviews({ status: 'submitted' }))
+      setPage(1)
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载失败')
     } finally {
@@ -115,7 +119,7 @@ export default function StationConfigReviewsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#f0f0f0]">
-                {items.map(item => {
+                {pageItems.map(item => {
                   const reviewable = isReviewableStationConfigStatus(item.status)
                   return (
                     <tr key={item.id} className="text-[#333]">
@@ -145,6 +149,11 @@ export default function StationConfigReviewsPage() {
             </table>
           </div>
         )}
+        {!loading && items.length > 0 ? (
+          <div className="border-t border-[#f0f0f0] px-4 pb-4">
+            <GlobalPagination page={page} total={items.length} loading={loading} onChange={setPage} />
+          </div>
+        ) : null}
       </div>
     </div>
   )

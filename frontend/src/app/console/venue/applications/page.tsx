@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getToken, getUser } from '@/lib/auth'
 import { listAdminVenues, listVenueApplications, privateAssetDownloadUrl, reviewVenueApplication } from '@/lib/api'
-import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import type { PrivateAssetVO, VenueApplicationVO, VenueEntity } from '@/types/api'
 
 const statusText: Record<number, string> = { 0: '待审核', 1: '已通过', 2: '已驳回' }
@@ -243,7 +243,7 @@ export default function VenueApplicationsPage() {
         ))}
       </div>
       {!loadError && !loading && applications.length > 0 && (
-        <Pagination page={page} total={applications.length} loading={loading} onChange={setPage} />
+        <GlobalPagination page={page} total={applications.length} loading={loading} onChange={setPage} />
       )}
     </div>
   )

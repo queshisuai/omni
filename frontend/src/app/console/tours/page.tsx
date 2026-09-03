@@ -1,11 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getUser } from '@/lib/auth'
 import { announceTourCities, deleteAdminActivity, deleteTourDraft, getActivityStation, listAdminActivities, listAdminTours, publishStation } from '@/lib/api'
 import { hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import type { ActivityEntity, PageResult, TourEntity, UserRole } from '@/types/api'
 
 const ADMIN_FETCH_SIZE = 500
@@ -57,11 +58,13 @@ export default function ToursPage() {
   const [checkingRole, setCheckingRole] = useState(true)
   const [deletingKey, setDeletingKey] = useState<string | null>(null)
   const [publishingKey, setPublishingKey] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
   const loadDraftsRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
   const isAdmin = isPlatformAdminRole(role)
   const canManageActivities = hasConsolePermission(role, permissionCodes, 'activity.manage')
   const canManageTours = hasConsolePermission(role, permissionCodes, 'tour.manage')
+  const pageRows = useMemo(() => rows.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [rows, page])
 
   const loadDrafts = useCallback(() => {
     const user = getUser()
@@ -102,6 +105,7 @@ export default function ToursPage() {
             createTime: tour.createTime,
           }))
         setRows([...activityDrafts, ...tourDrafts].sort(compareRows))
+        setPage(1)
       })
       .catch(err => setError(err instanceof Error ? err.message : '加载失败'))
       .finally(() => setLoading(false))
@@ -246,7 +250,7 @@ export default function ToursPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => {
+              {pageRows.map(row => {
                 const key = rowKey(row)
                 const isTour = row.itemType === 'tour'
                 const detailHref = isTour ? `/console/tours/${row.id}` : `/console/activities/${row.id}/edit`
@@ -278,6 +282,9 @@ export default function ToursPage() {
               })}
             </tbody>
           </table>
+          <div className="border-t border-[#f0f0f0] px-4 pb-4">
+            <GlobalPagination page={page} total={rows.length} loading={loading} onChange={setPage} />
+          </div>
         </div>
       )}
     </div>

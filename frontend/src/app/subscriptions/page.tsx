@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, CalendarDays, Heart, Loader2, MapPin, RefreshCw, Trash2, UserRound } from 'lucide-react'
+import { Bell, Heart, Loader2, MapPin, RefreshCw, Trash2, UserRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { SafeImage } from '@/components/SafeImage'
-import { cancelSubscription, createSubscription, createSubscriptionCalendar, listSubscriptions } from '@/lib/api'
+import { cancelSubscription, createSubscription, listSubscriptions } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { buildSubscriptionEmptyGuides, formatSubscriptionTargetType, formatSubscriptionTime, getCountdownText, type SubscriptionEmptyGuide } from '@/lib/subscription'
 import { ACTIVITY_VIEW_SIGNAL_KEY, parseActivityViewSignals } from '@/lib/personalized-recommendations'
@@ -30,18 +30,6 @@ function typeIcon(type: SubscriptionTargetType) {
   return <Bell className="h-4 w-4" />
 }
 
-function downloadTextFile(filename: string, content: string) {
-  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
 export default function SubscriptionsPage() {
   const router = useRouter()
   const [items, setItems] = useState<SubscriptionVO[]>([])
@@ -50,7 +38,6 @@ export default function SubscriptionsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('all')
   const [city, setCity] = useState('')
   const [savingCity, setSavingCity] = useState(false)
-  const [calendarLoading, setCalendarLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [emptyGuides, setEmptyGuides] = useState<SubscriptionEmptyGuide[]>([])
 
@@ -99,18 +86,6 @@ export default function SubscriptionsPage() {
     }
   }
 
-  const downloadCalendar = async () => {
-    setCalendarLoading(true)
-    try {
-      const data = await createSubscriptionCalendar()
-      downloadTextFile(data.fileName, data.content)
-    } catch (err) {
-      await globalAlert(err instanceof Error ? err.message : '生成日历失败')
-    } finally {
-      setCalendarLoading(false)
-    }
-  }
-
   const removeItem = async (item: SubscriptionVO) => {
     if (!(await globalConfirm('确认取消这条想看或提醒吗？'))) return
     setDeletingId(item.id)
@@ -134,14 +109,6 @@ export default function SubscriptionsPage() {
             <p className="mt-2 text-[13px] text-[#666]">管理演出想看、开售提醒、艺人和城市关注；候补释放和支付提醒在消息通知中查看。</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={downloadCalendar}
-              disabled={calendarLoading}
-              className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#ff1268] bg-white px-4 text-[14px] text-[#ff1268] outline-none hover:bg-[#fff0f5] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {calendarLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
-              导出日历
-            </button>
             <button
               onClick={loadData}
               disabled={loading}

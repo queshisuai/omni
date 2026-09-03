@@ -7,6 +7,7 @@ import {
   buildSearchSuggestions,
   formatSearchLoadFailure,
   parseSearchHistory,
+  shouldRenderSearchSuggestionStrip,
 } from './search-experience.ts'
 
 test('adds search history with newest first and no duplicates', () => {
@@ -31,6 +32,13 @@ test('builds suggestions from history popular terms and live results', () => {
   })
 
   assert.deepEqual(suggestions.slice(0, 3), ['周杰伦', '周末演出', '周杰伦演唱会'])
+})
+
+test('shows search suggestion strip only on search route with a keyword', () => {
+  assert.equal(shouldRenderSearchSuggestionStrip({ pathname: '/search', keyword: '孙燕姿', suggestionCount: 3 }), true)
+  assert.equal(shouldRenderSearchSuggestionStrip({ pathname: '/search', keyword: '', suggestionCount: 3 }), false)
+  assert.equal(shouldRenderSearchSuggestionStrip({ pathname: '/search', keyword: '孙燕姿', suggestionCount: 0 }), false)
+  assert.equal(shouldRenderSearchSuggestionStrip({ pathname: '/category', keyword: '孙燕姿', suggestionCount: 3 }), false)
 })
 
 test('builds suggestions from recent viewed activity title and artist', () => {

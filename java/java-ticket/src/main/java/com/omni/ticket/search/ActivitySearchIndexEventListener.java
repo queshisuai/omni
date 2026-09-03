@@ -8,12 +8,14 @@ import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
 
 @Component
+@ConditionalOnProperty(prefix = "omni.search", name = "provider", havingValue = "elasticsearch")
 public class ActivitySearchIndexEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(ActivitySearchIndexEventListener.class);

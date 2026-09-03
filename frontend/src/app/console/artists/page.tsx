@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Edit, Search } from 'lucide-react'
 import { globalAlert } from '@/components/GlobalDialog'
+import { GlobalPagination } from '@/components/Pagination'
 import { SafeImage } from '@/components/SafeImage'
 import { getUser } from '@/lib/auth'
 import { listAdminArtists, updateAdminArtistRisk } from '@/lib/api'
@@ -33,7 +34,6 @@ export default function ArtistsPage() {
   const [riskStatus, setRiskStatus] = useState<ArtistRiskStatus | ''>('')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
-  const [pages, setPages] = useState(1)
   const loadDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
   const canManageAllArtists = role !== 'organizer' && canUseConsoleAction('artist.manage', permissionCodes)
@@ -55,7 +55,6 @@ export default function ArtistsPage() {
     }).then(res => {
       setItems(res.records)
       setTotal(res.total)
-      setPages(res.pages || 1)
       setPage(res.current || nextPage)
       setLoading(false)
     }).catch(err => {
@@ -139,13 +138,7 @@ export default function ArtistsPage() {
         </div>
       )}
 
-      <div className="mt-5 flex flex-col gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 text-[13px] text-[#666] sm:flex-row sm:items-center sm:justify-between">
-        <span>共 {total} 条，当前第 {page} / {pages} 页</span>
-        <div className="flex gap-2">
-          <button disabled={page <= 1 || loading} onClick={() => loadData(page - 1)} className="rounded-lg border border-[#ddd] px-3 py-1.5 disabled:opacity-50">上一页</button>
-          <button disabled={page >= pages || loading} onClick={() => loadData(page + 1)} className="rounded-lg border border-[#ddd] px-3 py-1.5 disabled:opacity-50">下一页</button>
-        </div>
-      </div>
+      <GlobalPagination page={page} total={total} pageSize={PAGE_SIZE} loading={loading} onChange={loadData} />
     </div>
   )
 }

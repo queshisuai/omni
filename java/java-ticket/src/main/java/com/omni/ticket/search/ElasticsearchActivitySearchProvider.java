@@ -140,6 +140,8 @@ public class ElasticsearchActivitySearchProvider implements ActivitySearchProvid
             sorts.add(SortBuilders.fieldSort("minPrice").order(SortOrder.ASC));
         } else if ("price_desc".equals(normalized)) {
             sorts.add(SortBuilders.fieldSort("minPrice").order(SortOrder.DESC));
+        } else if ("relevance".equals(normalized)) {
+            return sorts;
         } else {
             sorts.add(SortBuilders.fieldSort("hotScore").order(SortOrder.DESC));
             sorts.add(SortBuilders.fieldSort("startTime").order(SortOrder.ASC));
@@ -152,11 +154,16 @@ public class ElasticsearchActivitySearchProvider implements ActivitySearchProvid
         vo.setItemType(document.getItemType());
         vo.setId("tour".equals(document.getItemType()) ? document.getTourId() : document.getActivityId());
         vo.setName(document.getActivityName());
+        vo.setPoster(document.getPoster());
+        vo.setCategoryId(document.getCategoryId());
         vo.setArtistName(document.getArtistName());
+        vo.setOrganizerId(document.getOrganizerId());
         vo.setCategoryName(document.getCategoryName());
         vo.setVenueCity(document.getCity());
+        vo.setVenueName(document.getVenueName());
         vo.setStartTime(parseDateTime(document.getStartTime()));
         vo.setMinPrice(document.getMinPrice());
+        vo.setMaxPrice(document.getMaxPrice());
         vo.setSeatMapVisibility(document.getSeatMapVisibility());
         vo.setRealNameRequired(document.getRealNameRequired());
         vo.setTicketTransferAllowed(document.getTicketTransferAllowed());

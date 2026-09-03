@@ -7,8 +7,8 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -44,10 +44,10 @@ class ActivitySearchIndexEventPublisherTest {
     }
 
     @Test
-    void publishFailureDoesNotEscapeBusinessFlow() {
+    void publishFailureEscapesBusinessFlow() {
         doThrow(new RuntimeException("rabbit down"))
                 .when(rabbitTemplate).convertAndSend(any(String.class), any(String.class), any(ActivitySearchIndexMessage.class));
 
-        assertDoesNotThrow(() -> publisher.publishDelete(900001L));
+        assertThrows(RuntimeException.class, () -> publisher.publishDelete(900001L));
     }
 }

@@ -4,12 +4,14 @@ import { SafeImage } from "@/components/SafeImage";
 
 interface TicketCardProps {
   activity: Activity;
+  onNavigate?: () => void;
 }
 
-export function TicketCard({ activity }: TicketCardProps) {
+export function TicketCard({ activity, onNavigate }: TicketCardProps) {
   return (
     <a
       href={activity.itemType === 'tour' ? `/tour/${activity.id}` : `/activity/${activity.id}`}
+      onClick={onNavigate}
       className="group block bg-white rounded-2xl overflow-hidden hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 border border-gray-100"
     >
       {/* Poster */}

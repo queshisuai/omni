@@ -13,11 +13,15 @@ public class ActivityVO {
     private String itemType;
     private String name;
     private String poster;
+    private Long categoryId;
     private String categoryName;
     private String artistName;
+    private Long organizerId;
     private String venueCity;
+    private String venueName;
     private LocalDateTime startTime;
     private BigDecimal minPrice;
+    private BigDecimal maxPrice;
     private String seatMapVisibility;
     private Boolean realNameRequired;
     private Boolean ticketTransferAllowed;
@@ -32,16 +36,24 @@ public class ActivityVO {
     public void setName(String name) { this.name = name; }
     public String getPoster() { return poster; }
     public void setPoster(String poster) { this.poster = poster; }
+    public Long getCategoryId() { return categoryId; }
+    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
     public String getCategoryName() { return categoryName; }
     public void setCategoryName(String categoryName) { this.categoryName = categoryName; }
     public String getArtistName() { return artistName; }
     public void setArtistName(String artistName) { this.artistName = artistName; }
+    public Long getOrganizerId() { return organizerId; }
+    public void setOrganizerId(Long organizerId) { this.organizerId = organizerId; }
     public String getVenueCity() { return venueCity; }
     public void setVenueCity(String venueCity) { this.venueCity = venueCity; }
+    public String getVenueName() { return venueName; }
+    public void setVenueName(String venueName) { this.venueName = venueName; }
     public LocalDateTime getStartTime() { return startTime; }
     public void setStartTime(LocalDateTime startTime) { this.startTime = startTime; }
     public BigDecimal getMinPrice() { return minPrice; }
     public void setMinPrice(BigDecimal minPrice) { this.minPrice = minPrice; }
+    public BigDecimal getMaxPrice() { return maxPrice; }
+    public void setMaxPrice(BigDecimal maxPrice) { this.maxPrice = maxPrice; }
     public String getSeatMapVisibility() { return seatMapVisibility; }
     public void setSeatMapVisibility(String seatMapVisibility) { this.seatMapVisibility = seatMapVisibility; }
     public Boolean getRealNameRequired() { return realNameRequired; }

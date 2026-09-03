@@ -103,17 +103,42 @@ class ElasticsearchActivitySearchProviderTest {
     }
 
     @Test
+    void relevanceSortKeepsElasticsearchScoreOrdering() {
+        SearchHits<ActivitySearchDocument> hits = searchHits(List.of(), 0);
+        when(operations.search(anyQuery(), eq(ActivitySearchDocument.class), any(IndexCoordinates.class)))
+                .thenReturn(hits);
+
+        provider.search(ActivitySearchRequest.builder()
+                .page(1)
+                .size(10)
+                .keyword("成都音乐节")
+                .sort("relevance")
+                .build());
+
+        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
+        verify(operations).search(queryCaptor.capture(), eq(ActivitySearchDocument.class), any(IndexCoordinates.class));
+        NativeSearchQuery query = (NativeSearchQuery) queryCaptor.getValue();
+
+        assertTrue(query.getElasticsearchSorts().isEmpty());
+    }
+
+    @Test
     void mapsSearchHitsToActivityPage() {
         ActivitySearchDocument document = new ActivitySearchDocument();
         document.setId("activity:900001");
         document.setActivityId(900001L);
         document.setItemType("activity");
+        document.setPoster("/uploads/ticket/activity-poster/2026/09/jay.webp");
+        document.setCategoryId(1001L);
+        document.setOrganizerId(2002L);
         document.setActivityName("Jay Chou Carnival World Tour Beijing");
         document.setArtistName("Jay Chou");
         document.setCategoryName("Concert");
         document.setCity("Beijing");
+        document.setVenueName("National Stadium");
         document.setStartTime("2026-06-22T19:30:00");
         document.setMinPrice(new BigDecimal("580"));
+        document.setMaxPrice(new BigDecimal("1880"));
         document.setSeatMapVisibility("published");
         document.setRealNameRequired(true);
         document.setTicketTransferAllowed(false);
@@ -129,11 +154,16 @@ class ElasticsearchActivitySearchProviderTest {
         ActivityVO vo = result.getRecords().get(0);
         assertEquals(900001L, vo.getId());
         assertEquals("activity", vo.getItemType());
+        assertEquals(1001L, vo.getCategoryId());
+        assertEquals(2002L, vo.getOrganizerId());
         assertEquals("Jay Chou Carnival World Tour Beijing", vo.getName());
+        assertEquals("/uploads/ticket/activity-poster/2026/09/jay.webp", vo.getPoster());
         assertEquals("Jay Chou", vo.getArtistName());
         assertEquals("Concert", vo.getCategoryName());
         assertEquals("Beijing", vo.getVenueCity());
+        assertEquals("National Stadium", vo.getVenueName());
         assertEquals(new BigDecimal("580"), vo.getMinPrice());
+        assertEquals(new BigDecimal("1880"), vo.getMaxPrice());
         assertEquals(1, vo.getStatus());
     }
 

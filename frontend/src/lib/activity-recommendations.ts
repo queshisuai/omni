@@ -1,5 +1,5 @@
 import type { ActivityViewSignal } from './personalized-recommendations'
-import { resolveImageSrc } from './image-url'
+import { resolveImageSrc } from './image-url.ts'
 
 const RECOMMENDABLE_STATUSES = new Set([1, 2])
 

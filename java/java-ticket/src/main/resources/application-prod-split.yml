@@ -12,6 +12,10 @@ spring:
     port: ${RABBITMQ_PORT}
     username: ${RABBITMQ_USER}
     password: ${RABBITMQ_PASSWORD}
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:${SPRING_ELASTICSEARCH_URIS}}
+    username: ${ELASTICSEARCH_USERNAME:}
+    password: ${ELASTICSEARCH_PASSWORD:}
   cloud:
     nacos:
       discovery:
@@ -47,5 +51,5 @@ seata:
 
 omni:
   search:
-    provider: ${OMNI_SEARCH_PROVIDER:elasticsearch}
-    require-elasticsearch: ${OMNI_SEARCH_REQUIRE_ES:true}
+    provider: elasticsearch
+    require-elasticsearch: true

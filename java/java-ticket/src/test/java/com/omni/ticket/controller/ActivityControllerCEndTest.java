@@ -182,6 +182,23 @@ class ActivityControllerCEndTest {
         }
 
         @Test
+        @DisplayName("AB-008B: 可选座筛选兼容 isSupportSeat 参数")
+        void listActivitiesSupportSeatAlias() {
+            ActivityController controller = new ActivityController(activityService);
+            Page<ActivityVO> page = singlePage(activityVO(1L, "支持选座的活动"));
+            when(activityService.searchActivities(eq(1), eq(10), isNull(), isNull(), isNull(),
+                    isNull(), isNull(), isNull(), isNull(), isNull(), eq(true), isNull(), isNull()))
+                    .thenReturn(page);
+
+            Result<Page<ActivityVO>> result = controller.listActivities(1, 10, null, null, null,
+                    null, null, null, null, null, null, true, null, null);
+
+            assertEquals(200, result.getCode());
+            verify(activityService).searchActivities(eq(1), eq(10), isNull(), isNull(), isNull(),
+                    isNull(), isNull(), isNull(), isNull(), isNull(), eq(true), isNull(), isNull());
+        }
+
+        @Test
         @DisplayName("AB-009: 仅实名活动筛选")
         void listActivitiesRealNameOnly() {
             ActivityController controller = new ActivityController(activityService);

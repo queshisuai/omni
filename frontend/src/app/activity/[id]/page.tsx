@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Ban, Bell, CalendarDays, Check, Info, Clock3, Heart, MapPin, MessageCircle, ShieldCheck, Star, Ticket, UserCheck, UserRound, UsersRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
+import { FloatingBackButton } from '@/components/FloatingBackButton'
 import { SeatCraftSelector } from '@/components/seatcraft-unified/SeatCraftSelector'
 import { AlipayQrPayModal } from '@/components/AlipayQrPayModal'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
@@ -25,7 +26,7 @@ import { ACTIVITY_VIEW_SIGNAL_KEY, addActivityViewSignal, parseActivityViewSigna
 import { findActivitySubscriptionAction, getActivitySubscriptionActionLabel, getActivitySubscriptionActions, removeActivitySubscriptionById, upsertActivitySubscription, type ActivitySubscriptionActionType, type ActivitySubscriptionLike } from '@/lib/activity-actions'
 import { buildActivityDetailTabs, type ActivityDetailTabKey } from '@/lib/activity-detail-content'
 import { buildActivityDetailRecommendations, type ActivityDetailRecommendation } from '@/lib/activity-recommendations'
-import type { ActivityDetailVO, ActivityQuestionVO, ActivityReviewListVO, ActivityVO, GrabProgressResult, PagePayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
+import type { ActivityDetailVO, ActivityQuestionVO, ActivityReviewListVO, ActivityVO, GrabProgressResult, PagePayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, StationPurchaseDetail, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
 
 const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
 const GRAB_STATUS_LABELS: Record<string, string> = {
@@ -121,12 +122,141 @@ function dedupeActivityCandidates(candidates: ActivityVO[]) {
   return Array.from(map.values())
 }
 
+type StationPurchaseState = 'ACTIVE' | 'RESERVING' | 'PENDING' | 'SOLD_OUT'
+type StationSessionLike = StationPurchaseDetail['sessions'][number]
+
+function toFiniteNumber(value: unknown) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function isStationSessionDetail(session: StationSessionLike): session is SessionDetail {
+  return Boolean(session && typeof session === 'object' && 'session' in session && 'ticketTypes' in session)
+}
+
+function getStationSessionId(session: StationSessionLike) {
+  return isStationSessionDetail(session) ? session.session.id : session.id
+}
+
+function getStationSessionStartTime(session?: StationSessionLike | null) {
+  if (!session) return null
+  return isStationSessionDetail(session) ? session.session.startTime : session.startTime
+}
+
+function isTourEvent(detail: ActivityDetailVO) {
+  return detail.isTour === true
+    || String(detail.eventType || '').toUpperCase() === 'TOUR'
+    || detail.activity.itemType === 'tour'
+    || Boolean(detail.tour)
+    || Boolean(detail.stationDetails?.length)
+}
+
+function getActivityStationDetails(detail: ActivityDetailVO): StationPurchaseDetail[] {
+  if (detail.stationDetails?.length) return detail.stationDetails
+  if (!isTourEvent(detail)) return []
+
+  const firstSession = detail.sessions[0]
+  const city = firstSession?.venue?.city || null
+  const prices = detail.sessions.flatMap(session => session.ticketTypes.map(ticket => ticket.price)).filter(price => price > 0)
+  const remainStock = detail.sessions
+    .flatMap(session => session.ticketTypes)
+    .reduce((sum, ticket) => sum + Math.max(0, Number(ticket.remainStock) || 0), 0)
+  const status = Number(detail.activity.status)
+  const saleStatus = status === 1 ? 'on_sale' : status === 3 ? 'sold_out' : status === 2 ? 'coming_soon' : 'unannounced'
+
+  return [{
+    station: {
+      id: detail.activity.id,
+      tourId: detail.tour?.id ?? null,
+      activityId: detail.activity.id,
+      city,
+      stationName: city ? `${city}站` : null,
+      poster: detail.activity.poster,
+      description: detail.activity.description,
+      publishStatus: detail.activity.publishStatus || (status === 1 ? 'published' : 'city_announced'),
+      status,
+      createTime: detail.activity.createTime,
+    },
+    activity: detail.activity,
+    sessions: detail.sessions,
+    venueName: firstSession?.venue?.name ?? null,
+    venueAddress: firstSession?.venue?.address ?? null,
+    priceMin: prices.length ? Math.min(...prices) : null,
+    priceMax: prices.length ? Math.max(...prices) : null,
+    remainStock,
+    saleStatus,
+    saleStatusText: status === 1 ? '售票中' : status === 3 ? '已售罄' : status === 2 ? '预约中' : '待公布',
+    primaryAction: status === 1 ? 'buy' : 'none',
+  }]
+}
+
+function getStationSessionDetails(detail: ActivityDetailVO, stationDetail: StationPurchaseDetail) {
+  const directDetails = stationDetail.sessions.filter(isStationSessionDetail)
+  if (directDetails.length) return directDetails
+
+  const stationActivityId = toFiniteNumber(stationDetail.activity?.id ?? stationDetail.station.activityId)
+  if (stationActivityId === detail.activity.id) return detail.sessions
+
+  const stationSessionIds = new Set(stationDetail.sessions.map(getStationSessionId).filter(Boolean))
+  return detail.sessions.filter(session => stationSessionIds.has(session.session.id))
+}
+
+function getStationPurchaseState(stationDetail: StationPurchaseDetail): StationPurchaseState {
+  const explicitStatus = String((stationDetail as StationPurchaseDetail & { status?: string | null }).status || '').toUpperCase()
+  if (explicitStatus === 'ACTIVE') return 'ACTIVE'
+  if (explicitStatus === 'RESERVING') return 'RESERVING'
+  if (explicitStatus === 'PENDING') return 'PENDING'
+
+  const saleStatus = String(stationDetail.saleStatus || '').toLowerCase()
+  const publishStatus = String(stationDetail.station.publishStatus || '').toLowerCase()
+  if (saleStatus === 'sold_out') return 'SOLD_OUT'
+  if (saleStatus === 'on_sale' || stationDetail.primaryAction === 'buy') {
+    return stationDetail.remainStock === 0 ? 'SOLD_OUT' : 'ACTIVE'
+  }
+  if (saleStatus === 'coming_soon') return 'RESERVING'
+  if (['unannounced', 'ticket_tba', 'to_be_scheduled'].includes(saleStatus)) return 'PENDING'
+  if (['draft', 'city_announced', 'venue_pending', 'venue_rejected', 'venue_approved'].includes(publishStatus)) return 'PENDING'
+  if (publishStatus === 'published' && stationDetail.activity) return Number(stationDetail.activity.status) === 1 ? 'ACTIVE' : 'RESERVING'
+  return 'PENDING'
+}
+
+function getStationStatusBadge(stationDetail: StationPurchaseDetail) {
+  const state = getStationPurchaseState(stationDetail)
+  if (state === 'ACTIVE') return { label: '售票中', className: 'border-[#D6F5E2] bg-[#E8F8EE] text-[#28C76F]' }
+  if (state === 'RESERVING') return { label: '预约中', className: 'border-amber-100 bg-amber-50 text-[#F59E0B]' }
+  if (state === 'SOLD_OUT') return { label: '缺货登记', className: 'border-[#e5e7eb] bg-[#F3F4F6] text-[#6b7280]' }
+  return { label: '待公布', className: 'border-[#e5e7eb] bg-[#F3F4F6] text-[#9CA3AF]' }
+}
+
+function getStationCityLabel(stationDetail: StationPurchaseDetail) {
+  const label = stationDetail.station.stationName || stationDetail.station.city || '城市待定'
+  return label.includes('站') ? label : `${label}站`
+}
+
+function formatStationDate(stationDetail: StationPurchaseDetail) {
+  const dateParts = stationDetail.sessions
+    .map(getStationSessionStartTime)
+    .filter(Boolean)
+    .map(value => {
+      const matched = String(value).match(/^\d{4}-(\d{2})-(\d{2})/)
+      return matched ? { month: matched[1], day: matched[2] } : null
+    })
+    .filter((value): value is { month: string; day: string } => Boolean(value))
+
+  if (!dateParts.length) return '时间待定'
+  const [first, ...rest] = dateParts
+  return [`${Number(first.month)}.${first.day}`, ...rest.map(item => (
+    item.month === first.month ? item.day : `${Number(item.month)}.${item.day}`
+  ))].join('/')
+}
+
 export default function ActivityDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
   const [detail, setDetail] = useState<ActivityDetailVO | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [selectedStationId, setSelectedStationId] = useState<number | null>(null)
   const [selectedSession, setSelectedSession] = useState<SessionDetail | null>(null)
   const [selectedTicket, setSelectedTicket] = useState<TicketTypeEntity | null>(null)
   const [quantity, setQuantity] = useState(1)
@@ -190,6 +320,18 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     ['attendance', detailTabs.attendance],
   ] as const : [], [detailTabs])
   const activeDetailContent = detailTabs?.[activeDetailTab]
+  const isCurrentTourEvent = useMemo(() => detail ? isTourEvent(detail) : false, [detail])
+  const stationDetails = useMemo(() => detail ? getActivityStationDetails(detail) : [], [detail])
+  const selectedStationDetail = useMemo(() => {
+    if (!stationDetails.length) return null
+    return stationDetails.find(item => item.station.id === selectedStationId) || stationDetails[0]
+  }, [stationDetails, selectedStationId])
+  const stationPurchaseState: StationPurchaseState = selectedStationDetail ? getStationPurchaseState(selectedStationDetail) : 'ACTIVE'
+  const activePurchaseSessions = useMemo(() => {
+    if (!detail) return []
+    if (!isCurrentTourEvent || !selectedStationDetail) return detail.sessions
+    return getStationSessionDetails(detail, selectedStationDetail)
+  }, [detail, isCurrentTourEvent, selectedStationDetail])
   const showsSeatCraftSelection = Boolean(seatMap?.layout && (seatMap.layout.blockLayout?.blocks?.length || seatMap.layout.blocks?.length) && seatCraftSelectionModel)
   const availableSeatIdSet = useMemo(() => {
     if (!seatMap) return null
@@ -313,6 +455,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     setLoading(true)
     setError('')
     setRecommendations([])
+    setSelectedStationId(null)
     setSelectedSession(null)
     setSelectedTicket(null)
     setAllowAutoDowngrade(false)
@@ -350,10 +493,14 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           }).catch(() => undefined)
         }
       }
-      if (data.sessions.length > 0) {
-        setSelectedSession(data.sessions[0])
-        if (data.sessions[0].ticketTypes.length > 0) {
-          setSelectedTicket(data.sessions[0].ticketTypes[0])
+      const initialStationDetail = isTourEvent(data) ? getActivityStationDetails(data)[0] ?? null : null
+      const initialStationState = initialStationDetail ? getStationPurchaseState(initialStationDetail) : 'ACTIVE'
+      const initialPurchaseSessions = initialStationDetail ? getStationSessionDetails(data, initialStationDetail) : data.sessions
+      setSelectedStationId(initialStationDetail?.station.id ?? null)
+      if (initialStationState !== 'PENDING' && initialPurchaseSessions.length > 0) {
+        setSelectedSession(initialPurchaseSessions[0])
+        if (initialPurchaseSessions[0].ticketTypes.length > 0) {
+          setSelectedTicket(initialPurchaseSessions[0].ticketTypes[0])
         }
       }
     } catch (err: unknown) {
@@ -533,6 +680,30 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
 
   const resetGrabIdempotencyKey = () => setGrabIdempotency(null)
 
+  const handleSelectStation = (stationDetail: StationPurchaseDetail) => {
+    if (!detail) return
+    const nextState = getStationPurchaseState(stationDetail)
+    const nextSessions = getStationSessionDetails(detail, stationDetail)
+    setSelectedStationId(stationDetail.station.id)
+    setQuantity(1)
+    setSelectedSeatIds([])
+    setSelectedAttendeeIds([])
+    setAllowAutoDowngrade(false)
+    setOrderError('')
+    setWaitlistMessage('')
+    resetGrabIdempotencyKey()
+
+    if (nextState === 'PENDING' || nextSessions.length === 0) {
+      setSelectedSession(null)
+      setSelectedTicket(null)
+      return
+    }
+
+    const nextSession = nextSessions[0]
+    setSelectedSession(nextSession)
+    setSelectedTicket(nextSession.ticketTypes[0] ?? null)
+  }
+
   const openProgressPayment = async (orderId: number) => {
     if (progressPaymentOrderIdRef.current === orderId || progressPaymentInFlightOrderIdRef.current === orderId) return
 
@@ -628,7 +799,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     hydratedGrabRequestRef.current = requestId
     getGrabProgress(requestId)
       .then((progress) => {
-        const belongsToActivity = detail.sessions.some((session) => session.session.id === progress.sessionId)
+        const belongsToActivity = [...detail.sessions, ...activePurchaseSessions].some((session) => session.session.id === progress.sessionId)
         if (!belongsToActivity) {
           forgetActiveGrabRequest()
           return
@@ -639,7 +810,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       .catch(() => {
         forgetActiveGrabRequest()
       })
-  }, [detail, grabProgress?.requestId])
+  }, [detail, activePurchaseSessions, grabProgress?.requestId])
 
   useEffect(() => {
     if (!grabProgress?.requestId) return
@@ -1018,6 +1189,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const handleSubscription = async (
     targetType: Exclude<ActivitySubscriptionActionType, 'CALENDAR'>,
     existingSubscription?: ActivitySubscriptionLike | null,
+    messages?: { success?: string; cancel?: string },
   ) => {
     if (!isAuthenticated()) {
       router.push(`/login?ru=/activity/${id}`)
@@ -1038,7 +1210,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         const message = targetType === 'ACTIVITY_WANT'
           ? '已取消想看'
           : targetType === 'SALE_REMINDER'
-            ? '开售提醒已关闭'
+            ? messages?.cancel ?? '开售提醒已关闭'
             : '已取消关注'
         showCenterToast(message)
         return
@@ -1065,7 +1237,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       const message = targetType === 'ACTIVITY_WANT'
         ? '已标记想看'
         : targetType === 'SALE_REMINDER'
-          ? '开售提醒已开启'
+          ? messages?.success ?? '开售提醒已开启'
           : '关注成功'
       showCenterToast(message)
     } catch (err) {
@@ -1093,7 +1265,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
         : [...calendarJoinedActivityIds, activityId]
       setCalendarJoinedActivityIds(next)
       persistCalendarReminderIds(next)
-      showCenterToast(exists ? '已移出日程提醒' : '已添加至日程提醒')
+      showCenterToast(exists ? '已移出日程提醒' : '已加入日程提醒')
     } catch {
       showCenterToast('日程提醒更新失败')
     } finally {
@@ -1174,15 +1346,27 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     ? detail.artists.map(item => item.roleName ? `${item.name}（${item.roleName}）` : item.name).filter(Boolean).join('、')
     : artist?.name
   const subscriptionActions = getActivitySubscriptionActions(activity)
-  const primarySession = selectedSession ?? sessions[0] ?? null
-  const projectIntro = activity.description?.trim()
+  const saleReminderSubscription = findActivitySubscriptionAction('SALE_REMINDER', subscriptions, {
+    activityId: activity.id,
+    artistId: artist?.id ?? null,
+  })
+  const saleReminderActive = Boolean(saleReminderSubscription)
+  const activeTicketPriceRange = getTicketPriceRange(activePurchaseSessions.length ? activePurchaseSessions : sessions)
+  const stationCityLabel = selectedStationDetail ? getStationCityLabel(selectedStationDetail) : ''
+  const showStationPendingEmptyState = isCurrentTourEvent && stationPurchaseState === 'PENDING'
+  const purchaseCtaLabel = stationPurchaseState === 'RESERVING' ? '立即预约' : '立即购买'
+  const primarySession = selectedSession ?? activePurchaseSessions[0] ?? sessions[0] ?? null
+  const displayTitle = isCurrentTourEvent ? detail.tour?.title || activity.name : activity.name
+  const displayPoster = selectedStationDetail?.station.poster || selectedStationDetail?.activity?.poster || detail.tour?.poster || activity.poster
+  const displayDescription = (isCurrentTourEvent ? detail.tour?.description || activity.description : activity.description)?.trim()
+  const projectIntro = displayDescription
     || activeDetailContent?.sections.find(section => section.title === '演出介绍')?.items[0]
-    || `${activity.name} 的演出信息正在同步，请以现场安排和票面信息为准。`
+    || `${displayTitle} 的演出信息正在同步，请以现场安排和票面信息为准。`
   const projectInfoCards = [
     { title: '场馆地址', value: getVenueAddressText(primarySession), icon: MapPin },
     { title: '演出时间', value: formatCompactDateTime(primarySession?.session.startTime), icon: Clock3 },
     { title: '演出阵容 / 类型', value: `${artistSummary || '演出阵容待公布'} · ${category?.name || '暂未分类'}`, icon: UsersRound },
-    { title: '票档区间', value: getTicketPriceRange(sessions), icon: Ticket },
+    { title: '票档区间', value: activeTicketPriceRange, icon: Ticket },
   ]
   const purchaseRulePills = [
     { title: '限购政策', value: activity.perUserLimit && activity.perUserLimit > 0 ? `每单限 ${activity.perUserLimit} 张` : '以提交订单为准' },
@@ -1199,7 +1383,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
     },
     {
       title: '票档库存',
-      value: `当前票档区间为 ${getTicketPriceRange(sessions)}，库存实时变化，以锁票结果和订单确认为准。`,
+      value: `当前票档区间为 ${activeTicketPriceRange}，库存实时变化，以锁票结果和订单确认为准。`,
     },
     {
       title: '支付出票',
@@ -1223,6 +1407,11 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   return (
     <>
       <Header />
+      <FloatingBackButton
+        pendingInteraction={showConfirm || grabProgressOpen || Boolean(pagePay)}
+        analyticsEvent="omni_activity_detail_back_clicked"
+        analyticsPayload={{ activity_id: activity.id }}
+      />
       <main className="bg-[#F8F9FA] px-5 py-8">
         <div className="mx-auto grid max-w-[1200px] gap-5 items-start lg:grid-cols-[minmax(0,1fr)_300px]">
           {/* 左侧：占比约 2/3 */}
@@ -1231,17 +1420,31 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             <div className="rounded-2xl border border-[#f0f1f3] bg-white p-6 shadow-[0_4px_12px_rgba(0,0,0,0.03)]">
               <div className="mb-10 flex flex-col gap-8 md:flex-row">
           {/* 海报 */}
-          <div className="aspect-[3/4] w-full max-w-[280px] flex-shrink-0 overflow-hidden rounded-2xl bg-gray-100">
+          <div className="relative aspect-[3/4] w-full max-w-[280px] flex-shrink-0 overflow-hidden rounded-2xl bg-gray-100">
             <SafeImage
-              src={activity.poster}
-              alt={activity.name}
+              src={displayPoster}
+              alt={displayTitle}
               className="h-full w-full object-cover"
             />
+            <span className="absolute left-3 top-3 rounded-full bg-black/65 px-3 py-1 text-[12px] font-medium text-white">
+              {category?.name || '演出'}
+            </span>
           </div>
 
           {/* 信息 */}
           <div className="flex-1">
-            <h1 className="mb-3 text-[24px] font-semibold text-[#111]">{activity.name}</h1>
+            {isCurrentTourEvent && (
+              <div className="mb-3 inline-flex items-center rounded-full border border-[#FFD6E4] bg-[#FFF0F5] px-3 py-1 text-[12px] font-semibold text-[#E6005C]">
+                巡演项目
+              </div>
+            )}
+            <h1 className="mb-3 text-[24px] font-semibold text-[#111]">{displayTitle}</h1>
+            {isCurrentTourEvent && selectedStationDetail && (
+              <p className="mb-2 text-[14px] text-[#666]">
+                当前选站：<span className="font-medium text-[#E6005C]">{stationCityLabel}</span>
+                <span className="ml-2 text-[#999]">{formatStationDate(selectedStationDetail)}</span>
+              </p>
+            )}
             {artistSummary && (
               <p className="text-[14px] text-[#666] mb-2">
                 艺人：<span className="text-[#ff1268]">{artistSummary}</span>
@@ -1250,8 +1453,8 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
             {category && (
               <p className="text-[14px] text-[#666] mb-2">类型：{category.name}</p>
             )}
-            {activity.description && (
-              <p className="text-[14px] text-[#999] leading-relaxed mt-4">{activity.description}</p>
+            {displayDescription && (
+              <p className="mt-4 text-[14px] leading-relaxed text-[#999]">{displayDescription}</p>
             )}
             <div className="mt-5 flex flex-wrap items-center gap-2">
               {subscriptionActions.map((action) => {
@@ -1300,22 +1503,113 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
               })}
             </div>
             <div className="mt-4 rounded-lg bg-[#fafafa] px-4 py-3 text-[13px] text-[#666]">
-              {selectedSession?.session.startTime ? `倒计时：${getCountdownText(selectedSession.session.startTime)}` : '倒计时：场次时间待定'}
+              {showStationPendingEmptyState
+                ? '倒计时：当前站点排期待公布'
+                : selectedSession?.session.startTime ? `倒计时：${getCountdownText(selectedSession.session.startTime)}` : '倒计时：场次时间待定'}
             </div>
           </div>
         </div>
+
+              {isCurrentTourEvent && (
+                <div className="mb-8">
+                  {/* Tour Stations Selector */}
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h2 className="text-[18px] font-semibold text-[#111]">选择城市</h2>
+                    <span className="text-[13px] text-[#999]">{stationDetails.length} 个站点</span>
+                  </div>
+                  <div className="-mx-2 overflow-x-auto scrollbar-hide px-2 pb-1" aria-label="巡演城市站点">
+                    <div className="flex min-w-max gap-3">
+                      {stationDetails.map((stationDetail) => {
+                        const active = selectedStationDetail?.station.id === stationDetail.station.id
+                        const badge = getStationStatusBadge(stationDetail)
+                        return (
+                          <button
+                            key={stationDetail.station.id}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => handleSelectStation(stationDetail)}
+                            className={`relative min-h-[108px] w-[164px] rounded-2xl border p-4 text-left transition-all duration-200 ${
+                              active
+                                ? 'border-[#FF1475] bg-[#FFF0F5] shadow-[0_4px_12px_rgba(255,20,117,0.12)]'
+                                : 'border-[#eef0f3] bg-white hover:border-[#FFD6E4] hover:bg-[#fffafd]'
+                            }`}
+                          >
+                            <span className={`absolute right-3 top-3 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${badge.className}`}>
+                              {badge.label}
+                            </span>
+                            <div className={`mt-7 text-[20px] font-semibold ${active ? 'text-[#E6005C]' : 'text-[#111]'}`}>
+                              {getStationCityLabel(stationDetail)}
+                            </div>
+                            <div className="mt-2 text-[13px] text-[#999]">{formatStationDate(stationDetail)}</div>
+                          </button>
+                        )
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => showCenterToast('已登记加场意向')}
+                        className="flex min-h-[108px] w-[144px] items-center justify-center rounded-2xl border border-dashed border-[#FFD6E4] bg-[#fffafd] text-[15px] font-semibold text-[#E6005C] transition-colors hover:bg-[#FFF0F5]"
+                      >
+                        + 求加场
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 场次和票档 */}
               <div>
                 <h2 className="text-[18px] text-[#111] font-medium mb-6">选择场次</h2>
 
-          {sessions.length === 0 ? (
+          {showStationPendingEmptyState ? (
+            <div className="flex flex-col items-center rounded-2xl border border-[#eef0f3] bg-[#FAFBFD] px-6 py-10 text-center">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#FFF0F5] text-[#E6005C]">
+                <Clock3 className="h-7 w-7" />
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <h3 className="text-[20px] font-semibold text-[#111]">{stationCityLabel} · 演出筹备中</h3>
+                <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-[12px] font-medium text-[#9CA3AF]">时间待公布</span>
+              </div>
+              <p className="mt-3 max-w-[560px] text-[13px] leading-6 text-[#666]">
+                本站演出场馆、具体时间及票档区间正由主办方积极筹备中。开启开售提醒，第一时间接收最新开票排期通知。
+              </p>
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button
+                  type="button"
+                  onClick={() => void handleSubscription('SALE_REMINDER', saleReminderSubscription, {
+                    success: '已成功订阅，开票前将短信提醒！',
+                    cancel: '已关闭开售提醒',
+                  })}
+                  disabled={subscriptionLoading === 'SALE_REMINDER'}
+                  className={`inline-flex h-11 min-w-[172px] items-center justify-center gap-2 rounded-full px-5 text-[14px] font-semibold text-white transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${
+                    saleReminderActive ? 'bg-[#28C76F] hover:bg-[#23ad61]' : 'bg-[#FF1475] hover:bg-[#E00D65]'
+                  }`}
+                >
+                  <Bell className="h-4 w-4" />
+                  {subscriptionLoading === 'SALE_REMINDER'
+                    ? saleReminderActive ? '取消中...' : '开启中...'
+                    : saleReminderActive ? '已开启开售提醒' : '开启开售提醒'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSubscription('ACTIVITY_WANT', findActivitySubscriptionAction('ACTIVITY_WANT', subscriptions, {
+                    activityId: activity.id,
+                    artistId: artist?.id ?? null,
+                  }))}
+                  disabled={subscriptionLoading === 'ACTIVITY_WANT'}
+                  className="inline-flex h-11 min-w-[144px] items-center justify-center gap-2 rounded-full border border-[#FF1475] bg-white px-5 text-[14px] font-semibold text-[#FF1475] transition-colors hover:bg-[#FFF0F5] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Heart className="h-4 w-4" />
+                  登记想看意向
+                </button>
+              </div>
+            </div>
+          ) : activePurchaseSessions.length === 0 ? (
             <p className="text-[#999] text-sm py-8 text-center">暂无可用场次</p>
           ) : (
             <>
               {/* 场次列表 */}
               <div className="flex flex-wrap gap-3 mb-6">
-                {sessions.map((sd) => (
+                {activePurchaseSessions.map((sd) => (
                   <button
                     key={sd.session.id}
                     onClick={() => {
@@ -1449,7 +1743,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                           className="h-11 w-full cursor-pointer rounded border-none px-10 text-[16px] font-medium text-white outline-none disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto sm:w-auto"
                           style={{ backgroundColor: '#ff1268' }}
                         >
-                          立即购买
+                          {purchaseCtaLabel}
                         </button>
                       </div>
                     </>
@@ -1877,6 +2171,13 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
           12% { opacity: 1; transform: scale(1); }
           82% { opacity: 1; transform: scale(1); }
           100% { opacity: 0; transform: scale(0.96); }
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
         }
       `}</style>
 

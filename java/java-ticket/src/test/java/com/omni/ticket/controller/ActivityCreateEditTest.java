@@ -14,6 +14,7 @@ import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.VenueMapper;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import com.omni.ticket.service.ActivityAdminService;
 import com.omni.ticket.service.ActivityArtistService;
 import com.omni.ticket.service.ActivityDraftService;
@@ -95,6 +96,7 @@ class ActivityCreateEditTest {
     @Mock ActivityDraftService activityDraftService;
     @Mock StationConfigVersionService stationConfigVersionService;
     @Mock ActivityMarketingService activityMarketingService;
+    @Mock ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     @BeforeAll
     static void ensureJwtSecret() {
@@ -106,7 +108,7 @@ class ActivityCreateEditTest {
     // ======================== 辅助方法 ========================
 
     private AdminController controller() {
-        return new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper,
+        AdminController controller = new AdminController(activityMapper, artistMapper, sessionMapper, ticketTypeMapper,
                 venueMapper, userAccessService, activityAdminService, sessionAdminService,
                 venueApplicationService, seatTemplateService, ticketTypeAreaService,
                 adminSummaryService, sessionSeatService, venueDefaultLayoutService,
@@ -116,6 +118,8 @@ class ActivityCreateEditTest {
                 activityRiskResponseService, ticketAssetService, privateAssetService,
                 seatCraftLayoutVersionService, activityDraftService, stationConfigVersionService,
                 activityMarketingService);
+        controller.setSearchIndexEventPublisher(searchIndexEventPublisher);
+        return controller;
     }
 
     private String adminToken() {
@@ -200,6 +204,23 @@ class ActivityCreateEditTest {
         }
 
         @Test
+        @DisplayName("创建活动后发布搜索索引更新事件")
+        void createActivityPublishesSearchIndexUpsert() {
+            AdminController controller = controller();
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
+            when(activityMapper.insert(any(Activity.class))).thenAnswer(inv -> {
+                Activity a = inv.getArgument(0);
+                a.setId(501L);
+                return 1;
+            });
+
+            Result<Activity> result = controller.createActivity(adminToken(), validCreateBody());
+
+            assertEquals(200, result.getCode());
+            verify(searchIndexEventPublisher).publishUpsert(501L);
+        }
+
+        @Test
         @DisplayName("AC-003: admin更新活动基本信息")
         void adminUpdateActivity() {
             AdminController controller = controller();
@@ -217,6 +238,24 @@ class ActivityCreateEditTest {
             assertEquals("新名称", result.getData().getName());
             assertEquals("新描述", result.getData().getDescription());
             verify(activityMapper).updateById(activity);
+        }
+
+        @Test
+        @DisplayName("更新活动后发布搜索索引更新事件")
+        void updateActivityPublishesSearchIndexUpsert() {
+            AdminController controller = controller();
+            when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(2002L, "activity.manage")).thenReturn("admin");
+            Activity activity = new Activity();
+            activity.setId(10L);
+            activity.setOrganizerId(2003L);
+            activity.setName("旧名称");
+            when(activityMapper.selectById(10L)).thenReturn(activity);
+
+            Result<Activity> result = controller.updateActivity(10L, adminToken(),
+                    Map.of("poster", "/uploads/activity/new-poster.webp"));
+
+            assertEquals(200, result.getCode());
+            verify(searchIndexEventPublisher).publishUpsert(10L);
         }
 
         @Test

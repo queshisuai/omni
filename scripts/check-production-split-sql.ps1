@@ -103,6 +103,7 @@ $schemaColumns = @{
     "reconciliation_difference" = New-ColumnSet @("id", "batch_no", "diff_type", "business_no", "expected_amount", "actual_amount", "diff_amount", "reason", "status", "create_time")
     "refund_request" = New-ColumnSet @("id", "payment_id", "quantity", "order_seat_ids", "refund_type")
     "reservation" = New-ColumnSet @("id", "session_id")
+    "search_history" = New-ColumnSet @("id", "user_id", "keyword", "search_count", "last_searched_at", "create_time", "update_time")
     "seat" = New-ColumnSet @("id", "session_id", "ticket_type_id")
     "seat_block" = New-ColumnSet @("id")
     "seat_override" = New-ColumnSet @("id", "block_id")

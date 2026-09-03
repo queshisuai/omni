@@ -22,11 +22,16 @@ class ActivitySearchDocumentBuilderTest {
         vo.setId(900001L);
         vo.setItemType("activity");
         vo.setName("Jay Chou Carnival World Tour Beijing");
+        vo.setPoster("/uploads/ticket/activity-poster/2026/09/jay.webp");
+        vo.setCategoryId(1001L);
+        vo.setOrganizerId(2002L);
         vo.setCategoryName("Concert");
         vo.setArtistName("Jay Chou");
         vo.setVenueCity("Beijing");
+        vo.setVenueName("National Stadium");
         vo.setStartTime(LocalDateTime.parse("2026-06-22T19:30:00"));
         vo.setMinPrice(new BigDecimal("580"));
+        vo.setMaxPrice(new BigDecimal("1880"));
         vo.setSeatMapVisibility("published");
         vo.setRealNameRequired(true);
         vo.setTicketTransferAllowed(false);
@@ -37,12 +42,17 @@ class ActivitySearchDocumentBuilderTest {
         assertEquals("activity:900001", document.getId());
         assertEquals(900001L, document.getActivityId());
         assertEquals("activity", document.getItemType());
+        assertEquals(1001L, document.getCategoryId());
+        assertEquals(2002L, document.getOrganizerId());
         assertEquals("Jay Chou Carnival World Tour Beijing", document.getActivityName());
+        assertEquals("/uploads/ticket/activity-poster/2026/09/jay.webp", document.getPoster());
         assertEquals("Concert", document.getCategoryName());
         assertEquals("Jay Chou", document.getArtistName());
         assertEquals("Beijing", document.getCity());
+        assertEquals("National Stadium", document.getVenueName());
         assertEquals("2026-06-22T19:30:00", document.getStartTime());
         assertEquals(new BigDecimal("580"), document.getMinPrice());
+        assertEquals(new BigDecimal("1880"), document.getMaxPrice());
         assertEquals("published", document.getSeatMapVisibility());
         assertEquals(true, document.getRealNameRequired());
         assertEquals(false, document.getTicketTransferAllowed());
@@ -88,6 +98,7 @@ class ActivitySearchDocumentBuilderTest {
             String mapping = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
 
             assertTrue(mapping.contains("\"activityName\""));
+            assertTrue(mapping.contains("\"poster\""));
             assertTrue(mapping.contains("\"artistName\""));
             assertTrue(mapping.contains("\"city\""));
             assertTrue(mapping.contains("\"minPrice\""));

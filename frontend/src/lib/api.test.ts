@@ -900,7 +900,7 @@ test('serializes activity search filters into query params', async () => {
       sort: 'price_asc',
     })
 
-    assert.equal(requestedUrl, '/api/ticket/activities?page=1&size=20&keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&city=%E4%B8%8A%E6%B5%B7&dateFrom=2026-06-01&dateTo=2026-06-30&minPrice=180&maxPrice=880&saleStatus=on_sale&seatMapOnly=true&realNameRequired=false&sort=price_asc')
+    assert.equal(requestedUrl, '/api/ticket/activities?page=1&size=20&keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&city=%E4%B8%8A%E6%B5%B7&dateFrom=2026-06-01&dateTo=2026-06-30&minPrice=180&maxPrice=880&saleStatus=on_sale&isSupportSeat=true&realNameRequired=false&sort=price_asc')
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -932,8 +932,33 @@ test('serializes ES activity search keyword city flags and sort params', async (
 
     assert.equal(
       requestedUrl,
-      '/api/ticket/activities?page=2&size=20&keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&city=%E5%8C%97%E4%BA%AC&saleStatus=on_sale&seatMapOnly=true&realNameRequired=true&sort=price_asc'
+      '/api/ticket/activities?page=2&size=20&keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&city=%E5%8C%97%E4%BA%AC&saleStatus=on_sale&isSupportSeat=true&realNameRequired=true&sort=price_asc'
     )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('serializes support-seat search filter with the public query alias', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: 'success',
+      data: { records: [], total: 0, size: 20, current: 1, pages: 0 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    await listActivities({
+      page: 1,
+      size: 20,
+      isSupportSeat: true,
+    })
+
+    assert.equal(requestedUrl, '/api/ticket/activities?page=1&size=20&isSupportSeat=true')
   } finally {
     globalThis.fetch = originalFetch
   }

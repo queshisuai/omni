@@ -57,7 +57,7 @@ export function getActivitySubscriptionActions(activity?: ActivitySaleStatusLike
 
   actions.push(
     { type: 'ARTIST_FOLLOW', label: '关注艺人', loadingLabel: '关注中...', activeLoadingLabel: '取消中...', tone: 'secondary' },
-    { type: 'CALENDAR', label: '加入日历', loadingLabel: '生成中...', tone: 'secondary' },
+    { type: 'CALENDAR', label: '加入日历', loadingLabel: '更新中...', tone: 'secondary' },
   )
 
   return actions

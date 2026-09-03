@@ -17,7 +17,7 @@ import {
   getConsoleRefundActivityLabel,
   getConsoleRefundStatusClassName,
 } from '@/lib/console-refunds'
-import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import type { RefundRequestVO, RefundStatus, UserRole } from '@/types/api'
 
 const STATUS_OPTIONS: Array<{ label: string; value?: RefundStatus }> = [
@@ -455,7 +455,7 @@ export default function ConsoleRefundsPage() {
             </table>
           </div>
           <div className="px-4 pb-4">
-            <Pagination page={page} total={refunds.length} loading={loading} onChange={setPage} />
+            <GlobalPagination page={page} total={refunds.length} loading={loading} onChange={setPage} />
           </div>
         </div>
       )}

@@ -11,6 +11,10 @@ param(
 $ErrorActionPreference = "Continue"
 $projectRoot = $PSScriptRoot
 if (-not $projectRoot) { $projectRoot = Get-Location }
+$runtimeTemp = Join-Path $projectRoot "runtime\tmp"
+New-Item -ItemType Directory -Force -Path $runtimeTemp | Out-Null
+$env:TEMP = $runtimeTemp
+$env:TMP = $runtimeTemp
 
 function Find-NacosHome {
     param([string[]]$SearchRoots = @("C:\", "D:\"))
@@ -91,6 +95,47 @@ function Start-Service-InBackground {
     $proc = Start-Process powershell -ArgumentList "-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $Command -WorkingDirectory $WorkDir -PassThru
     Write-Host "[$Name] Started (PID: $($proc.Id))" -ForegroundColor Green
     return $proc
+}
+
+function Get-PrimaryElasticsearchUri {
+    $uri = $env:ELASTICSEARCH_URIS
+    if ([string]::IsNullOrWhiteSpace($uri)) {
+        $uri = $env:SPRING_ELASTICSEARCH_URIS
+    }
+    if ([string]::IsNullOrWhiteSpace($uri)) {
+        return "http://localhost:9200"
+    }
+    return ($uri -split ",")[0].Trim().TrimEnd("/")
+}
+
+function Get-ElasticsearchHeaders {
+    $headers = @{}
+    if (-not [string]::IsNullOrWhiteSpace($env:ELASTICSEARCH_USERNAME)) {
+        $pair = "$($env:ELASTICSEARCH_USERNAME):$($env:ELASTICSEARCH_PASSWORD)"
+        $bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
+        $headers["Authorization"] = "Basic " + [Convert]::ToBase64String($bytes)
+    }
+    return $headers
+}
+
+function Wait-ElasticsearchHealthy {
+    param([int]$TimeoutSeconds = 120)
+    $uri = Get-PrimaryElasticsearchUri
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $health = Invoke-RestMethod -Uri "$uri/_cluster/health?wait_for_status=yellow&timeout=1s" -Headers (Get-ElasticsearchHeaders) -TimeoutSec 3
+            if ($health.status -in @("green", "yellow")) {
+                Write-Host "[Elasticsearch] $uri 已就绪，集群状态 $($health.status)" -ForegroundColor Green
+                return
+            }
+        } catch {
+            Start-Sleep -Seconds 2
+            continue
+        }
+        Start-Sleep -Seconds 2
+    }
+    throw "等待 Elasticsearch 超时：$uri 未达到 green/yellow 健康状态"
 }
 
 function Import-DotEnv {
@@ -187,8 +232,9 @@ $localRuntimeDefaults = @{
     RABBITMQ_PASSWORD = "123456"
     GRAB_SERVICE_URL = "http://localhost:3001"
     SEATA_ENABLED = "true"
-    OMNI_SEARCH_PROVIDER = "db"
-    OMNI_SEARCH_REQUIRE_ES = "false"
+    OMNI_SEARCH_PROVIDER = "elasticsearch"
+    OMNI_SEARCH_REQUIRE_ES = "true"
+    ELASTICSEARCH_URIS = "http://localhost:9200"
     OMNI_SUPPORT_AI_CONTEXT_WINDOW = "2048"
     ALIPAY_GATEWAY_URL = "http://localhost:8084/local-alipay-disabled"
     ALIPAY_APP_ID = "omni-local-placeholder"
@@ -202,6 +248,12 @@ foreach ($entry in $localRuntimeDefaults.GetEnumerator()) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($entry.Key, "Process"))) {
         [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process")
     }
+}
+if ([string]::IsNullOrWhiteSpace($env:SPRING_ELASTICSEARCH_URIS)) {
+    $env:SPRING_ELASTICSEARCH_URIS = $env:ELASTICSEARCH_URIS
+}
+if ([string]::IsNullOrWhiteSpace($env:ELASTICSEARCH_URIS)) {
+    $env:ELASTICSEARCH_URIS = $env:SPRING_ELASTICSEARCH_URIS
 }
 
 if ($UseDockerInfra) {
@@ -245,6 +297,12 @@ if ($UseDockerInfra) {
             Write-Host "[Nacos] Started" -ForegroundColor Green
         }
     }
+}
+
+# 4. Check Elasticsearch
+if (-not $SkipJava) {
+    Write-Step "Checking Elasticsearch..."
+    Wait-ElasticsearchHealthy -TimeoutSeconds 120
 }
 
 # 4. Install Java Dependencies
@@ -317,12 +375,16 @@ if (-not $SkipJava) {
         Write-Host "Starting $($svc.Name) on port $($svc.Port)..." -ForegroundColor Cyan
         $smsMockArg = if ($svc.Name -eq "java-user") { " --omni.sms.mock.enabled=true" } else { "" }
         $grabServiceUrlArg = if ($svc.Name -eq "java-user") { " --omni.grab-service.url=http://localhost:3001" } else { "" }
+        $searchArg = if ($svc.Name -eq "java-ticket") { " --spring.elasticsearch.uris=$env:SPRING_ELASTICSEARCH_URIS --omni.search.provider=elasticsearch --omni.search.require-elasticsearch=true" } else { "" }
+        if ($svc.Name -eq "java-ticket" -and -not [string]::IsNullOrWhiteSpace($env:ELASTICSEARCH_USERNAME)) {
+            $searchArg = "$searchArg --spring.elasticsearch.username=$env:ELASTICSEARCH_USERNAME --spring.elasticsearch.password=$env:ELASTICSEARCH_PASSWORD"
+        }
         $servicePathArg = Quote-PowerShellString $fullPath
-        $defaultRunArguments = "--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg"
+        $defaultRunArguments = "--spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg$searchArg"
         $command = "Set-Location -LiteralPath $servicePathArg; mvn spring-boot:run $(Quote-PowerShellString "-Dspring-boot.run.arguments=$defaultRunArguments")"
         if (-not $UseSharedDatabase -and $svc.Database) {
             $seataArg = if ($svc.Name -in @("java-ticket", "java-order", "java-payment")) { " --seata.enabled=true" } else { "" }
-            $prodSplitRunArguments = "--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=$internalApiToken --jwt.secret=$jwtSecret --NACOS_HOST=localhost --NACOS_PORT=$nacosPort --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg$grabServiceUrlArg$seataArg"
+            $prodSplitRunArguments = "--spring.datasource.url=jdbc:postgresql://localhost:5432/$($svc.Database) --spring.datasource.username=postgres --spring.datasource.password=123456 --internal.api.token=$internalApiToken --jwt.secret=$jwtSecret --NACOS_HOST=localhost --NACOS_PORT=$nacosPort --spring.cloud.nacos.discovery.ip=127.0.0.1 --omni.upload.root=$uploadRoot$smsMockArg$grabServiceUrlArg$searchArg$seataArg"
             $command = "Set-Location -LiteralPath $servicePathArg; mvn spring-boot:run $(Quote-PowerShellString "-Dspring-boot.run.profiles=prod-split") $(Quote-PowerShellString "-Dspring-boot.run.arguments=$prodSplitRunArguments")"
         }
         Start-Service-InBackground -Name $svc.Name -Command $command -WorkDir $fullPath

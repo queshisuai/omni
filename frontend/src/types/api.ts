@@ -543,6 +543,19 @@ export interface ActivityVO {
   artists?: ActivityArtistVO[]
 }
 
+export type SearchTrendingTagType = 'BURST' | 'HOT' | 'NEW' | 'NONE' | string
+export type SearchTrendingTargetType = 'EVENT' | 'KEYWORD' | string
+
+export interface SearchTrendingItem {
+  id?: number | null
+  rank: number
+  keyword: string
+  tagType: SearchTrendingTagType
+  targetType: SearchTrendingTargetType
+  targetId?: number | null
+  itemType?: 'activity' | 'tour' | string | null
+}
+
 /** 分类 */
 export interface CategoryVO {
   id: number
@@ -1224,7 +1237,7 @@ export interface TourAdminDetailVO extends TourDetailVO {
 export interface StationPurchaseDetail {
   station: StationEntity
   activity?: ActivityEntity | null
-  sessions: SessionEntity[]
+  sessions: Array<SessionEntity | SessionDetail>
   venueName?: string | null
   venueAddress?: string | null
   priceMin?: number | null
@@ -1583,6 +1596,10 @@ export interface ActivityDetailVO {
   artist: ArtistEntity
   artists?: ActivityArtistVO[]
   sessions: SessionDetail[]
+  isTour?: boolean
+  eventType?: 'TOUR' | 'SINGLE' | string
+  tour?: TourEntity | null
+  stationDetails?: StationPurchaseDetail[]
 }
 
 export interface ActivityReviewSummaryVO {
@@ -1697,11 +1714,6 @@ export interface SubscriptionVO {
   remindBeforeMinutes?: number | null
   status: number
   createTime?: string | null
-}
-
-export interface SubscriptionCalendarVO {
-  fileName: string
-  content: string
 }
 
 /** 订单 */

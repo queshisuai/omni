@@ -1,11 +1,10 @@
 'use client'
 
-import type { Dispatch, FormEvent, ReactNode, SetStateAction } from 'react'
+import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Bell,
-  CalendarDays,
   Camera,
   CheckCircle2,
   Clock3,
@@ -24,7 +23,6 @@ import {
 } from 'lucide-react'
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
-import { LocalFileUpload } from '@/components/LocalFileUpload'
 import { SafeImage } from '@/components/SafeImage'
 import {
   changePassword,
@@ -89,6 +87,7 @@ export default function ProfilePage() {
   const router = useRouter()
   const countdownTimers = useRef<number[]>([])
   const toastTimer = useRef<number | null>(null)
+  const avatarInputRef = useRef<HTMLInputElement | null>(null)
   const [user, setUser] = useState<UserInfo | null>(null)
   const [form, setForm] = useState<FormState>({ nickname: '', email: '', avatar: '' })
   const [loading, setLoading] = useState(true)
@@ -254,6 +253,24 @@ export default function ProfilePage() {
     }
   }
 
+  const handleAvatarFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setProfileMessage('头像仅支持 JPG、PNG、WebP 格式')
+      return
+    }
+
+    try {
+      await handleAvatarUpload(file)
+      setProfileMessage('头像已更新')
+    } catch (err: unknown) {
+      setProfileMessage(err instanceof Error ? err.message : '头像上传失败')
+    }
+  }
+
   const sendCodeToPhone = async (
     phone: string | null | undefined,
     setSending: Dispatch<SetStateAction<boolean>>,
@@ -394,10 +411,6 @@ export default function ProfilePage() {
     setPhoneModalOpen(true)
   }
 
-  const scrollToAvatarUpload = () => {
-    document.getElementById('profile-avatar-upload')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
-
   const authState = user ? authLabel(user.status) : null
   const roleLabel = user ? getConsoleRoleLabel(user.role, user.permissionCodes || []) : '未设置'
   const hasConsoleAccess = user ? canEnterConsole(user.role, user.permissionCodes || []) : false
@@ -406,7 +419,7 @@ export default function ProfilePage() {
   return (
     <>
       <Header />
-      <main className="min-h-screen bg-[#F7F8FA] px-4 py-8 sm:px-6 sm:py-10">
+      <main className="min-h-screen bg-[#F8F9FA] px-4 py-8 sm:px-6 sm:py-10">
         <div className="mx-auto max-w-[1120px]">
           <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -440,126 +453,169 @@ export default function ProfilePage() {
             </div>
           ) : user ? (
             <div className="flex flex-col gap-6">
-              <section className="rounded-2xl border border-[#ECECEC] bg-white p-6 shadow-[0_4px_12px_rgba(0,0,0,0.05)] sm:p-8">
-                <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                    <button
-                      type="button"
-                      onClick={scrollToAvatarUpload}
-                      className="group relative h-28 w-28 shrink-0 overflow-hidden rounded-full border-4 border-[#FFF0F5] bg-[#FFF4F8] shadow-inner"
-                      title="更换头像"
-                    >
-                      {form.avatar ? (
-                        <SafeImage src={form.avatar} alt={user.nickname || user.phone || '用户头像'} className="h-full w-full object-cover" />
-                      ) : (
-                        <User className="mx-auto h-full w-12 text-[#E6005C]" />
-                      )}
-                      <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-black/45 py-2 text-xs font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
-                        <Camera className="h-3.5 w-3.5" />
-                        更换头像
-                      </span>
-                    </button>
+              <section className="overflow-hidden rounded-2xl bg-white shadow-[0_4px_12px_rgba(0,0,0,0.03)]">
+                <div className="border-b border-[#F1F2F4] px-5 py-5 sm:px-8 sm:py-6">
+                  <div className="mb-5 flex items-center justify-between gap-4">
                     <div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <h2 className="text-[26px] font-bold text-[#111]">{user.nickname || '未设置昵称'}</h2>
-                        {authState && (
-                          <span
-                            className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold"
-                            style={{ color: authState.color, backgroundColor: authState.bg }}
-                          >
-                            {authState.text}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-3 text-sm font-medium text-[#666]">绑定的手机号：{user.phone}</p>
+                      <h2 className="text-[20px] font-bold text-[#111]">个人设置中心</h2>
+                      <p className="mt-1 text-[13px] leading-5 text-[#777]">集中管理头像、基础资料与账户安全凭证。</p>
+                    </div>
+                    <div className="hidden rounded-full bg-[#FFF0F5] px-3 py-1.5 text-xs font-semibold text-[#E6005C] sm:block">
+                      资料与安全
                     </div>
                   </div>
-                  <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#FFD1E0] bg-[#FFF4F8] px-4 py-2 text-sm font-semibold text-[#E6005C]">
-                    <ShieldCheck className="h-4 w-4" />
-                    {roleLabel}
+
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                      <div className="w-20 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => avatarInputRef.current?.click()}
+                          disabled={uploadingAvatar}
+                          className="group relative h-20 w-20 overflow-hidden rounded-2xl bg-[#FFF0F5] shadow-inner transition-transform hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-70"
+                          aria-label="更换头像"
+                        >
+                          {form.avatar ? (
+                            <SafeImage src={form.avatar} alt={user.nickname || user.phone || '用户头像'} className="h-full w-full object-cover" />
+                          ) : (
+                            <User className="mx-auto h-full w-9 text-[#E6005C]" />
+                          )}
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-white opacity-0 transition-all group-hover:bg-black/35 group-hover:opacity-100">
+                            {uploadingAvatar ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
+                          </span>
+                        </button>
+                        <input
+                          ref={avatarInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={handleAvatarFileChange}
+                        />
+                        <div className="mt-2 flex items-center justify-center gap-3 text-xs font-semibold whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => avatarInputRef.current?.click()}
+                            disabled={uploadingAvatar}
+                            className="text-[#E6005C] transition-colors hover:text-[#E00D65] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            更换头像
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm((prev) => ({ ...prev, avatar: '' }))
+                              setProfileMessage('头像已清除，保存后生效')
+                            }}
+                            disabled={!form.avatar || savingProfile || uploadingAvatar}
+                            className="text-[#999] transition-colors hover:text-[#E6005C] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            清除
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <h2 className="truncate text-[26px] font-bold leading-tight text-[#111]">{user.nickname || '未设置昵称'}</h2>
+                          {authState && (
+                            <span
+                              className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold"
+                              style={{ color: authState.color, backgroundColor: authState.bg }}
+                            >
+                              {authState.text}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] leading-6 text-[#777]">
+                          <span>当前账号 / 手机：{user.phone || '未绑定'}</span>
+                          <span>注册时间：{formatTime(user.createTime)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#FFD6E4] bg-[#FFF0F5] px-4 py-2 text-sm font-semibold text-[#E6005C]">
+                      <ShieldCheck className="h-4 w-4" />
+                      {roleLabel}
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-8 grid gap-4 md:grid-cols-3">
-                  <InfoItem icon={<Mail className="h-5 w-5" />} label="电子邮箱" value={user.email || '未设置'} />
-                  <InfoItem icon={<ShieldCheck className="h-5 w-5" />} label="角色身份" value={roleLabel} />
-                  <InfoItem icon={<CalendarDays className="h-5 w-5" />} label="注册时间" value={formatTime(user.createTime)} />
-                </div>
-              </section>
-
-              <section className="grid gap-6 lg:grid-cols-2">
-                <div id="profile-avatar-upload" className="rounded-2xl border border-[#ECECEC] bg-white p-6 shadow-[0_4px_12px_rgba(0,0,0,0.05)] sm:p-8">
-                  <CardHeader icon={<User className="h-5 w-5" />} title="个人资料" description="基础资料会同步到当前账户" />
-                  <form className="mt-6 grid gap-4 sm:grid-cols-2" onSubmit={handleProfileSubmit}>
-                    <Field
-                      icon={<User className="h-4 w-4" />}
-                      label="昵称"
-                      value={form.nickname}
-                      onChange={(value) => setForm((prev) => ({ ...prev, nickname: value }))}
-                      placeholder="请输入昵称"
-                    />
-                    <Field
-                      icon={<Mail className="h-4 w-4" />}
-                      label="邮箱"
-                      value={form.email}
-                      onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
-                      placeholder="请输入邮箱"
-                      type="email"
-                    />
-                    <div className="sm:col-span-2">
-                      <LocalFileUpload
-                        label="头像"
-                        value={form.avatar}
-                        accept="image/jpeg,image/png,image/webp"
-                        uploading={uploadingAvatar}
-                        onUpload={handleAvatarUpload}
-                        onChange={(value) => setForm((prev) => ({ ...prev, avatar: value }))}
-                        hint="支持 JPG、PNG、WebP，上传后会自动写入头像地址。"
-                        cropImage={true}
+                <div className="grid gap-7 px-5 py-6 sm:px-8 sm:py-7 lg:grid-cols-2">
+                  <form className="min-w-0" onSubmit={handleProfileSubmit}>
+                    <div className="mb-5 flex items-start gap-3">
+                      <span className="mt-1 h-8 w-1.5 rounded-full bg-[#FF1475]" />
+                      <div>
+                        <h3 className="text-[18px] font-bold text-[#111]">基础资料</h3>
+                        <p className="mt-1 text-sm text-[#777]">修改后即时同步</p>
+                      </div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                      <Field
+                        icon={<User className="h-4 w-4" />}
+                        label="用户昵称"
+                        value={form.nickname}
+                        onChange={(value) => setForm((prev) => ({ ...prev, nickname: value }))}
+                        placeholder="请输入昵称"
+                      />
+                      <Field
+                        icon={<Mail className="h-4 w-4" />}
+                        label="电子邮箱"
+                        value={form.email}
+                        onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
+                        placeholder="请输入电子邮箱"
+                        type="email"
                       />
                     </div>
-                    <div className="mt-2 flex flex-col gap-3 border-t border-[#F0F0F0] pt-6 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-[13px] text-[#666]">{profileMessage || `当前绑定账号：${user.phone}`}</p>
+                    <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="min-h-5 text-[13px] text-[#777]">{profileMessage || `当前绑定账号：${user.phone || '未绑定'}`}</p>
                       <button
                         type="submit"
                         disabled={savingProfile || uploadingAvatar}
-                        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#E6005C] px-6 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#E6005C]/20 transition-colors hover:bg-[#D10053] disabled:cursor-not-allowed disabled:opacity-70"
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#E6005C] px-6 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#E6005C]/20 transition-colors hover:bg-[#E00D65] disabled:cursor-not-allowed disabled:opacity-70"
                       >
                         {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                        保存资料
+                        保存资料修改
                       </button>
                     </div>
                   </form>
-                </div>
 
-                <div className="rounded-2xl border border-[#ECECEC] bg-white p-6 shadow-[0_4px_12px_rgba(0,0,0,0.05)] sm:p-8">
-                  <CardHeader icon={<ShieldHalf className="h-5 w-5" />} title="安全与认证" description="管理登录密码与敏感操作的安全凭证。" />
-                  <div className="mt-6 space-y-4">
-                    <SecurityActionItem
-                      icon={<LockKeyhole className="h-5 w-5" />}
-                      title="登录密码"
-                      description="定期更换密码有助于保护账号安全"
-                      actionLabel="修改密码"
-                      onClick={openPasswordModal}
-                    />
-                    <SecurityActionItem
-                      icon={<Smartphone className="h-5 w-5" />}
-                      title="安全手机"
-                      description={`已绑定：${maskedPhone}（用于接收验证码及安全登录）`}
-                      actionLabel="更换手机"
-                      onClick={openPhoneModal}
-                    />
-                  </div>
-                  <div className="mt-6 flex flex-col gap-2 border-t border-[#F0F0F0] pt-5 text-[13px] text-[#666] sm:flex-row sm:items-center sm:justify-between">
-                    <span className="font-semibold text-[#333]">安全防护等级：高</span>
-                    <span>最近安全操作：密码与手机变更需短信验证</span>
-                  </div>
+                  <section className="min-w-0">
+                    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <span className="mt-1 h-8 w-1.5 rounded-full bg-[#FF1475]" />
+                        <div>
+                          <h3 className="text-[18px] font-bold text-[#111]">安全与认证</h3>
+                          <p className="mt-1 text-sm text-[#777]">管理登录密码与敏感操作的安全凭证。</p>
+                        </div>
+                      </div>
+                      <span className="inline-flex w-fit items-center rounded-full bg-[#E8F8EE] px-3 py-1 text-xs font-semibold text-[#28C76F]">
+                        安全防护等级：高
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      <SecurityActionItem
+                        icon={<LockKeyhole className="h-5 w-5" />}
+                        title="登录密码"
+                        description="定期更换密码有助于保护账号安全"
+                        actionLabel="修改密码"
+                        onClick={openPasswordModal}
+                      />
+                      <SecurityActionItem
+                        icon={<Smartphone className="h-5 w-5" />}
+                        title="安全手机"
+                        description={`已绑定：${maskedPhone}（用于验证码校验）`}
+                        actionLabel="更换手机"
+                        onClick={openPhoneModal}
+                      />
+                    </div>
+                    <p className="mt-4 text-[13px] leading-5 text-[#777]">最近安全操作：密码与手机变更需短信验证</p>
+                  </section>
                 </div>
               </section>
 
-              <section className="flex flex-col gap-4 rounded-2xl border border-[#FFD1E0] bg-[#FFF4F8] p-6 shadow-[0_4px_12px_rgba(0,0,0,0.03)] sm:flex-row sm:items-start">
+              <section className="flex flex-col gap-4 rounded-2xl border border-[#FFD6E4] bg-[#FFF0F5] p-5 shadow-[0_4px_12px_rgba(0,0,0,0.03)] sm:flex-row sm:items-start sm:p-6">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-[#E6005C] shadow-sm">
-                  <ShieldCheck className="h-5 w-5" />
+                  <ShieldHalf className="h-5 w-5" />
                 </div>
                 <div>
                   <h3 className="text-[16px] font-bold text-[#111]">账户提示</h3>
@@ -698,32 +754,6 @@ function QuickActionButton({ icon, label, onClick }: { icon: ReactNode; label: s
       {icon}
       {label}
     </button>
-  )
-}
-
-function CardHeader({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FFF0F5] text-[#E6005C]">
-        {icon}
-      </div>
-      <div>
-        <h2 className="text-[18px] font-bold text-[#111]">{title}</h2>
-        <p className="mt-1 text-sm text-[#666]">{description}</p>
-      </div>
-    </div>
-  )
-}
-
-function InfoItem({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-[#F0F0F0] bg-[#FAFAFA] p-5 transition-all duration-200 hover:bg-white hover:shadow-[0_4px_12px_rgba(0,0,0,0.05)]">
-      <div className="flex items-center gap-2 text-[13px] font-semibold text-[#777]">
-        <span className="text-[#E6005C]">{icon}</span>
-        {label}
-      </div>
-      <div className="mt-3 break-words text-[15px] font-bold text-[#111]">{value}</div>
-    </div>
   )
 }
 

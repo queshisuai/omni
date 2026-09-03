@@ -14,8 +14,8 @@ test('formats subscription target types in Chinese', () => {
 
 test('returns countdown text for future performance time', () => {
   const now = new Date('2026-06-01T10:00:00+08:00').getTime()
-  assert.equal(getCountdownText('2026-06-03T12:30:00', now), '2天2小时后')
-  assert.equal(getCountdownText('2026-06-01T10:10:00', now), '10分钟后')
-  assert.equal(getCountdownText('2026-05-31T10:00:00', now), '已开始')
+  assert.equal(getCountdownText('2026-06-03T12:30:00+08:00', now), '2天2小时后')
+  assert.equal(getCountdownText('2026-06-01T10:10:00+08:00', now), '10分钟后')
+  assert.equal(getCountdownText('2026-05-31T10:00:00+08:00', now), '已开始')
   assert.equal(getCountdownText(null, now), '时间待定')
 })

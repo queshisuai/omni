@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getUser } from '@/lib/auth'
 import { listAdminActivities, listActivityRiskResolutions, submitActivityRiskResolution } from '@/lib/api'
-import { DEFAULT_PAGE_SIZE, Pagination } from '@/components/Pagination'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { globalAlert } from '@/components/GlobalDialog'
 import type { ActivityEntity, ActivityRiskResolutionVO } from '@/types/api'
@@ -169,7 +169,7 @@ export default function OrganizerRiskEventsPage() {
             onBlocked={(message) => { void globalAlert(message) }}
             onOpenDialog={(a) => { setTarget(a); setResolutionType('explain'); setResolutionNote('') }}
           />
-          <Pagination page={page} total={suspended.length} loading={loading} onChange={setPage} />
+          <GlobalPagination page={page} total={suspended.length} loading={loading} onChange={setPage} />
         </>
       )}
       {target && (

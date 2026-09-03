@@ -1,9 +1,14 @@
 package com.omni.common.mq;
 
+import com.omni.common.mq.message.ActivitySearchIndexMessage;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.support.converter.MessageConverter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MqConfigTest {
 
@@ -108,5 +113,14 @@ class MqConfigTest {
 
         assertEquals(MqConstants.Q_SEARCH_ACTIVITY_CHANGED_DLQ, queue.getName());
         assertEquals(true, queue.isDurable());
+    }
+
+    @Test
+    void messageConverterSerializesActivitySearchIndexJavaTimeMessage() {
+        MessageConverter converter = config.jackson2JsonMessageConverter();
+
+        Message message = converter.toMessage(ActivitySearchIndexMessage.upsert(900001L), new MessageProperties());
+
+        assertTrue(message.getBody().length > 0);
     }
 }

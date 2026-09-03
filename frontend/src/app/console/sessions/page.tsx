@@ -7,6 +7,7 @@ import { getUser } from '@/lib/auth'
 import { createAdminTicketType, deleteAdminSession, listAdminActivities, listAdminSessions, listAdminVenues, updateAdminSession, updateAdminTicketType } from '@/lib/api'
 import { Download, Edit, PackageOpen, Power, PowerOff, RefreshCw, Tags, Trash2, Upload, X } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
+import { GlobalPagination } from '@/components/Pagination'
 import { buildConsoleSessionReportCsv, buildConsoleSessionReportExcelHtml, formatConsoleSessionStatus, getConsoleSessionStatusClassName } from '@/lib/console-sessions'
 import { formatConsoleTicketTypeStatus, getBatchTicketPriceUpdateCandidates, getBatchTicketPriceUpdateTargets, getBatchTicketStatusUpdateTargets, getBatchTicketStockUpdateBlockedTargets, getBatchTicketStockUpdateTargets, getTicketTypeSoldStock, isBatchTicketPriceUpdateCandidate, parseBatchTicketImportInput, parseBatchTicketPriceInput, parseBatchTicketStockInput } from '@/lib/console-ticket-types'
 import type { ActivityEntity, SessionAdminVO, TicketTypeEntity, VenueEntity } from '@/types/api'
@@ -43,7 +44,6 @@ function SessionsPageContent() {
   const [statusFilter, setStatusFilter] = useState('')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
-  const [pages, setPages] = useState(1)
   const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState<SessionForm | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -84,7 +84,6 @@ function SessionsPageContent() {
       setSessions(res.records)
       setSelectedTicketTypeKeys(new Set())
       setTotal(res.total)
-      setPages(res.pages || 1)
       setPage(res.current || nextPage)
       setLoading(false)
     }).catch(err => {
@@ -747,12 +746,8 @@ function SessionsPageContent() {
               ))}
             </tbody>
           </table>
-          <div className="flex flex-col gap-3 border-t border-[#f0f0f0] px-4 py-3 text-[13px] text-[#666] sm:flex-row sm:items-center sm:justify-between">
-            <span>共 {total} 条，当前第 {page} / {pages} 页</span>
-            <div className="flex items-center gap-2">
-              <button disabled={page <= 1} onClick={() => loadSessions(page - 1)} className="rounded-lg border border-[#e5e5e5] px-3 py-1.5 disabled:cursor-not-allowed disabled:text-[#bbb]">上一页</button>
-              <button disabled={page >= pages} onClick={() => loadSessions(page + 1)} className="rounded-lg border border-[#e5e5e5] px-3 py-1.5 disabled:cursor-not-allowed disabled:text-[#bbb]">下一页</button>
-            </div>
+          <div className="border-t border-[#f0f0f0] px-4 pb-4">
+            <GlobalPagination page={page} total={total} pageSize={PAGE_SIZE} loading={loading} onChange={nextPage => loadSessions(nextPage)} />
           </div>
         </div>
       )}

@@ -19,6 +19,7 @@ import com.omni.ticket.mapper.StationMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.mapper.VenueMapper;
+import com.omni.ticket.search.ActivitySearchProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -158,36 +159,27 @@ class ActivityServiceArtistLineupTest {
 
     @Test
     void searchActivitiesFiltersByKeywordCityPriceAndRealName() {
-        Activity activity = new Activity();
-        activity.setId(10L);
-        activity.setName("周末演唱会");
-        activity.setArtistId(99L);
-        activity.setRealNameRequired(true);
-        activity.setStatus(1);
-        activity.setPublishStatus("published");
-        Page<Activity> page = new Page<>(1, 10, 1);
-        page.setRecords(List.of(activity));
-        when(activityMapper.selectPage(any(), any())).thenReturn(page);
-        when(artistMapper.selectBatchIds(any())).thenReturn(List.of(artist(99L, "周杰伦")));
-        Session session = new Session();
-        session.setId(60L);
-        session.setActivityId(10L);
-        session.setVenueId(8L);
-        session.setStartTime(LocalDateTime.of(2026, 6, 20, 19, 30));
-        when(sessionMapper.selectList(any())).thenReturn(List.of(session));
-        com.omni.ticket.entity.Venue venue = new com.omni.ticket.entity.Venue();
-        venue.setId(8L);
-        venue.setCity("上海");
-        when(venueMapper.selectBatchIds(any())).thenReturn(List.of(venue));
-        TicketType ticketType = new TicketType();
-        ticketType.setId(70L);
-        ticketType.setSessionId(60L);
-        ticketType.setPrice(new BigDecimal("380.00"));
-        ticketType.setStatus(1);
-        when(ticketTypeMapper.selectList(any())).thenReturn(List.of(ticketType));
-
+        ActivitySearchProvider searchProvider = request -> {
+            assertEquals(1, request.getPage());
+            assertEquals(10, request.getSize());
+            assertEquals("周杰伦", request.getKeyword());
+            assertEquals("上海", request.getCity());
+            assertEquals(LocalDate.of(2026, 6, 1), request.getDateFrom());
+            assertEquals(LocalDate.of(2026, 6, 30), request.getDateTo());
+            assertEquals(new BigDecimal("180.00"), request.getMinPrice());
+            assertEquals(new BigDecimal("580.00"), request.getMaxPrice());
+            assertEquals("on_sale", request.getSaleStatus());
+            assertEquals(true, request.getRealNameRequired());
+            assertEquals("price_asc", request.getSort());
+            ActivityVO vo = new ActivityVO();
+            vo.setId(10L);
+            vo.setName("周末演唱会");
+            Page<ActivityVO> result = new Page<>(1, 10, 1);
+            result.setRecords(List.of(vo));
+            return result;
+        };
         ActivityService service = new ActivityService(activityMapper, categoryMapper, artistMapper, sessionMapper,
-                venueMapper, ticketTypeMapper, activityArtistService);
+                venueMapper, ticketTypeMapper, activityArtistService, null, null, null, searchProvider);
 
         Page<ActivityVO> result = service.searchActivities(1, 10, null, "周杰伦", "上海",
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30),

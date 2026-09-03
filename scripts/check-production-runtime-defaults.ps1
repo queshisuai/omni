@@ -144,8 +144,24 @@ foreach ($svc in $servicesWithSeata) {
         exit 1
     }
 
-    Write-Host "PASS $svc prod-split Seata config requires explicit environment"
+Write-Host "PASS $svc prod-split Seata config requires explicit environment"
 }
+
+$ticketProdFile = Join-Path -Path $repoRoot -ChildPath "java/java-ticket/src/main/resources/application-prod-split.yml"
+$ticketProd = Get-Content -Raw -LiteralPath $ticketProdFile
+if ($ticketProd -match '\$\{OMNI_SEARCH_PROVIDER:' -or $ticketProd -match '\$\{OMNI_SEARCH_REQUIRE_ES:') {
+    Write-Host "FAIL java-ticket prod-split: search provider and require-es must be fixed, not defaulted from env fallback"
+    exit 1
+}
+if ($ticketProd -notmatch "(?m)^\s+provider:\s*elasticsearch\s*$" -or $ticketProd -notmatch "(?m)^\s+require-elasticsearch:\s*true\s*$") {
+    Write-Host "FAIL java-ticket prod-split: search must be fixed to Elasticsearch and require ES"
+    exit 1
+}
+if ($ticketProd -notmatch "(?m)^\s+uris:\s*\$\{ELASTICSEARCH_URIS:\$\{SPRING_ELASTICSEARCH_URIS\}\}\s*$") {
+    Write-Host "FAIL java-ticket prod-split: spring.elasticsearch.uris must come from ELASTICSEARCH_URIS or SPRING_ELASTICSEARCH_URIS without local fallback"
+    exit 1
+}
+Write-Host "PASS java-ticket prod-split search is fixed to required Elasticsearch"
 
 $gatewayProdFile = Join-Path -Path $repoRoot -ChildPath "java/java-gateway/src/main/resources/application-prod-split.yml"
 if (-not (Test-Path -LiteralPath $gatewayProdFile)) {
@@ -180,7 +196,7 @@ if (-not (Test-Path -LiteralPath $gatewayBaseFile)) {
 
 $gatewayBase = Get-Content -Raw -LiteralPath $gatewayBaseFile
 $gatewayRouteIds = [regex]::Matches($gatewayBase, '(?m)^\s+- id:\s*(\S+)\s*$') | ForEach-Object { $_.Groups[1].Value }
-if ($gatewayRouteIds.Count -le 13 -or $gatewayRouteIds[12] -ne "waitlist-service" -or $gatewayRouteIds[13] -ne "grab-service") {
+if ($gatewayRouteIds.Count -le 14 -or $gatewayRouteIds[13] -ne "waitlist-service" -or $gatewayRouteIds[14] -ne "grab-service") {
     Write-Host "FAIL java-gateway route index assumptions changed; update prod-split route list"
     exit 1
 }
@@ -192,7 +208,7 @@ if (Test-Path -LiteralPath $gatewayLegacyProdRoutesFile) {
 }
 
 $gatewayProdRouteIds = [regex]::Matches($gatewayProd, '(?m)^\s+- id:\s*(\S+)\s*$') | ForEach-Object { $_.Groups[1].Value }
-if ($gatewayProdRouteIds.Count -le 13 -or $gatewayProdRouteIds[12] -ne "waitlist-service" -or $gatewayProdRouteIds[13] -ne "grab-service") {
+if ($gatewayProdRouteIds.Count -le 14 -or $gatewayProdRouteIds[13] -ne "waitlist-service" -or $gatewayProdRouteIds[14] -ne "grab-service") {
     Write-Host "FAIL java-gateway prod-split route list must include complete waitlist/grab routes at expected indexes"
     exit 1
 }
@@ -398,6 +414,32 @@ if ($localCompose -notmatch "(?m)^\s+TICKET_SERVICE_URL:\s*http://host\.docker\.
 
 Write-Host "PASS docker-compose.yml grab-service order/ticket internal URLs bypass local Gateway"
 
+if ($localCompose -notmatch "(?m)^\s+elasticsearch:\s*$" -or $localCompose -notmatch "container_name:\s*omni-elasticsearch") {
+    Write-Host "FAIL docker-compose.yml must define local Elasticsearch service"
+    exit 1
+}
+
+if ($localCompose -notmatch "_cluster/health\?wait_for_status=yellow" -or $localCompose -notmatch "omni-elasticsearch-data:/usr/share/elasticsearch/data") {
+    Write-Host "FAIL docker-compose.yml Elasticsearch must have healthcheck and persistent data volume"
+    exit 1
+}
+
+Write-Host "PASS docker-compose.yml defines Elasticsearch healthcheck and data volume"
+
+$startInfraFile = Join-Path -Path $repoRoot -ChildPath "scripts/start-infra.ps1"
+if (-not (Test-Path -LiteralPath $startInfraFile)) {
+    Write-Host "FAIL missing infra startup script: $startInfraFile"
+    exit 1
+}
+
+$startInfra = Get-Content -Raw -LiteralPath $startInfraFile
+if ($startInfra -notmatch '"rabbitmq"' -or $startInfra -notmatch 'Wait-Port -Name "RabbitMQ"' -or $startInfra -notmatch 'Wait-ElasticsearchHealthy') {
+    Write-Host "FAIL scripts/start-infra.ps1 must start/wait RabbitMQ and require Elasticsearch health"
+    exit 1
+}
+
+Write-Host "PASS scripts/start-infra.ps1 starts RabbitMQ and requires Elasticsearch health"
+
 $startProjectFile = Join-Path -Path $repoRoot -ChildPath "start-project.ps1"
 if (-not (Test-Path -LiteralPath $startProjectFile)) {
     Write-Host "FAIL missing startup script: $startProjectFile"
@@ -417,6 +459,18 @@ if ($startProject -notmatch "\`$env:TICKET_SERVICE_URL='http://localhost:8082'")
 
 Write-Host "PASS start-project.ps1 grab-service order/ticket internal URLs bypass local Gateway"
 
+if ($startProject -match 'OMNI_SEARCH_PROVIDER\s*=\s*"db"' -or $startProject -match 'OMNI_SEARCH_REQUIRE_ES\s*=\s*"false"') {
+    Write-Host "FAIL start-project.ps1 must not configure DB search fallback"
+    exit 1
+}
+
+if ($startProject -notmatch 'OMNI_SEARCH_PROVIDER\s*=\s*"elasticsearch"' -or $startProject -notmatch 'OMNI_SEARCH_REQUIRE_ES\s*=\s*"true"' -or $startProject -notmatch 'Wait-ElasticsearchHealthy') {
+    Write-Host "FAIL start-project.ps1 must fix search to Elasticsearch and wait for ES health"
+    exit 1
+}
+
+Write-Host "PASS start-project.ps1 requires Elasticsearch search before Java startup"
+
 $productionComposeFile = Join-Path -Path $repoRoot -ChildPath "docker-compose.production.example.yml"
 if (-not (Test-Path -LiteralPath $productionComposeFile)) {
     Write-Host "FAIL missing production compose example: $productionComposeFile"
@@ -428,7 +482,8 @@ $requiredComposeSecrets = @(
     "JWT_SECRET",
     "INTERNAL_API_TOKEN",
     "GRAB_DB_PASSWORD",
-    "RABBITMQ_PASSWORD"
+    "RABBITMQ_PASSWORD",
+    "ELASTICSEARCH_PASSWORD"
 )
 
 foreach ($secretName in $requiredComposeSecrets) {
@@ -439,7 +494,7 @@ foreach ($secretName in $requiredComposeSecrets) {
     }
 }
 
-if ($productionCompose -match '\$\{(?:JWT_SECRET|INTERNAL_API_TOKEN|GRAB_DB_PASSWORD|RABBITMQ_PASSWORD):-') {
+if ($productionCompose -match '\$\{(?:JWT_SECRET|INTERNAL_API_TOKEN|GRAB_DB_PASSWORD|RABBITMQ_PASSWORD|ELASTICSEARCH_PASSWORD):-') {
     Write-Host "FAIL production compose must not use fallback defaults for sensitive secrets"
     exit 1
 }
@@ -450,6 +505,26 @@ if ($productionCompose -match 'omni-local-internal-token|omni-local-jwt-secret|1
 }
 
 Write-Host "PASS production compose sensitive values require explicit environment"
+
+if ($productionCompose -notmatch "(?m)^\s+elasticsearch:\s*$" -or $productionCompose -notmatch "container_name:\s*omni-elasticsearch") {
+    Write-Host "FAIL production compose must define Elasticsearch service"
+    exit 1
+}
+
+foreach ($envName in @("ELASTICSEARCH_IMAGE_TAG", "ELASTICSEARCH_SECURITY_ENABLED", "ELASTICSEARCH_PASSWORD", "ELASTICSEARCH_JAVA_OPTS")) {
+    $requiredMarker = [char]36 + [char]123 + $envName + ':?'
+    if ($productionCompose -notmatch [regex]::Escape($requiredMarker)) {
+        Write-Host "FAIL production compose Elasticsearch must require $envName without fallback"
+        exit 1
+    }
+}
+
+if ($productionCompose -notmatch "_cluster/health\?wait_for_status=yellow" -or $productionCompose -notmatch "omni-elasticsearch-data:/usr/share/elasticsearch/data") {
+    Write-Host "FAIL production compose Elasticsearch must have healthcheck and persistent data volume"
+    exit 1
+}
+
+Write-Host "PASS production compose defines required Elasticsearch healthcheck and data volume"
 
 $grabServiceSourceRoot = Join-Path -Path $repoRoot -ChildPath "nestjs/grab-service/src"
 if (-not (Test-Path -LiteralPath $grabServiceSourceRoot)) {
@@ -582,6 +657,13 @@ $requiredDocumentedEnvVars = @(
     "NACOS_PORT",
     "GATEWAY_GRAB_SERVICE_URI",
     "GATEWAY_WAITLIST_SERVICE_URI",
+    "ELASTICSEARCH_URIS",
+    "SPRING_ELASTICSEARCH_URIS",
+    "ELASTICSEARCH_USERNAME",
+    "ELASTICSEARCH_PASSWORD",
+    "ELASTICSEARCH_IMAGE_TAG",
+    "ELASTICSEARCH_SECURITY_ENABLED",
+    "ELASTICSEARCH_JAVA_OPTS",
     "OMNI_SEARCH_PROVIDER",
     "OMNI_SEARCH_REQUIRE_ES",
     "RABBITMQ_HOST",

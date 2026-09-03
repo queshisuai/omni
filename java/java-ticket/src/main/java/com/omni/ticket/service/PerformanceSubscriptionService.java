@@ -2,9 +2,11 @@ package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.omni.common.mq.message.NotificationEventMessage;
+import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
-import com.omni.ticket.dto.SubscriptionCalendarResponse;
+import com.omni.ticket.client.NotificationInternalClient;
 import com.omni.ticket.dto.SubscriptionRequest;
 import com.omni.ticket.dto.SubscriptionResponse;
 import com.omni.ticket.entity.Activity;
@@ -21,12 +23,16 @@ import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.mapper.VenueMapper;
+import com.omni.ticket.mq.NotificationMqProducer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -44,6 +50,8 @@ import java.util.stream.Collectors;
 @Service
 public class PerformanceSubscriptionService {
 
+    private static final Logger log = LoggerFactory.getLogger(PerformanceSubscriptionService.class);
+
     public static final String ACTIVITY_WANT = "ACTIVITY_WANT";
     public static final String SALE_REMINDER = "SALE_REMINDER";
     public static final String WAITLIST_REMINDER = "WAITLIST_REMINDER";
@@ -54,7 +62,6 @@ public class PerformanceSubscriptionService {
     private static final int STATUS_ACTIVE = 1;
     private static final int STATUS_CANCELLED = 0;
     private static final int DEFAULT_REMIND_BEFORE_MINUTES = 30;
-    private static final DateTimeFormatter ICS_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss");
 
     private final PerformanceSubscriptionMapper subscriptionMapper;
     private final ActivityMapper activityMapper;
@@ -63,6 +70,9 @@ public class PerformanceSubscriptionService {
     private final VenueMapper venueMapper;
     private final TicketTypeMapper ticketTypeMapper;
     private final TourMapper tourMapper;
+    private NotificationMqProducer notificationProducer;
+    private NotificationInternalClient notificationInternalClient;
+    private String internalApiToken = "";
 
     public PerformanceSubscriptionService(PerformanceSubscriptionMapper subscriptionMapper,
                                           ActivityMapper activityMapper,
@@ -78,6 +88,21 @@ public class PerformanceSubscriptionService {
         this.venueMapper = venueMapper;
         this.ticketTypeMapper = ticketTypeMapper;
         this.tourMapper = tourMapper;
+    }
+
+    @Autowired(required = false)
+    public void setNotificationProducer(NotificationMqProducer notificationProducer) {
+        this.notificationProducer = notificationProducer;
+    }
+
+    @Autowired(required = false)
+    public void setNotificationInternalClient(NotificationInternalClient notificationInternalClient) {
+        this.notificationInternalClient = notificationInternalClient;
+    }
+
+    @Value("${internal.api.token:${INTERNAL_API_TOKEN:}}")
+    public void setInternalApiToken(String internalApiToken) {
+        this.internalApiToken = internalApiToken;
     }
 
     public SubscriptionResponse createSubscription(Long userId, SubscriptionRequest request) {
@@ -97,6 +122,7 @@ public class PerformanceSubscriptionService {
             subscription.setRemindBeforeMinutes(DEFAULT_REMIND_BEFORE_MINUTES);
         }
         subscriptionMapper.insert(subscription);
+        publishTourCityWishNotification(subscription);
         return toResponse(subscription, EnrichmentContext.empty());
     }
 
@@ -128,44 +154,6 @@ public class PerformanceSubscriptionService {
         if (updated <= 0) {
             throw new BusinessException(ResultCode.NOT_FOUND, "订阅不存在");
         }
-    }
-
-    public SubscriptionCalendarResponse createCalendar(Long userId) {
-        List<PerformanceSubscription> subscriptions = subscriptionMapper.selectList(new LambdaQueryWrapper<PerformanceSubscription>()
-                .eq(PerformanceSubscription::getUserId, userId)
-                .eq(PerformanceSubscription::getStatus, STATUS_ACTIVE)
-                .in(PerformanceSubscription::getTargetType, List.of(ACTIVITY_WANT, SALE_REMINDER, WAITLIST_REMINDER)));
-        EnrichmentContext context = buildContext(subscriptions == null ? Collections.emptyList() : subscriptions);
-        StringBuilder builder = new StringBuilder();
-        builder.append("BEGIN:VCALENDAR\r\n");
-        builder.append("VERSION:2.0\r\n");
-        builder.append("PRODID:-//Omni//Performance Calendar//ZH-CN\r\n");
-        builder.append("CALSCALE:GREGORIAN\r\n");
-        for (PerformanceSubscription subscription : subscriptions == null ? Collections.<PerformanceSubscription>emptyList() : subscriptions) {
-            Session session = context.firstSessionByActivity.get(subscription.getActivityId());
-            if (session == null || session.getStartTime() == null) {
-                continue;
-            }
-            Activity activity = context.activityById.get(subscription.getActivityId());
-            Venue venue = context.venueById.get(session.getVenueId());
-            String title = activity != null && StringUtils.hasText(activity.getName()) ? activity.getName() : subscription.getTargetName();
-            builder.append("BEGIN:VEVENT\r\n");
-            builder.append("UID:omni-subscription-").append(subscription.getId()).append("@omni\r\n");
-            builder.append("SUMMARY:").append(escapeIcs(title)).append("\r\n");
-            builder.append("DTSTART;TZID=Asia/Shanghai:").append(ICS_TIME.format(session.getStartTime())).append("\r\n");
-            LocalDateTime endTime = session.getEndTime() == null ? session.getStartTime().plusHours(2) : session.getEndTime();
-            builder.append("DTEND;TZID=Asia/Shanghai:").append(ICS_TIME.format(endTime)).append("\r\n");
-            if (venue != null && StringUtils.hasText(venue.getName())) {
-                builder.append("LOCATION:").append(escapeIcs(venue.getName())).append("\r\n");
-            }
-            builder.append("DESCRIPTION:").append(escapeIcs("来自万象票务的想看/提醒日历")).append("\r\n");
-            builder.append("END:VEVENT\r\n");
-        }
-        builder.append("END:VCALENDAR\r\n");
-        SubscriptionCalendarResponse response = new SubscriptionCalendarResponse();
-        response.setFileName("omni-calendar-" + userId + ".ics");
-        response.setContent(builder.toString());
-        return response;
     }
 
     private PerformanceSubscription resolveSubscription(Long userId, SubscriptionRequest request) {
@@ -242,6 +230,67 @@ public class PerformanceSubscriptionService {
         Tour tour = tourMapper == null ? null : tourMapper.selectById(tourId);
         if (tour != null && StringUtils.hasText(tour.getTitle())) {
             subscription.setTargetName(tour.getTitle() + " " + subscription.getCity());
+        }
+    }
+
+    private void publishTourCityWishNotification(PerformanceSubscription subscription) {
+        if (subscription == null
+                || !TOUR_CITY_REMINDER.equals(subscription.getTargetType())
+                || tourMapper == null
+                || subscription.getTargetId() == null
+                || !StringUtils.hasText(subscription.getCity())) {
+            return;
+        }
+        try {
+            Tour tour = tourMapper.selectById(subscription.getTargetId());
+            if (tour == null || tour.getOrganizerId() == null) {
+                return;
+            }
+            String city = subscription.getCity().trim();
+            String tourTitle = StringUtils.hasText(tour.getTitle()) ? tour.getTitle().trim() : "巡演项目";
+            String marker = subscription.getId() != null
+                    ? String.valueOf(subscription.getId())
+                    : subscription.getUserId() + ":" + System.currentTimeMillis();
+            String aggregateKey = "TOUR_CITY_WISH:" + tour.getId() + ":" + city + ":" + marker;
+
+            NotificationEventMessage event = new NotificationEventMessage();
+            event.setEventId("tour-city-wish:" + tour.getId() + ":" + city + ":" + marker);
+            event.setEventType("TOUR_CITY_WISH");
+            event.setAggregateKey(aggregateKey);
+            event.setUserId(tour.getOrganizerId());
+            event.setChannels(List.of(NotificationEventMessage.CHANNEL_IN_APP));
+            event.setContent("有用户提交了《" + tourTitle + "》" + city + "站加场心愿，请在巡演后台查看城市热度。");
+            event.setActionHref("/console/tours/" + tour.getId());
+            event.setActionLabel("查看巡演");
+            event.setPayload(Map.of(
+                    "source", "java-ticket",
+                    "phase", "TOUR_CITY_WISH",
+                    "tourId", String.valueOf(tour.getId()),
+                    "city", city,
+                    "subscriberUserId", String.valueOf(subscription.getUserId()),
+                    "subscriptionId", String.valueOf(subscription.getId())
+            ));
+            event.setOccurredAt(LocalDateTime.now());
+            publishNotificationEventDirectly(event);
+            if (notificationProducer != null) {
+                notificationProducer.sendNotificationEvent(event);
+            }
+        } catch (RuntimeException e) {
+            log.warn("巡演加场心愿通知发送失败: tourId={}, city={}, message={}",
+                    subscription.getTargetId(), subscription.getCity(), e.getMessage());
+        }
+    }
+
+    private void publishNotificationEventDirectly(NotificationEventMessage event) {
+        if (notificationInternalClient == null || !StringUtils.hasText(internalApiToken)) {
+            return;
+        }
+        Result<Void> result = notificationInternalClient.createInternalEvent(event, internalApiToken);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+            String message = result != null && StringUtils.hasText(result.getMessage())
+                    ? result.getMessage()
+                    : "通知服务无响应";
+            log.warn("巡演加场心愿通知内部投递失败: eventId={}, message={}", event.getEventId(), message);
         }
     }
 
@@ -397,15 +446,6 @@ public class PerformanceSubscriptionService {
                 .filter(Objects::nonNull)
                 .filter(value -> idGetter.apply(value) != null)
                 .collect(Collectors.toMap(idGetter, Function.identity(), (a, b) -> a, LinkedHashMap::new));
-    }
-
-    private String escapeIcs(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\")
-                .replace(",", "\\,")
-                .replace(";", "\\;")
-                .replace("\r", "")
-                .replace("\n", "\\n");
     }
 
     private static class EnrichmentContext {

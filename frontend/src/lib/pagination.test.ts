@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { normalizePageRequest } from './pagination.ts'
+import { buildPaginationItems, normalizePageRequest } from './pagination.ts'
 
 test('normalizes manual page jump input into the available page range', () => {
   assert.equal(normalizePageRequest('3', 8), 3)
@@ -12,4 +12,9 @@ test('normalizes manual page jump input into the available page range', () => {
 
 test('keeps pagination valid when there are no records', () => {
   assert.equal(normalizePageRequest('5', 0), 1)
+})
+
+test('builds compact pagination items with jump slots for page gaps', () => {
+  assert.deepEqual(buildPaginationItems(5, 10), [1, 'jump-prev', 3, 4, 5, 6, 7, 'jump-next', 10])
+  assert.deepEqual(buildPaginationItems(1, 4), [1, 2, 3, 4])
 })

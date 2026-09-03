@@ -25,6 +25,7 @@ import {
   listOrganizerOpsFollowUps,
   updateOrganizerOpsAssignment,
 } from '@/lib/api'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import {
   formatOperationAction,
@@ -212,6 +213,7 @@ export default function OrganizerOpsPage() {
   const [saving, setSaving] = useState<'assignment' | 'follow' | ''>('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [assignmentPage, setAssignmentPage] = useState(1)
 
   const permissions = useMemo(() => user?.permissionCodes || [], [user])
   const canReviewOrganizer = canUseConsoleAction('organizer.review', permissions)
@@ -226,6 +228,10 @@ export default function OrganizerOpsPage() {
     [selectedOrganizerId, state.assignments]
   )
   const selectedFollowUps = selectedOrganizerId ? state.followUpsByOrganizer[selectedOrganizerId] || [] : []
+  const assignmentPageItems = useMemo(
+    () => state.assignments.slice((assignmentPage - 1) * DEFAULT_PAGE_SIZE, assignmentPage * DEFAULT_PAGE_SIZE),
+    [state.assignments, assignmentPage],
+  )
 
   const organizerNameByUserId = useMemo(() => {
     const map = new Map<number, string>()
@@ -308,6 +314,7 @@ export default function OrganizerOpsPage() {
       }
 
       setState(nextState)
+      setAssignmentPage(1)
       setSelectedOrganizerId(current => {
         if (current && nextState.assignments.some(item => item.organizerUserId === current)) return current
         return nextState.assignments[0]?.organizerUserId || null
@@ -553,7 +560,7 @@ export default function OrganizerOpsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {state.assignments.map(assignment => {
+                {assignmentPageItems.map(assignment => {
                   const latestFollowUp = state.followUpsByOrganizer[assignment.organizerUserId]?.[0]
                   const active = assignment.organizerUserId === selectedOrganizerId
                   return (
@@ -598,6 +605,11 @@ export default function OrganizerOpsPage() {
             </table>
           </div>
         )}
+        {!loading && !state.assignmentError && state.assignments.length > 0 ? (
+          <div className="border-t border-gray-100 px-5 pb-4">
+            <GlobalPagination page={assignmentPage} total={state.assignments.length} loading={loading} onChange={setAssignmentPage} />
+          </div>
+        ) : null}
       </section>
 
       {selectedAssignment ? (

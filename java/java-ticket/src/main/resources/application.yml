@@ -33,7 +33,9 @@ spring:
     password: ${RABBITMQ_PASSWORD:123456}
     virtual-host: /
   elasticsearch:
-    uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
+    uris: ${ELASTICSEARCH_URIS:${SPRING_ELASTICSEARCH_URIS:http://localhost:9200}}
+    username: ${ELASTICSEARCH_USERNAME:}
+    password: ${ELASTICSEARCH_PASSWORD:}
 
 internal:
   api:
@@ -50,7 +52,7 @@ omni:
   mq:
     enabled: true
   search:
-    provider: ${OMNI_SEARCH_PROVIDER:db}
-    require-elasticsearch: ${OMNI_SEARCH_REQUIRE_ES:false}
+    provider: elasticsearch
+    require-elasticsearch: true
     index-name: ${OMNI_ACTIVITY_SEARCH_INDEX:omni_activity_v1}
     alias-name: ${OMNI_ACTIVITY_SEARCH_ALIAS:omni_activity_current}

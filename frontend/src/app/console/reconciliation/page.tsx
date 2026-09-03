@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, CircleSlash, Download, Eye, FileSearch, Plus, RefreshCw, X } from 'lucide-react'
+import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { createReconciliationBatch, getReconciliationBatchDetail, ignoreReconciliationDifference, listReconciliationBatches, resolveReconciliationDifference } from '@/lib/api'
 import { globalAlert } from '@/components/GlobalDialog'
 import { buildConsoleReconciliationExportCsv, buildConsoleReconciliationExportExcelHtml } from '@/lib/console-reconciliation'
@@ -59,12 +60,14 @@ export default function ReconciliationPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [actingDifferenceId, setActingDifferenceId] = useState<number | null>(null)
+  const [page, setPage] = useState(1)
 
   const load = async () => {
     setLoading(true)
     setError('')
     try {
       setItems(await listReconciliationBatches())
+      setPage(1)
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载对账批次失败')
     } finally {
@@ -83,6 +86,7 @@ export default function ReconciliationPage() {
       return acc
     }, {})
   }, [items])
+  const pageItems = useMemo(() => items.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [items, page])
 
   const handleCreate = async () => {
     if (!bizDate) {
@@ -248,7 +252,7 @@ export default function ReconciliationPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {items.map(item => {
+                {pageItems.map(item => {
                   const summary = parseSummary(item.summaryJson)
                   return (
                     <tr key={item.id} className="text-[#333]">
@@ -277,6 +281,11 @@ export default function ReconciliationPage() {
             </table>
           </div>
         )}
+        {!loading && items.length > 0 ? (
+          <div className="border-t border-gray-100 px-5 pb-4">
+            <GlobalPagination page={page} total={items.length} loading={loading} onChange={setPage} />
+          </div>
+        ) : null}
       </section>
 
       {(selectedDetail || detailLoading || detailError) && (

@@ -2,7 +2,6 @@ package com.omni.ticket.controller;
 
 import com.omni.common.result.Result;
 import com.omni.common.util.JwtUtil;
-import com.omni.ticket.dto.SubscriptionCalendarResponse;
 import com.omni.ticket.dto.SubscriptionRequest;
 import com.omni.ticket.dto.SubscriptionResponse;
 import com.omni.ticket.service.PerformanceSubscriptionService;
@@ -14,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,17 +53,9 @@ class SubscriptionControllerTest {
     }
 
     @Test
-    void calendarUsesAuthorizationToken() {
-        SubscriptionController controller = new SubscriptionController(subscriptionService);
-        SubscriptionCalendarResponse response = new SubscriptionCalendarResponse();
-        response.setFileName("omni-calendar-2004.ics");
-        when(subscriptionService.createCalendar(2004L)).thenReturn(response);
-
-        Result<SubscriptionCalendarResponse> result = controller.createCalendar(token());
-
-        assertEquals(200, result.getCode());
-        assertEquals("omni-calendar-2004.ics", result.getData().getFileName());
-        verify(subscriptionService).createCalendar(2004L);
+    void subscriptionControllerDoesNotExposeLocalCalendarExport() {
+        assertThrows(NoSuchMethodException.class,
+                () -> SubscriptionController.class.getDeclaredMethod("createCalendar", String.class));
     }
 
     private String token() {

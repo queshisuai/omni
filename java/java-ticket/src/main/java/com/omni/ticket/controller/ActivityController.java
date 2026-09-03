@@ -72,11 +72,31 @@ public class ActivityController {
             @RequestParam(required = false) BigDecimal maxPrice,
             @RequestParam(required = false) String saleStatus,
             @RequestParam(required = false) Boolean seatMapOnly,
+            @RequestParam(name = "isSupportSeat", required = false) Boolean isSupportSeat,
             @RequestParam(required = false) Boolean realNameRequired,
             @RequestParam(required = false) String sort) {
+        Boolean supportSeatOnly = resolveSupportSeatOnly(seatMapOnly, isSupportSeat);
         Page<ActivityVO> result = activityService.searchActivities(page, size, categoryId, keyword, city, dateFrom,
-                dateTo, minPrice, maxPrice, saleStatus, seatMapOnly, realNameRequired, sort);
+                dateTo, minPrice, maxPrice, saleStatus, supportSeatOnly, realNameRequired, sort);
         return Result.success(result);
+    }
+
+    public Result<Page<ActivityVO>> listActivities(
+            Integer page,
+            Integer size,
+            Long categoryId,
+            String keyword,
+            String city,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            BigDecimal minPrice,
+            BigDecimal maxPrice,
+            String saleStatus,
+            Boolean seatMapOnly,
+            Boolean realNameRequired,
+            String sort) {
+        return listActivities(page, size, categoryId, keyword, city, dateFrom, dateTo, minPrice, maxPrice,
+                saleStatus, seatMapOnly, null, realNameRequired, sort);
     }
 
     /**
@@ -141,6 +161,16 @@ public class ActivityController {
     public Result<List<Category>> listCategories() {
         List<Category> categories = activityService.listCategories();
         return Result.success(categories);
+    }
+
+    private Boolean resolveSupportSeatOnly(Boolean seatMapOnly, Boolean isSupportSeat) {
+        if (Boolean.TRUE.equals(seatMapOnly) || Boolean.TRUE.equals(isSupportSeat)) {
+            return Boolean.TRUE;
+        }
+        if (seatMapOnly != null || isSupportSeat != null) {
+            return Boolean.FALSE;
+        }
+        return null;
     }
 
     private Long parseUserId(String authorization) {

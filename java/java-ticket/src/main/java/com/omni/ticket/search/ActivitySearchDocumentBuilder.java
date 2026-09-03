@@ -26,14 +26,18 @@ public class ActivitySearchDocumentBuilder {
                 document.setActivityId(vo.getId());
             }
         }
+        document.setCategoryId(vo.getCategoryId());
+        document.setOrganizerId(vo.getOrganizerId());
         document.setItemType(itemType);
         document.setActivityName(vo.getName());
+        document.setPoster(vo.getPoster());
         document.setArtistName(vo.getArtistName());
         document.setCategoryName(vo.getCategoryName());
         document.setCity(vo.getVenueCity());
+        document.setVenueName(vo.getVenueName());
         document.setStartTime(formatDateTime(vo.getStartTime()));
         document.setMinPrice(vo.getMinPrice());
-        document.setMaxPrice(vo.getMinPrice());
+        document.setMaxPrice(vo.getMaxPrice() == null ? vo.getMinPrice() : vo.getMaxPrice());
         document.setSaleStatus(resolveSaleStatus(vo));
         document.setSeatMapVisibility(vo.getSeatMapVisibility());
         document.setRealNameRequired(vo.getRealNameRequired());

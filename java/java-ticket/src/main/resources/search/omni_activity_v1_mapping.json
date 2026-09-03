@@ -11,6 +11,7 @@
           "keyword": { "type": "keyword" }
         }
       },
+      "poster": { "type": "keyword", "index": false },
       "artistName": {
         "type": "text",
         "fields": {

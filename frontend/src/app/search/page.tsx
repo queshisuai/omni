@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, Suspense, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Header, HOT_CITIES, OTHER_CITIES } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { TicketCard } from '@/components/TicketCard'
@@ -12,7 +12,9 @@ import { captureAnalyticsEvent } from '@/lib/analytics'
 import { resolveActivityCityParam, resolveInitialCity } from '@/lib/city-selection'
 import { ACTIVITY_VIEW_SIGNAL_KEY, parseActivityViewSignals, type ActivityViewSignal } from '@/lib/personalized-recommendations'
 import { toActivitySaleStatus } from '@/lib/activity-sale-status'
-import { DEFAULT_POPULAR_SEARCHES, SEARCH_HISTORY_KEY, addSearchHistoryTerm, buildEmptySearchRecommendations, buildSearchSidebarRecommendations, buildSearchSuggestions, formatSearchLoadFailure, parseSearchHistory } from '@/lib/search-experience'
+import { buildPaginationItems, normalizePageRequest } from '@/lib/pagination'
+import { addSearchHistoryTerm, buildEmptySearchRecommendations, buildSearchSidebarRecommendations, buildSearchSuggestions, formatSearchLoadFailure, readSearchHistoryFromStorage, shouldRenderSearchSuggestionStrip, writeSearchHistoryToStorage } from '@/lib/search-experience'
+import { restoreSearchScrollIfPending, saveSearchReturnState } from '@/lib/search-return-state'
 import { resolveImageSrc } from '@/lib/image-url'
 import type { CategoryVO, ActivityVO } from '@/types/api'
 import type { Activity } from '@/types/omni'
@@ -86,20 +88,52 @@ function Pagination({ page, totalPages, onPageChange }: {
   totalPages: number
   onPageChange: (p: number) => void
 }) {
+  const [editingJumpIndex, setEditingJumpIndex] = useState<number | null>(null)
+  const [jumpValue, setJumpValue] = useState('')
+  const jumpInputRef = useRef<HTMLInputElement>(null)
+  const ignoreNextJumpBlurRef = useRef(false)
+
+  useEffect(() => {
+    setEditingJumpIndex(null)
+    setJumpValue('')
+  }, [page, totalPages])
+
+  useEffect(() => {
+    if (editingJumpIndex != null) {
+      jumpInputRef.current?.focus()
+      jumpInputRef.current?.select()
+    }
+  }, [editingJumpIndex])
+
   if (totalPages <= 1) return null
 
-  const pages: (number | '...')[] = []
-  const delta = 2
-  for (let i = 1; i <= totalPages; i++) {
-    if (i === 1 || i === totalPages || (i >= page - delta && i <= page + delta)) {
-      pages.push(i)
-    } else if (pages[pages.length - 1] !== '...') {
-      pages.push('...')
+  const pages = buildPaginationItems(page, totalPages)
+  const closeJumpInput = () => {
+    setEditingJumpIndex(null)
+    setJumpValue('')
+  }
+  const cancelJumpInput = () => {
+    ignoreNextJumpBlurRef.current = true
+    closeJumpInput()
+  }
+  const commitJumpInput = () => {
+    if (ignoreNextJumpBlurRef.current) {
+      ignoreNextJumpBlurRef.current = false
+      return
     }
+    const value = jumpValue.trim()
+    if (!value) {
+      closeJumpInput()
+      return
+    }
+    const nextPage = normalizePageRequest(value, totalPages)
+    ignoreNextJumpBlurRef.current = true
+    closeJumpInput()
+    if (nextPage !== page) onPageChange(nextPage)
   }
 
   return (
-    <div className="flex justify-center items-center gap-2 mt-12 mb-8">
+    <div className="mt-12 mb-8 flex flex-wrap items-center justify-center gap-2">
       <button
         disabled={page <= 1}
         onClick={() => onPageChange(page - 1)}
@@ -108,15 +142,53 @@ function Pagination({ page, totalPages, onPageChange }: {
         上一页
       </button>
       {pages.map((p, i) =>
-        p === '...' ? (
-          <span key={`dots-${i}`} className="px-2 text-gray-400">...</span>
+        p === 'jump-prev' || p === 'jump-next' ? (
+          editingJumpIndex === i ? (
+            <input
+              key={`jump-input-${i}`}
+              ref={jumpInputRef}
+              type="text"
+              inputMode="numeric"
+              value={jumpValue}
+              onChange={(event) => setJumpValue(event.target.value.replace(/\D/g, ''))}
+              onBlur={commitJumpInput}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  commitJumpInput()
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelJumpInput()
+                }
+              }}
+              className="h-9 w-14 rounded-lg border border-[#ff2d55] bg-white px-2 text-center text-[13px] font-medium text-gray-700 outline-none shadow-sm shadow-[#ff2d55]/10"
+              placeholder="页码"
+              aria-label="输入页码跳转"
+            />
+          ) : (
+            <button
+              key={`${p}-${i}`}
+              type="button"
+              onClick={() => {
+                ignoreNextJumpBlurRef.current = false
+                setEditingJumpIndex(i)
+                setJumpValue('')
+              }}
+              className="h-9 min-w-9 rounded-lg border border-transparent px-2 text-[13px] font-medium text-gray-400 transition-all hover:border-gray-200 hover:bg-gray-50 hover:text-[#ff2d55]"
+              aria-label="输入页码跳转"
+              title="输入页码跳转"
+            >
+              ...
+            </button>
+          )
         ) : (
           <button
             key={p}
-            onClick={() => onPageChange(p as number)}
+            onClick={() => onPageChange(p)}
             className={`w-9 h-9 flex items-center justify-center text-[13px] rounded-lg transition-all font-medium ${
               p === page 
-                ? 'bg-[#ff1268] text-white shadow-sm shadow-[#ff1268]/20' 
+                ? 'bg-[#ff2d55] text-white shadow-sm shadow-[#ff2d55]/20' 
                 : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
             }`}
           >
@@ -167,6 +239,7 @@ function SortBar({ sort, onSortChange, page, totalPages }: {
 // ========== 主内容 ==========
 function SearchContent() {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const initialCategory = searchParams.get('category') || ''
   const initialKeyword = searchParams.get('keyword') || ''
@@ -261,7 +334,7 @@ function SearchContent() {
               minPrice: minPrice ? Number(minPrice) : undefined,
               maxPrice: maxPrice ? Number(maxPrice) : undefined,
               saleStatus: saleStatus || undefined,
-              seatMapOnly: seatMapOnly || undefined,
+              isSupportSeat: seatMapOnly || undefined,
               realNameRequired: realNameFilter === '' ? undefined : realNameFilter === 'true',
               sort: sort === 'recommend' ? undefined : sort,
             })
@@ -304,7 +377,7 @@ function SearchContent() {
         minPrice: minPrice ? Number(minPrice) : undefined,
         maxPrice: maxPrice ? Number(maxPrice) : undefined,
         saleStatus: saleStatus || undefined,
-        seatMapOnly: seatMapOnly || undefined,
+        isSupportSeat: seatMapOnly || undefined,
         realNameRequired: realNameFilter === '' ? undefined : realNameFilter === 'true',
         sort: sort === 'recommend' ? undefined : sort,
       })
@@ -335,8 +408,9 @@ function SearchContent() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setSearchHistory(parseSearchHistory(localStorage.getItem(SEARCH_HISTORY_KEY)))
+      setSearchHistory(readSearchHistoryFromStorage(localStorage))
       setViewSignals(parseActivityViewSignals(localStorage.getItem(ACTIVITY_VIEW_SIGNAL_KEY)))
+      restoreSearchScrollIfPending()
     }
   }, [])
 
@@ -350,8 +424,8 @@ function SearchContent() {
 
   useEffect(() => {
     if (initialKeyword && typeof window !== 'undefined') {
-      const next = addSearchHistoryTerm(parseSearchHistory(localStorage.getItem(SEARCH_HISTORY_KEY)), initialKeyword)
-      localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next))
+      const next = addSearchHistoryTerm(readSearchHistoryFromStorage(localStorage), initialKeyword)
+      writeSearchHistoryToStorage(localStorage, next)
       setSearchHistory(next)
     }
   }, [initialKeyword])
@@ -403,10 +477,15 @@ function SearchContent() {
   const suggestions = buildSearchSuggestions({
     keyword,
     history: searchHistory,
-    popular: DEFAULT_POPULAR_SEARCHES,
+    popular: [],
     resultTerms,
     viewSignals,
     limit: 8,
+  })
+  const showSuggestionStrip = shouldRenderSearchSuggestionStrip({
+    pathname,
+    keyword,
+    suggestionCount: suggestions.length,
   })
   const emptyRecommendations = buildEmptySearchRecommendations({
     keyword,
@@ -682,9 +761,9 @@ function SearchContent() {
           {/* 排序栏 */}
           <SortBar sort={sort} onSortChange={(value) => { setSort(value); setPage(1) }} page={page} totalPages={displayTotalPages} />
 
-          {suggestions.length > 0 && (
+          {showSuggestionStrip && (
             <div className="mb-5 flex flex-wrap items-center gap-2 text-[13px] text-gray-500">
-              <span>{keyword ? '搜索联想' : searchHistory.length > 0 ? '搜索历史' : '热门搜索'}</span>
+              <span>搜索联想</span>
               {suggestions.map((text) => (
                 <button
                   key={text}
@@ -765,7 +844,7 @@ function SearchContent() {
             <>
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5">
                 {pageData.map((activity) => (
-                  <TicketCard key={activity.id} activity={activity} />
+                  <TicketCard key={activity.id} activity={activity} onNavigate={() => saveSearchReturnState()} />
                 ))}
               </div>
               <Pagination page={page} totalPages={displayTotalPages} onPageChange={handlePageChange} />
@@ -786,6 +865,7 @@ function SearchContent() {
                 <a
                   key={a.id}
                   href={a.itemType === 'tour' ? `/tour/${a.id}` : `/activity/${a.id}`}
+                  onClick={() => saveSearchReturnState()}
                   className="flex gap-4 group"
                 >
                   <div className="w-[84px] h-[112px] shrink-0 bg-gray-100 rounded-xl overflow-hidden relative shadow-sm">
