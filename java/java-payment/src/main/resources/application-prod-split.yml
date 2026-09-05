@@ -1,27 +1,27 @@
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/omni_payment}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
   rabbitmq:
-    host: ${RABBITMQ_HOST}
-    port: ${RABBITMQ_PORT}
-    username: ${RABBITMQ_USER}
-    password: ${RABBITMQ_PASSWORD}
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASSWORD:123456}
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_HOST}:${NACOS_PORT}
+        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
       config:
-        server-addr: ${NACOS_HOST}:${NACOS_PORT}
+        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
 
 alipay:
-  gateway-url: ${ALIPAY_GATEWAY_URL}
-  app-id: ${ALIPAY_APP_ID}
-  merchant-private-key: ${ALIPAY_MERCHANT_PRIVATE_KEY}
-  alipay-public-key: ${ALIPAY_PUBLIC_KEY}
-  return-url: ${ALIPAY_RETURN_URL}
-  notify-url: ${ALIPAY_NOTIFY_URL}
+  gateway-url: ${ALIPAY_GATEWAY_URL:http://localhost:8084/local-alipay-disabled}
+  app-id: ${ALIPAY_APP_ID:omni-local-placeholder}
+  merchant-private-key: ${ALIPAY_MERCHANT_PRIVATE_KEY:omni-local-placeholder}
+  alipay-public-key: ${ALIPAY_PUBLIC_KEY:omni-local-placeholder}
+  return-url: ${ALIPAY_RETURN_URL:http://localhost:3000/payment/result}
+  notify-url: ${ALIPAY_NOTIFY_URL:http://localhost:8088/api/payment/alipay/notify}
   mock-qr-fallback-enabled: false
   mock-qr-auto-confirm-enabled: false
 
@@ -32,10 +32,10 @@ omni:
 
 internal:
   api:
-    token: ${INTERNAL_API_TOKEN}
+    token: ${INTERNAL_API_TOKEN:omni-local-internal-token}
 
 seata:
-  enabled: ${SEATA_ENABLED}
+  enabled: ${SEATA_ENABLED:true}
   application-id: ${spring.application.name}
   tx-service-group: omni_tx_group
   enable-auto-data-source-proxy: true
@@ -43,13 +43,13 @@ seata:
     type: nacos
     nacos:
       application: seata-server
-      server-addr: ${NACOS_HOST}:${NACOS_PORT}
+      server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
       group: SEATA_GROUP
       cluster: default
   config:
     type: nacos
     nacos:
-      server-addr: ${NACOS_HOST}:${NACOS_PORT}
+      server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
       group: SEATA_GROUP
       data-id: seataServer.properties
   service:

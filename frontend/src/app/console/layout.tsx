@@ -8,59 +8,198 @@ import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
 import { canAccessConsolePath, canEnterConsole, getConsoleBrandLabel, getConsoleRoleLabel, getDefaultConsolePath, isPlatformAdminRole } from '@/lib/console-auth'
 import { isConsolePathAllowedForRole } from '@/lib/console-paths'
-import { LayoutDashboard, CalendarDays, MapPin, ShoppingCart, Clock, LogOut, Menu, X, RotateCcw, UserCircle2, ClipboardList, AlertTriangle, Users, GitPullRequestArrow, Headphones, ShieldAlert, FileSearch, ShieldCheck, ChevronDown, MessageSquareText } from 'lucide-react'
+import { CalendarDays, ChevronDown, LayoutDashboard, LogOut, Menu, ShieldCheck, ShoppingCart, Sliders, UserCircle2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
-type ConsoleMenuItem = {
+type ConsoleMenuRole = 'admin' | 'organizer' | 'organizer_admin' | 'support'
+
+export interface ConsoleSubItem {
   href: string
   label: string
-  icon: LucideIcon
-  roles?: Array<'admin' | 'organizer'>
-  group?: string
+  icon?: LucideIcon
+  roles?: ConsoleMenuRole[]
 }
 
-const menuItems: ConsoleMenuItem[] = [
-  { href: '/console', label: '概览', icon: LayoutDashboard },
-  { href: '/console/activities', label: '活动发布管理', icon: CalendarDays, roles: ['admin'] },
-  { href: '/console/tours', label: '巡演草稿管理', icon: GitPullRequestArrow, roles: ['admin'] },
-  { href: '/console/sessions', label: '场次管理', icon: Clock },
-  { href: '/console/orders', label: '订单查看', icon: ShoppingCart },
-  { href: '/console/activity-engagement', label: '评价问答管理', icon: MessageSquareText, roles: ['admin'] },
-  { href: '/console/check-in', label: '入场核验', icon: ClipboardList },
-  { href: '/console/refunds', label: '退款审核', icon: RotateCcw },
-  { href: '/console/artists', label: '艺人管理', icon: Users, roles: ['admin'] },
-  { href: '/console/artists/pending', label: '艺人档案审核', icon: ClipboardList, roles: ['admin'] },
-  { href: '/console/risk-resolutions', label: '恢复售票审核', icon: AlertTriangle, roles: ['admin'] },
-  { href: '/console/risk-cases', label: '风险案例管理', icon: AlertTriangle, roles: ['admin'] },
-  { href: '/console/venue', label: '场馆记录', icon: MapPin, roles: ['admin'] },
-  { href: '/console/venue/applications', label: '场馆资料审核', icon: ClipboardList, roles: ['admin'] },
-  { href: '/console/station-config-reviews', label: '站点变更审核', icon: GitPullRequestArrow, roles: ['admin'] },
-  { href: '/console/organizer-ops', label: '运营工作台', icon: ShieldCheck, roles: ['admin'] },
-  { href: '/console/organizer-applications', label: '主办方管理', icon: ClipboardList, roles: ['admin'] },
-  { href: '/console/support-accounts', label: '客服账号管理', icon: Headphones, roles: ['admin'], group: '账号管理' },
-  { href: '/console/organizer-admins', label: '平台主办方运营员账号管理', icon: Users, roles: ['admin'], group: '账号管理' },
-  { href: '/console/support-conversations', label: '客服会话记录', icon: Headphones, roles: ['admin'] },
-  { href: '/console/roles', label: '角色权限', icon: ShieldCheck, roles: ['admin'] },
-  { href: '/console/audit-logs', label: '操作审计', icon: ClipboardList, roles: ['admin'] },
-  { href: '/console/exception-tasks', label: '异常任务', icon: ShieldAlert, roles: ['admin'] },
-  { href: '/console/reconciliation', label: '日结对账', icon: FileSearch, roles: ['admin'] },
-  { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
+export interface ConsoleMenuGroup {
+  id: string
+  title: string
+  icon: LucideIcon
+  roles?: ConsoleMenuRole[]
+  children: ConsoleSubItem[]
+}
+
+type VisibleConsoleMenuGroup = Omit<ConsoleMenuGroup, 'children'> & {
+  children: ConsoleSubItem[]
+}
+
+export const consoleMenuGroups: ConsoleMenuGroup[] = [
+  {
+    id: 'dashboard',
+    title: '概览与看板',
+    icon: LayoutDashboard,
+    children: [
+      { href: '/console', label: '工作台概览' },
+    ],
+  },
+  {
+    id: 'events',
+    title: '演出与票务管理',
+    icon: CalendarDays,
+    roles: ['admin', 'organizer'],
+    children: [
+      { href: '/console/activities', label: '活动发布管理' },
+      { href: '/console/tours', label: '巡演草稿管理' },
+      { href: '/console/sessions', label: '场次与票档管理' },
+      { href: '/console/venue', label: '场馆记录管理' },
+      { href: '/console/artists', label: '艺人档案管理' },
+    ],
+  },
+  {
+    id: 'orders',
+    title: '订单与履约中心',
+    icon: ShoppingCart,
+    children: [
+      { href: '/console/orders', label: '订单综合查询' },
+      { href: '/console/check-in', label: '现场入场核验' },
+      { href: '/console/refunds', label: '退款售后审核' },
+    ],
+  },
+  {
+    id: 'operations',
+    title: '运营、客服与审核',
+    icon: ShieldCheck,
+    roles: ['admin', 'organizer_admin', 'support'],
+    children: [
+      { href: '/console/organizer-ops', label: '运营工作台' },
+      { href: '/console/activity-engagement', label: '评价问答管理' },
+      { href: '/console/organizer-applications', label: '主办方入驻审核' },
+      { href: '/console/venue/applications', label: '场馆资料审核' },
+      { href: '/console/artists/pending', label: '艺人档案审核' },
+      { href: '/console/risk-resolutions', label: '恢复售票审核' },
+      { href: '/console/station-config-reviews', label: '站点变更审核' },
+      { href: '/console/support-conversations', label: '客服会话记录' },
+      { href: '/console/risk-cases', label: '风险案例管理' },
+    ],
+  },
+  {
+    id: 'system',
+    title: '系统、安全与财务',
+    icon: Sliders,
+    roles: ['admin'],
+    children: [
+      { href: '/console/roles', label: '角色权限配置' },
+      { href: '/console/support-accounts', label: '客服账号管理' },
+      { href: '/console/organizer-admins', label: '主办方运营员账号' },
+      { href: '/console/reconciliation', label: '日结对账报表' },
+      { href: '/console/exception-tasks', label: '异常补偿任务' },
+      { href: '/console/audit-logs', label: '操作审计日志' },
+    ],
+  },
 ]
 
-const organizerMenuItems: ConsoleMenuItem[] = [
-  { href: '/console', label: '概览', icon: LayoutDashboard },
-  { href: '/console/activities', label: '我的活动管理', icon: CalendarDays },
-  { href: '/console/tours', label: '巡演草稿', icon: GitPullRequestArrow },
-  { href: '/console/sessions', label: '我的场次管理', icon: Clock },
-  { href: '/console/artists', label: '我的艺人', icon: Users },
-  { href: '/console/risk-events', label: '风险事件待办', icon: AlertTriangle },
-  { href: '/console/refunds', label: '主办方退款处理', icon: RotateCcw },
-  { href: '/console/venue', label: '场馆记录', icon: MapPin },
-  { href: '/console/venue/apply', label: '提交场馆资料', icon: MapPin },
-  { href: '/console/orders', label: '订单', icon: ShoppingCart },
-  { href: '/console/check-in', label: '入场核验', icon: ClipboardList },
-  { href: '/console/profile', label: '个人中心', icon: UserCircle2 },
-]
+const ORGANIZER_CONSOLE_LABELS: Record<string, string> = {
+  '/console/activities': '我的活动管理',
+  '/console/tours': '我的巡演草稿',
+  '/console/sessions': '我的场次与票档',
+  '/console/venue': '我的场馆记录',
+  '/console/artists': '我的艺人档案',
+  '/console/orders': '我的订单查询',
+  '/console/check-in': '现场入场核验',
+  '/console/refunds': '主办方退款处理',
+}
+
+function normalizeConsoleMenuRole(role: string | null | undefined): ConsoleMenuRole | null {
+  if (isPlatformAdminRole(role)) return 'admin'
+  if (role === 'organizer' || role === 'organizer_admin' || role === 'support') return role
+  return null
+}
+
+function canUseConsoleMenuRole(roles: ConsoleMenuRole[] | undefined, role: string | null | undefined) {
+  if (!roles) return true
+  const menuRole = normalizeConsoleMenuRole(role)
+  return menuRole ? roles.includes(menuRole) : false
+}
+
+function getOrganizerConsoleSubItem(child: ConsoleSubItem): ConsoleSubItem {
+  return {
+    ...child,
+    label: ORGANIZER_CONSOLE_LABELS[child.href] || child.label,
+  }
+}
+
+function canAccessConsoleMenuChild(child: ConsoleSubItem, role: string, permissionCodes: string[]) {
+  if (!canUseConsoleMenuRole(child.roles, role)) return false
+  if (role === 'organizer') return isConsolePathAllowedForRole(role, child.href)
+  return canAccessConsolePath(child.href, permissionCodes)
+}
+
+export function buildVisibleConsoleMenuGroups(role: string, permissionCodes: string[]): VisibleConsoleMenuGroup[] {
+  return consoleMenuGroups
+    .filter(group => canUseConsoleMenuRole(group.roles, role))
+    .map(group => {
+      const children = group.children
+        .map(child => role === 'organizer' ? getOrganizerConsoleSubItem(child) : child)
+        .filter(child => canAccessConsoleMenuChild(child, role, permissionCodes))
+
+      return { ...group, children }
+    })
+    .filter(group => group.children.length > 0)
+}
+
+function isConsoleMenuHrefActive(pathname: string, href: string) {
+  if (pathname === href) return true
+  if (href === '/console') return false
+  return pathname.startsWith(`${href}/`)
+}
+
+function getActiveConsoleSubItemHref(groups: VisibleConsoleMenuGroup[], pathname: string) {
+  let bestMatch = ''
+
+  for (const group of groups) {
+    for (const child of group.children) {
+      if (pathname === child.href) return child.href
+      if (child.href === '/console') continue
+      if (pathname.startsWith(`${child.href}/`) && child.href.length > bestMatch.length) {
+        bestMatch = child.href
+      }
+    }
+  }
+
+  return bestMatch
+}
+
+function findActiveConsoleGroupId(groups: VisibleConsoleMenuGroup[], pathname: string) {
+  let activeGroupId = ''
+  let activeHrefLength = -1
+
+  for (const group of groups) {
+    for (const child of group.children) {
+      if (isConsoleMenuHrefActive(pathname, child.href) && child.href.length > activeHrefLength) {
+        activeGroupId = group.id
+        activeHrefLength = child.href.length
+      }
+    }
+  }
+
+  return activeGroupId
+}
+
+function canOpenConsolePath(role: string, pathname: string, permissionCodes: string[]) {
+  if (role === 'organizer') return isConsolePathAllowedForRole(role, pathname)
+  if (!canAccessConsolePath(pathname, permissionCodes)) return false
+  if (pathname === '/console' || isConsoleMenuHrefActive(pathname, '/console/profile')) return true
+
+  return buildVisibleConsoleMenuGroups(role, permissionCodes)
+    .some(group => group.children.some(child => isConsoleMenuHrefActive(pathname, child.href)))
+}
+
+function getConsoleRedirectPath(role: string, permissionCodes: string[]) {
+  const defaultPath = getDefaultConsolePath(role, permissionCodes)
+  if (canOpenConsolePath(role, defaultPath, permissionCodes)) return defaultPath
+
+  const firstVisibleChild = buildVisibleConsoleMenuGroups(role, permissionCodes)[0]?.children[0]
+  return firstVisibleChild?.href || '/console'
+}
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -70,38 +209,22 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const [role, setRole] = useState('')
   const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const [openGroups, setOpenGroups] = useState<string[]>([])
   const [checking, setChecking] = useState(true)
   const [redirecting, setRedirecting] = useState(false)
-  const visibleMenuItems = useMemo(() => {
+
+  const visibleMenuGroups = useMemo(() => {
     if (checking || !role) return []
-    if (isPlatformAdminRole(role)) {
-      return menuItems.filter((item) => canAccessConsolePath(item.href, permissionCodes))
-    }
-    if (role === 'organizer') return organizerMenuItems
-    if (permissionCodes.length > 0 || role === 'organizer_admin') {
-      return menuItems.filter((item) => {
-        return canAccessConsolePath(item.href, permissionCodes)
-      })
-    }
-    return menuItems.filter((item) => {
-      if (!('roles' in item) || !item.roles) return true
-      return item.roles.includes(role as 'admin' | 'organizer')
-    })
+    return buildVisibleConsoleMenuGroups(role, permissionCodes)
   }, [checking, role, permissionCodes])
+
   const activeMenuHref = useMemo(() => {
-    let bestMatch = ''
+    return getActiveConsoleSubItemHref(visibleMenuGroups, pathname)
+  }, [pathname, visibleMenuGroups])
 
-    for (const item of visibleMenuItems) {
-      if (pathname === item.href) return item.href
-      if (item.href === '/console') continue
-      if (pathname.startsWith(`${item.href}/`) && item.href.length > bestMatch.length) {
-        bestMatch = item.href
-      }
-    }
-
-    return bestMatch
-  }, [pathname, visibleMenuItems])
+  const activeGroupId = useMemo(() => {
+    return findActiveConsoleGroupId(visibleMenuGroups, pathname)
+  }, [pathname, visibleMenuGroups])
 
   useEffect(() => {
     if (!isAuthenticated()) { router.push('/login'); return }
@@ -122,21 +245,9 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         setAvatar(latest.avatar || '')
         setRole(latest.role)
         setPermissionCodes(latestPermissions)
-        if (latest.role === 'organizer') {
-          if (!isConsolePathAllowedForRole(latest.role, pathname)) {
-            setRedirecting(true)
-            router.replace(getDefaultConsolePath(latest.role, latestPermissions))
-            return
-          }
-        } else if (latestPermissions.length > 0 || latest.role === 'organizer_admin' || isPlatformAdminRole(latest.role)) {
-          if (!canAccessConsolePath(pathname, latestPermissions)) {
-            setRedirecting(true)
-            router.replace(getDefaultConsolePath(latest.role, latestPermissions))
-            return
-          }
-        } else if (!isConsolePathAllowedForRole(latest.role, pathname)) {
+        if (!canOpenConsolePath(latest.role, pathname, latestPermissions)) {
           setRedirecting(true)
-          router.replace(getDefaultConsolePath(latest.role, latestPermissions))
+          router.replace(getConsoleRedirectPath(latest.role, latestPermissions))
           return
         }
       } catch {
@@ -146,24 +257,14 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           router.push('/')
           return
         }
+        const cachedRole = cached.role || ''
         setNickname(cached.nickname || cached.phone || '')
-        setRole(cached.role || '')
+        setAvatar(cached.avatar || '')
+        setRole(cachedRole)
         setPermissionCodes(cachedPermissions)
-        if (cached.role === 'organizer') {
-          if (!isConsolePathAllowedForRole(cached.role, pathname)) {
-            setRedirecting(true)
-            router.replace(getDefaultConsolePath(cached.role, cachedPermissions))
-            return
-          }
-        } else if (cachedPermissions.length > 0 || cached.role === 'organizer_admin' || isPlatformAdminRole(cached.role)) {
-          if (!canAccessConsolePath(pathname, cachedPermissions)) {
-            setRedirecting(true)
-            router.replace(getDefaultConsolePath(cached.role, cachedPermissions))
-            return
-          }
-        } else if (!isConsolePathAllowedForRole(cached.role, pathname)) {
+        if (!canOpenConsolePath(cachedRole, pathname, cachedPermissions)) {
           setRedirecting(true)
-          router.replace(getDefaultConsolePath(cached.role, cachedPermissions))
+          router.replace(getConsoleRedirectPath(cachedRole, cachedPermissions))
           return
         }
       } finally {
@@ -176,90 +277,79 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   }, [router, pathname])
 
   const handleLogout = () => logout()
+  const toggleGroup = (groupId: string) => {
+    setOpenGroups(groups => groups.includes(groupId)
+      ? groups.filter(item => item !== groupId)
+      : [...groups, groupId],
+    )
+  }
   const roleReady = !checking && Boolean(role)
   const brandLabel = roleReady ? getConsoleBrandLabel(role, permissionCodes) : '后台'
   const roleLabel = roleReady ? getConsoleRoleLabel(role, permissionCodes) : '校验中'
+  const profileActive = isConsoleMenuHrefActive(pathname, '/console/profile')
 
   return (
     <div className="min-h-screen bg-gray-50 flex font-sans">
       {/* 侧边栏 */}
-      <aside className={`w-[240px] bg-white border-r border-gray-200 flex-shrink-0 flex flex-col ${sidebarOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden'} lg:flex lg:relative transition-all duration-300`}>
+      <aside className={`w-[260px] bg-white border-r border-gray-200 flex-shrink-0 flex flex-col ${sidebarOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden'} lg:flex lg:relative transition-all duration-300`}>
         <div className="h-[64px] px-6 flex items-center justify-between">
-          <Link href="/console" className="text-[18px] font-bold text-[#ff1268] tracking-tight">{brandLabel}</Link>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-500 hover:text-gray-900 transition-colors">
+          <Link href="/console" className="text-[18px] font-bold text-[var(--omni-brand)] tracking-tight">{brandLabel}</Link>
+          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-500 hover:text-gray-900 transition-colors" aria-label="关闭后台菜单">
             <X className="w-5 h-5" />
           </button>
         </div>
         <nav className="flex-1 px-3 py-4 overflow-y-auto custom-scrollbar">
-          {(() => {
-            const renderedGroups = new Set<string>()
-            return visibleMenuItems.map(item => {
-              if (item.group) {
-                if (renderedGroups.has(item.group)) return null
-                renderedGroups.add(item.group)
-                const groupItems = visibleMenuItems.filter(menuItem => menuItem.group === item.group)
-                const groupActive = groupItems.some(groupItem => groupItem.href === activeMenuHref)
-                const expanded = expandedGroups[item.group] ?? groupActive
-                return (
-                  <div key={`group-${item.group}`} className="mb-1">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedGroups(groups => ({ ...groups, [item.group!]: !expanded }))}
-                      className={`flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-[14px] transition-all duration-200 ${
-                        groupActive
-                          ? 'bg-[#fff0f5] text-[#ff1268] font-semibold'
-                          : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
-                      }`}
-                    >
-                      <Users className="w-5 h-5" />
-                      <span className="flex-1 text-left">账号管理</span>
-                      <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                    </button>
-                    {expanded && (
-                      <div className="mt-1 space-y-1">
-                        {groupItems.map(groupItem => {
-                          const ChildIcon = groupItem.icon
-                          const active = groupItem.href === activeMenuHref
-                          return (
-                            <Link
-                              key={groupItem.href}
-                              href={groupItem.href}
-                              onClick={() => setSidebarOpen(false)}
-                              className={`flex items-center gap-2 rounded-lg py-2 pl-10 pr-3 text-[13px] leading-5 transition-all duration-200 ${
-                                active
-                                  ? 'bg-[#fff0f5] text-[#ff1268] font-semibold'
-                                  : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
-                              }`}
-                            >
-                              <ChildIcon className="h-4 w-4 shrink-0" />
-                              <span>{groupItem.label}</span>
-                            </Link>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              }
-              const Icon = item.icon
-              const active = item.href === activeMenuHref
+          <div className="space-y-1">
+            {visibleMenuGroups.map(group => {
+              const GroupIcon = group.icon
+              const groupActive = group.id === activeGroupId
+              const expanded = groupActive || openGroups.includes(group.id)
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 text-[14px] transition-all duration-200 ${
-                    active
-                      ? 'bg-[#fff0f5] text-[#ff1268] font-semibold'
-                      : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
-                  {item.label}
-                </Link>
+                <div key={group.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.id)}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] transition-all duration-200 ${
+                      groupActive
+                        ? 'bg-[var(--omni-brand)]/10 text-[var(--omni-brand)] font-semibold'
+                        : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
+                    }`}
+                  >
+                    <GroupIcon className="h-5 w-5 shrink-0" />
+                    <span className="flex-1 text-left">{group.title}</span>
+                    <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {expanded && (
+                    <div className="mt-1 space-y-1 pb-1">
+                      {group.children.map(child => {
+                        const ChildIcon = child.icon
+                        const active = child.href === activeMenuHref
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={() => setSidebarOpen(false)}
+                            className={`flex items-center gap-2 rounded-lg py-2 pl-10 pr-3 text-[13px] leading-5 transition-all duration-200 ${
+                              active
+                                ? 'bg-[var(--omni-brand)]/10 text-[var(--omni-brand)] font-semibold'
+                                : 'text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900'
+                            }`}
+                          >
+                            {ChildIcon ? (
+                              <ChildIcon className="h-4 w-4 shrink-0" />
+                            ) : (
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
+                            )}
+                            <span className="truncate">{child.label}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               )
-            })
-          })()}
+            })}
+          </div>
         </nav>
         <div className="p-4 border-t border-gray-200 bg-gray-50/50">
           <div className="flex flex-col mb-4 px-2">
@@ -279,7 +369,11 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             <Link
               href="/console/profile"
               onClick={() => setSidebarOpen(false)}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-all"
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-all ${
+                profileActive
+                  ? 'bg-[var(--omni-brand)]/10 text-[var(--omni-brand)] font-semibold'
+                  : 'font-medium text-gray-600 hover:bg-gray-200 hover:text-gray-900'
+              }`}
             >
               <UserCircle2 className="w-4 h-4" />
               个人中心
@@ -304,13 +398,13 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
         {/* 顶部栏 */}
         <header className="bg-white h-[64px] border-b border-gray-200 flex items-center px-6 flex-shrink-0 sticky top-0 z-30">
-          <button onClick={() => setSidebarOpen(true)} className="lg:hidden mr-4 p-2 -ml-2 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors outline-none">
+          <button onClick={() => setSidebarOpen(true)} className="lg:hidden mr-4 p-2 -ml-2 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors outline-none" aria-label="打开后台菜单">
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1" />
           <Link
             href="/"
-            className="flex items-center justify-center px-4 py-1.5 rounded-md border border-gray-200 text-[13px] font-medium text-gray-600 hover:text-[#ff1268] hover:border-[#ff1268]/30 hover:bg-[#fff0f5] transition-all bg-white"
+            className="flex items-center justify-center px-4 py-1.5 rounded-md border border-gray-200 text-[13px] font-medium text-gray-600 hover:text-[var(--omni-brand)] hover:border-[var(--omni-brand)]/30 hover:bg-[var(--omni-brand)]/10 transition-all bg-white"
           >
             返回前台
           </Link>

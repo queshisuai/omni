@@ -47,30 +47,27 @@ const ORGANIZER_BUSINESS_PERMISSIONS = [
   'risk.view',
 ]
 
-const DEFAULT_PATH_BY_PERMISSION: Array<[string, string]> = [
-  ['activity.manage', '/console/activities'],
-  ['tour.manage', '/console/tours'],
-  ['session.manage', '/console/sessions'],
-  ['artist.manage', '/console/artists'],
-  ['order.view', '/console/orders'],
-  ['activity.review.manage', '/console/activity-engagement'],
-  ['checkin.view', '/console/check-in'],
-  ['refund.review', '/console/refunds'],
-  ['venue.manage', '/console/venue'],
-  ['organizer.review', '/console/organizer-applications'],
+const ORGANIZER_ADMIN_DEFAULT_PATH_BY_PERMISSION: Array<[string, string]> = [
+  ['organizer.review', '/console/organizer-ops'],
+  ['organizer.account.manage', '/console/organizer-ops'],
   ['organizer.follow.manage', '/console/organizer-ops'],
   ['organizer.assign.manage', '/console/organizer-ops'],
-  ['organizer.account.manage', '/console/organizer-admins'],
+  ['order.view', '/console/orders'],
+  ['checkin.view', '/console/check-in'],
+  ['refund.review', '/console/refunds'],
+  ['activity.review.manage', '/console/activity-engagement'],
   ['venue.review', '/console/venue/applications'],
   ['station.review', '/console/station-config-reviews'],
   ['risk.review', '/console/risk-resolutions'],
   ['risk.view', '/console/risk-cases'],
-  ['support.account.manage', '/console/support-accounts'],
   ['support.conversation.view', '/console/support-conversations'],
-  ['audit.view', '/console/audit-logs'],
-  ['compensation.execute', '/console/exception-tasks'],
-  ['reconcile.view', '/console/reconciliation'],
-  ['rbac.manage', '/console/roles'],
+]
+
+const SUPPORT_DEFAULT_PATH_BY_PERMISSION: Array<[string, string]> = [
+  ['order.view', '/console/orders'],
+  ['checkin.view', '/console/check-in'],
+  ['refund.review', '/console/refunds'],
+  ['support.conversation.view', '/console/support-conversations'],
 ]
 
 export function isPlatformAdminRole(role: string | null | undefined): boolean {
@@ -118,26 +115,16 @@ export function shouldDefaultToConsoleAfterLogin(role: string | null | undefined
 
 export function getDefaultConsolePath(role: string | null | undefined, permissionCodes: string[] = []): string {
   if (role === 'organizer_admin') {
-    if (
-      permissionCodes.includes('organizer.review') ||
-      permissionCodes.includes('organizer.account.manage') ||
-      permissionCodes.includes('organizer.follow.manage') ||
-      permissionCodes.includes('organizer.assign.manage')
-    ) {
-      return '/console/organizer-ops'
-    }
-    return getFirstPermissionPath(permissionCodes) || '/console'
+    return getFirstPermissionPath(permissionCodes, ORGANIZER_ADMIN_DEFAULT_PATH_BY_PERMISSION) || '/console'
   }
   if (role === 'support') {
-    if (permissionCodes.includes('support.account.manage')) return '/console/support-accounts'
-    if (permissionCodes.includes('audit.view')) return '/console/audit-logs'
-    if (permissionCodes.includes('support.conversation.view')) return '/console/support-conversations'
+    return getFirstPermissionPath(permissionCodes, SUPPORT_DEFAULT_PATH_BY_PERMISSION) || '/console'
   }
   return '/console'
 }
 
-function getFirstPermissionPath(permissionCodes: string[]): string | null {
-  for (const [permission, path] of DEFAULT_PATH_BY_PERMISSION) {
+function getFirstPermissionPath(permissionCodes: string[], pathsByPermission: Array<[string, string]>): string | null {
+  for (const [permission, path] of pathsByPermission) {
     if (permissionCodes.includes(permission)) return path
   }
   return null

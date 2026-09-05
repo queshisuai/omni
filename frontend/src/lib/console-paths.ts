@@ -29,6 +29,19 @@ const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href:
   { permission: 'rbac.manage', label: '角色权限', href: '/console/roles' },
 ]
 
+const SCOPED_BACKSTAGE_QUICK_ACTIONS = new Set([
+  'order.view',
+  'checkin.view',
+  'refund.review',
+  'activity.review.manage',
+  'organizer.review',
+  'venue.review',
+  'station.review',
+  'risk.review',
+  'risk.view',
+  'support.conversation.view',
+])
+
 const ORGANIZER_BLOCKED_PREFIXES = [
   '/console/artists/pending',
   '/console/risk-cases',
@@ -98,25 +111,19 @@ export function getConsoleQuickActions(role: UserRole | string | null | undefine
     return [
       ...(hasOrganizerOpsHome ? [{ label: '运营工作台', href: '/console/organizer-ops' }] : []),
       ...PERMISSION_QUICK_ACTIONS
-        .filter(action => permissionCodes.includes(action.permission))
+        .filter(action => SCOPED_BACKSTAGE_QUICK_ACTIONS.has(action.permission) && permissionCodes.includes(action.permission))
         .map(({ label, href }) => ({ label, href })),
       { label: '个人中心', href: '/console/profile' },
     ]
   }
 
   if (role === 'support') {
-    const actions: ConsoleQuickAction[] = []
-    if (permissionCodes.includes('support.account.manage')) {
-      actions.push({ label: '客服账号管理', href: '/console/support-accounts' })
-    }
-    if (permissionCodes.includes('support.conversation.view')) {
-      actions.push({ label: '客服会话查询', href: '/console/support-conversations' })
-    }
-    if (permissionCodes.includes('audit.view')) {
-      actions.push({ label: '操作审计', href: '/console/audit-logs' })
-    }
-    actions.push({ label: '个人中心', href: '/console/profile' })
-    return actions
+    return [
+      ...PERMISSION_QUICK_ACTIONS
+        .filter(action => SCOPED_BACKSTAGE_QUICK_ACTIONS.has(action.permission) && permissionCodes.includes(action.permission))
+        .map(({ label, href }) => ({ label, href })),
+      { label: '个人中心', href: '/console/profile' },
+    ]
   }
 
   return []

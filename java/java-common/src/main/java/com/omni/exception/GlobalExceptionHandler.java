@@ -2,6 +2,7 @@ package com.omni.exception;
 
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -37,6 +38,12 @@ public class GlobalExceptionHandler {
     public Result<Void> handleHttpRequestMethodNotSupported(HttpRequestMethodNotSupportedException e) {
         log.warn("请求方法不支持: method={}, supported={}", e.getMethod(), e.getSupportedHttpMethods());
         return Result.fail(HttpStatus.METHOD_NOT_ALLOWED.value(), "请求方法不支持");
+    }
+
+    @ExceptionHandler(ClientAbortException.class)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void handleClientAbortException(ClientAbortException e) {
+        log.debug("客户端已断开连接: {}", e.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

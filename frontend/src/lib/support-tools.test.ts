@@ -5,14 +5,14 @@ import { appendQuickReply, buildCloseRequestMessage, buildSupportSubject, canCla
 
 test('routes users to role-specific entry after login', () => {
   assert.equal(getLoginRedirectForRole('support'), '/support')
-  assert.equal(getLoginRedirectForRole('support', ['support.account.manage', 'support.conversation.view', 'audit.view']), '/console/support-accounts')
-  assert.equal(getLoginRedirectForRole('support', ['audit.view']), '/console/audit-logs')
+  assert.equal(getLoginRedirectForRole('support', ['support.account.manage', 'support.conversation.view', 'audit.view']), '/console/support-conversations')
+  assert.equal(getLoginRedirectForRole('support', ['audit.view']), '/console')
   assert.equal(getLoginRedirectForRole('admin'), '/console')
   assert.equal(getLoginRedirectForRole('platform_super_admin'), '/console')
   assert.equal(getLoginRedirectForRole('organizer'), '/console')
   assert.equal(getLoginRedirectForRole('organizer_admin'), '/console')
   assert.equal(getLoginRedirectForRole('organizer_admin', ['organizer.account.manage']), '/console/organizer-ops')
-  assert.equal(getLoginRedirectForRole('organizer_admin', ['activity.manage']), '/console/activities')
+  assert.equal(getLoginRedirectForRole('organizer_admin', ['activity.manage']), '/console')
   assert.equal(getLoginRedirectForRole('user'), '/')
 })
 

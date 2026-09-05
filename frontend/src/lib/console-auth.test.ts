@@ -21,11 +21,11 @@ test('support role can enter console when RBAC permissions allow it', () => {
   assert.equal(canEnterConsole('user', ['support.conversation.view']), false)
 })
 
-test('support manager defaults to management console while plain support stays in workbench', () => {
+test('support console default follows grouped sidebar role isolation', () => {
   assert.equal(shouldDefaultToConsoleAfterLogin('support', ['support.conversation.view']), false)
   assert.equal(shouldDefaultToConsoleAfterLogin('support', ['support.account.manage']), true)
-  assert.equal(getDefaultConsolePath('support', ['support.account.manage', 'support.conversation.view']), '/console/support-accounts')
-  assert.equal(getDefaultConsolePath('support', ['audit.view']), '/console/audit-logs')
+  assert.equal(getDefaultConsolePath('support', ['support.account.manage', 'support.conversation.view']), '/console/support-conversations')
+  assert.equal(getDefaultConsolePath('support', ['audit.view']), '/console')
 })
 
 test('platform super admin role code can enter console without extra permissions', () => {
@@ -52,10 +52,15 @@ test('organizer admin default entry follows granted permissions', () => {
   assert.equal(getDefaultConsolePath('organizer_admin', ['organizer.follow.manage']), '/console/organizer-ops')
   assert.equal(canAccessConsolePath('/console/organizer-ops', ['organizer.follow.manage']), true)
   assert.equal(canAccessConsolePath('/console/organizer-ops', ['organizer.assign.manage']), true)
-  assert.equal(getDefaultConsolePath('organizer_admin', ['activity.manage']), '/console/activities')
-  assert.equal(getDefaultConsolePath('organizer_admin', ['tour.manage']), '/console/tours')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['activity.review.manage']), '/console/activity-engagement')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['venue.review']), '/console/venue/applications')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['station.review']), '/console/station-config-reviews')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['risk.review']), '/console/risk-resolutions')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['activity.manage']), '/console')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['tour.manage']), '/console')
   assert.equal(getDefaultConsolePath('organizer_admin', ['order.view']), '/console/orders')
   assert.equal(getDefaultConsolePath('organizer_admin', ['checkin.view']), '/console/check-in')
+  assert.equal(getDefaultConsolePath('organizer_admin', ['refund.review']), '/console/refunds')
   assert.equal(getDefaultConsolePath('organizer_admin', ['organizer.account.manage', 'activity.manage']), '/console/organizer-ops')
   assert.equal(getDefaultConsolePath('organizer_admin', []), '/console')
 })

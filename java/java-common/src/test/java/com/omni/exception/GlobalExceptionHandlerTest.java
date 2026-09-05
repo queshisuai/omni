@@ -1,10 +1,14 @@
 package com.omni.exception;
 
 import com.omni.common.result.Result;
+import org.apache.catalina.connector.ClientAbortException;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 import java.lang.reflect.Method;
 
@@ -36,6 +40,19 @@ class GlobalExceptionHandlerTest {
 
         assertEquals(405, result.getCode());
         assertEquals("请求方法不支持", result.getMessage());
+    }
+
+    @Test
+    void clientAbortUsesDedicatedNoContentHandlerInsteadOfInternalError() throws Exception {
+        Method method = GlobalExceptionHandler.class.getDeclaredMethod(
+                "handleClientAbortException", ClientAbortException.class);
+
+        ExceptionHandler exceptionHandler = method.getAnnotation(ExceptionHandler.class);
+        ResponseStatus responseStatus = method.getAnnotation(ResponseStatus.class);
+
+        assertEquals(Void.TYPE, method.getReturnType());
+        assertEquals(ClientAbortException.class, exceptionHandler.value()[0]);
+        assertEquals(HttpStatus.NO_CONTENT, responseStatus.value());
     }
 
     static class SampleController {

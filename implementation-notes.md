@@ -1,5 +1,11 @@
 # Implementation Notes
 
+## 2026-09-04 项目架构上下文文档
+
+- 文档生成：新增根目录 `精准地掌握整个项目架构.md`，用于后续 AI 助手快速理解 Omni 项目架构、前端/B 端路由、RBAC、公共组件、核心实体与主要 API 数据流。
+- 范围口径：基于当前源码静态解析，覆盖 `frontend/`、`java/`、`nestjs/grab-service/`、`sql/production-split/` 和 Gateway 路由配置；未修改业务代码。
+- 文件名偏离：用户给出的名称末尾含空格，Windows 文件名对尾随空格不可靠；实际创建为 `精准地掌握整个项目架构.md`。
+
 ## 2026-09-03 顶栏搜索输入联想与模糊搜索
 
 - 根因：后端 ES 搜索已支持 `keyword=孙` 返回「孙燕姿」相关巡演，但顶栏搜索 Popover 只展示历史搜索和热门榜单，用户输入过程中没有把实时搜索结果展示出来。
@@ -221,3 +227,28 @@
 - API 收口：前端 `createSubscriptionCalendar()` 与 `SubscriptionCalendarVO` 已移除；后端 `GET /api/ticket/subscriptions/calendar`、`PerformanceSubscriptionService.createCalendar()` 和 `SubscriptionCalendarResponse` 已移除，生产链路不再生成本地日历文件。
 - 通知口径：开售提醒、想看状态、候补释放、支付提醒、艺人/城市上新与巡演加场心愿统一进入站内消息中心/顶部通知图标；后续短信、App Push 或浏览器 Push 也应通过消息服务下发，不恢复本地日历方案。
 - 后端机制：订阅仍写入 `performance_subscription`；需要触达用户或主办方的场景继续通过 MQ/延迟任务投递通知事件，由通知服务写入站内信通知列表。
+
+## 2026-09-04 IDEA 与 Docker 本地启动修复
+
+- Docker 根因：Docker Desktop 直接启动 `seata-server` 会先触发一次性容器 `seata-config-init`，但不会注入 `SEATA_ADVERTISE_HOST`，导致报错「必须是宿主机可达的非回环 IPv4」。本机应使用 `powershell -ExecutionPolicy Bypass -File scripts\start-seata-docker.ps1`，脚本会自动探测宿主机 IP、发布 Nacos 配置并启动 `omni-seata`。
+- 中间件状态：已恢复并验证 `omni-redis`、`omni-nacos`、`omni-rabbitmq`、`omni-elasticsearch`、`omni-seata` 健康运行；前端 Docker 容器 `omni-frontend` 继续监听 `localhost:3000`。
+- IDEA 根因：Windows 本机 `TEMP/TMP` 指向短路径 `C:\Users\ADMINI~1\AppData\Local\Temp` 时，JDK 17/Netty 在 `Selector.open()` 触发 `Unable to establish loopback connection` / `Invalid argument: connect`，导致 Java 微服务启动失败。
+- 本地配置修复：已在忽略文件 `.idea/workspace.xml` 的六个 Spring Boot Run Config 中写入 `TEMP=D:\Project\omni\runtime\java-tmp`、`TMP=D:\Project\omni\runtime\java-tmp` 和 `-Djava.io.tmpdir=D:\Project\omni\runtime\java-tmp`；`TicketApplication` 同时保持 ES 强制搜索配置，避免回退 DB 搜索。
+- IDEA 状态修复：`.idea/workspace.xml` 的 `RunDashboard` 残留了六个 Spring Boot 配置的 `FAILED` 历史状态，导致服务面板继续显示红色感叹号；已清理该本地失败缓存，重启或刷新 IDEA 后应恢复为可启动状态。
+- 启动验证：命令行按 IDEA 同等参数已验证 `GatewayApplication`、`PaymentApplication`、`TicketApplication`、`UserApplication`、`OrderApplication`、`NotificationApplication` 均可启动并注册 Nacos；其中 ticket/order/payment 的 Seata 连接正常，notification 的 RabbitMQ 连接正常。临时启动进程已全部停止，8081/8082/8083/8084/8085/8088 已释放给 IDEA 使用。
+- 二次修复：IDEA 实际启动时仍未向非网关服务传入部分环境变量，`application-prod-split.yml` 中的 `${RABBITMQ_PORT}`、`${SEATA_ENABLED}`、`${GRAB_SERVICE_URL}` 等裸占位符被原样绑定并启动失败。已为 `java-user`、`java-ticket`、`java-order`、`java-payment`、`java-notification` 的 `prod-split` 配置补齐本地默认值，环境变量仍可覆盖；同时补齐 `java-user` 的 `omni.privacy.id-no-key` 本地默认，避免实名观演人加密服务因本地密钥缺失启动失败。
+- 二次验证：在显式移除 `RABBITMQ_PORT`、`SEATA_ENABLED`、`GRAB_SERVICE_URL`、`OMNI_ID_NO_KEY`、`ELASTICSEARCH_URIS`、`ALIPAY_*` 等环境变量后，分别启动 `java-user`、`java-ticket`、`java-order`、`java-payment`、`java-notification`，均可使用 `prod-split` 成功启动并注册 Nacos；临时验证进程已停止，除 IDEA 当前运行的 `GatewayApplication` 占用 8088 外，其余 Java 端口均已释放。
+
+## 2026-09-04 客户端断连异常降噪
+
+- 根因：`java-ticket` 请求处理完成写响应时，浏览器或前端代理主动关闭连接，Tomcat 抛出 `ClientAbortException: 你的主机中的软件中止了一个已建立的连接`。这类异常表示客户端已取消接收响应，不是业务处理失败，也不是服务启动失败。
+- 修复：`java-common` 的 `GlobalExceptionHandler` 新增 `ClientAbortException` 专用处理器，返回 `204 NO_CONTENT` 且仅打 debug 日志，避免进入通用 `handleException(Exception)` 后被误报为「系统异常」并再次尝试写 500 JSON 响应。
+- 验证：新增 `GlobalExceptionHandlerTest.clientAbortUsesDedicatedNoContentHandlerInsteadOfInternalError` 回归测试；`mvn -pl java-common -Dtest=GlobalExceptionHandlerTest test` 通过 3/3；`mvn -pl java-ticket -am -DskipTests compile` 通过。
+
+## 2026-09-04 后台侧边栏分组导航重构
+
+- 范围：按需求重构 `frontend/src/app/console/layout.tsx` 后台侧边栏，将平铺菜单改为「概览与看板、演出与票务管理、订单与履约中心、运营、客服与审核、系统、安全与财务」五个折叠分组，并把 `/console/profile` 固定保留在底部个人区。
+- 权限：分组渲染先按 `role` 过滤，再按子项 `roles`、`canAccessConsolePath(child.href, permissionCodes)` 过滤；`organizer` 角色继续使用 `isConsolePathAllowedForRole(role, child.href)` 白名单，并对活动、巡演、场次、场馆、艺人、订单、退款文案做主办方视角调整。
+- 入口对齐：`console-auth.ts` 将 `organizer_admin`、`support` 的默认后台入口限制在新分组实际可见的订单、履约、运营和客服路径；`console-paths.ts` 同步收紧两类角色的快捷操作，隐藏客服账号、审计等不应暴露的系统入口。
+- 交互：新增 `openGroups: string[]` 状态、当前路径命中分组自动展开、分组按钮手动展开/收起；子菜单选中态统一使用 `bg-[var(--omni-brand)]/10` 和 `text-[var(--omni-brand)]`。
+- 验证：新增 `frontend/src/lib/console-layout-menu.test.ts` 并更新 `console-production-entry.test.ts` 覆盖分组结构、主办方白名单、空分组隐藏和自动展开；`node --test` 目标测试 92/92 通过，`pnpm typecheck` 通过，`pnpm build` 通过。`pnpm lint` 仍被既有全仓 React Compiler/unused-vars 问题拦截，本次改动文件仅剩原布局已有的 `setRedirecting(false)` effect 警告。

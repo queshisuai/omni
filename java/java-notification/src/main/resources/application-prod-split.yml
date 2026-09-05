@@ -1,26 +1,26 @@
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/omni_notification}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
   rabbitmq:
-    host: ${RABBITMQ_HOST}
-    port: ${RABBITMQ_PORT}
-    username: ${RABBITMQ_USER}
-    password: ${RABBITMQ_PASSWORD}
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASSWORD:123456}
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_HOST}:${NACOS_PORT}
+        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
       config:
-        server-addr: ${NACOS_HOST}:${NACOS_PORT}
+        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
 
 jwt:
-  secret: ${JWT_SECRET}
+  secret: ${JWT_SECRET:omni-local-jwt-secret-must-be-at-least-32-bytes}
 
 internal:
   api:
-    token: ${INTERNAL_API_TOKEN}
+    token: ${INTERNAL_API_TOKEN:omni-local-internal-token}
 
 omni:
   notification:

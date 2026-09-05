@@ -28,12 +28,14 @@ test('console activity list keeps unknown sale status visible and protected', ()
   assert.match(content, /状态待核对/)
 })
 
-test('console layout keeps organizer business paths before permission-code filtering', () => {
+test('console layout keeps organizer whitelist path checks inside grouped menu filtering', () => {
   const content = source('../app/console/layout.tsx')
 
-  assert.match(content, /if \(role === 'organizer'\) return organizerMenuItems[\s\S]*if \(permissionCodes\.length > 0 \|\| role === 'organizer_admin'\)/)
-  assert.match(content, /if \(latest\.role === 'organizer'\) \{[\s\S]*isConsolePathAllowedForRole\(latest\.role, pathname\)/)
-  assert.match(content, /if \(cached\.role === 'organizer'\) \{[\s\S]*isConsolePathAllowedForRole\(cached\.role, pathname\)/)
+  assert.match(content, /buildVisibleConsoleMenuGroups/)
+  assert.match(content, /role === 'organizer'\) return isConsolePathAllowedForRole\(role, child\.href\)/)
+  assert.match(content, /return canAccessConsolePath\(child\.href, permissionCodes\)/)
+  assert.match(content, /filter\(group => group\.children\.length > 0\)/)
+  assert.match(content, /canOpenConsolePath/)
 })
 
 test('console activity list supports batch deactivate with refund confirmation', () => {
