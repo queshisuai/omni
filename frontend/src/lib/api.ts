@@ -1474,10 +1474,11 @@ export async function listCheckInRecords(params: { sessionId: number; result?: s
   )
 }
 
-export async function listAdminTours(userId: number, params: { page?: number; size?: number } = {}) {
+export async function listAdminTours(userId: number, params: { page?: number; size?: number; categoryId?: number } = {}) {
   const searchParams = new URLSearchParams()
   searchParams.set('page', String(params.page || 1))
   searchParams.set('size', String(params.size || 10))
+  if (params.categoryId) searchParams.set('categoryId', String(params.categoryId))
   return request<import('@/types/api').PageResult<import('@/types/api').TourEntity>>(
     `/api/ticket/admin/tours?${searchParams.toString()}`
   )
@@ -1598,12 +1599,13 @@ export async function getTourDetail(id: number) {
   return request<import('@/types/api').TourDetailVO>(`/api/ticket/tours/${id}`)
 }
 
-export async function listAdminActivities(params: { page?: number; size?: number; keyword?: string; status?: number } = {}) {
+export async function listAdminActivities(params: { page?: number; size?: number; keyword?: string; status?: number; categoryId?: number } = {}) {
   const searchParams = new URLSearchParams()
   searchParams.set('page', String(params.page || 1))
   searchParams.set('size', String(params.size || 10))
   if (params.keyword?.trim()) searchParams.set('keyword', params.keyword.trim())
   if (params.status !== undefined) searchParams.set('status', String(params.status))
+  if (params.categoryId) searchParams.set('categoryId', String(params.categoryId))
   return request<import('@/types/api').PageResult<import('@/types/api').ActivityEntity>>(
     `/api/ticket/admin/activities?${searchParams.toString()}`,
     undefined,

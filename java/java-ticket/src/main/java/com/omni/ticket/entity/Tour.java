@@ -1,6 +1,7 @@
 package com.omni.ticket.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -12,6 +13,7 @@ public class Tour {
     private Long id;
     private String title;
     private Long artistId;
+    @TableField("category_id")
     private Long categoryId;
     private String poster;
     private String description;

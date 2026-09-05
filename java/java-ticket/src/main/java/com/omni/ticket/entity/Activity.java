@@ -17,6 +17,7 @@ public class Activity {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    @TableField("category_id")
     private Long categoryId;
     private Long artistId;
     private Long organizerId;

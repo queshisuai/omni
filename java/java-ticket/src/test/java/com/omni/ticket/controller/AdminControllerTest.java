@@ -795,6 +795,19 @@ class AdminControllerTest {
     }
 
     @Test
+    void listToursPassesCategoryFilterToService() {
+        AdminController controller = controller();
+        Page<Tour> page = new Page<>(1, 10);
+        when(tourStationService.listManageableTours(2003L, 1, 10, 66L)).thenReturn(page);
+
+        Result<Page<Tour>> result = controller.listTours(organizerToken(), 9999L, 1, 10, 66L);
+
+        assertEquals(200, result.getCode());
+        assertEquals(page, result.getData());
+        verify(tourStationService).listManageableTours(2003L, 1, 10, 66L);
+    }
+
+    @Test
     void updateSessionSeatLayoutDelegatesToService() {
         AdminController controller = controller();
         SeatCraftLayoutDtos.LayoutSaveRequest request = new SeatCraftLayoutDtos.LayoutSaveRequest();
@@ -1479,6 +1492,25 @@ class AdminControllerTest {
         LambdaUtils.installCache(TableInfoHelper.getTableInfo(Activity.class));
         String sqlSegment = captor.getValue().getSqlSegment();
         assertTrue(sqlSegment.contains("ORDER BY id ASC"));
+    }
+
+    @Test
+    void listAdminActivitiesFiltersByCategoryId() {
+        AdminController controller = controller();
+        allowActivityRole(2003L, "organizer");
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<Activity> page = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10, 0);
+        when(activityMapper.selectPage(any(), any())).thenReturn(page);
+
+        controller.listAdminActivities(organizerToken(), 9999L, 1, 10, null, null, 66L);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<Activity>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(activityMapper).selectPage(any(), captor.capture());
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), Activity.class);
+        LambdaUtils.installCache(TableInfoHelper.getTableInfo(Activity.class));
+        String sqlSegment = captor.getValue().getSqlSegment().toLowerCase();
+        assertTrue(sqlSegment.contains("category_id"), sqlSegment);
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue(66L));
     }
 
     @Test

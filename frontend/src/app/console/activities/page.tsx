@@ -1,15 +1,16 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getToken, getUser } from '@/lib/auth'
-import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, notifyActivityBuyers, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl } from '@/lib/api'
+import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation, listAdminActivities, listAdminTours, deleteAdminActivity, updateActivityStatus, deactivateActivity, notifyActivityBuyers, publishStation, submitActivityRiskResolution, suspendActivityForRisk, privateAssetDownloadUrl, listCategories } from '@/lib/api'
 import { getRealNameRequirementLabel, getTicketTransferAllowedLabel } from '@/lib/activity-flags'
 import { canUseConsoleAction, hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
-import { Bell, Trash2, Eye, EyeOff, RefreshCw, Search, FileDown } from 'lucide-react'
+import { Bell, Trash2, Eye, EyeOff, RefreshCw, Search, FileDown, MoreHorizontal } from 'lucide-react'
 import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
 import { GlobalPagination } from '@/components/Pagination'
-import type { ActivityBuyerNotificationResponse, ActivityEntity, PageResult, RefundImpactResponse, TourEntity, UserRole } from '@/types/api'
+import { SafeImage } from '@/components/SafeImage'
+import type { ActivityBuyerNotificationResponse, ActivityEntity, CategoryVO, PageResult, RefundImpactResponse, TourEntity, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
 const ADMIN_FETCH_SIZE = 500
@@ -132,8 +133,19 @@ function emptyPage<T>(): PageResult<T> {
   }
 }
 
+function getActivityCategoryLabel(activity: ActivityEntity, categoryNameById: Map<number, string>) {
+  return categoryNameById.get(activity.categoryId) || '暂未分类'
+}
+
+type ActivityListFilters = {
+  keyword?: string
+  status?: string
+  categoryId?: string
+}
+
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState<ActivityEntity[]>([])
+  const [categories, setCategories] = useState<CategoryVO[]>([])
   const [userId, setUserId] = useState(0)
   const [role, setRole] = useState<UserRole | ''>('')
   const [permissionCodes, setPermissionCodes] = useState<string[]>([])
@@ -141,20 +153,29 @@ export default function ActivitiesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [keyword, setKeyword] = useState('')
+  const [categoryId, setCategoryId] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [publishingKey, setPublishingKey] = useState<string | null>(null)
   const [selectedActivityKeys, setSelectedActivityKeys] = useState<Set<string>>(() => new Set())
+  const [openActionMenuKey, setOpenActionMenuKey] = useState<string | null>(null)
   const loadDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
   const isAdmin = isPlatformAdminRole(role)
   const canManageActivities = hasConsolePermission(role, permissionCodes, 'activity.manage')
   const canManageTours = hasConsolePermission(role, permissionCodes, 'tour.manage')
   const canReviewRisk = canUseConsoleAction('risk.review', permissionCodes)
+  const categoryNameById = useMemo(() => new Map(categories.map(category => [category.id, category.name])), [categories])
   const batchSelectableActivities = activities.filter(isBatchSelectableActivity)
   const batchDeactivatableActivities = getBatchDeactivatableActivities(activities, selectedActivityKeys)
   const batchNotifiableActivities = getBatchNotifiableActivities(activities, selectedActivityKeys)
+  const selectedCount = selectedActivityKeys.size
+  const isMultiple = selectedCount > 1
+  const alertText = `已勾选 ${selectedCount} 个活动`
+  const offlineBtnText = isMultiple ? '批量下架' : '下架活动'
+  const notifyBtnText = isMultiple ? '批量通知购票用户' : '通知购票用户'
+  const refundBtnText = isMultiple ? '批量下架并退款' : '下架并退款'
   const allBatchSelectableSelected = batchSelectableActivities.length > 0 &&
     batchSelectableActivities.every(activity => selectedActivityKeys.has(activityRowKey(activity)))
   const canPublishDraft = (activity: ActivityEntity) => {
@@ -162,7 +183,11 @@ export default function ActivitiesPage() {
     return activity.publishStatus === 'draft' && (canManageRowType || activity.organizerId === userId)
   }
 
-  const loadData = (nextPage = page) => {
+  const loadData = (nextPage = page, filters: ActivityListFilters = {}) => {
+    const activeKeyword = filters.keyword ?? keyword
+    const activeStatus = filters.status ?? status
+    const activeCategoryId = filters.categoryId ?? categoryId
+    const selectedCategoryId = activeCategoryId ? Number(activeCategoryId) : undefined
     const u = getUser()
     if (!u) {
       setCheckingRole(false)
@@ -186,14 +211,15 @@ export default function ActivitiesPage() {
       canLoadActivities ? listAdminActivities({
         page: 1,
         size: ADMIN_FETCH_SIZE,
-        keyword,
-        status: status === '' ? undefined : Number(status),
+        keyword: activeKeyword,
+        status: activeStatus === '' ? undefined : Number(activeStatus),
+        categoryId: selectedCategoryId,
       }) : Promise.resolve(emptyPage<ActivityEntity>()),
-      canLoadTours ? listAdminTours(u.userId, { page: 1, size: ADMIN_FETCH_SIZE }) : Promise.resolve(emptyPage<TourEntity>()),
+      canLoadTours ? listAdminTours(u.userId, { page: 1, size: ADMIN_FETCH_SIZE, categoryId: selectedCategoryId }) : Promise.resolve(emptyPage<TourEntity>()),
     ]).then(([activityRes, tourRes]) => {
       const tourActivities: ActivityEntity[] = tourRes.records
-        .filter(tour => !keyword.trim() || tour.title.includes(keyword.trim()))
-        .filter(tour => status === '' || getTourRowStatus(tour) === Number(status))
+        .filter(tour => !activeKeyword.trim() || tour.title.includes(activeKeyword.trim()))
+        .filter(tour => activeStatus === '' || getTourRowStatus(tour) === Number(activeStatus))
         .map(tour => ({
           id: tour.id,
           itemType: 'tour' as const,
@@ -216,6 +242,7 @@ export default function ActivitiesPage() {
       const pageKeys = new Set(pageRecords.filter(isBatchSelectableActivity).map(activityRowKey))
       setActivities(pageRecords)
       setSelectedActivityKeys(previous => new Set([...previous].filter(key => pageKeys.has(key))))
+      setOpenActionMenuKey(null)
       setTotal(nextTotal)
       setPage(safePage)
       setLoading(false)
@@ -228,6 +255,10 @@ export default function ActivitiesPage() {
   useEffect(() => {
     loadDataRef.current = loadData
   })
+
+  useEffect(() => {
+    listCategories().then(setCategories).catch(() => setCategories([]))
+  }, [])
 
   const refreshWhenVisible = () => {
     const now = Date.now()
@@ -303,7 +334,9 @@ export default function ActivitiesPage() {
       await globalAlert('请先选择可下架的上架活动或巡演。')
       return
     }
-    const confirmed = await globalConfirm(`已选择 ${selected.length} 个活动/巡演。批量下架并退款后，所选活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意批量下架并同意退款。`)
+    const multiple = selected.length > 1
+    const actionText = multiple ? '批量下架并退款' : '下架并退款'
+    const confirmed = await globalConfirm(`已选择 ${selected.length} 个活动/巡演。${actionText}后，所选活动、场次、票档将全部下架，并直接为所有已支付订单发起真实支付宝退款。“同意退款”表示你确认平台将对这些已支付订单执行退款，可能产生退款失败、结果未知或需人工处理的记录。请确认：同意${actionText}。`)
     if (!confirmed) return
 
     const impact = {
@@ -323,12 +356,12 @@ export default function ActivitiesPage() {
           ? await deactivateTour(activity.id, {
             userId,
             confirmRefund: true,
-            reason: isAdmin ? '平台批量下架巡演/多站点活动自动退款' : '主办方批量下架巡演/多站点活动自动退款',
+            reason: isAdmin ? `平台${actionText}巡演/多站点活动自动退款` : `主办方${actionText}巡演/多站点活动自动退款`,
           })
           : await deactivateActivity(activity.id, {
             userId,
             confirmRefund: true,
-            reason: isAdmin ? '平台批量下架活动自动退款' : '主办方批量下架活动自动退款',
+            reason: isAdmin ? `平台${actionText}活动自动退款` : `主办方${actionText}活动自动退款`,
           })
         impact.deactivatedActivityCount += result.deactivatedActivityCount
         impact.paidOrderCount += result.paidOrderCount
@@ -349,7 +382,7 @@ export default function ActivitiesPage() {
     }
 
     const abnormalCount = impact.refundFailedCount + impact.refundUnknownCount + impact.refundCompensationRequiredCount
-    const outcome = `批量下架处理完成：成功 ${completedKeys.size} 个，失败 ${failedMessages.length} 个。${buildRefundImpactSummary(impact)}`
+    const outcome = `${actionText}处理完成：成功 ${completedKeys.size} 个，失败 ${failedMessages.length} 个。${buildRefundImpactSummary(impact)}`
     if (failedMessages.length > 0) {
       await globalAlert(`${outcome}失败明细：${failedMessages.slice(0, 3).join('；')}${failedMessages.length > 3 ? '；其余失败项请刷新后重试。' : ''}`)
     } else if (abnormalCount > 0) {
@@ -365,7 +398,9 @@ export default function ActivitiesPage() {
       await globalAlert('请先选择可通知的普通活动。')
       return
     }
-    const content = await globalPrompt('通知内容将发送给所选普通活动的已支付订单用户，请填写明确的中文通知。', '批量通知购票用户', '请输入通知内容（必填）')
+    const multiple = selected.length > 1
+    const actionText = multiple ? '批量通知购票用户' : '通知购票用户'
+    const content = await globalPrompt('通知内容将发送给所选普通活动的已支付订单用户，请填写明确的中文通知。', actionText, '请输入通知内容（必填）')
     if (content === null) return
     const trimmedContent = content.trim()
     if (!trimmedContent) {
@@ -406,7 +441,7 @@ export default function ActivitiesPage() {
       setSelectedActivityKeys(previous => new Set([...previous].filter(key => !completedKeys.has(key))))
     }
 
-    const outcome = `批量通知处理完成：成功 ${completedKeys.size} 个，失败 ${failedMessages.length} 个。${buildBuyerNotificationSummary(impact)}`
+    const outcome = `${actionText}处理完成：成功 ${completedKeys.size} 个，失败 ${failedMessages.length} 个。${buildBuyerNotificationSummary(impact)}`
     if (failedMessages.length > 0) {
       await globalAlert(`${outcome}失败明细：${failedMessages.slice(0, 3).join('；')}${failedMessages.length > 3 ? '；其余失败项请刷新后重试。' : ''}`)
     } else {
@@ -587,6 +622,14 @@ export default function ActivitiesPage() {
     loadData(1)
   }
 
+  const handleResetFilters = () => {
+    setKeyword('')
+    setCategoryId('')
+    setStatus('')
+    setPage(1)
+    loadData(1, { keyword: '', categoryId: '', status: '' })
+  }
+
   const downloadVenueApprovalAsset = async (activity: ActivityEntity) => {
     const assetId = parsePrivateAssetRef(activity.venueApprovalFileUrl)
     if (!assetId) return
@@ -639,27 +682,24 @@ export default function ActivitiesPage() {
 
   return (
     <div>
-      <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-[22px] font-bold text-[#1a1a2e]">{isAdmin ? '活动发布管理' : '我的活动管理'}</h1>
           <p className="mt-1 text-[13px] text-[#999]">{isAdmin ? '管理平台活动草稿、补齐配置并处理发布状态。' : '维护自己主办的活动草稿、发布申请与后续上下架。'}</p>
         </div>
-      </div>
-
-      <div className="mb-5 grid gap-3 md:grid-cols-2">
-        <Link href="/console/activities/new" className="rounded-xl border border-[#ffd0df] bg-white p-4 text-[14px] font-medium text-[#ff1268] hover:bg-[#fff7fb]">
-          新建活动草稿
-          <span className="mt-1 block text-[12px] font-normal text-[#999]">普通活动或巡演活动都从这里创建，创建后继续补齐站点、场馆审核资料和座位票档。</span>
-        </Link>
-        {(canManageActivities || canManageTours) && (
-          <Link href="/console/tours" className="rounded-xl border border-[#e5e5e5] bg-white p-4 text-[14px] font-medium text-[#1a1a2e] hover:bg-[#fafafa]">
-            活动发布/多站点草稿管理
-            <span className="mt-1 block text-[12px] font-normal text-[#999]">进入已创建的普通活动草稿和巡演/多站点草稿，补齐场馆审核资料、SeatCraft 座位票档和发布配置。</span>
+        <div className="flex flex-wrap gap-2">
+          {canManageTours && (
+            <Link href="/console/tours" className="inline-flex h-10 items-center justify-center rounded-lg border border-[#e5e5e5] bg-white px-4 text-[14px] font-medium text-[#333] transition-colors hover:border-[#ff1268]/30 hover:bg-[#fff7fb] hover:text-[#ff1268]">
+              巡演草稿箱
+            </Link>
+          )}
+          <Link href="/console/activities/new" className="inline-flex h-10 items-center justify-center rounded-lg bg-[#ff1268] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#e6005c]">
+            + 新建演出活动
           </Link>
-        )}
+        </div>
       </div>
 
-      <form onSubmit={handleSearch} className="mb-5 grid gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 sm:grid-cols-[1fr_180px_auto]">
+      <form onSubmit={handleSearch} className="mb-5 grid gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 lg:grid-cols-[minmax(220px,1fr)_180px_160px_auto_auto]">
         <label className="relative block">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#999]" />
           <input
@@ -669,6 +709,16 @@ export default function ActivitiesPage() {
             className="h-10 w-full rounded-lg border border-[#e5e5e5] pl-9 pr-3 text-[14px] outline-none focus:border-[#ff1268]"
           />
         </label>
+        <select
+          value={categoryId}
+          onChange={(event) => setCategoryId(event.target.value)}
+          className="h-10 rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]"
+        >
+          <option value="">全部类目</option>
+          {categories.map(category => (
+            <option key={category.id} value={category.id}>{category.name}</option>
+          ))}
+        </select>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value)}
@@ -683,6 +733,13 @@ export default function ActivitiesPage() {
           className="h-10 rounded-lg bg-[#1a1a2e] px-5 text-[14px] font-medium text-white transition-colors hover:bg-[#2a2a42]"
         >
           查询
+        </button>
+        <button
+          type="button"
+          onClick={handleResetFilters}
+          className="h-10 rounded-lg border border-[#e5e5e5] bg-white px-5 text-[14px] font-medium text-[#666] transition-colors hover:border-[#ff1268]/30 hover:bg-[#fff7fb] hover:text-[#ff1268]"
+        >
+          重置
         </button>
       </form>
 
@@ -700,44 +757,48 @@ export default function ActivitiesPage() {
         </div>
       ) : activities.length === 0 ? (
         <div className="text-center text-[#999] py-20 bg-white rounded-xl border border-[#e5e5e5] text-[14px]">
-          暂无匹配活动，可调整筛选条件或点击上方新建活动草稿。
+          暂无匹配活动，可调整筛选条件或点击右上角新建演出活动。
         </div>
       ) : (
         <>
-        <div className="mb-3 flex flex-col gap-3 rounded-lg border border-[#e5e5e5] bg-white px-4 py-3 text-[13px] text-[#666] sm:flex-row sm:items-center sm:justify-between">
-          <label className="inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={allBatchSelectableSelected}
-              disabled={batchSelectableActivities.length === 0}
-              onChange={(event) => toggleAllBatchSelectable(event.target.checked)}
-              aria-label="选择当前页可批量操作活动"
-              className="h-4 w-4 accent-[#ff1268]"
-            />
-            <span>已选择 {selectedActivityKeys.size} 个，可批量下架 {batchDeactivatableActivities.length} 个，可通知 {batchNotifiableActivities.length} 个</span>
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleBatchNotifyBuyers}
-              disabled={batchNotifiableActivities.length === 0}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#ff1268] bg-white px-3 text-[13px] font-medium text-[#ff1268] disabled:cursor-not-allowed disabled:border-[#f3a1bf] disabled:text-[#f3a1bf]"
-              title="批量通知购票用户"
-            >
-              <Bell className="h-4 w-4" /> 批量通知购票用户
-            </button>
-            <button
-              type="button"
-              onClick={handleBatchDeactivate}
-              disabled={batchDeactivatableActivities.length === 0}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[#ff1268] px-3 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:bg-[#f3a1bf]"
-              title="批量下架并退款"
-            >
-              <EyeOff className="h-4 w-4" /> 批量下架并退款
-            </button>
-          </div>
-        </div>
-        <div className="overflow-hidden rounded-xl border border-[#e5e5e5] bg-white">
+        <div className="rounded-xl border border-[#e5e5e5] bg-white">
+          {selectedCount > 0 && (
+            <div className="border-b border-[#cfe5ff] bg-[#e8f3ff] px-4 py-3 text-[13px] text-[#1f3b57] transition-all duration-200">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-semibold">{alertText}</span>
+                  <span className="text-[#5f7892]">可{offlineBtnText} {batchDeactivatableActivities.length} 个，可{notifyBtnText} {batchNotifiableActivities.length} 个</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleBatchNotifyBuyers}
+                    disabled={batchNotifiableActivities.length === 0}
+                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[#8bbdf4] bg-white px-3 text-[13px] font-medium text-[#2563eb] disabled:cursor-not-allowed disabled:border-[#c8dcf4] disabled:text-[#9bb4d0]"
+                    title={notifyBtnText}
+                  >
+                    <Bell className="h-4 w-4" /> {notifyBtnText}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBatchDeactivate}
+                    disabled={batchDeactivatableActivities.length === 0}
+                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-[#ff1268] px-3 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:bg-[#f3a1bf]"
+                    title={refundBtnText}
+                  >
+                    <EyeOff className="h-4 w-4" /> {refundBtnText}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedActivityKeys(new Set())}
+                    className="inline-flex h-8 items-center justify-center rounded-lg px-2 text-[13px] font-medium text-[#31506f] hover:bg-white/70"
+                  >
+                    取消选择
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <table className="w-full text-[14px]">
             <thead>
               <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
@@ -751,8 +812,7 @@ export default function ActivitiesPage() {
                     className="h-4 w-4 accent-[#ff1268]"
                   />
                 </th>
-                <th className="text-left p-3 font-medium text-[#666]">活动类型</th>
-                <th className="text-left p-3 font-medium text-[#666]">活动名称</th>
+                <th className="text-left p-3 font-medium text-[#666]">演出活动</th>
                 <th className="text-left p-3 font-medium text-[#666]">状态</th>
                 <th className="text-left p-3 font-medium text-[#666]">创建时间</th>
                 <th className="text-center p-3 font-medium text-[#666]">操作</th>
@@ -762,10 +822,11 @@ export default function ActivitiesPage() {
               {activities.map(a => {
                 const rowKey = activityRowKey(a)
                 const isTour = a.itemType === 'tour'
-                const canBatchDeactivate = isBatchDeactivatableActivity(a)
                 const canBatchSelect = isBatchSelectableActivity(a)
                 const configHref = isTour ? `/console/tours/${a.id}` : `/console/activities/${a.id}/edit`
                 const seatHref = isTour ? `/console/tours/${a.id}?mode=seatcraft` : `/console/sessions?activityId=${a.id}`
+                const categoryLabel = getActivityCategoryLabel(a, categoryNameById)
+                const menuOpen = openActionMenuKey === rowKey
                 return (
                 <tr key={rowKey} className="border-b border-[#f0f0f0] hover:bg-[#fafafa]">
                   <td className="p-3">
@@ -779,23 +840,29 @@ export default function ActivitiesPage() {
                     />
                   </td>
                   <td className="p-3">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[12px] ${isTour ? 'bg-[#eff6ff] text-[#2563eb]' : 'bg-[#f5f5f5] text-[#666]'}`}>
-                      {isTour ? '巡演 / 多站点活动' : '普通活动'}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <div className="font-medium text-[#333]">{a.name}</div>
-                    {!isTour && (
-                      <div className="mt-1 flex flex-wrap gap-1">
+                    <div className="flex min-w-[280px] items-center gap-3">
+                      <SafeImage src={a.poster} alt={a.name || '活动海报'} className="h-16 w-12 shrink-0 rounded-lg bg-[#f5f5f5] object-cover" />
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-[#333]">{a.name || '活动信息待同步'}</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[12px] ${isTour ? 'bg-[#eff6ff] text-[#2563eb]' : 'bg-[#f5f5f5] text-[#666]'}`}>
+                            {isTour ? '巡演 / 多站点活动' : '普通活动'}
+                          </span>
+                          <span className="inline-flex rounded-full bg-[#f7f7ff] px-2 py-0.5 text-[12px] text-[#6366f1]">类目 {categoryLabel}</span>
+                          {!isTour && (
+                            <>
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-[12px] ${a.realNameRequired ? 'bg-[#fff7ed] text-[#f97316]' : 'bg-[#f5f5f5] text-[#999]'}`}>
                           {getRealNameRequirementLabel(a.realNameRequired)}
                         </span>
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-[12px] ${a.ticketTransferAllowed === false ? 'bg-[#fef2f2] text-[#dc2626]' : 'bg-[#f0fff4] text-[#16a34a]'}`}>
                           {getTicketTransferAllowedLabel(a.ticketTransferAllowed)}
                         </span>
+                            </>
+                          )}
+                        </div>
+                        {a.artistName ? <div className="mt-1 truncate text-[12px] font-normal text-[#999]">阵容：{a.artistName}</div> : null}
                       </div>
-                    )}
-                    {a.artistName ? <div className="mt-1 text-[12px] font-normal text-[#999]">阵容：{a.artistName}</div> : null}
+                    </div>
                   </td>
                   <td className="p-3">
                     <span className={`text-[12px] px-2 py-0.5 rounded-full ${getActivityStatusClass(a)}`}>
@@ -805,74 +872,120 @@ export default function ActivitiesPage() {
                   <td className="p-3 text-[#999]">{a.createTime?.substring(0, 10)}</td>
                   <td className="p-3">
                     <div className="flex items-center justify-center gap-2">
-                      {shouldShowSaleStatusControl(a) && (
-                        <button
-                          onClick={() => handleToggleStatus(a)}
-                          disabled={!canToggleSaleStatus(a)}
-                          className="p-1.5 rounded hover:bg-[#f0f0f0] text-[#666] transition-colors bg-transparent border-none cursor-pointer"
-                          title={getActivitySaleActionTitle(a)}
-                        >
-                          {a.itemType === 'tour' || a.status === 1 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      )}
                       <Link href={configHref} className="rounded px-2 py-1 text-[12px] text-[#3b82f6] hover:bg-[#eff6ff]">继续配置</Link>
                       <Link href={seatHref} className="rounded px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]">座位票档</Link>
-                      {!isTour && (
-                        <Link href={`/console/activities/${a.id}/marketing`} className="rounded px-2 py-1 text-[12px] text-[#7c3aed] hover:bg-[#f5f3ff]">营销</Link>
-                      )}
-                      {canPublishDraft(a) && (
+                      <div className="relative">
                         <button
-                          onClick={() => handlePublishDraft(a)}
-                          disabled={publishingKey === rowKey}
-                          className="rounded px-2 py-1 text-[12px] text-[#16a34a] hover:bg-[#f0fff4] disabled:text-[#aaa]"
-                          title="发布活动草稿"
+                          type="button"
+                          onClick={() => setOpenActionMenuKey(menuOpen ? null : rowKey)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#666] transition-colors hover:bg-[#f5f5f5] hover:text-[#333]"
+                          aria-label={`更多操作 ${a.name || '活动信息待同步'}`}
                         >
-                          {publishingKey === rowKey ? '发布中' : '发布'}
+                          <MoreHorizontal className="h-4 w-4" />
                         </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(a)}
-                        className="p-1.5 rounded hover:bg-[#fee2e2] text-[#ef4444] transition-colors bg-transparent border-none cursor-pointer"
-                        title="删除"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      {a.publishStatus === 'risk_suspended' && (
-                        <button
-                          onClick={() => handleRiskResolution(a)}
-                          className="rounded px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]"
-                          title="提交恢复售票申请"
-                        >
-                          申请恢复
-                        </button>
-                      )}
-                      {parsePrivateAssetRef(a.venueApprovalFileUrl) && (
-                        <button
-                          onClick={() => downloadVenueApprovalAsset(a)}
-                          className="p-1.5 rounded hover:bg-[#f0f0f0] text-[#666] transition-colors bg-transparent border-none cursor-pointer"
-                          title="下载场馆审核文件"
-                        >
-                          <FileDown className="w-4 h-4" />
-                        </button>
-                      )}
-                      {canReviewRisk && isTour && a.publishStatus !== 'draft' && a.status === 1 && (
-                        <Link
-                          href={`/console/tours/${a.id}?mode=risk`}
-                          className="rounded px-2 py-1 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"
-                          title="风险停售"
-                        >
-                          风险停售
-                        </Link>
-                      )}
-                      {canReviewRisk && !isTour && a.publishStatus === 'published' && a.status === 1 && (
-                        <button
-                          onClick={() => handleAdminSuspend(a)}
-                          className="rounded px-2 py-1 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"
-                          title="风险停售"
-                        >
-                          风险停售
-                        </button>
-                      )}
+                        {menuOpen && (
+                          <div className="absolute right-0 z-20 mt-2 w-44 rounded-lg border border-[#e5e5e5] bg-white p-1 text-left shadow-lg">
+                            {shouldShowSaleStatusControl(a) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionMenuKey(null)
+                                  handleToggleStatus(a)
+                                }}
+                                disabled={!canToggleSaleStatus(a)}
+                                className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-[12px] disabled:cursor-not-allowed disabled:text-[#aaa] ${a.itemType === 'tour' || a.status === 1 ? 'text-[#b91c1c] hover:bg-[#fef2f2]' : 'text-[#333] hover:bg-[#f5f5f5]'}`}
+                                title={getActivitySaleActionTitle(a)}
+                              >
+                                {a.itemType === 'tour' || a.status === 1 ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                {getActivitySaleActionTitle(a)}
+                              </button>
+                            )}
+                            {!isTour && (
+                              <Link
+                                href={`/console/activities/${a.id}/marketing`}
+                                onClick={() => setOpenActionMenuKey(null)}
+                                className="flex items-center rounded-md px-3 py-2 text-[12px] text-[#333] hover:bg-[#f5f5f5]"
+                              >
+                                营销配置
+                              </Link>
+                            )}
+                            {canPublishDraft(a) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionMenuKey(null)
+                                  handlePublishDraft(a)
+                                }}
+                                disabled={publishingKey === rowKey}
+                                className="flex w-full items-center rounded-md px-3 py-2 text-[12px] text-[#16a34a] hover:bg-[#f0fff4] disabled:cursor-not-allowed disabled:text-[#aaa]"
+                                title="发布活动草稿"
+                              >
+                                {publishingKey === rowKey ? '发布中' : '发布活动'}
+                              </button>
+                            )}
+                            {a.publishStatus === 'risk_suspended' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionMenuKey(null)
+                                  handleRiskResolution(a)
+                                }}
+                                className="flex w-full items-center rounded-md px-3 py-2 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]"
+                                title="提交恢复售票申请"
+                              >
+                                申请恢复
+                              </button>
+                            )}
+                            {parsePrivateAssetRef(a.venueApprovalFileUrl) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionMenuKey(null)
+                                  downloadVenueApprovalAsset(a)
+                                }}
+                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[12px] text-[#333] hover:bg-[#f5f5f5]"
+                                title="下载场馆审核文件"
+                              >
+                                <FileDown className="h-4 w-4" /> 下载审核文件
+                              </button>
+                            )}
+                            {canReviewRisk && isTour && a.publishStatus !== 'draft' && a.status === 1 && (
+                              <Link
+                                href={`/console/tours/${a.id}?mode=risk`}
+                                onClick={() => setOpenActionMenuKey(null)}
+                                className="flex items-center rounded-md px-3 py-2 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"
+                                title="风险停售"
+                              >
+                                风险停售
+                              </Link>
+                            )}
+                            {canReviewRisk && !isTour && a.publishStatus === 'published' && a.status === 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenActionMenuKey(null)
+                                  handleAdminSuspend(a)
+                                }}
+                                className="flex w-full items-center rounded-md px-3 py-2 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"
+                                title="风险停售"
+                              >
+                                风险停售
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenActionMenuKey(null)
+                                handleDelete(a)
+                              }}
+                              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[12px] text-[#b91c1c] hover:bg-[#fef2f2]"
+                              title="删除"
+                            >
+                              <Trash2 className="h-4 w-4" /> 删除
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </td>
                 </tr>

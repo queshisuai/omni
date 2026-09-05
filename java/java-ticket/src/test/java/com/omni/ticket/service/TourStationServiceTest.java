@@ -359,6 +359,24 @@ class TourStationServiceTest {
     }
 
     @Test
+    void listManageableToursFiltersByCategoryId() {
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2002L, "tour.manage")).thenReturn(user(2002L, "admin"));
+        Page<Tour> page = new Page<>(1, 10);
+        when(tourMapper.selectPage(any(), any())).thenReturn(page);
+
+        service.listManageableTours(2002L, 1, 10, 66L);
+
+        @SuppressWarnings("rawtypes")
+        ArgumentCaptor<LambdaQueryWrapper> wrapperCaptor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(tourMapper).selectPage(any(), wrapperCaptor.capture());
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), Tour.class);
+        LambdaUtils.installCache(TableInfoHelper.getTableInfo(Tour.class));
+        String queryConditions = wrapperCaptor.getValue().getSqlSegment().toLowerCase();
+        assertTrue(queryConditions.contains("category_id"), queryConditions);
+        assertTrue(wrapperCaptor.getValue().getParamNameValuePairs().containsValue(66L));
+    }
+
+    @Test
     void organizerAnnouncesOwnTourCitiesWithoutVenueApplication() {
         when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "tour.manage")).thenReturn(user(2003L, "organizer"));
         Tour tour = tour(10L, 2003L);

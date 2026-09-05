@@ -1,5 +1,14 @@
 # Implementation Notes
 
+## 2026-09-05 活动发布管理页排版与类目联合过滤
+
+- 页面排版：`/console/activities` 移除顶部两个说明型草稿卡片，右上角仅保留「巡演草稿箱」和「+ 新建演出活动」；搜索、类目、状态、查询和重置整合为紧凑筛选栏。
+- 类目筛选：前端类目选择器直接透传 `categoryId` 给普通活动与巡演管理查询；后端后台活动列表按 `activity.category_id` 过滤，巡演列表按 `tour.category_id` 过滤，保证混合分页列表中两类主体使用同一类目口径。
+- 批量操作：批量条从表格底部移到表头正上方，选中活动后展示浅蓝提示条；按钮文案按单选/多选自适应，提供「取消选择」清空选中项。
+- 行与操作列：演出活动列补充海报、类目、实名制和可转赠标签；操作列常驻「继续配置」「座位票档」，删除、风险停售、营销配置等低频或高危动作收纳进更多菜单，并用红色警示高危项。
+- 分页复原：表格底部仅保留 `GlobalPagination`，不再夹带批量操作块。
+- 验证：`node --test src\lib\console-production-entry.test.ts` 通过 55/55；`pnpm typecheck` 通过；`pnpm build` 通过；`mvn -pl java-ticket "-Dtest=AdminControllerTest,TourStationServiceTest" test` 通过 177/177。
+
 ## 2026-09-04 项目架构上下文文档
 
 - 文档生成：新增根目录 `精准地掌握整个项目架构.md`，用于后续 AI 助手快速理解 Omni 项目架构、前端/B 端路由、RBAC、公共组件、核心实体与主要 API 数据流。

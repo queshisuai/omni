@@ -218,13 +218,20 @@ public class TourStationService {
     }
 
     public Page<Tour> listManageableTours(Long userId, int page, int size) {
+        return listManageableTours(userId, page, size, null);
+    }
+
+    public Page<Tour> listManageableTours(Long userId, int page, int size, Long categoryId) {
         InternalUserRefResponse user = requireTourManager(userId);
         LambdaQueryWrapper<Tour> wrapper = new LambdaQueryWrapper<Tour>()
-                .eq(Tour::getStatus, 1)
-                .orderByAsc(Tour::getId);
+                .eq(Tour::getStatus, 1);
         if ("organizer".equals(user.getRole())) {
             wrapper.eq(Tour::getOrganizerId, userId);
         }
+        if (categoryId != null) {
+            wrapper.eq(Tour::getCategoryId, categoryId);
+        }
+        wrapper.orderByAsc(Tour::getId);
         return tourMapper.selectPage(new Page<>(Math.max(1, page), Math.max(1, size)), wrapper);
     }
 

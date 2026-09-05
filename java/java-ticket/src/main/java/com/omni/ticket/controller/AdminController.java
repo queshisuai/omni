@@ -827,10 +827,15 @@ public class AdminController {
     public Result<Page<Tour>> listTours(@RequestHeader(value = "Authorization", required = false) String authorization,
                                          @RequestParam(required = false) Long userId,
                                          @RequestParam(defaultValue = "1") Integer page,
-                                         @RequestParam(defaultValue = "10") Integer size) {
+                                         @RequestParam(defaultValue = "10") Integer size,
+                                         @RequestParam(required = false) Long categoryId) {
         userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
-        return Result.success(tourStationService.listManageableTours(userId, page, size));
+        return Result.success(tourStationService.listManageableTours(userId, page, size, categoryId));
+    }
+
+    public Result<Page<Tour>> listTours(String authorization, Long userId, Integer page, Integer size) {
+        return listTours(authorization, userId, page, size, null);
     }
 
     @GetMapping("/tours/{tourId}")
@@ -1336,7 +1341,8 @@ public class AdminController {
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer size,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) Integer status) {
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) Long categoryId) {
         Long operatorId = parseOperatorId(authorization);
         if (operatorId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         userId = operatorId;
@@ -1356,12 +1362,19 @@ public class AdminController {
         if (status != null) {
             wrapper.eq(Activity::getStatus, status);
         }
+        if (categoryId != null) {
+            wrapper.eq(Activity::getCategoryId, categoryId);
+        }
         wrapper.orderByAsc(Activity::getId);
         Page<Activity> result = activityMapper.selectPage(new Page<>(page, size), wrapper);
         if (activityArtistService != null) {
             result.getRecords().forEach(this::attachLineupSummary);
         }
         return Result.success(result);
+    }
+
+    public Result<Page<Activity>> listAdminActivities(String authorization, Long userId, Integer page, Integer size, String keyword, Integer status) {
+        return listAdminActivities(authorization, userId, page, size, keyword, status, null);
     }
 
     private void attachLineupSummary(Activity activity) {

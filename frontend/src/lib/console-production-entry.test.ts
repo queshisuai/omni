@@ -63,6 +63,55 @@ test('console activity list supports batch buyer notifications without external 
   assert.match(content, /notifyActivityBuyers\(activity\.id/)
 })
 
+test('console activity list uses compact header actions and category filter', () => {
+  const content = source('../app/console/activities/page.tsx')
+  const api = source('./api.ts')
+
+  assert.match(content, /listCategories/)
+  assert.match(content, /const \[categoryId, setCategoryId\] = useState\(''\)/)
+  assert.match(content, /全部类目/)
+  assert.match(content, /巡演草稿箱/)
+  assert.match(content, /\+ 新建演出活动/)
+  assert.match(content, /handleResetFilters/)
+  assert.match(content, /categoryId: selectedCategoryId/)
+  assert.match(content, /listAdminTours\(u\.userId, \{ page: 1,\s*size: ADMIN_FETCH_SIZE,\s*categoryId: selectedCategoryId/)
+  assert.match(api, /listAdminActivities\(params: \{ page\?: number; size\?: number; keyword\?: string; status\?: number; categoryId\?: number/)
+  assert.match(api, /listAdminTours\(userId: number, params: \{ page\?: number; size\?: number; categoryId\?: number/)
+  assert.doesNotMatch(content, /新建活动草稿/)
+  assert.doesNotMatch(content, /活动发布\/多站点草稿管理/)
+})
+
+test('console activity batch action bar is contextual and uses dynamic copy', () => {
+  const content = source('../app/console/activities/page.tsx')
+
+  assert.match(content, /const selectedCount = selectedActivityKeys\.size/)
+  assert.match(content, /const isMultiple = selectedCount > 1/)
+  assert.match(content, /const alertText = `已勾选 \$\{selectedCount\} 个活动`/)
+  assert.match(content, /const offlineBtnText = isMultiple \? '批量下架' : '下架活动'/)
+  assert.match(content, /const notifyBtnText = isMultiple \? '批量通知购票用户' : '通知购票用户'/)
+  assert.match(content, /const refundBtnText = isMultiple \? '批量下架并退款' : '下架并退款'/)
+  assert.match(content, /selectedCount > 0 &&/)
+  assert.match(content, /取消选择/)
+  assert.match(content, /#e8f3ff/)
+  assert.doesNotMatch(content, /可批量下架/)
+})
+
+test('console activity rows show poster rich info and move risky actions into more menu', () => {
+  const content = source('../app/console/activities/page.tsx')
+
+  assert.match(content, /SafeImage/)
+  assert.match(content, /src=\{a\.poster\}/)
+  assert.match(content, /getActivityCategoryLabel/)
+  assert.match(content, /类目/)
+  assert.match(content, /openActionMenuKey/)
+  assert.match(content, /MoreHorizontal/)
+  assert.match(content, /营销配置/)
+  assert.match(content, /text-\[#b91c1c\]/)
+  assert.match(content, /继续配置/)
+  assert.match(content, /座位票档/)
+  assert.doesNotMatch(content, /<Link href=\{`\/console\/activities\/\$\{a\.id\}\/marketing`\} className="rounded px-2 py-1/)
+})
+
 test('console artist page does not use browser alert directly', () => {
   const content = source('../app/console/artists/page.tsx')
 
