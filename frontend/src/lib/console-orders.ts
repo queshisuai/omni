@@ -9,10 +9,11 @@ export function formatOrderAttendees(order: Pick<OrderEntity, 'attendees'>) {
     .join('；')
 }
 
-export type ConsoleOrderStatusFilter = 'all' | 2 | 3 | 4
+export type ConsoleOrderStatusFilter = 'all' | 1 | 2 | 3 | 4
 
 export const CONSOLE_ORDER_STATUS_TABS: Array<{ value: ConsoleOrderStatusFilter; label: string }> = [
   { value: 'all', label: '全部' },
+  { value: 1, label: '待支付' },
   { value: 2, label: '已支付' },
   { value: 4, label: '已退款' },
   { value: 3, label: '已取消' },
@@ -38,6 +39,7 @@ export function getConsoleOrderStatusClassName(status: number) {
 
 export interface ConsoleOrderStatusCounts {
   all: number
+  pending: number
   paid: number
   refunded: number
   cancelled: number
@@ -55,13 +57,34 @@ export function countConsoleOrdersByStatus(orders: OrderEntity[]): ConsoleOrderS
   return orders.reduce<ConsoleOrderStatusCounts>(
     (counts, order) => {
       counts.all += 1
+      if (order.status === 1) counts.pending += 1
       if (order.status === 2) counts.paid += 1
       if (order.status === 4) counts.refunded += 1
       if (order.status === 3) counts.cancelled += 1
       return counts
     },
-    { all: 0, paid: 0, refunded: 0, cancelled: 0 },
+    { all: 0, pending: 0, paid: 0, refunded: 0, cancelled: 0 },
   )
+}
+
+type ConsoleOrderSearchable = OrderEntity & {
+  userPhoneMask?: string | null
+  userPhone?: string | null
+  phoneMask?: string | null
+}
+
+export function filterConsoleOrdersByQuery(orders: OrderEntity[], query: string) {
+  const normalized = query.trim()
+  if (!normalized) return orders
+  return orders.filter(order => {
+    const searchable = order as ConsoleOrderSearchable
+    return [
+      order.orderNo,
+      searchable.userPhoneMask,
+      searchable.phoneMask,
+      searchable.userPhone,
+    ].some(value => value === normalized)
+  })
 }
 
 export function paginateConsoleOrders(

@@ -1,5 +1,61 @@
 # Implementation Notes
 
+## 2026-09-06 后台三大模块治理与侧边栏折叠修复
+
+- 侧边栏折叠：`frontend/src/app/console/layout.tsx` 原实现把 `groupActive` 与展开状态绑定，当前路由命中分组时会强制 `expanded=true`，导致“运营、客服与审核”等分组点击后无法收回；现改为路由变化时仅把命中分组并入 `openGroups`，渲染时完全以 `openGroups.includes(group.id)` 控制展开，高亮仍由 `groupActive` 独立控制。
+- 订单与履约：订单状态筛选补齐 `待支付(status=1)`；订单页增加订单号/脱敏手机号精确检索、活动海报与场次信息展示；现场核验页增加“手动应急核验”票码输入、设备编号和右下角状态 Toast；退款批量审核改为单次调用 `POST /api/payment/refunds/admin/batch-review`。
+- 退款后端：`java-payment` 新增 `BatchReviewRefundRequest` 与 `RefundService.batchReview()`，在本地事务内对批量审核请求做去重、参数校验和同意/拒绝分派；偏离说明：外部支付渠道与跨服务订单状态副作用不属于单库事务，不能被本地事务完全回滚，生产侧仍建议补偿任务与对账兜底。
+- 运营、客服与审核：客服会话详情顶部挂载认领、转接、升级和结束操作；场馆审核、站点配置审核等页面收敛为独立 Modal 审核意见，不再复用页面级 textarea；风险案例页改为紧凑表格与弹窗化“去审核处置/查看恢复记录”；评价问答管理首屏通过 `Promise.allSettled` 预加载角标数量。
+- 系统、安全与财务：主办方运营员账号删除改为 `status=0` 软删除，保留历史审计引用；日结批次生成入口改为标准 Modal；异常任务新建/处理/关闭延续 Drawer/Modal 工单化交互。
+- 验证：`node --test src/lib/console-layout-menu.test.ts src/lib/console-orders.test.ts src/lib/api.test.ts src/lib/console-modal-drawer-layout.test.ts`、`node --test src/lib/api.test.ts src/lib/check-in-production-entry.test.ts`、`pnpm typecheck`、`mvn -pl java-payment -Dtest=RefundControllerTest test`、`mvn -pl java-user -Dtest=OrganizerAdminAccountServiceTest test`、`mvn -pl java-ticket -Dtest=AdminControllerTest test`、`mvn -pl java-order -Dtest=TicketCheckInServiceTest test` 均通过。
+
+## 2026-09-06 Seata 自动刷新计划任务弹窗
+
+- 根因：`OmniRefreshSeataEvery5Min` 仍处于 Enabled，按 5 分钟触发；`OmniRefreshSeataOnNetwork` 仍指向旧动作 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\Project\omni\scripts\start-seata-docker.ps1`，没有隐藏窗口参数。
+- 当前处理：已成功终止一次正在运行的 `OmniRefreshSeataEvery5Min`，但当前会话执行 `schtasks /Change ... /DISABLE` 返回 `Access is denied`，无法代替用户禁用/删除计划任务。
+- 后续口径：需要管理员 PowerShell 删除或禁用 `OmniRefreshSeataEvery5Min`、`OmniRefreshSeataOnNetwork`、`OmniRefreshSeataOnLogon`；IDEA 模式下需要刷新 Seata 时手动运行 `scripts\refresh-seata-advertise-host.ps1 -Force` 即可。
+
+## 2026-09-06 删除 Java Compose overlay
+
+- 用户确认继续使用 IDEA 启动 Java 服务，不再保留 Java 服务容器化 overlay。
+- 已删除本轮新增的 `docker-compose.java.yml`，避免后续误用 overlay 把 Seata 切换为 Docker 内部服务名。
+- 当前 IDEA 模式仍使用 `scripts/refresh-seata-advertise-host.ps1` / `scripts/start-seata-docker.ps1` 将 Seata 注册为宿主机可达 IPv4。
+
+## 2026-09-06 评价问答管理首屏角标预加载
+
+- 根因：`frontend/src/app/console/activity-engagement/page.tsx` 只在当前 Tab 的 `refreshActive()` 中加载列表，Tab 角标直接取三个列表数组的 `length`，未访问的 Tab 首次进入时仍为空数组。
+- 修复：新增独立 `badgeCounts` 状态，挂载时通过 `Promise.allSettled` 并行请求评价 `status=0`、举报 `PENDING`、问答 `PENDING` 三个待处理列表作为角标数据源；当前 Tab 列表仍按原筛选条件加载。
+- 联动：评价审核、评价举报、问答回复/隐藏/恢复成功后，先刷新当前列表，再重新加载全部角标，避免处理后角标残留。
+- 口径偏离：当前前端 API 没有专用 count/badge 聚合接口，因此复用三个后台列表接口统计待处理数量；角标请求单个维度失败时保留该维度已有值并记录中文错误日志。
+- 验证：`node --test src\lib\activity-engagement-production-entry.test.ts` 通过 7/7；`pnpm typecheck` 通过。
+
+## 2026-09-06 Java 服务 Docker Compose 网络 overlay
+
+- 目标：解决宿主机 WLAN IP 变化导致 Seata Server 注册到旧地址、Java 服务继续连接旧 `SEATA_IP` 的问题。
+- 方案：新增 `docker-compose.java.yml` overlay，保留现有 `docker-compose.yml` 作为本地中间件/前端/grab 基础；Java 六个服务进入同一个 Compose 网络。
+- 服务通信：Java 容器使用 `nacos:8848`、`seata-server:8091`、`rabbitmq:5672`、`elasticsearch:9200`、`grab-service:3001`；PostgreSQL 仍按当前本机拆库口径走 `host.docker.internal:5432`。
+- Seata 口径：overlay 中 `seata-config-init` 发布 `service.default.grouplist=seata-server:8091`，`seata-server` 也用服务名注册，避免依赖宿主机动态 IPv4。
+- 网关修复：`java-gateway` 基础配置里的 `/api/waitlist/**` 和 `/api/grab/**` URI 改为环境变量可覆盖，本地默认仍保持 `http://localhost:3001`。
+- 运行偏离：首次使用 Java overlay 会拉取 `maven:3.9.9-eclipse-temurin-11` 并在 `java-maven-repo` 卷内下载 Maven 依赖；容器 Maven 全局 settings 使用阿里云 public 镜像；未把 PostgreSQL 容器化，继续复用本机 `localhost:5432` 数据库。
+- 启动修复：Java overlay 原命令 `mvn -pl <module> -am spring-boot:run` 会先在父 POM `omni-ticket-parent` 执行 Spring Boot 插件并报 `Unable to find a suitable main class`；已改为 `java-common-build` 一次性安装 `java-common`，各服务再用 `mvn -f <module>/pom.xml spring-boot:run` 启动自身模块。
+
+## 2026-09-06 IDEA 模式 Seata 地址自动刷新
+
+- 回退口径：用户放弃 Java 服务容器化，继续用 IDEA 启动 Java 服务；Seata 需要恢复为宿主机可达 IPv4，而不是 Docker 内部服务名 `seata-server`。
+- 运行态修复：执行 `scripts/start-seata-docker.ps1` 后，Nacos `SEATA_GROUP@@seata-server`、`service.default.grouplist` 和 `omni-seata` 容器 `SEATA_IP` 均恢复为当前 WLAN IP `10.150.195.38:8091`。
+- 自动任务根因：原计划任务只在登录/网络事件触发，且直接运行 `start-seata-docker.ps1`；登录时 Docker Desktop 未就绪会直接失败，后续不会自动重试。
+- 修复方案：新增 `scripts/refresh-seata-advertise-host.ps1`，先检测当前主 IPv4、Nacos grouplist 和容器 `SEATA_IP`，只有不一致时才调用 `start-seata-docker.ps1`；Docker 未就绪时记录日志并等待下次计划任务重试。
+- 日志位置：自动刷新日志写入 `runtime/logs/seata-auto-refresh.log`，该目录仍属于本地运行态，不提交。
+
+## 2026-09-06 后台表格防挤压与 Modal/Drawer 收敛
+
+- 基础组件：新增 `frontend/src/components/ui/Modal.tsx` 和 `Drawer.tsx`，支持 ESC/遮罩关闭、中文关闭按钮、默认/自定义 footer、危险操作红色主按钮和右侧抽屉滑入布局。
+- 表格排版：`/console/tours`、`/console/artists`、`/console/sessions`、`/console/venue` 及本轮触达的活动/异常任务表格补齐 `whitespace-nowrap`、功能列最小宽度、长文本 `truncate` 和横向滚动兜底，避免状态、进度和操作按钮被挤压成竖排。
+- Modal 收敛：场次编辑、场馆新增/编辑、主办方入驻审核、待审核艺人、退款审核、风险恢复审核、平台主办方运营员账号、客服账号、巡演城市站发布、活动删除/通知/风险停售、异常任务处理均从 inline 表单或共享 textarea 改为专属弹窗。
+- Drawer 收敛：场次票档配置、SeatCraft 票档与座区绑定、活动场地临时变更、主办方运营跟进和异常任务新建均改为右侧 Drawer，主列表和画布不再被表单下推。
+- 测试覆盖：新增 `frontend/src/lib/console-modal-drawer-layout.test.ts`，并更新 `console-production-entry.test.ts` 中旧手写抽屉断言，覆盖通用组件、关键表格列和本轮 Modal/Drawer 化入口。
+- 验证：`node --test src\lib\console-modal-drawer-layout.test.ts src\lib\console-production-entry.test.ts src\lib\console-sessions.test.ts src\lib\console-refunds.test.ts src\lib\console-artists.test.ts` 通过 81/81；`pnpm typecheck` 通过；`pnpm build` 通过。
+
 ## 2026-09-05 活动发布管理页排版与类目联合过滤
 
 - 页面排版：`/console/activities` 移除顶部两个说明型草稿卡片，右上角仅保留「巡演草稿箱」和「+ 新建演出活动」；搜索、类目、状态、查询和重置整合为紧凑筛选栏。
@@ -261,3 +317,24 @@
 - 入口对齐：`console-auth.ts` 将 `organizer_admin`、`support` 的默认后台入口限制在新分组实际可见的订单、履约、运营和客服路径；`console-paths.ts` 同步收紧两类角色的快捷操作，隐藏客服账号、审计等不应暴露的系统入口。
 - 交互：新增 `openGroups: string[]` 状态、当前路径命中分组自动展开、分组按钮手动展开/收起；子菜单选中态统一使用 `bg-[var(--omni-brand)]/10` 和 `text-[var(--omni-brand)]`。
 - 验证：新增 `frontend/src/lib/console-layout-menu.test.ts` 并更新 `console-production-entry.test.ts` 覆盖分组结构、主办方白名单、空分组隐藏和自动展开；`node --test` 目标测试 92/92 通过，`pnpm typecheck` 通过，`pnpm build` 通过。`pnpm lint` 仍被既有全仓 React Compiler/unused-vars 问题拦截，本次改动文件仅剩原布局已有的 `setRedirecting(false)` effect 警告。
+
+## 2026-09-06 演出与票务全流程页面重构与数据闭环修复
+
+- 巡演城市入参：新增 `TourStationCityDTO` / `TourDraftCreateDTO`，`TourStationService.createTourDraftFromRequest()` 按 `{ city, stationName }` 对象数组创建初始 `Station`，保留 `station_name`，并继续兼容旧 Map 调用。
+- 巡演风控闭环：巡演站点发布生成或复用 `Activity` 后调用 `ActivityArtistService.ensurePrimaryArtist(activityId, artistId)`，同步写入 `activity_artist` 主艺人记录，确保艺人列入风险后巡演生成活动可被风险联动停售扫描命中。
+- 票档批量事务：新增 `POST /api/ticket/admin/ticket-types/batch-update` 和 `TicketTypeBatchUpdateRequest`，支持 `UPDATE_PRICE`、`SET_STATUS`、`ADJUST_STOCK`，后端先整体校验再写入，任一非法价格、库存低于已售或权限失败都会整批回滚。
+- 场次页重构：`/console/sessions` 将票档列表移入右侧 Drawer，主表仅保留库存摘要；批量改价、启停、滚库存改为调用原子批量接口，批量导入仍沿用既有单条创建接口。
+- SeatCraft 绑定闭环：`/console/sessions/[id]/seat-layout` 消费 `mode=tickets`，自动展开 `SeatCraftTicketEditor`，选中 SeatBlock 后调用 `updateSessionTicketBindings()` 物化 `SessionSeat.ticketGroupId/ticketTypeId`。
+- 场馆模板入口：`/console/venue` 增加默认座位图状态和「座位模板配置」入口；`/console/venue/[id]/seats` 明确该页为场馆 Default Layout 模板，不影响已关联历史售票场次。
+- 巡演草稿页：`/console/tours` 改为巡演草稿管理专页，新增「+ 新建巡演草稿」入口，操作列收敛为「配置站点」「官宣城市」「删除草稿」。
+- 艺人页重构：`/console/artists` 从卡片列表改为表格，增加待审核艺人数量角标；列入风险必须弹出危险确认并填写 `reason` 后调用 `POST /api/ticket/admin/artists/{id}/risk`。
+- 验证：`mvn -pl java-ticket "-Dtest=TourStationServiceTest,ActivityArtistServiceTest,AdminControllerTest" test` 通过 186/186；`node --test src/lib/console-production-entry.test.ts` 通过 60/60；`node --test src/lib/console-ticket-types.test.ts src/lib/console-artists.test.ts` 通过 10/10；`pnpm typecheck` 通过；`pnpm build` 通过。
+
+## 2026-09-07 后台场馆、艺人、订单快照与退款排版修复
+
+- 场馆排序：`java-ticket` 后台场馆查询明确使用 `ORDER BY id ASC`，前端继续把实体 `id` 作为场馆编号展示，避免历史大号 ID 按物理存储顺序插队。
+- 艺人头像：新增 `frontend/public/avatars/artists/*.webp` 本地素材，覆盖旧 seed 的 10 个目标艺人及 prod-split demo 的 8 个对应 ID；`sql/production-split/ticket/20260610_artist_avatar_backfill.sql` 负责更新 `artist.avatar`，并已加入 `sql/production-split/manifest.json`。`sql/seed.sql` 与 `sql/seeds/prod-split-real-demo/01-ticket.sql` 同步指向本地路径，来源和文件大小记录在 `sql/seeds/prod-split-real-demo/artist-avatars.json`。
+- 头像素材偏离：个人艺人使用公开人物图；开心麻花、故宫博物院、德云社、广州长隆和科学队长等团体/机构优先使用公开官网标识、场景图或品牌素材，目的是保证本地可部署且不再显示灰色文字占位，不代表生产授权素材。
+- 订单快照：根因确认是 `java-ticket` 的 `OrderInfoResponse` 缺失 `activityPoster`、`sessionTime`、`ticketName` 等快照字段，导致 Feign 反序列化丢失；已补齐 DTO。`java-order` 实际在 `OrderService.writeSnapshot()` 已写入活动海报、场次时间、票档名称，前端按真实值展示并仅在 null 时兜底。
+- 退款排版：`/console/refunds` 使用固定列宽、申请原因两行截断 Tooltip、审核备注/处理时间上下分行和右对齐水平操作按钮；拒绝审核使用必填理由 Modal。
+- 验证：`mvn -pl java-ticket "-Dtest=AdminControllerTest" test` 通过 138 项；`mvn -pl java-ticket "-Dtest=AdminOrderManagementTest" test` 通过 20 项；`mvn -pl java-order "-Dtest=OrderSnapshotServiceTest,AdminOrderManagementTest" test` 中实际匹配 `OrderSnapshotServiceTest` 通过 2 项；前端目标测试通过 90 项；`pnpm typecheck` 通过；`scripts/check-production-split-sql.ps1` 通过。

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   listAdminActivityQuestions,
   listAdminActivityReviewReports,
@@ -114,6 +114,11 @@ export default function ActivityEngagementConsolePage() {
   const [reportStatus, setReportStatus] = useState('PENDING')
   const [questionStatus, setQuestionStatus] = useState('PENDING')
   const [answerDrafts, setAnswerDrafts] = useState<Record<number, string>>({})
+  const [badgeCounts, setBadgeCounts] = useState({
+    reviews: 0,
+    reports: 0,
+    questions: 0,
+  })
   const [loading, setLoading] = useState(false)
   const [actingId, setActingId] = useState<string | null>(null)
 
@@ -159,15 +164,33 @@ export default function ActivityEngagementConsolePage() {
     if (activeTab === 'questions') await loadQuestions()
   }, [activeTab, loadQuestions, loadReports, loadReviews])
 
+  const loadTabBadges = useCallback(async () => {
+    const [reviewsResult, reportsResult, questionsResult] = await Promise.allSettled([
+      listAdminActivityReviews({ status: 0 }),
+      listAdminActivityReviewReports('PENDING'),
+      listAdminActivityQuestions({ status: 'PENDING' }),
+    ])
+
+    setBadgeCounts(current => ({
+      reviews: reviewsResult.status === 'fulfilled' ? reviewsResult.value.length : current.reviews,
+      reports: reportsResult.status === 'fulfilled' ? reportsResult.value.length : current.reports,
+      questions: questionsResult.status === 'fulfilled' ? questionsResult.value.length : current.questions,
+    }))
+
+    for (const result of [reviewsResult, reportsResult, questionsResult]) {
+      if (result.status === 'rejected') {
+        console.error('加载评价问答角标失败', result.reason)
+      }
+    }
+  }, [])
+
   useEffect(() => {
     void refreshActive()
   }, [refreshActive])
 
-  const counts = useMemo(() => ({
-    reviews: reviews.length,
-    reports: reports.length,
-    questions: questions.length,
-  }), [questions.length, reports.length, reviews.length])
+  useEffect(() => {
+    void loadTabBadges()
+  }, [loadTabBadges])
 
   const handleReviewAction = async (review: ActivityReviewVO, action: 'APPROVE' | 'HIDE' | 'RESTORE') => {
     if (!review.id) return
@@ -184,6 +207,7 @@ export default function ActivityEngagementConsolePage() {
     try {
       await moderateAdminActivityReview(review.id, action)
       await loadReviews()
+      await loadTabBadges()
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '处理评价失败')
     } finally {
@@ -202,6 +226,7 @@ export default function ActivityEngagementConsolePage() {
     try {
       await moderateAdminActivityReviewReport(report.id, action)
       await loadReports()
+      await loadTabBadges()
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '处理举报失败')
     } finally {
@@ -225,6 +250,7 @@ export default function ActivityEngagementConsolePage() {
       await moderateAdminActivityQuestion(question.id, { action: 'ANSWER', answer })
       setAnswerDrafts(current => ({ ...current, [question.id!]: '' }))
       await loadQuestions()
+      await loadTabBadges()
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '回复问题失败')
     } finally {
@@ -243,6 +269,7 @@ export default function ActivityEngagementConsolePage() {
     try {
       await moderateAdminActivityQuestion(question.id, { action })
       await loadQuestions()
+      await loadTabBadges()
     } catch (err: unknown) {
       await globalAlert(err instanceof Error ? err.message : '处理问题失败')
     } finally {
@@ -269,9 +296,9 @@ export default function ActivityEngagementConsolePage() {
 
       <div className="flex flex-wrap gap-2 border-b border-gray-200">
         {[
-          { key: 'reviews' as const, label: '评价审核', count: counts.reviews },
-          { key: 'reports' as const, label: '评价举报', count: counts.reports },
-          { key: 'questions' as const, label: '购前问答', count: counts.questions },
+          { key: 'reviews' as const, label: '评价审核', count: badgeCounts.reviews },
+          { key: 'reports' as const, label: '评价举报', count: badgeCounts.reports },
+          { key: 'questions' as const, label: '购前问答', count: badgeCounts.questions },
         ].map(tab => (
           <button
             key={tab.key}

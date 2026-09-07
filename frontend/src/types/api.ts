@@ -1089,6 +1089,22 @@ export interface TourEntity {
   updateTime?: string | null
 }
 
+export interface TourStationCityPayload {
+  city: string
+  stationName?: string | null
+}
+
+export interface TourDraftCreatePayload {
+  userId?: number
+  title: string
+  categoryId?: number | null
+  artistId?: number | null
+  poster?: string | null
+  description?: string | null
+  organizerId?: number | null
+  cities: TourStationCityPayload[]
+}
+
 export type StationPublishStatus =
   | 'draft'
   | 'city_announced'
@@ -1574,6 +1590,16 @@ export interface AdminTicketTypeCreateRequest {
   areaIds?: number[]
 }
 
+export type TicketTypeBatchUpdateAction = 'UPDATE_PRICE' | 'SET_STATUS' | 'ADJUST_STOCK'
+
+export interface TicketTypeBatchUpdateRequest {
+  ids: number[]
+  action: TicketTypeBatchUpdateAction
+  price?: number
+  status?: number
+  totalStock?: number
+}
+
 export interface SessionTicketBindingRequest {
   userId: number
   bindings: Array<{
@@ -1721,6 +1747,7 @@ export interface OrderEntity {
   id: number
   orderNo: string
   userId: number
+  userPhoneMask?: string | null
   sessionId: number
   ticketTypeId: number
   quantity: number

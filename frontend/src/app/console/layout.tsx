@@ -227,6 +227,11 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   }, [pathname, visibleMenuGroups])
 
   useEffect(() => {
+    if (!activeGroupId) return
+    setOpenGroups(groups => (groups.includes(activeGroupId) ? groups : [...groups, activeGroupId]))
+  }, [activeGroupId])
+
+  useEffect(() => {
     if (!isAuthenticated()) { router.push('/login'); return }
     let active = true
     setRedirecting(false)
@@ -303,7 +308,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             {visibleMenuGroups.map(group => {
               const GroupIcon = group.icon
               const groupActive = group.id === activeGroupId
-              const expanded = groupActive || openGroups.includes(group.id)
+              const expanded = openGroups.includes(group.id)
               return (
                 <div key={group.id}>
                   <button

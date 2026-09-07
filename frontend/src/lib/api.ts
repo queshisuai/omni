@@ -1406,6 +1406,17 @@ export async function rejectRefund(id: number, reviewNote?: string) {
   })
 }
 
+export async function batchReviewRefunds(ids: number[], action: 'APPROVE' | 'REJECT', reason: string) {
+  if (!ids.length) throw new ApiError(400, '退款申请不能为空')
+  for (const id of ids) assertPositiveInteger(id, '退款申请ID')
+  const normalizedReason = reason.trim()
+  if (!normalizedReason) throw new ApiError(400, '批量审核原因不能为空')
+  return request<import('@/types/api').RefundRequestVO[]>('/api/payment/refunds/admin/batch-review', {
+    method: 'POST',
+    body: JSON.stringify({ ids, action, reason: normalizedReason }),
+  })
+}
+
 export function submitPayForm(payForm: string) {
   const container = document.createElement('div')
   container.style.display = 'none'
@@ -1474,6 +1485,21 @@ export async function listCheckInRecords(params: { sessionId: number; result?: s
   )
 }
 
+export async function manualCheckInTicket(params: { sessionId: number; entryCode: string; deviceCode?: string | null }) {
+  assertPositiveInteger(params.sessionId, '场次ID')
+  const entryCode = params.entryCode.trim()
+  if (!entryCode) throw new ApiError(400, '票码不能为空')
+  const deviceCode = params.deviceCode?.trim()
+  return request<import('@/types/api').CheckInRecordVO>('/api/ticket/admin/check-in/manual', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: params.sessionId,
+      entryCode,
+      ...(deviceCode ? { deviceCode } : {}),
+    }),
+  })
+}
+
 export async function listAdminTours(userId: number, params: { page?: number; size?: number; categoryId?: number } = {}) {
   const searchParams = new URLSearchParams()
   searchParams.set('page', String(params.page || 1))
@@ -1512,7 +1538,7 @@ export async function deactivateTour(tourId: number, body: { userId: number; con
   })
 }
 
-export async function createTourDraft(body: Record<string, unknown>) {
+export async function createTourDraft(body: import('@/types/api').TourDraftCreatePayload) {
   return request<import('@/types/api').TourEntity>('/api/ticket/admin/tours/draft', {
     method: 'POST', body: JSON.stringify((({ userId: _userId, ...safeBody }) => safeBody)(body)),
   })
@@ -1702,6 +1728,13 @@ export async function createAdminTicketType(body: import('@/types/api').AdminTic
 export async function updateAdminTicketType(id: number, body: Record<string, unknown>) {
   return request<import('@/types/api').TicketTypeEntity>(`/api/ticket/admin/ticket-types/${id}`, {
     method: 'PUT', body: JSON.stringify(body),
+  })
+}
+
+export async function batchUpdateAdminTicketTypes(body: import('@/types/api').TicketTypeBatchUpdateRequest) {
+  return request<import('@/types/api').TicketTypeEntity[]>('/api/ticket/admin/ticket-types/batch-update', {
+    method: 'POST',
+    body: JSON.stringify(body),
   })
 }
 

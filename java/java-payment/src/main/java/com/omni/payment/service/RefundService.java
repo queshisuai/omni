@@ -46,6 +46,7 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -245,6 +246,34 @@ public class RefundService {
             }
         }
         return result;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public List<RefundRequestVO> batchReview(Long reviewerId, List<Long> ids, String action, String reason) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款申请不能为空");
+        }
+        List<Long> normalizedIds = new ArrayList<>(new LinkedHashSet<>(ids));
+        for (Long id : normalizedIds) {
+            if (id == null || id <= 0) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "退款申请ID不正确");
+            }
+        }
+        String normalizedAction = requireText(action, "退款审核动作不能为空").trim().toUpperCase(Locale.ROOT);
+        if (!"APPROVE".equals(normalizedAction) && !"REJECT".equals(normalizedAction)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "退款审核动作不正确");
+        }
+        String reviewNote = requireText(reason, "批量审核原因不能为空").trim();
+
+        List<RefundRequestVO> reviewed = new ArrayList<>();
+        for (Long id : normalizedIds) {
+            if ("APPROVE".equals(normalizedAction)) {
+                reviewed.add(approve(id, reviewerId, reviewNote));
+            } else {
+                reviewed.add(reject(id, reviewerId, reviewNote));
+            }
+        }
+        return reviewed;
     }
 
     public RefundRequestVO reject(Long refundId, Long reviewerId, String reviewNote) {

@@ -78,6 +78,8 @@ class TourStationServiceTest {
     private ActivityAdminService activityAdminService;
     @Mock
     private SessionSeatMapper sessionSeatMapper;
+    @Mock
+    private ActivityArtistService activityArtistService;
 
     private TourStationService service;
 
@@ -85,7 +87,8 @@ class TourStationServiceTest {
     void setUp() {
         service = new TourStationService(tourMapper, stationMapper, userAccessService, venueApplicationMapper,
                 activityMapper, sessionMapper, ticketTypeMapper, venueMapper,
-                activitySeatLayoutService, sessionSeatLayoutService, activityAdminService, sessionSeatMapper);
+                activitySeatLayoutService, sessionSeatLayoutService, activityAdminService, sessionSeatMapper,
+                activityArtistService);
     }
 
     @Test
@@ -177,6 +180,32 @@ class TourStationServiceTest {
         List<Station> stations = captor.getAllValues();
         assertEquals("北京", stations.get(0).getCity());
         assertEquals("北京站", stations.get(0).getStationName());
+        assertEquals("上海", stations.get(1).getCity());
+        assertEquals("上海站", stations.get(1).getStationName());
+    }
+
+    @Test
+    void createTourDraftCreatesStationDraftsFromCityObjectsAndKeepsStationName() {
+        when(userAccessService.requireAdminOrOrganizerOrAnyPermission(2003L, "tour.manage")).thenReturn(user(2003L, "organizer"));
+        doAnswer(invocation -> {
+            Tour tour = invocation.getArgument(0);
+            tour.setId(10L);
+            return 1;
+        }).when(tourMapper).insert(any(Tour.class));
+
+        service.createTourDraft(2003L, Map.of(
+                "title", "巡回演唱会",
+                "cities", List.of(
+                        Map.of("city", "北京", "stationName", "北京特别场"),
+                        Map.of("city", " 上海 ", "stationName", " ")
+                )
+        ));
+
+        ArgumentCaptor<Station> captor = ArgumentCaptor.forClass(Station.class);
+        verify(stationMapper, org.mockito.Mockito.times(2)).insert(captor.capture());
+        List<Station> stations = captor.getAllValues();
+        assertEquals("北京", stations.get(0).getCity());
+        assertEquals("北京特别场", stations.get(0).getStationName());
         assertEquals("上海", stations.get(1).getCity());
         assertEquals("上海站", stations.get(1).getStationName());
     }
@@ -834,6 +863,7 @@ class TourStationServiceTest {
         verify(activitySeatLayoutService).copyFromVenueApplication(2003L, 301L, 88L);
         verify(sessionSeatLayoutService).copyFromActivity(2003L, 401L, 301L);
         verify(sessionSeatLayoutService).generateSessionSeats(401L);
+        verify(activityArtistService).ensurePrimaryArtist(301L, 3L);
         verify(activityMapper).updateById(activity);
         verify(stationMapper).updateById(station);
     }

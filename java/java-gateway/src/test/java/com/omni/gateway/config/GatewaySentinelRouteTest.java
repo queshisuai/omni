@@ -45,7 +45,7 @@ class GatewaySentinelRouteTest {
         void paymentServiceRoute() { assertTrue(true, "Verified in application.yml"); }
         @Test @DisplayName("GW-005: notification-service route → /api/notification/** → lb://java-notification")
         void notificationServiceRoute() { assertTrue(true, "Verified in application.yml"); }
-        @Test @DisplayName("GW-006: grab-service route → /api/grab/** → http://localhost:3001")
+        @Test @DisplayName("GW-006: grab-service route → /api/grab/** → configurable grab URI")
         void grabServiceRoute() { assertTrue(true, "Verified in application.yml"); }
         @Test @DisplayName("GW-007: ticket-uploads route → /uploads/ticket/** → lb://java-ticket")
         void ticketUploadsRoute() { assertTrue(true, "Verified in application.yml"); }

@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.TicketTypeSeatStockSnapshot;
+import com.omni.ticket.dto.TourDraftCreateDTO;
+import com.omni.ticket.dto.TourStationCityDTO;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.dto.RefundImpactResponse;
 import com.omni.ticket.entity.Session;
@@ -79,11 +81,12 @@ public class TourStationService {
     private final SessionSeatLayoutService sessionSeatLayoutService;
     private final ActivityAdminService activityAdminService;
     private final SessionSeatMapper sessionSeatMapper;
+    private final ActivityArtistService activityArtistService;
 
     public TourStationService(TourMapper tourMapper,
                                StationMapper stationMapper,
                                UserAccessService userAccessService) {
-        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null, null, null, null, null);
+        this(tourMapper, stationMapper, userAccessService, null, null, null, null, null, null, null, null, null, null);
     }
 
     public TourStationService(TourMapper tourMapper,
@@ -95,7 +98,7 @@ public class TourStationService {
                               ActivitySeatLayoutService activitySeatLayoutService,
                               SessionSeatLayoutService sessionSeatLayoutService) {
         this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
-                null, null, activitySeatLayoutService, sessionSeatLayoutService, null, null);
+                null, null, activitySeatLayoutService, sessionSeatLayoutService, null, null, null);
     }
 
     public TourStationService(TourMapper tourMapper,
@@ -109,7 +112,7 @@ public class TourStationService {
                                ActivitySeatLayoutService activitySeatLayoutService,
                                SessionSeatLayoutService sessionSeatLayoutService) {
         this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
-                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, null, null);
+                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, null, null, null);
     }
 
     public TourStationService(TourMapper tourMapper,
@@ -124,7 +127,23 @@ public class TourStationService {
                                SessionSeatLayoutService sessionSeatLayoutService,
                                ActivityAdminService activityAdminService) {
         this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
-                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, activityAdminService, null);
+                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, activityAdminService, null, null);
+    }
+
+    public TourStationService(TourMapper tourMapper,
+                               StationMapper stationMapper,
+                               UserAccessService userAccessService,
+                               VenueApplicationMapper venueApplicationMapper,
+                               ActivityMapper activityMapper,
+                               SessionMapper sessionMapper,
+                               TicketTypeMapper ticketTypeMapper,
+                               VenueMapper venueMapper,
+                               ActivitySeatLayoutService activitySeatLayoutService,
+                               SessionSeatLayoutService sessionSeatLayoutService,
+                               ActivityAdminService activityAdminService,
+                               SessionSeatMapper sessionSeatMapper) {
+        this(tourMapper, stationMapper, userAccessService, venueApplicationMapper, activityMapper, sessionMapper,
+                ticketTypeMapper, venueMapper, activitySeatLayoutService, sessionSeatLayoutService, activityAdminService, sessionSeatMapper, null);
     }
 
     @Autowired
@@ -139,7 +158,8 @@ public class TourStationService {
                                ActivitySeatLayoutService activitySeatLayoutService,
                                SessionSeatLayoutService sessionSeatLayoutService,
                                ActivityAdminService activityAdminService,
-                               SessionSeatMapper sessionSeatMapper) {
+                               SessionSeatMapper sessionSeatMapper,
+                               ActivityArtistService activityArtistService) {
         this.tourMapper = tourMapper;
         this.stationMapper = stationMapper;
         this.userAccessService = userAccessService;
@@ -152,32 +172,45 @@ public class TourStationService {
         this.sessionSeatLayoutService = sessionSeatLayoutService;
         this.activityAdminService = activityAdminService;
         this.sessionSeatMapper = sessionSeatMapper;
+        this.activityArtistService = activityArtistService;
     }
 
     @Transactional
     public Tour createTourDraft(Long userId, Map<String, Object> body) {
+        return createTourDraftFromRequest(userId, toTourDraftCreateDTO(body));
+    }
+
+    @Transactional
+    public Tour createTourDraftFromRequest(Long userId, TourDraftCreateDTO body) {
         InternalUserRefResponse user = requireTourManager(userId);
-        String title = requireText(body == null ? null : body.get("title"), "演出项目名称不能为空");
+        if (body == null) {
+            body = new TourDraftCreateDTO();
+        }
+        String title = requireText(body.getTitle(), "演出项目名称不能为空");
         LocalDateTime now = LocalDateTime.now();
         Tour tour = new Tour();
         tour.setTitle(title);
-        tour.setArtistId(parsePositiveLong(body.get("artistId")));
-        tour.setCategoryId(parsePositiveLong(body.get("categoryId")));
-        tour.setPoster(optionalText(body.get("poster")));
-        tour.setDescription(optionalText(body.get("description")));
+        tour.setArtistId(parsePositiveLong(body.getArtistId()));
+        tour.setCategoryId(parsePositiveLong(body.getCategoryId()));
+        tour.setPoster(optionalText(body.getPoster()));
+        tour.setDescription(optionalText(body.getDescription()));
         tour.setOrganizerId("admin".equals(user.getRole())
-                ? defaultLong(parsePositiveLong(body.get("organizerId")), userId)
+                ? defaultLong(parsePositiveLong(body.getOrganizerId()), userId)
                 : userId);
         tour.setReviewStatus("draft");
         tour.setStatus(1);
         tour.setCreateTime(now);
         tour.setUpdateTime(now);
         tourMapper.insert(tour);
-        for (String city : parseCities(body.get("cities"))) {
+        for (TourStationCityDTO cityInput : normalizeCities(body.getCities())) {
+            String city = optionalText(cityInput.getCity());
+            if (city == null) {
+                continue;
+            }
             Station station = new Station();
             station.setTourId(tour.getId());
             station.setCity(city);
-            station.setStationName(city + "站");
+            station.setStationName(defaultText(optionalText(cityInput.getStationName()), city + "站"));
             station.setPublishStatus(PUBLISH_STATUS_DRAFT);
             station.setStatus(1);
             station.setCreateTime(now);
@@ -625,6 +658,7 @@ public class TourStationService {
             activityMapper.insert(activity);
         }
 
+        syncTourPrimaryArtist(activity.getId(), tour.getArtistId());
         copyPublishSeatCraftLayout(userId, activity, station, application);
 
         Session session = null;
@@ -655,6 +689,13 @@ public class TourStationService {
         result.put("activity", activity);
         result.put("session", session);
         return result;
+    }
+
+    private void syncTourPrimaryArtist(Long activityId, Long artistId) {
+        if (activityArtistService == null || activityId == null || artistId == null || artistId <= 0) {
+            return;
+        }
+        activityArtistService.ensurePrimaryArtist(activityId, artistId);
     }
 
     private Map<String, Object> publishActivityStation(InternalUserRefResponse user, Long userId, Station station, Map<String, Object> body) {
@@ -797,14 +838,46 @@ public class TourStationService {
     }
 
     private List<String> parseCities(Object value) {
+        return parseCityInputs(value).stream()
+                .map(TourStationCityDTO::getCity)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    private TourDraftCreateDTO toTourDraftCreateDTO(Map<String, Object> body) {
+        TourDraftCreateDTO request = new TourDraftCreateDTO();
+        if (body == null) {
+            return request;
+        }
+        request.setTitle(optionalText(body.get("title")));
+        request.setArtistId(parsePositiveLong(body.get("artistId")));
+        request.setCategoryId(parsePositiveLong(body.get("categoryId")));
+        request.setPoster(optionalText(body.get("poster")));
+        request.setDescription(optionalText(body.get("description")));
+        request.setOrganizerId(parsePositiveLong(body.get("organizerId")));
+        request.setCities(parseCityInputs(body.get("cities")));
+        return request;
+    }
+
+    private List<TourStationCityDTO> normalizeCities(List<TourStationCityDTO> input) {
+        if (input == null || input.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return input.stream()
+                .map(this::copyCityInput)
+                .filter(city -> city.getCity() != null)
+                .collect(Collectors.toList());
+    }
+
+    private List<TourStationCityDTO> parseCityInputs(Object value) {
         if (value == null) {
             return Collections.emptyList();
         }
-        List<String> cities = new ArrayList<>();
+        List<TourStationCityDTO> cities = new ArrayList<>();
         if (value instanceof List<?>) {
             for (Object item : (List<?>) value) {
-                String city = optionalText(item);
-                if (city != null) {
+                TourStationCityDTO city = toCityInput(item);
+                if (city.getCity() != null) {
                     cities.add(city);
                 }
             }
@@ -813,20 +886,45 @@ public class TourStationService {
         if (value.getClass().isArray()) {
             int length = Array.getLength(value);
             for (int i = 0; i < length; i++) {
-                String city = optionalText(Array.get(value, i));
-                if (city != null) {
+                TourStationCityDTO city = toCityInput(Array.get(value, i));
+                if (city.getCity() != null) {
                     cities.add(city);
                 }
             }
             return cities;
         }
         for (String part : value.toString().split(",")) {
-            String city = optionalText(part);
-            if (city != null) {
+            TourStationCityDTO city = toCityInput(part);
+            if (city.getCity() != null) {
                 cities.add(city);
             }
         }
         return cities;
+    }
+
+    private TourStationCityDTO toCityInput(Object value) {
+        if (value instanceof TourStationCityDTO) {
+            return copyCityInput((TourStationCityDTO) value);
+        }
+        TourStationCityDTO city = new TourStationCityDTO();
+        if (value instanceof Map<?, ?>) {
+            Map<?, ?> map = (Map<?, ?>) value;
+            city.setCity(optionalText(map.get("city")));
+            city.setStationName(optionalText(map.get("stationName")));
+            return city;
+        }
+        city.setCity(optionalText(value));
+        return city;
+    }
+
+    private TourStationCityDTO copyCityInput(TourStationCityDTO source) {
+        TourStationCityDTO city = new TourStationCityDTO();
+        if (source == null) {
+            return city;
+        }
+        city.setCity(optionalText(source.getCity()));
+        city.setStationName(optionalText(source.getStationName()));
+        return city;
     }
 
     private Long parsePositiveLong(Object value) {

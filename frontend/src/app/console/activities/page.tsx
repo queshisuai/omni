@@ -7,9 +7,10 @@ import { announceTourCities, deleteTourDraft, deactivateTour, getActivityStation
 import { getRealNameRequirementLabel, getTicketTransferAllowedLabel } from '@/lib/activity-flags'
 import { canUseConsoleAction, hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
 import { Bell, Trash2, Eye, EyeOff, RefreshCw, Search, FileDown, MoreHorizontal } from 'lucide-react'
-import { globalAlert, globalConfirm, globalPrompt } from '@/components/GlobalDialog'
+import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
 import { GlobalPagination } from '@/components/Pagination'
 import { SafeImage } from '@/components/SafeImage'
+import { Modal } from '@/components/ui/Modal'
 import type { ActivityBuyerNotificationResponse, ActivityEntity, CategoryVO, PageResult, RefundImpactResponse, TourEntity, UserRole } from '@/types/api'
 
 const PAGE_SIZE = 10
@@ -143,6 +144,11 @@ type ActivityListFilters = {
   categoryId?: string
 }
 
+type ActivityActionDialog =
+  | { action: 'notify_buyers'; title: string; activities: ActivityEntity[]; content: string; error: string }
+  | { action: 'delete'; title: string; activity: ActivityEntity; reason: string; error: string }
+  | { action: 'risk_suspend'; title: string; activity: ActivityEntity; reason: string; error: string }
+
 export default function ActivitiesPage() {
   const [activities, setActivities] = useState<ActivityEntity[]>([])
   const [categories, setCategories] = useState<CategoryVO[]>([])
@@ -160,6 +166,8 @@ export default function ActivitiesPage() {
   const [publishingKey, setPublishingKey] = useState<string | null>(null)
   const [selectedActivityKeys, setSelectedActivityKeys] = useState<Set<string>>(() => new Set())
   const [openActionMenuKey, setOpenActionMenuKey] = useState<string | null>(null)
+  const [activityActionDialog, setActivityActionDialog] = useState<ActivityActionDialog | null>(null)
+  const [activityActionSubmitting, setActivityActionSubmitting] = useState(false)
   const loadDataRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
   const isAdmin = isPlatformAdminRole(role)
@@ -400,15 +408,15 @@ export default function ActivitiesPage() {
     }
     const multiple = selected.length > 1
     const actionText = multiple ? '批量通知购票用户' : '通知购票用户'
-    const content = await globalPrompt('通知内容将发送给所选普通活动的已支付订单用户，请填写明确的中文通知。', actionText, '请输入通知内容（必填）')
-    if (content === null) return
-    const trimmedContent = content.trim()
+    setActivityActionDialog({ action: 'notify_buyers', title: actionText, activities: selected, content: '', error: '' })
+  }
+
+  const submitBuyerNotification = async (dialog: Extract<ActivityActionDialog, { action: 'notify_buyers' }>) => {
+    const trimmedContent = dialog.content.trim()
     if (!trimmedContent) {
-      await globalAlert('通知内容不能为空')
+      setActivityActionDialog({ ...dialog, error: '通知内容不能为空' })
       return
     }
-    const confirmed = await globalConfirm(`已选择 ${selected.length} 个普通活动。该操作仅发送站内通知，不发送短信或邮件；用户将从通知跳转到对应订单详情。请确认：仅发送站内通知。`)
-    if (!confirmed) return
 
     const impact = {
       paidOrderCount: 0,
@@ -419,7 +427,8 @@ export default function ActivitiesPage() {
     const failedMessages: string[] = []
     const completedKeys = new Set<string>()
 
-    for (const activity of selected) {
+    setActivityActionSubmitting(true)
+    for (const activity of dialog.activities) {
       try {
         const result = await notifyActivityBuyers(activity.id, {
           userId,
@@ -436,12 +445,14 @@ export default function ActivitiesPage() {
         failedMessages.push(`${activity.name || '活动信息待同步'}：${message}`)
       }
     }
+    setActivityActionSubmitting(false)
+    setActivityActionDialog(null)
 
     if (completedKeys.size > 0) {
       setSelectedActivityKeys(previous => new Set([...previous].filter(key => !completedKeys.has(key))))
     }
 
-    const outcome = `${actionText}处理完成：成功 ${completedKeys.size} 个，失败 ${failedMessages.length} 个。${buildBuyerNotificationSummary(impact)}`
+    const outcome = `${dialog.title}处理完成：成功 ${completedKeys.size} 个，失败 ${failedMessages.length} 个。${buildBuyerNotificationSummary(impact)}`
     if (failedMessages.length > 0) {
       await globalAlert(`${outcome}失败明细：${failedMessages.slice(0, 3).join('；')}${failedMessages.length > 3 ? '；其余失败项请刷新后重试。' : ''}`)
     } else {
@@ -505,15 +516,26 @@ export default function ActivitiesPage() {
       loadData(page)
       return
     }
-    const reason = await globalPrompt('删除活动前请填写原因。已发布且有订单的活动需先完成下架退款。', '删除活动', '请输入删除原因（必填）')
-    if (reason === null) return
-    if (!reason.trim()) {
-      await globalAlert('删除原因不能为空')
+    setActivityActionDialog({ action: 'delete', title: '删除活动', activity, reason: '', error: '' })
+  }
+
+  const submitDeleteActivity = async (dialog: Extract<ActivityActionDialog, { action: 'delete' }>) => {
+    const reason = dialog.reason.trim()
+    if (!reason) {
+      setActivityActionDialog({ ...dialog, error: '删除原因不能为空' })
       return
     }
-    const result = await deleteAdminActivity(activity.id, { userId, reason: reason.trim() })
-    await globalAlert(result.message || '活动已删除')
-    loadData(page)
+    setActivityActionSubmitting(true)
+    try {
+      const result = await deleteAdminActivity(dialog.activity.id, { userId, reason })
+      setActivityActionDialog(null)
+      await globalAlert(result.message || '活动已删除')
+      loadData(page)
+    } catch (err) {
+      setActivityActionDialog({ ...dialog, error: err instanceof Error ? err.message : '删除活动失败' })
+    } finally {
+      setActivityActionSubmitting(false)
+    }
   }
 
   const handlePublishDraft = async (activity: ActivityEntity) => {
@@ -552,26 +574,26 @@ export default function ActivitiesPage() {
     }
   }
 
-  const [riskTarget, setRiskTarget] = useState<ActivityEntity | null>(null)
+  const [riskResolutionDialog, setRiskResolutionDialog] = useState<ActivityEntity | null>(null)
   const [riskNote, setRiskNote] = useState('')
   const [riskType, setRiskType] = useState<'remove_artist' | 'reschedule' | 'refund' | 'explain'>('explain')
   const [riskSubmitting, setRiskSubmitting] = useState(false)
 
   const handleRiskResolution = (activity: ActivityEntity) => {
-    setRiskTarget(activity)
+    setRiskResolutionDialog(activity)
     setRiskNote('')
     setRiskType('explain')
   }
 
   const closeRiskDialog = () => {
     if (riskSubmitting) return
-    setRiskTarget(null)
+    setRiskResolutionDialog(null)
     setRiskNote('')
     setRiskType('explain')
   }
 
   const submitRiskResolution = async () => {
-    if (!riskTarget) return
+    if (!riskResolutionDialog) return
     if (!riskNote.trim()) {
       await globalAlert('处理说明不能为空')
       return
@@ -584,12 +606,12 @@ export default function ActivitiesPage() {
     }
     setRiskSubmitting(true)
     try {
-      await submitActivityRiskResolution(riskTarget.id, {
+      await submitActivityRiskResolution(riskResolutionDialog.id, {
         userId,
         resolutionNote: `${TYPE_PREFIX[riskType]} ${riskNote.trim()}`,
       })
       await globalAlert('已提交恢复售票申请，等待平台审核。')
-      setRiskTarget(null)
+      setRiskResolutionDialog(null)
       setRiskNote('')
       setRiskType('explain')
       loadData(page)
@@ -601,19 +623,52 @@ export default function ActivitiesPage() {
   }
 
   const handleAdminSuspend = async (activity: ActivityEntity) => {
-    const reason = await globalPrompt('请输入停售原因（将记录到风险案例并通知主办方）：', '风险停售', '请输入停售原因（必填）')
-    if (reason === null) return
-    if (!reason.trim()) {
-      await globalAlert('停售原因不能为空')
+    setActivityActionDialog({ action: 'risk_suspend', title: '风险停售', activity, reason: '', error: '' })
+  }
+
+  const submitRiskSuspend = async (dialog: Extract<ActivityActionDialog, { action: 'risk_suspend' }>) => {
+    const reason = dialog.reason.trim()
+    if (!reason) {
+      setActivityActionDialog({ ...dialog, error: '停售原因不能为空' })
       return
     }
+    setActivityActionSubmitting(true)
     try {
-      await suspendActivityForRisk(activity.id, { userId, reason: reason.trim() })
+      await suspendActivityForRisk(dialog.activity.id, { userId, reason })
+      setActivityActionDialog(null)
       await globalAlert('活动已被主动停售，已通知主办方处理。')
       loadData(page)
     } catch (err: unknown) {
-      await globalAlert(err instanceof Error ? err.message : '停售失败')
+      setActivityActionDialog({ ...dialog, error: err instanceof Error ? err.message : '停售失败' })
+    } finally {
+      setActivityActionSubmitting(false)
     }
+  }
+
+  const closeActivityActionDialog = () => {
+    if (activityActionSubmitting) return
+    setActivityActionDialog(null)
+  }
+
+  const updateActivityActionText = (value: string) => {
+    setActivityActionDialog(current => {
+      if (!current) return current
+      if (current.action === 'notify_buyers') return { ...current, content: value, error: '' }
+      return { ...current, reason: value, error: '' }
+    })
+  }
+
+  const submitActivityAction = async () => {
+    if (!activityActionDialog) return
+    if (activityActionDialog.action === 'notify_buyers') {
+      await submitBuyerNotification(activityActionDialog)
+      return
+    }
+    if (activityActionDialog.action === 'delete') {
+      await submitDeleteActivity(activityActionDialog)
+      return
+    }
+    await submitRiskSuspend(activityActionDialog)
   }
 
   const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
@@ -769,7 +824,7 @@ export default function ActivitiesPage() {
                   <span className="font-semibold">{alertText}</span>
                   <span className="text-[#5f7892]">可{offlineBtnText} {batchDeactivatableActivities.length} 个，可{notifyBtnText} {batchNotifiableActivities.length} 个</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 whitespace-nowrap">
                   <button
                     type="button"
                     onClick={handleBatchNotifyBuyers}
@@ -799,10 +854,10 @@ export default function ActivitiesPage() {
               </div>
             </div>
           )}
-          <table className="w-full text-[14px]">
+          <table className="min-w-[960px] w-full text-[14px]">
             <thead>
               <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
-                <th className="w-[52px] p-3 text-left font-medium text-[#666]">
+                <th className="w-[52px] whitespace-nowrap p-3 text-left font-medium text-[#666]">
                   <input
                     type="checkbox"
                     checked={allBatchSelectableSelected}
@@ -812,10 +867,10 @@ export default function ActivitiesPage() {
                     className="h-4 w-4 accent-[#ff1268]"
                   />
                 </th>
-                <th className="text-left p-3 font-medium text-[#666]">演出活动</th>
-                <th className="text-left p-3 font-medium text-[#666]">状态</th>
-                <th className="text-left p-3 font-medium text-[#666]">创建时间</th>
-                <th className="text-center p-3 font-medium text-[#666]">操作</th>
+                <th className="whitespace-nowrap text-left p-3 font-medium text-[#666]">演出活动</th>
+                <th className="whitespace-nowrap text-left p-3 font-medium text-[#666]">状态</th>
+                <th className="whitespace-nowrap text-left p-3 font-medium text-[#666]">创建时间</th>
+                <th className="whitespace-nowrap text-center p-3 font-medium text-[#666]">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -864,14 +919,14 @@ export default function ActivitiesPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="p-3">
-                    <span className={`text-[12px] px-2 py-0.5 rounded-full ${getActivityStatusClass(a)}`}>
+                  <td className="whitespace-nowrap p-3">
+                    <span className={`whitespace-nowrap text-[12px] px-2 py-0.5 rounded-full ${getActivityStatusClass(a)}`}>
                       {getActivityStatusText(a)}
                     </span>
                   </td>
-                  <td className="p-3 text-[#999]">{a.createTime?.substring(0, 10)}</td>
-                  <td className="p-3">
-                    <div className="flex items-center justify-center gap-2">
+                  <td className="whitespace-nowrap p-3 text-[#999]">{a.createTime?.substring(0, 10)}</td>
+                  <td className="min-w-[180px] whitespace-nowrap p-3">
+                    <div className="flex items-center justify-center gap-2 whitespace-nowrap">
                       <Link href={configHref} className="rounded px-2 py-1 text-[12px] text-[#3b82f6] hover:bg-[#eff6ff]">继续配置</Link>
                       <Link href={seatHref} className="rounded px-2 py-1 text-[12px] text-[#ff1268] hover:bg-[#fff0f3]">座位票档</Link>
                       <div className="relative">
@@ -998,15 +1053,69 @@ export default function ActivitiesPage() {
         </div>
         </>
       )}
-      {riskTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
-          <div className="w-full max-w-[480px] rounded-lg bg-white p-6 shadow-xl">
-            <h2 className="mb-2 text-[18px] font-medium text-[#111]">提交恢复售票申请</h2>
-            <p className="mb-4 text-[13px] leading-5 text-[#666]">
-              活动：{riskTarget.name}<br />
+      {activityActionDialog && (
+        <Modal
+          open={Boolean(activityActionDialog)}
+          onClose={closeActivityActionDialog}
+          title={activityActionDialog.title}
+          size="md"
+          danger={activityActionDialog.action !== 'notify_buyers'}
+          loading={activityActionSubmitting}
+          footer={(
+            <>
+              <button type="button" onClick={closeActivityActionDialog} disabled={activityActionSubmitting} className="rounded-lg border border-[#e5e5e5] bg-white px-4 py-2 text-[13px] text-[#666] hover:bg-[#fafafa] disabled:opacity-60">
+                取消
+              </button>
+              <button type="button" onClick={() => void submitActivityAction()} disabled={activityActionSubmitting} className={`rounded-lg px-4 py-2 text-[13px] font-medium text-white disabled:opacity-60 ${activityActionDialog.action === 'notify_buyers' ? 'bg-[#ff1268]' : 'bg-[#f53f3f]'}`}>
+                {activityActionSubmitting ? '提交中...' : activityActionDialog.action === 'notify_buyers' ? '发送通知' : '确认提交'}
+              </button>
+            </>
+          )}
+        >
+          <div className="space-y-3">
+            {activityActionDialog.action === 'notify_buyers' ? (
+              <p className="text-[13px] leading-6 text-[#666]">通知内容将发送给 {activityActionDialog.activities.length} 个普通活动的已支付订单用户；该操作仅发送站内通知，不发送短信或邮件。</p>
+            ) : (
+              <div className="rounded-lg bg-[#fff1f2] px-3 py-2 text-[13px] leading-6 text-[#b91c1c]">
+                {activityActionDialog.action === 'delete' ? '删除活动前必须填写原因。已发布且有订单的活动需先完成下架退款。' : '风险停售将记录到风险案例并通知主办方，请填写明确停售原因。'}
+              </div>
+            )}
+            <textarea
+              value={activityActionDialog.action === 'notify_buyers' ? activityActionDialog.content : activityActionDialog.reason}
+              onChange={event => updateActivityActionText(event.target.value)}
+              rows={activityActionDialog.action === 'notify_buyers' ? 6 : 4}
+              placeholder={activityActionDialog.action === 'notify_buyers' ? '请输入通知内容（必填）' : activityActionDialog.action === 'delete' ? '请输入删除原因（必填）' : '请输入停售原因（必填）'}
+              className="w-full resize-none rounded-lg border border-[#ddd] px-3 py-2 text-[14px] text-[#333] outline-none focus:border-[#ff1268]"
+              maxLength={1000}
+            />
+            {activityActionDialog.error && <div className="rounded-lg bg-[#fff0f3] px-3 py-2 text-[13px] text-[#ff4d4f]">{activityActionDialog.error}</div>}
+          </div>
+        </Modal>
+      )}
+      <Modal
+        open={Boolean(riskResolutionDialog)}
+        onClose={closeRiskDialog}
+        title="提交恢复售票申请"
+        size="md"
+        loading={riskSubmitting}
+        footer={(
+          <>
+            <button type="button" onClick={closeRiskDialog} disabled={riskSubmitting} className="rounded-lg border border-[#e5e5e5] bg-white px-4 py-2 text-[13px] text-[#666] hover:bg-[#fafafa] disabled:opacity-60">
+              取消
+            </button>
+            <button type="button" onClick={() => void submitRiskResolution()} disabled={riskSubmitting} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-60">
+              {riskSubmitting ? '提交中...' : '提交申请'}
+            </button>
+          </>
+        )}
+      >
+        {riskResolutionDialog ? (
+          <div className="space-y-4">
+            <p className="text-[13px] leading-6 text-[#666]">
+              活动：{riskResolutionDialog.name}<br />
               请选择处置方式并描述已完成的整改动作，平台审核通过后将恢复售票。
             </p>
-            <div className="mb-3">
+            <div>
               <div className="mb-2 text-[13px] text-[#333]">处置方式</div>
               <div className="grid grid-cols-2 gap-2">
                 {(
@@ -1037,30 +1146,12 @@ export default function ActivitiesPage() {
               value={riskNote}
               onChange={(event) => setRiskNote(event.target.value)}
               placeholder="请描述具体处置动作，例如：已下线风险艺人 张三，并向 218 名购票用户发出阵容变更通知。"
-              className="mb-4 h-[120px] w-full resize-none rounded border border-[#ddd] px-3 py-2 text-[14px] text-[#333] outline-none focus:border-[#ff1268]"
+              className="h-[120px] w-full resize-none rounded border border-[#ddd] px-3 py-2 text-[14px] text-[#333] outline-none focus:border-[#ff1268]"
               maxLength={500}
             />
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={closeRiskDialog}
-                disabled={riskSubmitting}
-                className="cursor-pointer rounded border border-[#ddd] bg-white px-5 py-2 text-[14px] text-[#666] outline-none"
-                style={{ opacity: riskSubmitting ? 0.7 : 1 }}
-              >
-                取消
-              </button>
-              <button
-                onClick={submitRiskResolution}
-                disabled={riskSubmitting}
-                className="cursor-pointer rounded border-none bg-[#ff1268] px-5 py-2 text-[14px] text-white outline-none"
-                style={{ opacity: riskSubmitting ? 0.7 : 1 }}
-              >
-                {riskSubmitting ? '提交中...' : '提交申请'}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </Modal>
     </div>
   )
 }

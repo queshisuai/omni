@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckSquare, Download, XCircle } from 'lucide-react'
 import { getUser } from '@/lib/auth'
-import { approveRefund, listAdminRefunds, rejectRefund } from '@/lib/api'
+import { approveRefund, batchReviewRefunds, listAdminRefunds, rejectRefund } from '@/lib/api'
 import { isPlatformAdminRole } from '@/lib/console-auth'
 import {
   buildConsoleRefundExportCsv,
@@ -18,6 +18,7 @@ import {
   getConsoleRefundStatusClassName,
 } from '@/lib/console-refunds'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
+import { Modal } from '@/components/ui/Modal'
 import type { RefundRequestVO, RefundStatus, UserRole } from '@/types/api'
 
 const STATUS_OPTIONS: Array<{ label: string; value?: RefundStatus }> = [
@@ -31,10 +32,13 @@ const STATUS_OPTIONS: Array<{ label: string; value?: RefundStatus }> = [
 
 type ReviewAction = 'approve' | 'reject'
 
-interface ReviewDraft {
-  id: number
+interface RefundReviewDialog {
   action: ReviewAction
+  scope: 'single' | 'batch'
+  ids: number[]
   note: string
+  title: string
+  description: string
 }
 
 function formatMoney(amount: number) {
@@ -46,12 +50,17 @@ function formatTime(value: string | null) {
   return value.replace('T', ' ').substring(0, 19)
 }
 
+function shouldShowTooltip(value: string | null | undefined, limit: number) {
+  return Boolean(value && value.length > limit)
+}
+
 export default function ConsoleRefundsPage() {
   const [refunds, setRefunds] = useState<RefundRequestVO[]>([])
   const [status, setStatus] = useState<RefundStatus | undefined>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [draft, setDraft] = useState<ReviewDraft | null>(null)
+  const [refundReviewDialog, setRefundReviewDialog] = useState<RefundReviewDialog | null>(null)
+  const [reviewDialogError, setReviewDialogError] = useState('')
   const [submittingId, setSubmittingId] = useState<number | null>(null)
   const [role, setRole] = useState<UserRole | ''>('')
   const [checkingRole, setCheckingRole] = useState(true)
@@ -116,32 +125,74 @@ export default function ConsoleRefundsPage() {
       return
     }
     setError('')
-    setDraft({ id: refund.id, action, note: '' })
+    setReviewDialogError('')
+    setRefundReviewDialog({
+      action,
+      scope: 'single',
+      ids: [refund.id],
+      note: '',
+      title: action === 'approve' ? (refund.status === 4 ? '重试退款' : '同意退款') : '拒绝退款申请',
+      description: action === 'approve'
+        ? `确认${refund.status === 4 ? '重试' : '同意'}退款申请“${refund.refundNo || refund.id}”？审核备注可选。`
+        : `确认拒绝退款申请“${refund.refundNo || refund.id}”？请填写拒绝原因。`,
+    })
   }
 
   const submitReview = async () => {
-    if (!draft) return
-    const currentRefund = refunds.find(refund => refund.id === draft.id)
-    if (!currentRefund || !canApplyConsoleRefundReviewAction(currentRefund.status, draft.action)) {
-      setError('退款状态待核对，请刷新后再操作')
-      setDraft(null)
+    if (!refundReviewDialog) return
+    const note = refundReviewDialog.note.trim()
+    if (refundReviewDialog.action === 'reject' && !note) {
+      setReviewDialogError('拒绝原因不能为空')
       return
     }
-    const note = draft.note.trim() || undefined
-    setSubmittingId(draft.id)
+
     setError('')
+    setReviewDialogError('')
     try {
-      if (draft.action === 'approve') {
-        await approveRefund(draft.id, note)
+      let batchOutcome = ''
+      let batchError = ''
+      if (refundReviewDialog.scope === 'single') {
+        const [id] = refundReviewDialog.ids
+        const currentRefund = refunds.find(refund => refund.id === id)
+        if (!currentRefund || !canApplyConsoleRefundReviewAction(currentRefund.status, refundReviewDialog.action)) {
+          setError('退款状态待核对，请刷新后再操作')
+          setRefundReviewDialog(null)
+          return
+        }
+        setSubmittingId(id)
+        if (refundReviewDialog.action === 'approve') {
+          await approveRefund(id, note || undefined)
+        } else {
+          await rejectRefund(id, note)
+        }
       } else {
-        await rejectRefund(draft.id, note)
+        const selectedTargets = refunds.filter(refund => refundReviewDialog.ids.includes(refund.id))
+        const targets = refundReviewDialog.action === 'approve'
+          ? getBatchRefundApproveTargets(selectedTargets)
+          : getBatchRefundRejectTargets(selectedTargets)
+        if (targets.length === 0) {
+          setError(refundReviewDialog.action === 'approve' ? '请先选择可同意或重试的退款申请' : '请先选择待审核的退款申请')
+          setRefundReviewDialog(null)
+          return
+        }
+
+        setBatchSubmitting(true)
+        await batchReviewRefunds(
+          targets.map(refund => refund.id),
+          refundReviewDialog.action === 'approve' ? 'APPROVE' : 'REJECT',
+          note || '批量同意/重试退款',
+        )
+        batchOutcome = `批量审核已提交 ${targets.length} 条`
       }
-      setDraft(null)
+      setRefundReviewDialog(null)
       await refresh()
-    } catch {
-      setError('提交审核失败，请稍后重试')
+      if (batchOutcome) setExportMessage(batchOutcome)
+      if (batchError) setError(batchError)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '提交审核失败，请稍后重试')
     } finally {
       setSubmittingId(null)
+      setBatchSubmitting(false)
     }
   }
 
@@ -170,40 +221,18 @@ export default function ConsoleRefundsPage() {
       return
     }
 
-    const actionName = action === 'approve' ? '批量同意/重试退款' : '批量拒绝退款'
-    const confirmed = window.confirm(`确认${actionName} ${targets.length} 条退款申请？该操作会逐条调用现有审核链路并写入对应审计。`)
-    if (!confirmed) return
-
-    setBatchSubmitting(true)
     setError('')
+    setReviewDialogError('')
     setExportMessage('')
-    let successCount = 0
-    let failedCount = 0
-
-    for (const refund of targets) {
-      try {
-        if (action === 'approve') {
-          await approveRefund(refund.id, '批量同意/重试退款')
-        } else {
-          await rejectRefund(refund.id, '批量拒绝退款')
-        }
-        successCount += 1
-      } catch {
-        failedCount += 1
-      }
-    }
-
-    try {
-      await refresh()
-      setExportMessage(`批量处理结果：成功 ${successCount} 条，失败 ${failedCount} 条`)
-      if (failedCount > 0) {
-        setError(`批量处理有 ${failedCount} 条失败，请刷新后核对退款状态`)
-      }
-    } catch {
-      setError('批量处理已提交，但刷新列表失败，请手动刷新核对')
-    } finally {
-      setBatchSubmitting(false)
-    }
+    const actionName = action === 'approve' ? '批量同意/重试退款' : '批量拒绝退款'
+    setRefundReviewDialog({
+      action,
+      scope: 'batch',
+      ids: targets.map(refund => refund.id),
+      note: '',
+      title: actionName,
+      description: `确认${actionName} ${targets.length} 条退款申请？该操作将通过原子批量接口提交，避免局部成功造成账务不一致。${action === 'reject' ? '请填写拒绝原因。' : '审核备注可选。'}`,
+    })
   }
 
   const downloadRefunds = (content: string, type: string, extension: string) => {
@@ -274,8 +303,8 @@ export default function ConsoleRefundsPage() {
 
       {exportMessage && <div className="mb-4 rounded-lg bg-[#f0fff4] px-3 py-2 text-[13px] text-[#16a34a]">{exportMessage}</div>}
 
-      <div className="bg-white rounded-xl border border-[#e5e5e5] p-3 mb-4 overflow-x-auto">
-        <div className="flex gap-2 min-w-max">
+      <div className="bg-white rounded-xl border border-[#e5e5e5] p-3 mb-4">
+        <div className="flex flex-wrap gap-2">
           {STATUS_OPTIONS.map(option => {
             const active = status === option.value
             return (
@@ -335,11 +364,11 @@ export default function ConsoleRefundsPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-[#e5e5e5] overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px] text-[14px]">
+          <div>
+            <table className="w-full table-fixed text-[14px]">
               <thead>
                 <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
-                  <th className="w-[52px] p-3 text-left font-medium text-[#666]">
+                  <th className="w-10 text-center whitespace-nowrap p-3 font-medium text-[#666]">
                     <input
                       type="checkbox"
                       aria-label="选择本页可处理退款"
@@ -349,15 +378,15 @@ export default function ConsoleRefundsPage() {
                       className="h-4 w-4 accent-[#ff1268]"
                     />
                   </th>
-                  <th className="text-left p-3 font-medium text-[#666]">退款号</th>
-                  <th className="text-left p-3 font-medium text-[#666]">订单/活动</th>
-                  <th className="text-left p-3 font-medium text-[#666]">用户编号</th>
-                  <th className="text-left p-3 font-medium text-[#666]">金额</th>
-                  <th className="text-left p-3 font-medium text-[#666]">原因</th>
-                  <th className="text-left p-3 font-medium text-[#666]">状态</th>
-                  <th className="text-left p-3 font-medium text-[#666]">申请时间</th>
-                  <th className="text-left p-3 font-medium text-[#666]">审核备注/时间</th>
-                  <th className="text-left p-3 font-medium text-[#666]">操作</th>
+                  <th className="w-40 min-w-[150px] whitespace-nowrap p-3 text-left font-medium text-[#666]">退款编号</th>
+                  <th className="w-64 min-w-[220px] p-3 text-left font-medium text-[#666]">订单与活动信息</th>
+                  <th className="w-20 text-center whitespace-nowrap p-3 font-medium text-[#666]">用户编号</th>
+                  <th className="w-24 text-right whitespace-nowrap p-3 font-medium text-[#666]">退款金额</th>
+                  <th className="w-60 min-w-[200px] p-3 text-left font-medium text-[#666]">申请退款原因</th>
+                  <th className="w-24 min-w-[90px] whitespace-nowrap p-3 text-center font-medium text-[#666]">状态</th>
+                  <th className="w-36 whitespace-nowrap p-3 text-left font-medium text-[#666]">申请时间</th>
+                  <th className="w-44 min-w-[150px] p-3 text-left font-medium text-[#666]">审核备注 / 时间</th>
+                  <th className="w-36 text-right whitespace-nowrap p-3 font-medium text-[#666]">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -366,12 +395,10 @@ export default function ConsoleRefundsPage() {
                   const statusClassName = getConsoleRefundStatusClassName(refund.status)
                   const canReview = canReviewConsoleRefund(refund.status)
                   const actionLabel = formatConsoleRefundActionLabel(refund.status)
-                  const reviewing = draft?.id === refund.id
-                  const submitting = submittingId === refund.id
                   const selected = selectedRefundIds.includes(refund.id)
                   return (
-                    <tr key={refund.id} className="border-b border-[#f0f0f0] align-top hover:bg-[#fafafa]">
-                      <td className="p-3">
+                    <tr key={refund.id} className="border-b border-[#f0f0f0] align-middle hover:bg-[#fafafa]">
+                      <td className="w-10 p-3 text-center">
                         <input
                           type="checkbox"
                           aria-label={`选择退款 ${refund.refundNo || refund.id}`}
@@ -381,26 +408,44 @@ export default function ConsoleRefundsPage() {
                           className="h-4 w-4 accent-[#ff1268] disabled:cursor-not-allowed"
                         />
                       </td>
-                      <td className="p-3 font-medium text-[#333]">{refund.refundNo || refund.id}</td>
-                      <td className="p-3 text-[#666]">
-                        <div className="font-medium text-[#333]">{getConsoleRefundActivityLabel(refund)}</div>
-                        <div className="text-[12px] text-[#666]">订单号：{refund.orderNo || '-'}</div>
+                      <td className="w-40 min-w-[150px] whitespace-nowrap p-3 font-medium text-[#333]">{refund.refundNo || refund.id}</td>
+                      <td className="w-64 min-w-[220px] p-3 text-[#666]">
+                        <div className="truncate font-medium text-[#333]" title={getConsoleRefundActivityLabel(refund)}>{getConsoleRefundActivityLabel(refund)}</div>
+                        <div className="truncate text-[12px] text-[#666]" title={refund.orderNo || '-'}>订单号：{refund.orderNo || '-'}</div>
                         <div className="text-[12px] text-[#999]">订单编号：{refund.orderId}</div>
                       </td>
-                      <td className="p-3 text-[#666]">{refund.userId}</td>
-                      <td className="p-3 text-[#ff1268] font-medium">{formatMoney(refund.amount)}</td>
-                      <td className="p-3 text-[#666] max-w-[180px] whitespace-pre-wrap break-words">{refund.reason || '-'}</td>
-                      <td className="p-3">
+                      <td className="w-20 whitespace-nowrap p-3 text-center text-[#666]">{refund.userId}</td>
+                      <td className="w-24 whitespace-nowrap p-3 text-right font-medium text-[#ff1268]">{formatMoney(refund.amount)}</td>
+                      <td className="w-60 min-w-[200px] align-middle p-3 text-[#666]">
+                        <div className="relative group max-w-[220px]">
+                          <p className="line-clamp-2 text-xs text-gray-700 leading-relaxed cursor-default">
+                            {refund.reason || '无申请原因'}
+                          </p>
+                          {shouldShowTooltip(refund.reason, 25) && (
+                            <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden w-max max-w-xs rounded-lg bg-gray-900/95 p-2.5 text-xs leading-5 text-white shadow-xl backdrop-blur-xs transition-all group-hover:block">
+                              {refund.reason}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="w-24 min-w-[90px] whitespace-nowrap p-3 text-center">
                         <span className={`text-[12px] px-2 py-0.5 rounded-full ${statusClassName}`}>{statusLabel}</span>
                       </td>
-                      <td className="p-3 text-[#999] whitespace-nowrap">{formatTime(refund.createTime)}</td>
-                      <td className="p-3 text-[#666] max-w-[220px]">
-                        <div className="whitespace-pre-wrap break-words">{refund.reviewNote || '-'}</div>
-                        <div className="text-[12px] text-[#999] mt-1">{formatTime(refund.reviewTime)}</div>
+                      <td className="w-36 p-3 text-[#999] whitespace-nowrap">{formatTime(refund.createTime)}</td>
+                      <td className="w-44 min-w-[150px] align-middle p-3 text-[#666]">
+                        <div className="relative group max-w-[170px]">
+                          <p className="truncate text-xs text-gray-700 cursor-default">{refund.reviewNote || '-'}</p>
+                          {shouldShowTooltip(refund.reviewNote, 20) && (
+                            <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden w-max max-w-xs rounded-lg bg-gray-900/95 p-2.5 text-xs leading-5 text-white shadow-xl backdrop-blur-xs transition-all group-hover:block">
+                              {refund.reviewNote}
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-1 font-mono text-[11px] text-gray-400">{formatTime(refund.reviewTime)}</div>
                       </td>
-                      <td className="p-3 min-w-[210px]">
-                        {canReview && !reviewing && (
-                          <div className="flex flex-wrap gap-2">
+                      <td className="w-36 whitespace-nowrap p-3 text-right align-middle">
+                        {canReview && (
+                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
                             <button
                               onClick={() => startReview(refund, 'approve')}
                               className="text-[13px] bg-[#ff1268] text-white px-3 py-1.5 rounded-lg border-none cursor-pointer hover:bg-[#e0105a]"
@@ -417,35 +462,8 @@ export default function ConsoleRefundsPage() {
                             )}
                           </div>
                         )}
-                        {canReview && reviewing && (
-                          <div className="w-[260px] max-w-full">
-                            <textarea
-                              value={draft.note}
-                              onChange={e => setDraft({ ...draft, note: e.target.value })}
-                              rows={3}
-                              placeholder={refund.status === 4 ? '重试备注，可空' : '审核备注，可空'}
-                              className="w-full px-3 py-2 border border-[#ddd] rounded-lg text-[13px] outline-none resize-none focus:border-[#ff1268]"
-                            />
-                            <div className="flex gap-2 mt-2">
-                              <button
-                                onClick={submitReview}
-                                disabled={submitting}
-                                className="text-[13px] bg-[#ff1268] text-white px-3 py-1.5 rounded-lg border-none cursor-pointer hover:bg-[#e0105a] disabled:bg-[#f8a9c6] disabled:cursor-not-allowed"
-                              >
-                                {submitting ? '提交中...' : draft.action === 'approve' ? refund.status === 4 ? '确认重试' : '确认同意' : '确认拒绝'}
-                              </button>
-                              <button
-                                onClick={() => setDraft(null)}
-                                disabled={submitting}
-                                className="text-[13px] text-[#666] bg-transparent border-none cursor-pointer hover:text-[#333] disabled:text-[#bbb]"
-                              >
-                                取消
-                              </button>
-                            </div>
-                          </div>
-                        )}
                         {!canReview && (
-                          <div className="text-[13px] text-[#999]">{actionLabel}</div>
+                          <div className="text-right text-[13px] text-[#999]">{actionLabel}</div>
                         )}
                       </td>
                     </tr>
@@ -459,6 +477,63 @@ export default function ConsoleRefundsPage() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={Boolean(refundReviewDialog)}
+        onClose={() => {
+          if (submittingId || batchSubmitting) return
+          setRefundReviewDialog(null)
+          setReviewDialogError('')
+        }}
+        title={refundReviewDialog?.title || '退款审核'}
+        size="md"
+        danger={refundReviewDialog?.action === 'reject'}
+        loading={Boolean(submittingId) || batchSubmitting}
+        footer={(
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                if (submittingId || batchSubmitting) return
+                setRefundReviewDialog(null)
+                setReviewDialogError('')
+              }}
+              disabled={Boolean(submittingId) || batchSubmitting}
+              className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={submitReview}
+              disabled={Boolean(submittingId) || batchSubmitting}
+              className={`rounded-lg px-4 py-2 text-[14px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${refundReviewDialog?.action === 'reject' ? 'bg-[#f53f3f] hover:bg-[#d92d2d]' : 'bg-[#ff1268] hover:bg-[#e0105a]'}`}
+            >
+              {submittingId || batchSubmitting ? '提交中...' : refundReviewDialog?.action === 'reject' ? '确认拒绝' : '确认同意'}
+            </button>
+          </>
+        )}
+      >
+        {refundReviewDialog ? (
+          <div className="space-y-4">
+            <p className="text-[14px] leading-6 text-[#666]">{refundReviewDialog.description}</p>
+            <label className="block text-[13px] font-medium text-[#333]">
+              {refundReviewDialog.action === 'reject' ? '拒绝原因 *' : '审核备注'}
+              <textarea
+                value={refundReviewDialog.note}
+                onChange={event => {
+                  setRefundReviewDialog({ ...refundReviewDialog, note: event.target.value })
+                  if (event.target.value.trim()) setReviewDialogError('')
+                }}
+                rows={4}
+                placeholder={refundReviewDialog.action === 'reject' ? '请输入拒绝原因（必填）' : '请输入审核备注（可选）'}
+                className={`mt-1 w-full resize-none rounded-xl border p-3 text-[14px] outline-none ${reviewDialogError ? 'border-[#dc2626]' : 'border-[#e5e5e5] focus:border-[#ff1268]'}`}
+              />
+            </label>
+            {reviewDialogError && <div className="text-[13px] text-[#dc2626]">{reviewDialogError}</div>}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

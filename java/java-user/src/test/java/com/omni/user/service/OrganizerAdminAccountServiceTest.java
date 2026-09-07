@@ -119,7 +119,7 @@ class OrganizerAdminAccountServiceTest {
     }
 
     @Test
-    void deletesOrganizerAdminAccount() {
+    void deleteOrganizerAdminAccountSoftDisablesUserForAuditTraceability() {
         User user = new User();
         user.setId(11L);
         user.setPhone("13900000004");
@@ -132,7 +132,9 @@ class OrganizerAdminAccountServiceTest {
 
         assertEquals(11L, response.getId());
         assertEquals("13900000004", response.getPhone());
-        verify(userMapper).deleteById(11L);
+        assertEquals(0, user.getStatus());
+        verify(userMapper).updateById(user);
+        verify(userMapper, never()).deleteById(11L);
     }
 
     private OrganizerAdminAccountRequest request(String phone, String nickname, String password) {

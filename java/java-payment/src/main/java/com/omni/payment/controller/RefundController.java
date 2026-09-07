@@ -8,6 +8,7 @@ import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
 import com.omni.payment.config.PaymentSentinelConfig;
 import com.omni.payment.dto.ApplyRefundRequest;
+import com.omni.payment.dto.BatchReviewRefundRequest;
 import com.omni.payment.dto.DirectRefundRequest;
 import com.omni.payment.dto.DirectRefundResponse;
 import com.omni.payment.dto.RefundRequestVO;
@@ -90,6 +91,21 @@ public class RefundController {
                                                   @RequestParam(required = false) Integer status) {
         AuthUser authUser = requireAuthUser(authorization);
         return Result.success(refundService.listAdminRefunds(authUser.userId, status));
+    }
+
+    @PostMapping("/admin/batch-review")
+    public Result<List<RefundRequestVO>> batchReview(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody(required = false) BatchReviewRefundRequest request) {
+        if (request == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "批量退款审核参数不能为空");
+        }
+        AuthUser authUser = requireAuthUser(authorization);
+        return Result.success(refundService.batchReview(
+                authUser.userId,
+                request.getIds(),
+                request.getAction(),
+                request.getReason()));
     }
 
     @PostMapping("/{id}/approve")

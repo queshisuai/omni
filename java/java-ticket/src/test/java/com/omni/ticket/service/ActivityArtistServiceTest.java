@@ -95,6 +95,25 @@ class ActivityArtistServiceTest {
     }
 
     @Test
+    void ensurePrimaryArtistInsertsPrimaryLineupRowWhenMissing() {
+        ActivityArtistService service = new ActivityArtistService(activityArtistMapper, artistMapper);
+        when(activityArtistMapper.selectList(any())).thenReturn(List.of());
+
+        service.ensurePrimaryArtist(10L, 3L);
+
+        ArgumentCaptor<ActivityArtist> captor = ArgumentCaptor.forClass(ActivityArtist.class);
+        verify(activityArtistMapper).insert(captor.capture());
+        ActivityArtist row = captor.getValue();
+        assertEquals(10L, row.getActivityId());
+        assertEquals(3L, row.getArtistId());
+        assertTrue(row.getPrimary());
+        assertEquals("primary", row.getRoleType());
+        assertEquals("主艺人", row.getRoleName());
+        assertEquals("public", row.getVisibility());
+        assertEquals(1, row.getStatus());
+    }
+
+    @Test
     void saveLineupRejectsDuplicateArtist() {
         ActivityArtistService service = new ActivityArtistService(activityArtistMapper, artistMapper);
         ActivityArtistDto one = new ActivityArtistDto();

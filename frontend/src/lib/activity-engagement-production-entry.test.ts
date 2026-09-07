@@ -63,3 +63,21 @@ test('activity engagement report moderation protects unknown statuses from write
   assert.match(source, /举报状态待核对，请刷新后再操作/)
   assert.match(source, /状态待核对/)
 })
+
+test('activity engagement page preloads all pending tab badges on mount', () => {
+  assert.match(source, /const \[badgeCounts, setBadgeCounts\] = useState/)
+  assert.match(source, /const loadTabBadges = useCallback\(async \(\) => \{[\s\S]*Promise\.allSettled\(\[/)
+  assert.match(source, /listAdminActivityReviews\(\{ status: 0 \}\)/)
+  assert.match(source, /listAdminActivityReviewReports\('PENDING'\)/)
+  assert.match(source, /listAdminActivityQuestions\(\{ status: 'PENDING' \}\)/)
+  assert.match(source, /useEffect\(\(\) => \{\s*void loadTabBadges\(\)\s*\}, \[loadTabBadges\]\)/)
+  assert.match(source, /count: badgeCounts\.reviews/)
+  assert.match(source, /count: badgeCounts\.reports/)
+  assert.match(source, /count: badgeCounts\.questions/)
+})
+
+test('activity engagement moderation refreshes tab badges after every successful action', () => {
+  assert.match(source, /await loadReviews\(\)\s*await loadTabBadges\(\)/)
+  assert.match(source, /await loadReports\(\)\s*await loadTabBadges\(\)/)
+  assert.match(source, /await loadQuestions\(\)\s*await loadTabBadges\(\)/)
+})

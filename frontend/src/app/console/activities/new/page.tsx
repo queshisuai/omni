@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { listCategories, listAdminVenues, createActivityDraft, createStationConfigVersion, createTourDraft, getAdminTourDetail, listVenueSeatLayoutTemplates, submitStationConfigVersion, submitVenueApplication, uploadPrivateAsset, uploadTicketAsset } from '@/lib/api'
 import { hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
@@ -22,7 +22,16 @@ type TourStationDraft = {
 }
 
 export default function NewActivityPage() {
+  return (
+    <Suspense fallback={<div className="py-20 text-center text-[14px] text-[#999]">加载中...</div>}>
+      <NewActivityPageContent />
+    </Suspense>
+  )
+}
+
+function NewActivityPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [step, setStep] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [role, setRole] = useState<UserRole | ''>('')
@@ -62,13 +71,14 @@ export default function NewActivityPage() {
     setRole(u.role || 'user')
     const permissions = u.permissionCodes || []
     setPermissionCodes(permissions)
-    if (!hasConsolePermission(u.role, permissions, 'activity.manage') && hasConsolePermission(u.role, permissions, 'tour.manage')) {
+    if ((searchParams.get('type') === 'tour' && hasConsolePermission(u.role, permissions, 'tour.manage'))
+      || (!hasConsolePermission(u.role, permissions, 'activity.manage') && hasConsolePermission(u.role, permissions, 'tour.manage'))) {
       setActivityMode('tour')
     }
     setCheckingRole(false)
     listCategories().then(setCategories).catch(() => {})
     listAdminVenues(u.userId).then(setVenues).catch(() => {})
-  }, [])
+  }, [searchParams])
 
   const primaryVenueId = stationConfig.mode === 'existing' ? stationConfig.venueId : null
 
@@ -188,7 +198,10 @@ export default function NewActivityPage() {
           artistId: primaryArtist.artistId,
           poster: poster || null,
           description: description.trim() || null,
-          cities: cities.map(item => item.stationName ? { city: item.city, stationName: item.stationName } : item.city),
+          cities: cities.map(item => ({
+            city: item.city,
+            stationName: item.stationName || `${item.city}站`,
+          })),
         })
         const detail = await getAdminTourDetail(u.userId, tour.id)
         for (let index = 0; index < tourStations.length; index += 1) {

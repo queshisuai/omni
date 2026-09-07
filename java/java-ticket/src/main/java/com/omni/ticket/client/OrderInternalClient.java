@@ -5,6 +5,7 @@ import com.omni.ticket.dto.CheckInOverviewRequest;
 import com.omni.ticket.dto.CheckInOverviewResponse;
 import com.omni.ticket.dto.CheckInRecordQueryRequest;
 import com.omni.ticket.dto.CheckInRecordResponse;
+import com.omni.ticket.dto.CheckInSyncRequest;
 import com.omni.ticket.dto.OrderInfoResponse;
 import com.omni.ticket.dto.PaidOrderCountRequest;
 import com.omni.ticket.dto.PaidOrderCountResponse;
@@ -46,4 +47,8 @@ public interface OrderInternalClient {
     @PostMapping("/api/order/internal/tickets/check-in/overview")
     Result<CheckInOverviewResponse> getCheckInOverview(@RequestBody CheckInOverviewRequest request,
                                                        @RequestHeader("X-Internal-Token") String internalToken);
+
+    @PostMapping("/api/order/internal/tickets/check-in/sync")
+    Result<CheckInRecordResponse> syncCheckIn(@RequestBody CheckInSyncRequest request,
+                                              @RequestHeader("X-Internal-Token") String internalToken);
 }

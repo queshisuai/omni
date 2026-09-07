@@ -10,6 +10,8 @@ import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
 import { toSeatCraftLayoutPayload } from '@/components/seatcraft/block-layout'
 import { toSeatCraftLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
 
+const DEFAULT_LAYOUT_NOTICE = '此处配置为该场馆的默认底图模板（Default Layout），作为后续新建活动与场次时的初始复制底图，修改不会影响已关联的历史售票场次。'
+
 function createDefaultLayout(name: string): SeatCraftLayoutDraft {
   return {
     name,
@@ -109,14 +111,18 @@ export default function VenueSeatTemplatePage() {
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[22px] font-bold text-[#1a1a2e]">场馆 SeatCraft 座位图</h1>
-          <p className="mt-1 text-[13px] text-[#999]">维护场馆默认 SeatCraft 座位图；活动和场次可从这里复制生成。</p>
+          <h1 className="text-[22px] font-bold text-[#1a1a2e]">场馆默认座位模板</h1>
+          <p className="mt-1 text-[13px] text-[#999]">{DEFAULT_LAYOUT_NOTICE}</p>
         </div>
         <Link href="/console/venue" className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] hover:bg-[#fafafa]">返回场馆记录</Link>
       </div>
 
       {error && <div className="mb-4 rounded-lg bg-[#fff0f3] px-3 py-2 text-[13px] text-[#ff4d4f]">{error}</div>}
       {message && <div className="mb-4 rounded-lg bg-[#f0fff4] px-3 py-2 text-[13px] text-[#16a34a]">{message}</div>}
+
+      <div className="mb-4 rounded-lg border border-[#dbeafe] bg-[#eff6ff] p-3 text-[13px] leading-6 text-[#1d4ed8]">
+        {DEFAULT_LAYOUT_NOTICE}
+      </div>
 
       <div className="mb-4 flex items-center gap-3">
         <button

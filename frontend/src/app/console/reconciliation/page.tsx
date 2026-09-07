@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { CheckCircle2, CircleSlash, Download, Eye, FileSearch, Plus, RefreshCw, X } from 'lucide-react'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { createReconciliationBatch, getReconciliationBatchDetail, ignoreReconciliationDifference, listReconciliationBatches, resolveReconciliationDifference } from '@/lib/api'
-import { globalAlert } from '@/components/GlobalDialog'
+import { Modal } from '@/components/ui/Modal'
 import { buildConsoleReconciliationExportCsv, buildConsoleReconciliationExportExcelHtml } from '@/lib/console-reconciliation'
 import {
   formatReconciliationBatchStatus,
@@ -60,6 +60,7 @@ export default function ReconciliationPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [actingDifferenceId, setActingDifferenceId] = useState<number | null>(null)
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false)
   const [page, setPage] = useState(1)
 
   const load = async () => {
@@ -88,9 +89,13 @@ export default function ReconciliationPage() {
   }, [items])
   const pageItems = useMemo(() => items.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [items, page])
 
+  const handleBizDateChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setBizDate(event.target.value)
+  }
+
   const handleCreate = async () => {
     if (!bizDate) {
-      await globalAlert('请选择对账日期')
+      setError('请选择对账日期')
       return
     }
     setSubmitting(true)
@@ -100,6 +105,7 @@ export default function ReconciliationPage() {
       const created = await createReconciliationBatch(bizDate)
       await load()
       await handleView(created)
+      setBatchDialogOpen(false)
       setMessage('对账批次已生成')
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成对账批次失败')
@@ -186,10 +192,16 @@ export default function ReconciliationPage() {
           <h1 className="text-[24px] font-bold text-[#111]">日结对账</h1>
           <p className="mt-2 text-[14px] text-gray-500">按业务日期生成日结批次，跟踪支付、退款和差异处理的后台对账结果。</p>
         </div>
-        <button onClick={load} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
-          <RefreshCw className="h-4 w-4" />
-          刷新
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setBatchDialogOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white hover:bg-[#e0105a]">
+            <Plus className="h-4 w-4" />
+            生成日结批次
+          </button>
+          <button onClick={load} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
+            <RefreshCw className="h-4 w-4" />
+            刷新
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -210,24 +222,6 @@ export default function ReconciliationPage() {
           <div className="text-[30px] font-bold leading-none text-[#111]">{statusSummary.generated || 0}</div>
         </div>
       </div>
-
-      <section className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2 text-[16px] font-bold text-[#111]">
-          <Plus className="h-4 w-4 text-[#ff1268]" />
-          生成日结批次
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date"
-            value={bizDate}
-            onChange={event => setBizDate(event.target.value)}
-            className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-[#ff1268]"
-          />
-          <button onClick={handleCreate} disabled={submitting} className="h-10 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">
-            {submitting ? '生成中...' : '生成批次'}
-          </button>
-        </div>
-      </section>
 
       {(error || message) && <div className={`rounded-xl px-4 py-3 text-[13px] ${error ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>{error || message}</div>}
 
@@ -441,6 +435,34 @@ export default function ReconciliationPage() {
           ) : null}
         </section>
       )}
+      <Modal
+        open={batchDialogOpen}
+        onClose={() => {
+          if (submitting) return
+          setBatchDialogOpen(false)
+        }}
+        title="生成日结批次"
+        loading={submitting}
+        footer={(
+          <>
+            <button type="button" onClick={() => { if (!submitting) setBatchDialogOpen(false) }} disabled={submitting} className="rounded-lg border border-gray-200 px-4 py-2 text-[13px] text-gray-600 disabled:cursor-not-allowed disabled:opacity-60">取消</button>
+            <button type="button" onClick={handleCreate} disabled={submitting} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">{submitting ? '生成中...' : '生成批次'}</button>
+          </>
+        )}
+      >
+        <div className="space-y-3">
+          <p className="text-[13px] leading-6 text-gray-600">选择业务日期后生成支付、退款和差异汇总批次。</p>
+          <label className="block text-[13px] font-medium text-[#333]">
+            对账日期
+            <input
+              type="date"
+              value={bizDate}
+              onChange={handleBizDateChange}
+              className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-[13px] outline-none focus:border-[#ff1268]"
+            />
+          </label>
+        </div>
+      </Modal>
     </div>
   )
 }

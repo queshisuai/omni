@@ -222,8 +222,9 @@ test('console sessions status uses shared Chinese fallback', () => {
   assert.match(helper, /bg-\[#fff7e6\] text-\[#ad6800\]/)
 })
 
-test('console sessions page supports batch ticket price updates through existing single update api', () => {
+test('console sessions page supports batch ticket price updates through atomic batch api', () => {
   const content = source('../app/console/sessions/page.tsx')
+  const api = source('./api.ts')
 
   assert.match(content, /selectedTicketTypeKeys/)
   assert.match(content, /getBatchTicketPriceUpdateTargets/)
@@ -231,11 +232,13 @@ test('console sessions page supports batch ticket price updates through existing
   assert.match(content, /批量改价/)
   assert.match(content, /目标票价/)
   assert.match(content, /确认批量改价/)
-  assert.match(content, /批量改价处理完成/)
-  assert.match(content, /updateAdminTicketType\(ticket\.id/)
+  assert.match(content, /batchUpdateAdminTicketTypes/)
+  assert.match(content, /action: 'UPDATE_PRICE'/)
+  assert.doesNotMatch(content, /updateAdminTicketType\(ticket\.id,\s*\{\s*price: parsed\.price\s*\}/)
+  assert.match(api, /\/api\/ticket\/admin\/ticket-types\/batch-update/)
 })
 
-test('console sessions page supports batch ticket status updates through existing single update api', () => {
+test('console sessions page supports batch ticket status updates through atomic batch api', () => {
   const content = source('../app/console/sessions/page.tsx')
 
   assert.match(content, /getBatchTicketStatusUpdateTargets/)
@@ -243,11 +246,11 @@ test('console sessions page supports batch ticket status updates through existin
   assert.match(content, /批量启用/)
   assert.match(content, /批量停用/)
   assert.match(content, /确认批量调整票档状态/)
-  assert.match(content, /批量调整票档状态处理完成/)
-  assert.match(content, /updateAdminTicketType\(ticket\.id,\s*\{\s*status: targetStatus\s*\}/)
+  assert.match(content, /action: 'SET_STATUS'/)
+  assert.doesNotMatch(content, /updateAdminTicketType\(ticket\.id,\s*\{\s*status: targetStatus\s*\}/)
 })
 
-test('console sessions page supports guarded batch ticket stock updates through existing single update api', () => {
+test('console sessions page supports guarded batch ticket stock updates through atomic batch api', () => {
   const content = source('../app/console/sessions/page.tsx')
 
   assert.match(content, /parseBatchTicketStockInput/)
@@ -257,8 +260,19 @@ test('console sessions page supports guarded batch ticket stock updates through 
   assert.match(content, /批量库存/)
   assert.match(content, /目标总库存/)
   assert.match(content, /确认批量调整票档库存/)
-  assert.match(content, /批量调整票档库存处理完成/)
-  assert.match(content, /updateAdminTicketType\(ticket\.id,\s*\{\s*totalStock: parsed\.totalStock\s*\}/)
+  assert.match(content, /action: 'ADJUST_STOCK'/)
+  assert.doesNotMatch(content, /updateAdminTicketType\(ticket\.id,\s*\{\s*totalStock: parsed\.totalStock\s*\}/)
+})
+
+test('console sessions page moves ticket type editing into drawer and keeps seat layout action explicit', () => {
+  const content = source('../app/console/sessions/page.tsx')
+
+  assert.match(content, /ticketDrawerSession/)
+  assert.match(content, /@\/components\/ui\/Drawer/)
+  assert.match(content, /票档配置/)
+  assert.match(content, /座位图设计/)
+  assert.match(content, /<Drawer[\s\S]*title="票档配置"/)
+  assert.doesNotMatch(content, /mt-2 space-y-1/)
 })
 
 test('console sessions page supports batch ticket import through existing single create api', () => {
@@ -574,6 +588,56 @@ test('console venue list labels venue identifier with Chinese context', () => {
 
   assert.doesNotMatch(content, /<th[^>]*>\s*ID\s*<\/th>/)
   assert.match(content, /场馆编号/)
+})
+
+test('console venue list exposes default layout status and seat template configuration entry', () => {
+  const content = source('../app/console/venue/page.tsx')
+  const venueSeatsContent = source('../app/console/venue/[id]/seats/page.tsx')
+
+  assert.match(content, /默认座位图状态/)
+  assert.match(content, /座位模板配置/)
+  assert.match(content, /\/console\/venue\/\$\{v\.id\}\/seats/)
+  assert.match(content, /\+ 新增场馆记录/)
+  assert.match(content, /\+ 提交场馆入驻申请/)
+  assert.match(venueSeatsContent, /默认底图模板（Default Layout）/)
+  assert.match(venueSeatsContent, /修改不会影响已关联的历史售票场次/)
+})
+
+test('console tours page is tour-draft focused and announces cities with clear copy', () => {
+  const content = source('../app/console/tours/page.tsx')
+  const newActivity = source('../app/console/activities/new/page.tsx')
+
+  assert.match(content, /\+ 新建巡演草稿/)
+  assert.match(content, /\/console\/activities\/new\?type=tour/)
+  assert.match(content, /官宣城市/)
+  assert.match(content, /配置站点/)
+  assert.match(content, /删除草稿/)
+  assert.match(content, /站点配置进度/)
+  assert.match(newActivity, /useSearchParams/)
+  assert.match(newActivity, /type'\) === 'tour'/)
+})
+
+test('console artists page uses table layout and risk confirmation reason before risk api', () => {
+  const content = source('../app/console/artists/page.tsx')
+
+  assert.match(content, /<table/)
+  assert.match(content, /40×40px/)
+  assert.match(content, /风险等级/)
+  assert.match(content, /警告：将该艺人列入风险后，系统将通过联动机制自动停售下架所有包含该艺人的已发布演出活动！/)
+  assert.match(content, /风险原因/)
+  assert.match(content, /待审核艺人/)
+  assert.match(content, /pendingArtistCount/)
+  assert.doesNotMatch(content, /ArtistCard/)
+})
+
+test('session seat layout page consumes tickets mode and submits session ticket bindings', () => {
+  const content = source('../app/console/sessions/[id]/seat-layout/page.tsx')
+
+  assert.match(content, /useSearchParams/)
+  assert.match(content, /mode'\) === 'tickets'/)
+  assert.match(content, /SeatCraftTicketEditor/)
+  assert.match(content, /updateSessionTicketBindings/)
+  assert.match(content, /ticketEditorOpen/)
 })
 
 test('console station config reviews show status in Chinese and protect non-reviewable states', () => {

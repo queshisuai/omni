@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { getToken, getUser } from '@/lib/auth'
 import { listAdminVenues, listVenueApplications, privateAssetDownloadUrl, reviewVenueApplication } from '@/lib/api'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
+import { Modal } from '@/components/ui/Modal'
 import type { PrivateAssetVO, VenueApplicationVO, VenueEntity } from '@/types/api'
 
 const statusText: Record<number, string> = { 0: '待审核', 1: '已通过', 2: '已驳回' }
@@ -31,15 +32,20 @@ function getErrorMessage(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback
 }
 
+interface VenueReviewDialog {
+  item: VenueApplicationVO
+  mode: 'create' | 'link'
+  venueId: string
+  note: string
+}
+
 export default function VenueApplicationsPage() {
   const [userId, setUserId] = useState(0)
   const [applications, setApplications] = useState<VenueApplicationVO[]>([])
   const [venues, setVenues] = useState<VenueEntity[]>([])
   const [status, setStatus] = useState('0')
-  const [reviewingId, setReviewingId] = useState<number | null>(null)
-  const [mode, setMode] = useState<'create' | 'link'>('create')
-  const [venueId, setVenueId] = useState('')
-  const [reviewNote, setReviewNote] = useState('')
+  const [venueReviewDialog, setVenueReviewDialog] = useState<VenueReviewDialog | null>(null)
+  const [reviewError, setReviewError] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -75,21 +81,21 @@ export default function VenueApplicationsPage() {
 
   const openReview = (item: VenueApplicationVO) => {
     if (!isReviewableVenueApplicationStatus(item.status)) {
-      setReviewingId(null)
+      setVenueReviewDialog(null)
       setMessage('场馆审核状态待核对，请刷新后再操作')
       return
     }
-    setReviewingId(item.id)
-    setMode('create')
-    setVenueId('')
-    setReviewNote('')
+    setVenueReviewDialog({ item, mode: 'create', venueId: '', note: '' })
+    setReviewError('')
     setMessage('')
   }
 
   const confirmReviewableStatus = () => {
-    const reviewingApplication = applications.find(item => item.id === reviewingId)
+    const reviewingApplication = venueReviewDialog
+      ? applications.find(item => item.id === venueReviewDialog.item.id)
+      : null
     if (!reviewingApplication || !isReviewableVenueApplicationStatus(reviewingApplication.status)) {
-      setMessage('场馆审核状态待核对，请刷新后再操作')
+      setReviewError('场馆审核状态待核对，请刷新后再操作')
       return false
     }
     return true
@@ -127,39 +133,39 @@ export default function VenueApplicationsPage() {
   }
 
   const handleApprove = async () => {
-    if (!reviewingId) return
+    if (!venueReviewDialog) return
     if (!confirmReviewableStatus()) return
-    if (mode === 'link' && !venueId) {
-      setMessage('请选择要关联的已有场馆')
+    if (venueReviewDialog.mode === 'link' && !venueReviewDialog.venueId) {
+      setReviewError('请选择要关联的已有场馆')
       return
     }
     try {
-      await reviewVenueApplication(reviewingId, {
+      await reviewVenueApplication(venueReviewDialog.item.id, {
         action: 'approve',
-        mode,
-        venueId: mode === 'link' ? Number(venueId) : null,
-        reviewNote,
+        mode: venueReviewDialog.mode,
+        venueId: venueReviewDialog.mode === 'link' ? Number(venueReviewDialog.venueId) : null,
+        reviewNote: venueReviewDialog.note,
       })
-      setReviewingId(null)
+      setVenueReviewDialog(null)
       loadData(userId)
     } catch (err) {
-      setMessage(getErrorMessage(err, '审核通过失败，请稍后重试'))
+      setReviewError(getErrorMessage(err, '审核通过失败，请稍后重试'))
     }
   }
 
   const handleReject = async () => {
-    if (!reviewingId) return
+    if (!venueReviewDialog) return
     if (!confirmReviewableStatus()) return
-    if (!reviewNote.trim()) {
-      setMessage('驳回必须填写原因')
+    if (!venueReviewDialog.note.trim()) {
+      setReviewError('驳回必须填写原因')
       return
     }
     try {
-      await reviewVenueApplication(reviewingId, { action: 'reject', reviewNote })
-      setReviewingId(null)
+      await reviewVenueApplication(venueReviewDialog.item.id, { action: 'reject', reviewNote: venueReviewDialog.note })
+      setVenueReviewDialog(null)
       loadData(userId)
     } catch (err) {
-      setMessage(getErrorMessage(err, '审核驳回失败，请稍后重试'))
+      setReviewError(getErrorMessage(err, '审核驳回失败，请稍后重试'))
     }
   }
 
@@ -218,33 +224,50 @@ export default function VenueApplicationsPage() {
               </div>
             </div>
 
-            {reviewingId === item.id && (
-              <div className="mt-4 rounded-lg border border-[#ffd9e6] bg-[#fff7fa] p-4">
-                <div className="mb-3 flex gap-4 text-[14px] text-[#333]">
-                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'create'} onChange={() => setMode('create')} /> 新增场馆记录</label>
-                  <label className="flex items-center gap-1"><input type="radio" checked={mode === 'link'} onChange={() => setMode('link')} /> 关联已有场馆记录</label>
-                </div>
-                {mode === 'link' && (
-                  <select value={venueId} onChange={e => setVenueId(e.target.value)} className="mb-3 h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
-                    <option value="">请选择已有场馆记录</option>
-                    {venues.map(venue => <option key={venue.id} value={venue.id}>{venue.name} ({venue.city})</option>)}
-                  </select>
-                )}
-                <textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)} rows={3} className="w-full rounded-lg border border-[#e5e5e5] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" placeholder="审核备注；驳回时必填" />
-                {message && <div className="mt-2 text-[13px] text-[#ef4444]">{message}</div>}
-                <div className="mt-3 flex justify-end gap-2">
-                  <button onClick={() => setReviewingId(null)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[13px] text-[#666]">取消</button>
-                  <button onClick={handleReject} className="rounded-lg bg-[#ef4444] px-4 py-2 text-[13px] font-medium text-white">驳回</button>
-                  <button onClick={handleApprove} className="rounded-lg bg-[#22c55e] px-4 py-2 text-[13px] font-medium text-white">通过</button>
-                </div>
-              </div>
-            )}
           </div>
         ))}
       </div>
       {!loadError && !loading && applications.length > 0 && (
         <GlobalPagination page={page} total={applications.length} loading={loading} onChange={setPage} />
       )}
+      <Modal
+        open={Boolean(venueReviewDialog)}
+        onClose={() => {
+          setVenueReviewDialog(null)
+          setReviewError('')
+        }}
+        title="场馆资料审核"
+        size="lg"
+        footer={(
+          <>
+            <button type="button" onClick={() => { setVenueReviewDialog(null); setReviewError('') }} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[13px] text-[#666]">取消</button>
+            <button type="button" onClick={handleReject} className="rounded-lg bg-[#ef4444] px-4 py-2 text-[13px] font-medium text-white">驳回</button>
+            <button type="button" onClick={handleApprove} className="rounded-lg bg-[#22c55e] px-4 py-2 text-[13px] font-medium text-white">通过</button>
+          </>
+        )}
+      >
+        {venueReviewDialog ? (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-[#fafafa] p-3 text-[13px] leading-6 text-[#666]">
+              <div className="font-medium text-[#333]">{venueReviewDialog.item.venueName}</div>
+              <div>{venueReviewDialog.item.city} · {venueReviewDialog.item.address}</div>
+              <div>联系人：{venueReviewDialog.item.contactName} / {venueReviewDialog.item.contactPhone}</div>
+            </div>
+            <div className="flex gap-4 text-[14px] text-[#333]">
+              <label className="flex items-center gap-1"><input type="radio" checked={venueReviewDialog.mode === 'create'} onChange={() => setVenueReviewDialog({ ...venueReviewDialog, mode: 'create', venueId: '' })} /> 新增场馆记录</label>
+              <label className="flex items-center gap-1"><input type="radio" checked={venueReviewDialog.mode === 'link'} onChange={() => setVenueReviewDialog({ ...venueReviewDialog, mode: 'link' })} /> 关联已有场馆记录</label>
+            </div>
+            {venueReviewDialog.mode === 'link' && (
+              <select value={venueReviewDialog.venueId} onChange={e => setVenueReviewDialog({ ...venueReviewDialog, venueId: e.target.value })} className="h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[14px] outline-none focus:border-[#ff1268]">
+                <option value="">请选择已有场馆记录</option>
+                {venues.map(venue => <option key={venue.id} value={venue.id}>{venue.name} ({venue.city})</option>)}
+              </select>
+            )}
+            <textarea value={venueReviewDialog.note} onChange={e => { setVenueReviewDialog({ ...venueReviewDialog, note: e.target.value }); if (e.target.value.trim()) setReviewError('') }} rows={4} className="w-full rounded-lg border border-[#e5e5e5] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]" placeholder="审核备注；驳回时必填" />
+            {reviewError ? <div className="text-[13px] text-[#ef4444]">{reviewError}</div> : null}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

@@ -11,7 +11,7 @@ RENDERED_CONFIG="/tmp/seataServer.properties"
 
 case "${SEATA_ADVERTISE_HOST}" in
   ""|127.*|localhost|0.0.0.0|::1)
-    echo "SEATA_ADVERTISE_HOST 必须是宿主机可达的非回环 IPv4，当前值为 '${SEATA_ADVERTISE_HOST}'。请运行 scripts/start-seata-docker.ps1 自动注入。" >&2
+    echo "SEATA_ADVERTISE_HOST 必须是可达的非回环 IPv4 或 Docker 服务名，当前值为 '${SEATA_ADVERTISE_HOST}'。宿主机 Java 模式请运行 scripts/start-seata-docker.ps1 自动注入；Docker Java overlay 模式请使用 seata-server。" >&2
     exit 1
     ;;
 esac

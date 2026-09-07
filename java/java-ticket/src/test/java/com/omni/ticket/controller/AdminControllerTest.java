@@ -37,6 +37,7 @@ import com.omni.ticket.dto.SeatTemplateResponse;
 import com.omni.ticket.dto.StationConfigVersionRequest;
 import com.omni.ticket.dto.StationConfigVersionResponse;
 import com.omni.ticket.dto.StationConfigVersionReviewRequest;
+import com.omni.ticket.dto.TicketTypeBatchUpdateRequest;
 import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.dto.VenueApplicationReviewRequest;
@@ -224,7 +225,7 @@ class AdminControllerTest {
         ArgumentCaptor<QueryWrapper<Venue>> captor = ArgumentCaptor.forClass(QueryWrapper.class);
         verify(venueMapper).selectList(captor.capture());
         String sqlSegment = captor.getValue().getSqlSegment().trim();
-        assertEquals("(status = #{ew.paramNameValuePairs.MPGENVAL1}) ORDER BY city ASC,name ASC,id ASC", sqlSegment);
+        assertEquals("(status = #{ew.paramNameValuePairs.MPGENVAL1}) ORDER BY id ASC", sqlSegment);
     }
 
     @Test
@@ -2299,6 +2300,57 @@ class AdminControllerTest {
     }
 
     @Test
+    void batchUpdateTicketTypesUpdatesPriceThroughAtomicEndpoint() {
+        AdminController controller = controller();
+        allowSessionRole(2002L, "admin");
+        TicketType first = ticketType(101L, 100L, "内场票", "880", 100, 60, 1);
+        TicketType second = ticketType(102L, 100L, "看台票", "380", 200, 180, 1);
+        Session session = session(100L, 10L);
+        when(ticketTypeMapper.selectById(101L)).thenReturn(first);
+        when(ticketTypeMapper.selectById(102L)).thenReturn(second);
+        when(sessionMapper.selectById(100L)).thenReturn(session);
+        TicketTypeBatchUpdateRequest request = new TicketTypeBatchUpdateRequest();
+        request.setIds(List.of(101L, 102L));
+        request.setAction("UPDATE_PRICE");
+        request.setPrice(new java.math.BigDecimal("520.00"));
+
+        Result<List<TicketType>> result = controller.batchUpdateTicketTypes(adminToken(), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(new java.math.BigDecimal("520.00"), first.getPrice());
+        assertEquals(new java.math.BigDecimal("520.00"), second.getPrice());
+        verify(ticketTypeMapper).updateById(first);
+        verify(ticketTypeMapper).updateById(second);
+        verify(searchIndexEventPublisher).publishUpsert(10L);
+    }
+
+    @Test
+    void batchUpdateTicketTypesRejectsWholeStockBatchBeforeAnyWriteWhenOneTicketWouldGoBelowSold() {
+        AdminController controller = controller();
+        allowSessionRole(2002L, "admin");
+        TicketType first = ticketType(101L, 100L, "内场票", "880", 100, 90, 1);
+        TicketType second = ticketType(102L, 100L, "看台票", "380", 200, 80, 1);
+        Session session = session(100L, 10L);
+        when(ticketTypeMapper.selectById(101L)).thenReturn(first);
+        when(ticketTypeMapper.selectById(102L)).thenReturn(second);
+        when(sessionMapper.selectById(100L)).thenReturn(session);
+        TicketTypeBatchUpdateRequest request = new TicketTypeBatchUpdateRequest();
+        request.setIds(List.of(101L, 102L));
+        request.setAction("ADJUST_STOCK");
+        request.setTotalStock(100);
+
+        Result<List<TicketType>> result = controller.batchUpdateTicketTypes(adminToken(), request);
+
+        assertEquals(400, result.getCode());
+        assertEquals("目标总库存不能小于票档“看台票”的已售数量", result.getMessage());
+        assertEquals(100, first.getTotalStock());
+        assertEquals(90, first.getRemainStock());
+        assertEquals(200, second.getTotalStock());
+        assertEquals(80, second.getRemainStock());
+        verify(ticketTypeMapper, never()).updateById(any());
+    }
+
+    @Test
     void getVenueDefaultLayoutRequiresAuthorizationToken() {
         AdminController controller = controller();
         SeatCraftLayoutDtos.LayoutResponse response = new SeatCraftLayoutDtos.LayoutResponse();
@@ -2357,5 +2409,24 @@ class AdminControllerTest {
         body.put("artistId", 1L);
         body.put("name", "测试活动");
         return body;
+    }
+
+    private TicketType ticketType(Long id, Long sessionId, String name, String price, Integer totalStock, Integer remainStock, Integer status) {
+        TicketType ticketType = new TicketType();
+        ticketType.setId(id);
+        ticketType.setSessionId(sessionId);
+        ticketType.setName(name);
+        ticketType.setPrice(new java.math.BigDecimal(price));
+        ticketType.setTotalStock(totalStock);
+        ticketType.setRemainStock(remainStock);
+        ticketType.setStatus(status);
+        return ticketType;
+    }
+
+    private Session session(Long id, Long activityId) {
+        Session session = new Session();
+        session.setId(id);
+        session.setActivityId(activityId);
+        return session;
     }
 }

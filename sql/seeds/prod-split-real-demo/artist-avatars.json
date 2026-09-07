@@ -1,20 +1,164 @@
 [
   {
-    "id": 901002,
-    "name": "BY2",
-    "localPath": "/seed-artist-avatars-real/artist-901002.jpg",
-    "sourceUrl": "https://www.newton.com.tw/img/f/63e/fd02838d169c0043f392946c2849.jpg",
-    "sourcePage": "https://www.newton.com.tw/wiki/BY2",
+    "id": 3,
+    "name": "林俊杰",
+    "localPath": "/avatars/artists/artist-3.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/JJ_Lin_in_2019_(2).jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/林俊杰",
     "sourceKind": "public-page-archive",
-    "bytes": 8483
+    "bytes": 9428
   },
   {
-    "id": 901003,
-    "name": "胡夏",
-    "localPath": "/seed-artist-avatars-real/artist-901003.jpg",
-    "sourceUrl": "https://www.newton.com.tw/img/3/7a4/1c2e00ada475e3c02d5419c74ffc.jpg",
-    "sourcePage": "https://www.newton.com.tw/wiki/%E8%83%A1%E5%A4%8F",
+    "id": 4,
+    "name": "开心麻花",
+    "localPath": "/avatars/artists/artist-4.webp",
+    "sourceUrl": "https://static.wixstatic.com/media/ebe32b_99dbe4458a2b4a9180890c76fe8c8807~mv2.jpg",
+    "sourcePage": "https://www.kaixinmahua.com.cn/",
     "sourceKind": "public-page-archive",
-    "bytes": 5985
+    "bytes": 80866
+  },
+  {
+    "id": 6,
+    "name": "孟京辉戏剧工作室",
+    "localPath": "/avatars/artists/artist-6.webp",
+    "sourceUrl": "https://sucimg.itc.cn/avatarimg/28fc5296d2ee4d1a8292dcc8e5a030cb_1477458752674",
+    "sourcePage": "https://zh.wikipedia.org/wiki/孟京辉",
+    "sourceKind": "public-page-archive",
+    "bytes": 17912
+  },
+  {
+    "id": 7,
+    "name": "郭艾伦",
+    "localPath": "/avatars/artists/artist-7.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/Guo_Ailun_2012.jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/郭艾伦",
+    "sourceKind": "public-page-archive",
+    "bytes": 33078
+  },
+  {
+    "id": 11,
+    "name": "科学队长",
+    "localPath": "/avatars/artists/artist-11.webp",
+    "sourceUrl": "http://img.mytbz.com/www/product/captain.png",
+    "sourcePage": "https://www.mytbz.com/",
+    "sourceKind": "public-page-archive",
+    "bytes": 9582
+  },
+  {
+    "id": 12,
+    "name": "广州长隆国际大马戏",
+    "localPath": "/avatars/artists/artist-12.webp",
+    "sourceUrl": "https://cdn.chimelong.com/upload/b4238720905e9190/384decb8debde55f.png",
+    "sourcePage": "https://www.chimelong.com/",
+    "sourceKind": "public-page-archive",
+    "bytes": 22874
+  },
+  {
+    "id": 14,
+    "name": "故宫博物院",
+    "localPath": "/avatars/artists/artist-14.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/The_Palace_Museum.jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/故宫博物院",
+    "sourceKind": "public-page-archive",
+    "bytes": 54044
+  },
+  {
+    "id": 18,
+    "name": "李泉",
+    "localPath": "/avatars/artists/artist-18.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/2018_%E8%A5%BF%E6%B9%96%E9%9F%B3%E4%B9%90%E8%8A%82_%E6%9D%8E%E6%B3%89_%EF%BC%881%EF%BC%89.jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/李泉",
+    "sourceKind": "public-page-archive",
+    "bytes": 24990
+  },
+  {
+    "id": 19,
+    "name": "德云社",
+    "localPath": "/avatars/artists/artist-19.webp",
+    "sourceUrl": "https://upload.wikimedia.org/wikipedia/zh/1/1f/DEYUNSHE_LOGO.png",
+    "sourcePage": "https://zh.wikipedia.org/wiki/德云社",
+    "sourceKind": "public-page-archive",
+    "bytes": 7346
+  },
+  {
+    "id": 25,
+    "name": "初音未来",
+    "localPath": "/avatars/artists/artist-25.webp",
+    "sourceUrl": "https://upload.wikimedia.org/wikipedia/zh/b/ba/Hatsune_Miku_V6.png",
+    "sourcePage": "https://zh.wikipedia.org/wiki/初音未来",
+    "sourceKind": "public-page-archive",
+    "bytes": 17026
+  },
+  {
+    "id": 901008,
+    "name": "开心麻花",
+    "localPath": "/avatars/artists/artist-901008.webp",
+    "sourceUrl": "https://static.wixstatic.com/media/ebe32b_99dbe4458a2b4a9180890c76fe8c8807~mv2.jpg",
+    "sourcePage": "https://www.kaixinmahua.com.cn/",
+    "sourceKind": "public-page-archive",
+    "bytes": 80866
+  },
+  {
+    "id": 901010,
+    "name": "开心麻花",
+    "localPath": "/avatars/artists/artist-901010.webp",
+    "sourceUrl": "https://static.wixstatic.com/media/ebe32b_99dbe4458a2b4a9180890c76fe8c8807~mv2.jpg",
+    "sourcePage": "https://www.kaixinmahua.com.cn/",
+    "sourceKind": "public-page-archive",
+    "bytes": 80866
+  },
+  {
+    "id": 901023,
+    "name": "开心麻花",
+    "localPath": "/avatars/artists/artist-901023.webp",
+    "sourceUrl": "https://static.wixstatic.com/media/ebe32b_99dbe4458a2b4a9180890c76fe8c8807~mv2.jpg",
+    "sourcePage": "https://www.kaixinmahua.com.cn/",
+    "sourceKind": "public-page-archive",
+    "bytes": 80866
+  },
+  {
+    "id": 901027,
+    "name": "开心麻花",
+    "localPath": "/avatars/artists/artist-901027.webp",
+    "sourceUrl": "https://static.wixstatic.com/media/ebe32b_99dbe4458a2b4a9180890c76fe8c8807~mv2.jpg",
+    "sourcePage": "https://www.kaixinmahua.com.cn/",
+    "sourceKind": "public-page-archive",
+    "bytes": 80866
+  },
+  {
+    "id": 901030,
+    "name": "故宫博物院",
+    "localPath": "/avatars/artists/artist-901030.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/The_Palace_Museum.jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/故宫博物院",
+    "sourceKind": "public-page-archive",
+    "bytes": 54044
+  },
+  {
+    "id": 901034,
+    "name": "李泉",
+    "localPath": "/avatars/artists/artist-901034.webp",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/2018_%E8%A5%BF%E6%B9%96%E9%9F%B3%E4%B9%90%E8%8A%82_%E6%9D%8E%E6%B3%89_%EF%BC%881%EF%BC%89.jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/李泉",
+    "sourceKind": "public-page-archive",
+    "bytes": 24990
+  },
+  {
+    "id": 901035,
+    "name": "德云社",
+    "localPath": "/avatars/artists/artist-901035.webp",
+    "sourceUrl": "https://upload.wikimedia.org/wikipedia/zh/1/1f/DEYUNSHE_LOGO.png",
+    "sourcePage": "https://zh.wikipedia.org/wiki/德云社",
+    "sourceKind": "public-page-archive",
+    "bytes": 7346
+  },
+  {
+    "id": 901041,
+    "name": "初音未来",
+    "localPath": "/avatars/artists/artist-901041.webp",
+    "sourceUrl": "https://upload.wikimedia.org/wikipedia/zh/b/ba/Hatsune_Miku_V6.png",
+    "sourcePage": "https://zh.wikipedia.org/wiki/初音未来",
+    "sourceKind": "public-page-archive",
+    "bytes": 17026
   }
 ]

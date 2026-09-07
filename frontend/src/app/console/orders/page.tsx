@@ -5,17 +5,18 @@ import { getUser } from '@/lib/auth'
 import { listConsoleOrders } from '@/lib/api'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { ConsoleTableSkeleton } from '@/components/Skeleton'
+import { SafeImage } from '@/components/SafeImage'
 import { CheckSquare, Download, Square } from 'lucide-react'
 import {
   buildConsoleOrderExportCsv,
   CONSOLE_ORDER_STATUS_TABS,
   countConsoleOrdersByStatus,
+  filterConsoleOrdersByQuery,
   filterConsoleOrdersByStatus,
   paginateConsoleOrders,
   type ConsoleOrderStatusFilter,
   getConsoleOrderActivityLabel,
   getConsoleOrderScopeCopy,
-  getConsoleOrderTicketLabel,
   getSelectedConsoleOrders,
   formatOrderAttendees,
   formatConsoleOrderStatusLabel,
@@ -23,11 +24,23 @@ import {
 } from '@/lib/console-orders'
 import type { OrderEntity, UserRole } from '@/types/api'
 
+function formatConsoleOrderTime(value: string | null | undefined) {
+  return value ? value.replace('T', ' ').slice(0, 16) : '场次时间待同步'
+}
+
+function formatConsoleOrderTicketSpec(order: OrderEntity) {
+  if (!order.ticketName) return '票档信息待同步'
+  const unitPrice = order.unitPrice ?? (order.quantity ? Number(order.amount || 0) / order.quantity : null)
+  const priceText = unitPrice == null || !Number.isFinite(unitPrice) ? '' : `¥${Number(unitPrice).toFixed(0)} `
+  return `${priceText}(${order.ticketName})`
+}
+
 export default function ConsoleOrdersPage() {
   const [orders, setOrders] = useState<OrderEntity[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<ConsoleOrderStatusFilter>('all')
+  const [query, setQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set())
   const [exportMessage, setExportMessage] = useState('')
   const [userRole, setUserRole] = useState<UserRole | null>(() => {
@@ -46,9 +59,13 @@ export default function ConsoleOrdersPage() {
   }, [])
 
   const statusCounts = useMemo(() => countConsoleOrdersByStatus(orders), [orders])
-  const filteredOrders = useMemo(
+  const statusFilteredOrders = useMemo(
     () => filterConsoleOrdersByStatus(orders, statusFilter),
     [orders, statusFilter],
+  )
+  const filteredOrders = useMemo(
+    () => filterConsoleOrdersByQuery(statusFilteredOrders, query),
+    [statusFilteredOrders, query],
   )
   const { currentPage, pageOrders } = useMemo(
     () => paginateConsoleOrders(filteredOrders, page, DEFAULT_PAGE_SIZE),
@@ -62,6 +79,7 @@ export default function ConsoleOrdersPage() {
 
   const getStatusCount = (value: ConsoleOrderStatusFilter) => {
     if (value === 'all') return statusCounts.all
+    if (value === 1) return statusCounts.pending
     if (value === 2) return statusCounts.paid
     if (value === 4) return statusCounts.refunded
     return statusCounts.cancelled
@@ -141,6 +159,20 @@ export default function ConsoleOrdersPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e5e5e5] bg-white px-4 py-3">
+        <label className="block min-w-[260px] flex-1">
+          <span className="mb-1 block text-[12px] font-medium text-[#666]">订单号 / 脱敏手机号精确检索</span>
+          <input
+            value={query}
+            onChange={event => {
+              setQuery(event.target.value)
+              setPage(1)
+              setSelectedIds(new Set())
+              setExportMessage('')
+            }}
+            placeholder="请输入订单号或 139****0001"
+            className="h-10 w-full rounded-lg border border-[#e5e5e5] px-3 text-[13px] outline-none focus:border-[#ff1268]"
+          />
+        </label>
         <div className="text-[13px] text-[#666]">
           已选择 <span className="font-semibold text-[#ff1268]">{selectedOrders.length}</span> 条；当前筛选共 {filteredOrders.length} 条
           {exportMessage ? <span className="ml-3 text-[#22c55e]">{exportMessage}</span> : null}
@@ -175,7 +207,7 @@ export default function ConsoleOrdersPage() {
         </div>
       ) : filteredOrders.length === 0 ? (
         <div className="text-center text-[#999] py-20 bg-white rounded-xl border border-[#e5e5e5] text-[14px]">
-          当前状态暂无订单
+          当前筛选暂无订单
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-[#e5e5e5] overflow-hidden">
@@ -210,17 +242,23 @@ export default function ConsoleOrdersPage() {
                   </td>
                   <td className="p-3 font-medium text-[#333]">{o.orderNo}</td>
                   <td className="p-3 text-[#333] max-w-[260px]">
-                    <div className="font-medium line-clamp-2">{getConsoleOrderActivityLabel(o)}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-[#777]">
-                      <span>{getConsoleOrderTicketLabel(o)}</span>
-                      {showTicketRoute && (
-                        <span className="text-[#999]">原票档编号：{requestedTicketTypeId} → 实际票档编号：{matchedTicketTypeId}</span>
-                      )}
-                      {o.autoDowngraded && (
-                        <span className="inline-flex items-center rounded border border-[#ffb3ca] bg-[#fff7fa] px-1.5 py-0.5 text-[11px] font-medium text-[#ff1268]">
-                          降级成功
-                        </span>
-                      )}
+                    <div className="flex min-w-0 items-start gap-3">
+                      <SafeImage src={o.activityPoster} alt={getConsoleOrderActivityLabel(o)} fallbackText={getConsoleOrderActivityLabel(o)} className="h-[54px] w-10 shrink-0 rounded-md object-cover" />
+                      <div className="min-w-0">
+                        <div className="font-medium line-clamp-2">{getConsoleOrderActivityLabel(o)}</div>
+                        <div className="mt-0.5 text-[12px] text-[#999]">{formatConsoleOrderTime(o.sessionTime)}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-[#777]">
+                          <span>{formatConsoleOrderTicketSpec(o)}</span>
+                          {showTicketRoute && (
+                            <span className="text-[#999]">原票档编号：{requestedTicketTypeId} → 实际票档编号：{matchedTicketTypeId}</span>
+                          )}
+                          {o.autoDowngraded && (
+                            <span className="inline-flex items-center rounded border border-[#ffb3ca] bg-[#fff7fa] px-1.5 py-0.5 text-[11px] font-medium text-[#ff1268]">
+                              降级成功
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </td>
                   <td className="p-3 text-[#333]">

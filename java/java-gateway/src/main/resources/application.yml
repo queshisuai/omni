@@ -127,14 +127,14 @@ spring:
             connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
             response-timeout: ${GATEWAY_SHORT_RESPONSE_TIMEOUT_MS:3000}
         - id: waitlist-service
-          uri: http://localhost:3001
+          uri: ${GATEWAY_WAITLIST_SERVICE_URI:http://localhost:3001}
           predicates:
             - Path=/api/waitlist/**
           metadata:
             connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
             response-timeout: ${GATEWAY_LONG_RESPONSE_TIMEOUT_MS:15000}
         - id: grab-service
-          uri: http://localhost:3001
+          uri: ${GATEWAY_GRAB_SERVICE_URI:http://localhost:3001}
           predicates:
             - Path=/api/grab/**
           metadata:

@@ -92,6 +92,52 @@ public class ActivityArtistService {
         publishSearchUpsert(activityId);
     }
 
+    @Transactional
+    public void ensurePrimaryArtist(Long activityId, Long artistId) {
+        if (activityId == null || activityId <= 0) throw new IllegalArgumentException("活动ID不正确");
+        if (artistId == null || artistId <= 0) throw new IllegalArgumentException("艺人信息不正确");
+        List<ActivityArtist> rows = activityArtistMapper.selectList(new LambdaQueryWrapper<ActivityArtist>()
+                .eq(ActivityArtist::getActivityId, activityId)
+                .eq(ActivityArtist::getStatus, 1));
+        if (rows == null) rows = List.of();
+        ActivityArtist target = null;
+        int maxSort = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (ActivityArtist row : rows) {
+            if (row == null) continue;
+            if (row.getSort() != null && row.getSort() > maxSort) maxSort = row.getSort();
+            if (artistId.equals(row.getArtistId())) {
+                target = row;
+            } else if (Boolean.TRUE.equals(row.getPrimary())) {
+                row.setPrimary(false);
+                row.setUpdateTime(now);
+                activityArtistMapper.updateById(row);
+            }
+        }
+        if (target == null) {
+            ActivityArtist row = new ActivityArtist();
+            row.setActivityId(activityId);
+            row.setArtistId(artistId);
+            row.setSort(maxSort + 1);
+            row.setPrimary(true);
+            row.setRoleType("primary");
+            row.setRoleName("主艺人");
+            row.setVisibility(VISIBILITY_PUBLIC);
+            row.setStatus(1);
+            row.setCreateTime(now);
+            row.setUpdateTime(now);
+            activityArtistMapper.insert(row);
+        } else {
+            target.setPrimary(true);
+            target.setRoleType(defaultText(target.getRoleType(), "primary"));
+            target.setRoleName(defaultText(target.getRoleName(), "主艺人"));
+            target.setVisibility(defaultText(target.getVisibility(), VISIBILITY_PUBLIC));
+            target.setUpdateTime(now);
+            activityArtistMapper.updateById(target);
+        }
+        publishSearchUpsert(activityId);
+    }
+
     public List<ActivityArtistDto> listAdminLineup(Long activityId) {
         return listLineup(activityId, false);
     }
@@ -146,7 +192,7 @@ public class ActivityArtistService {
                 .eq(ActivityArtist::getStatus, 1)
                 .orderByAsc(ActivityArtist::getSort)
                 .orderByAsc(ActivityArtist::getId));
-        if (rows.isEmpty()) return List.of();
+        if (rows == null || rows.isEmpty()) return List.of();
         List<Long> ids = rows.stream().map(ActivityArtist::getArtistId).distinct().collect(Collectors.toList());
         Map<Long, Artist> artistMap = artistMapper.selectBatchIds(ids).stream()
                 .collect(Collectors.toMap(Artist::getId, Function.identity()));

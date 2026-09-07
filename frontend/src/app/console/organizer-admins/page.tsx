@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, Pencil, Plus, RefreshCw, ShieldOff, Trash2, Users, X } from 'lucide-react'
 import { globalConfirm } from '@/components/GlobalDialog'
+import { Modal } from '@/components/ui/Modal'
 import {
   createOrganizerAdminAccount,
   deactivateOrganizerAdminAccount,
@@ -15,7 +16,10 @@ import {
 import { canUseConsoleAction } from '@/lib/console-auth'
 import type { OrganizerAdminAccountVO } from '@/types/api'
 
+const emptyCreateForm = { phone: '', nickname: '', password: '' }
 const emptyEditForm = { phone: '', nickname: '', password: '', status: 1 }
+
+type AccountDialog = { mode: 'create' } | { mode: 'edit'; accountId: number }
 
 function isKnownOrganizerAdminAccountStatus(status?: number | null) {
   return status === 1 || status === 0
@@ -44,8 +48,8 @@ function canToggleOrganizerAdminAccountStatus(status?: number | null) {
 export default function OrganizerAdminsPage() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<OrganizerAdminAccountVO[]>([])
-  const [form, setForm] = useState({ phone: '', nickname: '', password: '' })
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState(emptyCreateForm)
+  const [accountDialog, setAccountDialog] = useState<AccountDialog | null>(null)
   const [editForm, setEditForm] = useState(emptyEditForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -90,7 +94,8 @@ export default function OrganizerAdminsPage() {
         nickname: form.nickname.trim(),
         password: form.password.trim(),
       })
-      setForm({ phone: '', nickname: '', password: '' })
+      setForm(emptyCreateForm)
+      setAccountDialog(null)
       await load()
       setMessage('平台主办方运营员账号已创建')
     } catch (err) {
@@ -107,7 +112,7 @@ export default function OrganizerAdminsPage() {
       setError('账号状态待核对，请刷新后再操作')
       return
     }
-    setEditingId(account.id)
+    setAccountDialog({ mode: 'edit', accountId: account.id })
     setEditForm({
       phone: account.phone,
       nickname: account.nickname || '',
@@ -117,12 +122,12 @@ export default function OrganizerAdminsPage() {
   }
 
   const cancelEdit = () => {
-    setEditingId(null)
+    setAccountDialog(null)
     setEditForm(emptyEditForm)
   }
 
   const saveEdit = async () => {
-    if (!editingId) return
+    if (!accountDialog || accountDialog.mode !== 'edit') return
     setMessage('')
     setError('')
     if (!editForm.phone.trim() || !editForm.nickname.trim()) {
@@ -131,7 +136,7 @@ export default function OrganizerAdminsPage() {
     }
     setSaving(true)
     try {
-      await updateOrganizerAdminAccount(editingId, {
+      await updateOrganizerAdminAccount(accountDialog.accountId, {
         phone: editForm.phone.trim(),
         nickname: editForm.nickname.trim(),
         password: editForm.password.trim() || undefined,
@@ -220,13 +225,27 @@ export default function OrganizerAdminsPage() {
           <h1 className="text-[24px] font-bold text-[#111]">平台主办方运营员账号管理</h1>
           <p className="mt-2 text-[14px] text-gray-500">维护平台侧负责主办方账号管理的职位账号，不等同于普通主办方账号。</p>
         </div>
-        <button
-          onClick={load}
-          className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]"
-        >
-          <RefreshCw className="h-4 w-4" />
-          刷新
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={load}
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]"
+          >
+            <RefreshCw className="h-4 w-4" />
+            刷新
+          </button>
+          <button
+            onClick={() => {
+              setMessage('')
+              setError('')
+              setForm(emptyCreateForm)
+              setAccountDialog({ mode: 'create' })
+            }}
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white hover:bg-[#e0105a]"
+          >
+            <Plus className="h-4 w-4" />
+            新建账号
+          </button>
+        </div>
       </div>
 
       {(message || error) && (
@@ -234,19 +253,6 @@ export default function OrganizerAdminsPage() {
           {error || message}
         </div>
       )}
-
-      <section className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2 text-[16px] font-bold text-[#111]">
-          <Plus className="h-4 w-4 text-[#ff1268]" />
-          新建平台主办方运营员账号
-        </div>
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
-          <input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} placeholder="手机号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <input value={form.nickname} onChange={event => setForm({ ...form, nickname: event.target.value })} placeholder="昵称" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <input value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} placeholder="初始密码" type="password" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <button onClick={submit} disabled={saving} className="h-10 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">创建</button>
-        </div>
-      </section>
 
       <section className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
         <div className="border-b border-gray-100 px-5 py-4 text-[16px] font-bold text-[#111]">账号列表</div>
@@ -259,74 +265,79 @@ export default function OrganizerAdminsPage() {
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#fff0f5] text-[#ff1268]">
                   <Users className="h-5 w-5" />
                 </div>
-                {editingId === account.id ? (
-                  <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-[170px_170px_170px_110px]">
-                    <input value={editForm.phone} onChange={event => setEditForm({ ...editForm, phone: event.target.value })} placeholder="手机号" className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-                    <input value={editForm.nickname} onChange={event => setEditForm({ ...editForm, nickname: event.target.value })} placeholder="昵称" className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-                    <input value={editForm.password} onChange={event => setEditForm({ ...editForm, password: event.target.value })} placeholder="新密码（可不填）" type="password" className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-                    <select value={editForm.status} onChange={event => setEditForm({ ...editForm, status: Number(event.target.value) })} className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
-                      <option value={1}>启用</option>
-                      <option value={0}>停用</option>
-                    </select>
-                  </div>
-                ) : (
-                  <div className="min-w-0">
-                    <div className="truncate text-[14px] font-semibold text-[#111]">{account.nickname || '未命名管理员'}</div>
-                    <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {formatOrganizerAdminAccountStatus(account.status)} · {account.role}</div>
-                  </div>
-                )}
+                <div className="min-w-0">
+                  <div className="truncate text-[14px] font-semibold text-[#111]">{account.nickname || '未命名管理员'}</div>
+                  <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {formatOrganizerAdminAccountStatus(account.status)} · {account.role}</div>
+                </div>
               </div>
-              {editingId === account.id ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={saveEdit}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#ff1268] px-3 py-2 text-[13px] text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Check className="h-4 w-4" />
-                    保存
-                  </button>
-                  <button
-                    onClick={cancelEdit}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <X className="h-4 w-4" />
-                    取消
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => startEdit(account)}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    编辑
-                  </button>
-                  <button
-                    onClick={() => toggleStatus(account)}
-                    disabled={saving || !canToggleOrganizerAdminAccountStatus(account.status)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isEnabledOrganizerAdminAccountStatus(account.status) ? <ShieldOff className="h-4 w-4" /> : isKnownOrganizerAdminAccountStatus(account.status) ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
-                    {formatOrganizerAdminStatusAction(account.status)}
-                  </button>
-                  <button
-                    onClick={() => remove(account)}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-red-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    删除
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <button
+                  onClick={() => startEdit(account)}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Pencil className="h-4 w-4" />
+                  编辑
+                </button>
+                <button
+                  onClick={() => toggleStatus(account)}
+                  disabled={saving || !canToggleOrganizerAdminAccountStatus(account.status)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isEnabledOrganizerAdminAccountStatus(account.status) ? <ShieldOff className="h-4 w-4" /> : isKnownOrganizerAdminAccountStatus(account.status) ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                  {formatOrganizerAdminStatusAction(account.status)}
+                </button>
+                <button
+                  onClick={() => remove(account)}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-red-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  删除
+                </button>
+              </div>
             </div>
           ))}
         </div>
       </section>
+
+      {accountDialog && (
+        <Modal
+          open={Boolean(accountDialog)}
+          onClose={cancelEdit}
+          title={accountDialog.mode === 'edit' ? '编辑平台主办方运营员账号' : '新建平台主办方运营员账号'}
+          size="md"
+          loading={saving}
+          footer={(
+            <>
+              <button type="button" onClick={cancelEdit} disabled={saving} className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60">
+                取消
+              </button>
+              <button type="button" onClick={accountDialog.mode === 'edit' ? saveEdit : submit} disabled={saving} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-60">
+                {saving ? '保存中...' : accountDialog.mode === 'edit' ? '保存' : '创建'}
+              </button>
+            </>
+          )}
+        >
+          {accountDialog.mode === 'edit' ? (
+            <div className="grid gap-4">
+              <input value={editForm.phone} onChange={event => setEditForm({ ...editForm, phone: event.target.value })} placeholder="手机号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <input value={editForm.nickname} onChange={event => setEditForm({ ...editForm, nickname: event.target.value })} placeholder="昵称" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <input value={editForm.password} onChange={event => setEditForm({ ...editForm, password: event.target.value })} placeholder="新密码（可不填）" type="password" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <select value={editForm.status} onChange={event => setEditForm({ ...editForm, status: Number(event.target.value) })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
+                <option value={1}>启用</option>
+                <option value={0}>停用</option>
+              </select>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              <input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} placeholder="手机号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <input value={form.nickname} onChange={event => setForm({ ...form, nickname: event.target.value })} placeholder="昵称" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <input value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} placeholder="初始密码" type="password" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   )
 }

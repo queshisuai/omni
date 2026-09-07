@@ -7,6 +7,7 @@ import { approveOrganizerApplication, deactivateOrganizer, getUserInfo, listOrga
 import { isAuthenticated } from '@/lib/auth'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import { globalAlert, globalConfirm } from '@/components/GlobalDialog'
+import { Modal } from '@/components/ui/Modal'
 import type { OrganizerApplicationStatus, OrganizerApplicationVO, UserInfo } from '@/types/api'
 
 const STATUS_OPTIONS: Array<{ value: OrganizerApplicationStatus | 'all'; label: string }> = [
@@ -15,6 +16,14 @@ const STATUS_OPTIONS: Array<{ value: OrganizerApplicationStatus | 'all'; label: 
   { value: 1, label: '已通过' },
   { value: 2, label: '已驳回' },
 ]
+
+type ApplicationReviewAction = 'approve' | 'reject'
+
+interface ApplicationReviewDialog {
+  item: OrganizerApplicationVO
+  action: ApplicationReviewAction
+  note: string
+}
 
 function statusMeta(status: OrganizerApplicationStatus) {
   if (status === 0) return { text: '待审核', color: '#ff7a00', bg: '#fff7ed' }
@@ -60,7 +69,8 @@ export default function OrganizerApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState<OrganizerApplicationStatus | 'all'>('all')
   const [items, setItems] = useState<OrganizerApplicationVO[]>([])
   const [keyword, setKeyword] = useState('')
-  const [reviewNote, setReviewNote] = useState('')
+  const [applicationReviewDialog, setApplicationReviewDialog] = useState<ApplicationReviewDialog | null>(null)
+  const [reviewError, setReviewError] = useState('')
 
   const loadData = async (status: OrganizerApplicationStatus | 'all' = statusFilter) => {
     setLoading(true)
@@ -118,42 +128,58 @@ export default function OrganizerApplicationsPage() {
     })
   }, [items, keyword])
 
-  const handleApprove = async (item: OrganizerApplicationVO) => {
+  const handleApprove = (item: OrganizerApplicationVO) => {
     if (!isReviewableOrganizerApplicationStatus(item.status)) {
       setError('入驻审核状态待核对，请刷新后再操作')
       return
     }
-    setSavingId(item.id)
     setError('')
-    try {
-      await approveOrganizerApplication(item.id, reviewNote.trim() || undefined)
-      setReviewNote('')
-      await loadData(statusFilter)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '通过申请失败')
-    } finally {
-      setSavingId(null)
-    }
+    setReviewError('')
+    setApplicationReviewDialog({ item, action: 'approve', note: '' })
   }
 
-  const handleReject = async (item: OrganizerApplicationVO) => {
+  const handleReject = (item: OrganizerApplicationVO) => {
     if (!isReviewableOrganizerApplicationStatus(item.status)) {
       setError('入驻审核状态待核对，请刷新后再操作')
       return
     }
-    const note = reviewNote.trim()
-    if (!note) {
-      setError('驳回时必须填写原因')
+    setError('')
+    setReviewError('')
+    setApplicationReviewDialog({ item, action: 'reject', note: '' })
+  }
+
+  const closeApplicationReviewDialog = () => {
+    if (savingId) return
+    setApplicationReviewDialog(null)
+    setReviewError('')
+  }
+
+  const submitApplicationReview = async () => {
+    if (!applicationReviewDialog) return
+    const { item, action } = applicationReviewDialog
+    if (!isReviewableOrganizerApplicationStatus(item.status)) {
+      setError('入驻审核状态待核对，请刷新后再操作')
+      closeApplicationReviewDialog()
+      return
+    }
+    const note = applicationReviewDialog.note.trim()
+    if (action === 'reject' && !note) {
+      setReviewError('驳回原因不能为空')
       return
     }
     setSavingId(item.id)
     setError('')
+    setReviewError('')
     try {
-      await rejectOrganizerApplication(item.id, note)
-      setReviewNote('')
+      if (action === 'approve') {
+        await approveOrganizerApplication(item.id, note || undefined)
+      } else {
+        await rejectOrganizerApplication(item.id, note)
+      }
+      setApplicationReviewDialog(null)
       await loadData(statusFilter)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '驳回申请失败')
+      setError(err instanceof Error ? err.message : action === 'approve' ? '通过申请失败' : '驳回申请失败')
     } finally {
       setSavingId(null)
     }
@@ -221,15 +247,6 @@ export default function OrganizerApplicationsPage() {
             />
           </div>
           <div className="text-sm text-[#666]">共 {filteredItems.length} 条申请</div>
-        </div>
-        <div className="mt-3">
-          <textarea
-            value={reviewNote}
-            onChange={(e) => setReviewNote(e.target.value)}
-            rows={3}
-            placeholder="审核备注，驳回时请填写原因"
-            className="w-full rounded-2xl border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 text-sm outline-none focus:border-[#ff1268]"
-          />
         </div>
       </div>
 
@@ -320,7 +337,7 @@ export default function OrganizerApplicationsPage() {
                       {isCancelled ? '已取消主办方' : '取消主办方'}
                     </button>
                     {(!isKnownOrganizerApplicationStatus(item.status) || !isKnownOrganizerStatus(item.organizerStatus)) ? <span className="rounded-full border border-[#ffd591] bg-[#fff7e6] px-3 py-1 text-[12px] text-[#ad6800]">状态待核对</span> : null}
-                    <div className="text-xs text-[#999]">驳回前请在上方备注框填写原因</div>
+                    <div className="text-xs text-[#999]">点击通过或驳回后填写本次审核备注</div>
                   </div>
                 </div>
               </div>
@@ -328,6 +345,47 @@ export default function OrganizerApplicationsPage() {
           })}
         </div>
       )}
+      <Modal
+        open={Boolean(applicationReviewDialog)}
+        onClose={closeApplicationReviewDialog}
+        title={applicationReviewDialog?.action === 'reject' ? '驳回入驻申请' : '通过入驻申请'}
+        size="md"
+        danger={applicationReviewDialog?.action === 'reject'}
+        loading={Boolean(savingId)}
+        footer={(
+          <>
+            <button type="button" onClick={closeApplicationReviewDialog} disabled={Boolean(savingId)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60">取消</button>
+            <button type="button" onClick={submitApplicationReview} disabled={Boolean(savingId)} className={`rounded-lg px-4 py-2 text-[14px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${applicationReviewDialog?.action === 'reject' ? 'bg-[#f53f3f] hover:bg-[#d92d2d]' : 'bg-[#16a34a] hover:bg-[#13813b]'}`}>
+              {savingId ? '提交中...' : applicationReviewDialog?.action === 'reject' ? '确认驳回' : '确认通过'}
+            </button>
+          </>
+        )}
+      >
+        {applicationReviewDialog ? (
+          <div className="space-y-4">
+            <p className="text-[14px] leading-6 text-[#666]">
+              {applicationReviewDialog.action === 'reject' ? '请填写驳回原因，备注将写入当前入驻申请。' : '确认通过该主办方入驻申请，可填写本次审核备注。'}
+            </p>
+            <div className="rounded-xl bg-[#fafafa] p-3 text-[13px] text-[#666]">
+              {applicationReviewDialog.item.organizerName} · {applicationReviewDialog.item.contactName}
+            </div>
+            <label className="block text-[13px] font-medium text-[#333]">
+              {applicationReviewDialog.action === 'reject' ? '驳回原因 *' : '审核备注'}
+              <textarea
+                value={applicationReviewDialog.note}
+                onChange={event => {
+                  setApplicationReviewDialog({ ...applicationReviewDialog, note: event.target.value })
+                  if (event.target.value.trim()) setReviewError('')
+                }}
+                rows={4}
+                placeholder={applicationReviewDialog.action === 'reject' ? '请输入驳回原因（必填）' : '请输入审核备注（可选）'}
+                className={`mt-1 w-full resize-none rounded-xl border p-3 text-[14px] outline-none ${reviewError ? 'border-[#dc2626]' : 'border-[#e5e5e5] focus:border-[#ff1268]'}`}
+              />
+            </label>
+            {reviewError && <div className="text-[13px] text-[#dc2626]">{reviewError}</div>}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

@@ -16,6 +16,20 @@ public class OrderInfoResponse {
     private BigDecimal amount;
     private Integer status;
     private String activityName;
+    private String activityPoster;
+    private String venueName;
+    private LocalDateTime sessionTime;
+    private String ticketName;
+    private BigDecimal unitPrice;
+    private String seatLabels;
+    private String grabRequestId;
+    private Long requestedTicketTypeId;
+    private Long matchedTicketTypeId;
+    private Boolean autoDowngraded;
+    private Long teamId;
+    private String teamGrabRequestId;
+    private Boolean teamOrder;
+    private String seatSelectionMode;
     private List<OrderAttendeeResponse> attendees;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
@@ -40,6 +54,34 @@ public class OrderInfoResponse {
     public void setStatus(Integer status) { this.status = status; }
     public String getActivityName() { return activityName; }
     public void setActivityName(String activityName) { this.activityName = activityName; }
+    public String getActivityPoster() { return activityPoster; }
+    public void setActivityPoster(String activityPoster) { this.activityPoster = activityPoster; }
+    public String getVenueName() { return venueName; }
+    public void setVenueName(String venueName) { this.venueName = venueName; }
+    public LocalDateTime getSessionTime() { return sessionTime; }
+    public void setSessionTime(LocalDateTime sessionTime) { this.sessionTime = sessionTime; }
+    public String getTicketName() { return ticketName; }
+    public void setTicketName(String ticketName) { this.ticketName = ticketName; }
+    public BigDecimal getUnitPrice() { return unitPrice; }
+    public void setUnitPrice(BigDecimal unitPrice) { this.unitPrice = unitPrice; }
+    public String getSeatLabels() { return seatLabels; }
+    public void setSeatLabels(String seatLabels) { this.seatLabels = seatLabels; }
+    public String getGrabRequestId() { return grabRequestId; }
+    public void setGrabRequestId(String grabRequestId) { this.grabRequestId = grabRequestId; }
+    public Long getRequestedTicketTypeId() { return requestedTicketTypeId; }
+    public void setRequestedTicketTypeId(Long requestedTicketTypeId) { this.requestedTicketTypeId = requestedTicketTypeId; }
+    public Long getMatchedTicketTypeId() { return matchedTicketTypeId; }
+    public void setMatchedTicketTypeId(Long matchedTicketTypeId) { this.matchedTicketTypeId = matchedTicketTypeId; }
+    public Boolean getAutoDowngraded() { return autoDowngraded; }
+    public void setAutoDowngraded(Boolean autoDowngraded) { this.autoDowngraded = autoDowngraded; }
+    public Long getTeamId() { return teamId; }
+    public void setTeamId(Long teamId) { this.teamId = teamId; }
+    public String getTeamGrabRequestId() { return teamGrabRequestId; }
+    public void setTeamGrabRequestId(String teamGrabRequestId) { this.teamGrabRequestId = teamGrabRequestId; }
+    public Boolean getTeamOrder() { return teamOrder; }
+    public void setTeamOrder(Boolean teamOrder) { this.teamOrder = teamOrder; }
+    public String getSeatSelectionMode() { return seatSelectionMode; }
+    public void setSeatSelectionMode(String seatSelectionMode) { this.seatSelectionMode = seatSelectionMode; }
     public List<OrderAttendeeResponse> getAttendees() { return attendees; }
     public void setAttendees(List<OrderAttendeeResponse> attendees) { this.attendees = attendees; }
     public LocalDateTime getCreateTime() { return createTime; }

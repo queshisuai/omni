@@ -29,6 +29,7 @@ import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSearchResponse;
 import com.omni.ticket.dto.ArtistSubmissionRequest;
 import com.omni.ticket.dto.ArtistUpdateRequest;
+import com.omni.ticket.dto.CheckInManualRequest;
 import com.omni.ticket.dto.CheckInOverviewResponse;
 import com.omni.ticket.dto.CheckInRecordResponse;
 import com.omni.ticket.dto.SeatCraftBlockDtos;
@@ -41,6 +42,8 @@ import com.omni.ticket.dto.StationConfigVersionDetailResponse;
 import com.omni.ticket.dto.StationConfigVersionRequest;
 import com.omni.ticket.dto.StationConfigVersionResponse;
 import com.omni.ticket.dto.StationConfigVersionReviewRequest;
+import com.omni.ticket.dto.TicketTypeBatchUpdateRequest;
+import com.omni.ticket.dto.TourDraftCreateDTO;
 import com.omni.ticket.dto.UpdateActivityStatusRequest;
 import com.omni.ticket.dto.VenueApplicationRequest;
 import com.omni.ticket.dto.VenueApplicationResponse;
@@ -814,9 +817,26 @@ public class AdminController {
         return Result.success(checkInAdminQueryService.listRecords(operatorId, sessionId, result, page, size));
     }
 
+    @PostMapping("/check-in/manual")
+    public Result<CheckInRecordResponse> manualCheckIn(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody(required = false) CheckInManualRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(checkInAdminQueryService.manualCheckIn(operatorId, request));
+    }
+
     @PostMapping("/tours/draft")
     public Result<Tour> createTourDraft(@RequestHeader(value = "Authorization", required = false) String authorization,
-                                        @RequestBody Map<String, Object> body) {
+                                        @RequestBody TourDraftCreateDTO body) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        return Result.success(tourStationService.createTourDraftFromRequest(userId, body));
+    }
+
+    public Result<Tour> createTourDraft(String authorization, Map<String, Object> body) {
         Long userId = parseOperatorId(authorization);
         if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
         Map<String, Object> safeBody = withOperatorUserId(body, userId);
@@ -1608,6 +1628,133 @@ public class AdminController {
         return Result.success(tt);
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    @PostMapping("/ticket-types/batch-update")
+    public Result<List<TicketType>> batchUpdateTicketTypes(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                                           @RequestBody TicketTypeBatchUpdateRequest request) {
+        Long userId = parseOperatorId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        String role = checkSessionRole(userId);
+        if (role == null) return Result.fail(403, "无权限");
+        if (request == null || request.getIds() == null || request.getIds().isEmpty()) {
+            return Result.fail(400, "请选择需要批量操作的票档");
+        }
+        List<Long> ids = request.getIds().stream()
+                .filter(Objects::nonNull)
+                .filter(id -> id > 0)
+                .distinct()
+                .collect(Collectors.toList());
+        if (ids.size() != request.getIds().size()) {
+            return Result.fail(400, "票档编号不正确");
+        }
+        String action = request.getAction() == null ? "" : request.getAction().trim();
+        if (!"UPDATE_PRICE".equals(action) && !"SET_STATUS".equals(action) && !"ADJUST_STOCK".equals(action)) {
+            return Result.fail(400, "批量操作类型不正确");
+        }
+
+        List<TicketType> ticketTypes = new ArrayList<>();
+        Map<Long, Session> sessions = new HashMap<>();
+        for (Long id : ids) {
+            TicketType ticketType = ticketTypeMapper.selectById(id);
+            if (ticketType == null) {
+                return Result.fail(404, "票档不存在");
+            }
+            Session session = sessions.computeIfAbsent(ticketType.getSessionId(), sessionMapper::selectById);
+            if (session == null) {
+                return Result.fail(404, "场次不存在");
+            }
+            if ("organizer".equals(role) && !ownsActivity(session.getActivityId(), userId)) {
+                return Result.fail(403, "只能管理自己主办的票档");
+            }
+            ticketTypes.add(ticketType);
+        }
+
+        Result<Void> validation = validateBatchTicketTypeUpdate(request, action, ticketTypes);
+        if (validation.getCode() != 200) {
+            return Result.fail(validation.getCode(), validation.getMessage());
+        }
+
+        Set<Long> affectedActivityIds = ticketTypes.stream()
+                .map(ticketType -> sessions.get(ticketType.getSessionId()))
+                .filter(Objects::nonNull)
+                .map(Session::getActivityId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        for (TicketType ticketType : ticketTypes) {
+            applyBatchTicketTypeUpdate(ticketType, request, action);
+            ticketTypeMapper.updateById(ticketType);
+            writeTicketTypeAudit(userId, role, "ticket_type.batch_update", ticketType,
+                    "批量更新票档：" + batchTicketTypeActionText(action) + "；场次编号 " + ticketType.getSessionId()
+                            + "，票价 " + ticketType.getPrice() + "，总库存 " + ticketType.getTotalStock()
+                            + "，状态 " + ticketType.getStatus());
+        }
+        affectedActivityIds.forEach(this::publishSearchUpsert);
+        return Result.success(ticketTypes);
+    }
+
+    private Result<Void> validateBatchTicketTypeUpdate(TicketTypeBatchUpdateRequest request, String action, List<TicketType> ticketTypes) {
+        if ("UPDATE_PRICE".equals(action)) {
+            if (request.getPrice() == null || request.getPrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+                return Result.fail(400, "目标票价必须大于 0");
+            }
+            return Result.success();
+        }
+        if ("SET_STATUS".equals(action)) {
+            if (request.getStatus() == null || (request.getStatus() != 0 && request.getStatus() != 1)) {
+                return Result.fail(400, "票档状态不正确");
+            }
+            return Result.success();
+        }
+        if ("ADJUST_STOCK".equals(action)) {
+            if (request.getTotalStock() == null || request.getTotalStock() < 0) {
+                return Result.fail(400, "目标总库存不能小于 0");
+            }
+            for (TicketType ticketType : ticketTypes) {
+                int soldStock = soldStock(ticketType);
+                if (request.getTotalStock() < soldStock) {
+                    return Result.fail(400, "目标总库存不能小于票档“" + ticketTypeDisplayName(ticketType) + "”的已售数量");
+                }
+            }
+            return Result.success();
+        }
+        return Result.fail(400, "批量操作类型不正确");
+    }
+
+    private void applyBatchTicketTypeUpdate(TicketType ticketType, TicketTypeBatchUpdateRequest request, String action) {
+        if ("UPDATE_PRICE".equals(action)) {
+            ticketType.setPrice(request.getPrice());
+            return;
+        }
+        if ("SET_STATUS".equals(action)) {
+            ticketType.setStatus(request.getStatus());
+            return;
+        }
+        if ("ADJUST_STOCK".equals(action)) {
+            int soldStock = soldStock(ticketType);
+            ticketType.setTotalStock(request.getTotalStock());
+            ticketType.setRemainStock(request.getTotalStock() - soldStock);
+        }
+    }
+
+    private int soldStock(TicketType ticketType) {
+        int totalStock = ticketType.getTotalStock() == null ? 0 : ticketType.getTotalStock();
+        int remainStock = ticketType.getRemainStock() == null ? 0 : ticketType.getRemainStock();
+        return Math.max(0, totalStock - remainStock);
+    }
+
+    private String ticketTypeDisplayName(TicketType ticketType) {
+        String name = ticketType.getName();
+        if (StringUtils.hasText(name)) return name.trim();
+        return "票档编号：" + ticketType.getId();
+    }
+
+    private String batchTicketTypeActionText(String action) {
+        if ("UPDATE_PRICE".equals(action)) return "批量改价";
+        if ("SET_STATUS".equals(action)) return "批量启停";
+        if ("ADJUST_STOCK".equals(action)) return "批量调整库存";
+        return "批量更新";
+    }
+
     @DeleteMapping("/ticket-types/{id}")
     public Result<Void> deleteTicketType(@RequestHeader(value = "Authorization", required = false) String authorization,
                                          @RequestParam(required = false) Long userId,
@@ -1762,8 +1909,6 @@ public class AdminController {
         if (role == null) return Result.fail(403, "无权限");
         return Result.success(venueMapper.selectList(new QueryWrapper<Venue>()
                 .eq("status", 1)
-                .orderByAsc("city")
-                .orderByAsc("name")
                 .orderByAsc("id")));
     }
 

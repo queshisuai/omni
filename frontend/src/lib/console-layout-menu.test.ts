@@ -37,3 +37,11 @@ test('console layout auto-expands active group and uses brand color for active s
   assert.match(layoutSource, /bg-\[var\(--omni-brand\)\]\/10/)
   assert.match(layoutSource, /text-\[var\(--omni-brand\)\]/)
 })
+
+test('console layout lets users collapse the active route group after auto expansion', () => {
+  assert.match(layoutSource, /useEffect\(\(\) => \{\s*if \(!activeGroupId\) return\s*setOpenGroups/)
+  assert.match(layoutSource, /}, \[activeGroupId\]\)/)
+  assert.match(layoutSource, /const groupActive = group\.id === activeGroupId/)
+  assert.match(layoutSource, /const expanded = openGroups\.includes\(group\.id\)/)
+  assert.doesNotMatch(layoutSource, /const expanded = groupActive \|\| openGroups\.includes\(group\.id\)/)
+})

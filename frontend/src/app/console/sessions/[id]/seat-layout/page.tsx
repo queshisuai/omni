@@ -1,19 +1,31 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { deleteSeatCraftVersion, getSeatCraftDraft, getSessionSeatLayout, listSeatCraftVersions, publishSeatCraftDraft, rollbackSeatCraftVersion, saveSeatCraftDraft } from '@/lib/api'
+import { useParams, useSearchParams } from 'next/navigation'
+import { deleteSeatCraftVersion, getSeatCraftDraft, getSessionSeatLayout, getSessionTicketDrafts, listAdminSessions, listSeatCraftVersions, publishSeatCraftDraft, rollbackSeatCraftVersion, saveSeatCraftDraft, updateSessionTicketBindings } from '@/lib/api'
 import { getUser } from '@/lib/auth'
 import { globalConfirm } from '@/components/GlobalDialog'
+import { Drawer } from '@/components/ui/Drawer'
 import { SeatLayoutDesigner } from '@/components/seatcraft/SeatLayoutDesigner'
-import { mergePersistedSeatCraftLayout, toSeatCraftVersionedLayoutPayload } from '@/components/seatcraft/block-layout'
+import { SeatCraftTicketEditor } from '@/components/seatcraft-unified/SeatCraftTicketEditor'
+import { mergePersistedSeatCraftLayout, toSeatCraftLayoutPayload, toSeatCraftVersionedLayoutPayload } from '@/components/seatcraft/block-layout'
 import { toSeatCraftVersionedLayoutDraft, type SeatCraftLayoutDraft } from '@/components/seatcraft/types'
-import type { SeatCraftVersionSummaryVO, SessionSeatVO } from '@/types/api'
+import type { SeatCraftSectionVO, SeatCraftVersionSummaryVO, SessionSeatVO, TicketTypeEntity } from '@/types/api'
 
 export default function SessionSeatLayoutPage() {
+  return (
+    <Suspense fallback={<div className="py-20 text-center text-[14px] text-[#999]">加载 SeatCraft 座位图中...</div>}>
+      <SessionSeatLayoutPageContent />
+    </Suspense>
+  )
+}
+
+function SessionSeatLayoutPageContent() {
   const params = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
   const sessionId = Number(params.id)
+  const ticketEditorOpen = searchParams.get('mode') === 'tickets'
   const [layout, setLayout] = useState<SeatCraftLayoutDraft | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -23,11 +35,38 @@ export default function SessionSeatLayoutPage() {
   const [message, setMessage] = useState('')
   const [sessionSeats, setSessionSeats] = useState<SessionSeatVO[]>([])
   const [versions, setVersions] = useState<SeatCraftVersionSummaryVO[]>([])
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeEntity[]>([])
+  const [ticketDrafts, setTicketDrafts] = useState<SeatCraftSectionVO[]>([])
+  const [ticketEditorPanelOpen, setTicketEditorPanelOpen] = useState(ticketEditorOpen)
+  const [selectedSectionIds, setSelectedSectionIds] = useState<number[]>([])
+  const [selectedTicketTypeId, setSelectedTicketTypeId] = useState('')
+  const [ticketName, setTicketName] = useState('')
+  const [ticketPrice, setTicketPrice] = useState('')
+  const [bindingSubmitting, setBindingSubmitting] = useState(false)
   const canPersistLayout = canPersistSeatCraftLayout(layout)
+  const ticketEditorLayout = layout ? toSeatCraftLayoutPayload(layout) : null
 
   const refreshVersions = () => listSeatCraftVersions('session', sessionId).then(setVersions).catch(() => undefined)
 
   const refreshSessionSeats = (userId: number) => getSessionSeatLayout(sessionId, userId).then(legacyLayout => setSessionSeats(legacyLayout?.seats ?? sessionSeats)).catch(() => undefined)
+
+  useEffect(() => {
+    if (ticketEditorOpen) setTicketEditorPanelOpen(true)
+  }, [ticketEditorOpen])
+
+  useEffect(() => {
+    if (selectedTicketTypeId && ticketTypes.some(ticket => String(ticket.id) === selectedTicketTypeId)) return
+    const firstTicket = ticketTypes[0]
+    if (!firstTicket) {
+      setSelectedTicketTypeId('')
+      setTicketName('')
+      setTicketPrice('')
+      return
+    }
+    setSelectedTicketTypeId(String(firstTicket.id))
+    setTicketName(firstTicket.name || '')
+    setTicketPrice(String(firstTicket.price ?? ''))
+  }, [selectedTicketTypeId, ticketTypes])
 
   useEffect(() => {
     if (!Number.isInteger(sessionId) || sessionId <= 0) {
@@ -63,6 +102,22 @@ export default function SessionSeatLayoutPage() {
           })
           .catch(() => {
             if (!cancelled) setVersions([])
+          })
+        listAdminSessions(user.userId, { page: 1, size: 500 })
+          .then(sessionPage => {
+            if (cancelled) return
+            const currentSession = sessionPage.records.find(item => item.id === sessionId)
+            setTicketTypes(currentSession?.ticketTypes ?? [])
+          })
+          .catch(() => {
+            if (!cancelled) setTicketTypes([])
+          })
+        getSessionTicketDrafts(sessionId, user.userId)
+          .then(drafts => {
+            if (!cancelled) setTicketDrafts(drafts)
+          })
+          .catch(() => {
+            if (!cancelled) setTicketDrafts([])
           })
       })
       .catch(err => {
@@ -194,6 +249,47 @@ export default function SessionSeatLayoutPage() {
     }
   }
 
+  const handleSelectedTicketTypeChange = (value: string) => {
+    setSelectedTicketTypeId(value)
+    const ticket = ticketTypes.find(item => String(item.id) === value)
+    setTicketName(ticket?.name || '')
+    setTicketPrice(ticket ? String(ticket.price ?? '') : '')
+  }
+
+  const handleSubmitTicketBinding = async () => {
+    const user = getUser()
+    const ticketTypeId = Number(selectedTicketTypeId)
+    const blockKeys = getSelectedBlockKeys(layout, selectedSectionIds)
+    if (!user) {
+      setError('请先登录')
+      return
+    }
+    if (!Number.isInteger(ticketTypeId) || ticketTypeId <= 0) {
+      setError('请先选择要绑定的票档')
+      return
+    }
+    if (blockKeys.length === 0) {
+      setError('请先在座位图中选择 SeatBlock')
+      return
+    }
+
+    setBindingSubmitting(true)
+    setError('')
+    setMessage('')
+    try {
+      await updateSessionTicketBindings(sessionId, {
+        userId: user.userId,
+        bindings: [{ ticketTypeId, blockKeys }],
+      })
+      await refreshSessionSeats(user.userId)
+      setMessage(`已将 ${blockKeys.length} 个 SeatBlock 绑定到票档“${ticketName || selectedTicketTypeId}”`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存票档座位块绑定失败')
+    } finally {
+      setBindingSubmitting(false)
+    }
+  }
+
 
 
   if (loading) {
@@ -247,9 +343,49 @@ export default function SessionSeatLayoutPage() {
             >
               {publishing ? '发布中...' : '保存并发布'}
             </button>
+            <button
+              type="button"
+              onClick={() => setTicketEditorPanelOpen(open => !open)}
+              disabled={!ticketEditorLayout}
+              className="rounded-lg border border-[#2563eb] px-4 py-2 text-[14px] font-medium text-[#2563eb] disabled:opacity-50"
+            >
+              {ticketEditorPanelOpen ? '收起票档座位绑定' : '票档座位绑定'}
+            </button>
             <span className="text-[13px] text-[#999]">至少添加一个座位块、票档组和票档绑定后才能保存草稿。</span>
           </div>
           {versions.length > 0 && <SeatCraftVersionList versions={versions} onRollback={handleRollbackVersion} onDelete={handleDeleteVersion} disabled={saving || publishing || creating} />}
+          <Drawer
+            open={ticketEditorPanelOpen && Boolean(ticketEditorLayout)}
+            onClose={() => setTicketEditorPanelOpen(false)}
+            title="票档与座区绑定"
+            width="w-[560px]"
+            loading={bindingSubmitting}
+          >
+            <div className="mb-4">
+              <p className="text-[13px] leading-6 text-[#666]">选择一个已存在票档，再在座位图中点选 SeatBlock，保存后会物化到 SessionSeat 的 ticketGroupId / ticketTypeId。</p>
+              <select value={selectedTicketTypeId} onChange={event => handleSelectedTicketTypeChange(event.target.value)} className="mt-3 h-10 w-full rounded-lg border border-[#bfdbfe] bg-white px-3 text-[14px] outline-none focus:border-[#2563eb]">
+                <option value="">请选择票档</option>
+                {ticketTypes.map(ticket => <option key={ticket.id} value={ticket.id}>{ticket.name || `票档编号：${ticket.id}`} · {ticket.price}</option>)}
+              </select>
+            </div>
+            {ticketTypes.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-[#bfdbfe] bg-white py-8 text-center text-[13px] text-[#666]">当前场次暂无票档，请先返回场次管理配置票档。</div>
+            ) : ticketEditorLayout ? (
+              <SeatCraftTicketEditor
+                layout={ticketEditorLayout}
+                ticketDrafts={ticketDrafts}
+                selectedSectionIds={selectedSectionIds}
+                onSelectedSectionIdsChange={setSelectedSectionIds}
+                ticketName={ticketName}
+                ticketPrice={ticketPrice}
+                onTicketNameChange={setTicketName}
+                onTicketPriceChange={setTicketPrice}
+                estimatedSeatCount={0}
+                onSubmit={handleSubmitTicketBinding}
+                submitLabel={bindingSubmitting ? '绑定中...' : '保存票档绑定'}
+              />
+            ) : null}
+          </Drawer>
           <SeatLayoutDesigner layout={layout} onChange={setLayout} sessionSeats={sessionSeats} />
         </>
       )}
@@ -287,6 +423,14 @@ function SeatCraftVersionList({ versions, onRollback, onDelete, disabled }: {
       </div>
     </div>
   )
+}
+
+function getSelectedBlockKeys(layout: SeatCraftLayoutDraft | null, selectedSectionIds: number[]) {
+  const selectedIds = new Set(selectedSectionIds)
+  return (layout?.blocks ?? [])
+    .filter((_, index) => selectedIds.has(index + 1))
+    .map(block => block.blockKey)
+    .filter(Boolean)
 }
 
 function formatVersionTime(value?: string | null) {

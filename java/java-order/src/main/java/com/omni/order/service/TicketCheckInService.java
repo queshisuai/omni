@@ -64,6 +64,9 @@ public class TicketCheckInService {
             if (ticket == null || !payload.getUserId().equals(ticket.getUserId())) {
                 return insertFailure(request, channel, null, "电子票不存在");
             }
+            if (request.getSessionId() != null && !request.getSessionId().equals(ticket.getSessionId())) {
+                return insertFailure(request, channel, ticket, "票券不属于当前场次");
+            }
             if (Integer.valueOf(TicketWalletService.STATUS_CHECKED_IN).equals(ticket.getStatus())) {
                 return insertRecord(request, channel, ticket, RESULT_DUPLICATE, null, ticket.getCheckedInAt());
             }

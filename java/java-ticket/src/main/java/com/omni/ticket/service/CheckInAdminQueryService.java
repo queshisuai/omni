@@ -4,10 +4,12 @@ import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.client.OrderInternalClient;
+import com.omni.ticket.dto.CheckInManualRequest;
 import com.omni.ticket.dto.CheckInOverviewRequest;
 import com.omni.ticket.dto.CheckInOverviewResponse;
 import com.omni.ticket.dto.CheckInRecordQueryRequest;
 import com.omni.ticket.dto.CheckInRecordResponse;
+import com.omni.ticket.dto.CheckInSyncRequest;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
@@ -19,6 +21,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class CheckInAdminQueryService {
@@ -87,6 +90,34 @@ public class CheckInAdminQueryService {
         return response.getData() == null ? Collections.emptyList() : response.getData();
     }
 
+    public CheckInRecordResponse manualCheckIn(Long userId, CheckInManualRequest request) {
+        if (request == null || request.getSessionId() == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "场次信息无效");
+        }
+        String entryCode = requireText(request.getEntryCode(), "票码不能为空");
+        InternalUserRefResponse user = requireCheckInViewer(userId, request.getSessionId());
+        ensureOrganizerOwnsSessionIfNeeded(user, request.getSessionId());
+
+        CheckInSyncRequest syncRequest = new CheckInSyncRequest();
+        syncRequest.setRequestId("ADMIN-" + userId + "-" + UUID.randomUUID());
+        syncRequest.setSessionId(request.getSessionId());
+        syncRequest.setEntryCode(entryCode);
+        syncRequest.setDeviceCode(trimToNull(request.getDeviceCode()));
+        syncRequest.setOperatorUserId(userId);
+        syncRequest.setChannel("MANUAL_ADMIN");
+
+        Result<CheckInRecordResponse> response;
+        try {
+            response = orderInternalClient.syncCheckIn(syncRequest, requireInternalToken());
+        } catch (RuntimeException e) {
+            throw unavailable();
+        }
+        if (response == null || response.getCode() != ResultCode.SUCCESS.getCode()) {
+            throw unavailable();
+        }
+        return response.getData();
+    }
+
     private InternalUserRefResponse requireCheckInViewer(Long userId, Long sessionId) {
         if (sessionId == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "场次信息无效");
@@ -120,5 +151,19 @@ public class CheckInAdminQueryService {
 
     private BusinessException unavailable() {
         return new BusinessException(ResultCode.INTERNAL_ERROR, "入场核验记录暂不可用");
+    }
+
+    private String requireText(String value, String message) {
+        if (!StringUtils.hasText(value)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, message);
+        }
+        return value.trim();
+    }
+
+    private String trimToNull(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
     }
 }

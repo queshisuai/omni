@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Plus, RefreshCw, ShieldAlert, XCircle } from 'lucide-react'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
+import { Drawer } from '@/components/ui/Drawer'
+import { Modal } from '@/components/ui/Modal'
 import { claimExceptionTask, closeExceptionTask, createExceptionTask, listExceptionTasks, resolveExceptionTask } from '@/lib/api'
 import {
   formatExceptionSeverity,
@@ -54,6 +56,7 @@ export default function ExceptionTasksPage() {
   const [items, setItems] = useState<ExceptionTaskVO[]>([])
   const [statusFilter, setStatusFilter] = useState('')
   const [form, setForm] = useState<ExceptionTaskCreatePayload>(initialForm())
+  const [createDrawerOpen, setCreateDrawerOpen] = useState(false)
   const [actionTarget, setActionTarget] = useState<{ taskId: number; status: string; action: 'resolve' | 'close' } | null>(null)
   const [actionResult, setActionResult] = useState('')
   const [loading, setLoading] = useState(true)
@@ -119,6 +122,7 @@ export default function ExceptionTasksPage() {
         reason: form.reason?.trim(),
       })
       setForm(initialForm())
+      setCreateDrawerOpen(false)
       setMessage('异常任务已创建')
       await load(statusFilter)
     } catch (err) {
@@ -201,7 +205,7 @@ export default function ExceptionTasksPage() {
   const renderTaskActions = (item: ExceptionTaskVO) => {
     if (isClaimableExceptionStatus(item.status)) {
       return (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex items-center gap-2 whitespace-nowrap">
           <button
             onClick={() => handleClaim(item)}
             disabled={actingId === item.id}
@@ -224,7 +228,7 @@ export default function ExceptionTasksPage() {
 
     if (isResolvableExceptionStatus(item.status)) {
       return (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex items-center gap-2 whitespace-nowrap">
           <button
             onClick={() => startAction(item, 'resolve')}
             disabled={actingId === item.id}
@@ -259,10 +263,16 @@ export default function ExceptionTasksPage() {
           <h1 className="text-[24px] font-bold text-[#111]">异常任务</h1>
           <p className="mt-2 text-[14px] text-gray-500">集中处理支付、退款、出票、库存等需要人工追踪的后台异常。</p>
         </div>
-        <button onClick={() => load(statusFilter)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
-          <RefreshCw className="h-4 w-4" />
-          刷新
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => load(statusFilter)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
+            <RefreshCw className="h-4 w-4" />
+            刷新
+          </button>
+          <button onClick={() => setCreateDrawerOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white hover:bg-[#e0105a]">
+            <Plus className="h-4 w-4" />
+            新建任务
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -293,32 +303,6 @@ export default function ExceptionTasksPage() {
         </div>
       )}
 
-      <section className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2 text-[16px] font-bold text-[#111]">
-          <Plus className="h-4 w-4 text-[#ff1268]" />
-          新建异常任务
-        </div>
-        <div className="grid gap-3 lg:grid-cols-[160px_120px_1fr_1fr_1fr]">
-          <select value={form.taskType} onChange={event => setForm({ ...form, taskType: event.target.value })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
-            {taskTypeOptions.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
-          <select value={form.severity} onChange={event => setForm({ ...form, severity: event.target.value })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
-            {severityOptions.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
-          <input value={form.businessNo || ''} onChange={event => setForm({ ...form, businessNo: event.target.value })} placeholder="业务编号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <input value={form.orderNo || ''} onChange={event => setForm({ ...form, orderNo: event.target.value })} placeholder="订单号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <input value={form.refundNo || ''} onChange={event => setForm({ ...form, refundNo: event.target.value })} placeholder="退款号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-        </div>
-        <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
-          <input value={form.paymentNo || ''} onChange={event => setForm({ ...form, paymentNo: event.target.value })} placeholder="支付号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <input value={form.ticketNo || ''} onChange={event => setForm({ ...form, ticketNo: event.target.value })} placeholder="票号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <button onClick={submit} disabled={saving} className="h-10 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">
-            {saving ? '创建中...' : '创建任务'}
-          </button>
-        </div>
-        <textarea value={form.reason || ''} onChange={event => setForm({ ...form, reason: event.target.value })} rows={3} placeholder="异常原因和需要追踪的处理目标" className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-[#ff1268]" />
-      </section>
-
       <section className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
           <div className="text-[16px] font-bold text-[#111]">任务队列</div>
@@ -339,30 +323,30 @@ export default function ExceptionTasksPage() {
             <table className="min-w-full text-left text-[13px]">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 font-medium">类型</th>
-                  <th className="px-4 py-3 font-medium">关联编号</th>
-                  <th className="px-4 py-3 font-medium">等级</th>
-                  <th className="px-4 py-3 font-medium">状态</th>
-                  <th className="px-4 py-3 font-medium">原因/结果</th>
-                  <th className="px-4 py-3 font-medium">追踪编号</th>
-                  <th className="px-4 py-3 font-medium">创建时间</th>
-                  <th className="px-4 py-3 font-medium">操作</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">类型</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">关联编号</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">等级</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">状态</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">原因/结果</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">追踪编号</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">创建时间</th>
+                  <th className="whitespace-nowrap px-4 py-3 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {pageItems.map(item => (
                   <tr key={item.id} className="text-[#333]">
-                    <td className="px-4 py-3">{formatExceptionTaskType(item.taskType)}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">{formatExceptionTaskType(item.taskType)}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
                       <div>{item.businessNo || item.orderNo || '-'}</div>
                       <div className="mt-1 text-[12px] text-gray-500">{item.refundNo || item.paymentNo || item.ticketNo || ''}</div>
                     </td>
-                    <td className="px-4 py-3">{formatExceptionSeverity(item.severity)}</td>
-                    <td className="px-4 py-3">{formatExceptionStatus(item.status)}</td>
-                    <td className="max-w-[320px] px-4 py-3 text-gray-600">{item.result || item.reason || '-'}</td>
-                    <td className="px-4 py-3 font-mono text-[12px] text-gray-500">{item.traceId || '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{formatExceptionSeverity(item.severity)}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{formatExceptionStatus(item.status)}</td>
+                    <td className="max-w-[320px] truncate px-4 py-3 text-gray-600" title={item.result || item.reason || '-'}>{item.result || item.reason || '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-gray-500">{item.traceId || '-'}</td>
                     <td className="whitespace-nowrap px-4 py-3">{formatTime(item.createTime)}</td>
-                    <td className="min-w-[260px] px-4 py-3">
+                    <td className="min-w-[260px] whitespace-nowrap px-4 py-3">
                       {renderTaskActions(item)}
                     </td>
                   </tr>
@@ -378,28 +362,64 @@ export default function ExceptionTasksPage() {
         ) : null}
       </section>
 
-      {actionTarget && (
-        <section className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
-          <div className="mb-3 text-[16px] font-bold text-[#111]">
-            {actionTarget.action === 'resolve' ? '填写处理结果' : '填写关闭原因'}
-          </div>
-          <textarea
-            value={actionResult}
-            onChange={event => setActionResult(event.target.value)}
-            rows={3}
-            placeholder={actionTarget.action === 'resolve' ? '例如：已核对渠道流水并补偿用户' : '例如：重复任务，已合并处理'}
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-[#ff1268]"
-          />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={submitAction} disabled={actingId === actionTarget.taskId} className="h-9 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">
-              {actingId === actionTarget.taskId ? '提交中...' : '提交'}
-            </button>
-            <button onClick={() => { setActionTarget(null); setActionResult('') }} className="h-9 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
+      <Drawer
+        open={createDrawerOpen}
+        onClose={() => setCreateDrawerOpen(false)}
+        title="新建异常任务"
+        width="w-[560px]"
+        loading={saving}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setCreateDrawerOpen(false)} disabled={saving} className="h-10 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60">
               取消
             </button>
+            <button type="button" onClick={submit} disabled={saving} className="h-10 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">
+              {saving ? '创建中...' : '创建任务'}
+            </button>
           </div>
-        </section>
-      )}
+        )}
+      >
+        <div className="grid gap-4">
+          <select value={form.taskType} onChange={event => setForm({ ...form, taskType: event.target.value })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
+            {taskTypeOptions.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+          <select value={form.severity} onChange={event => setForm({ ...form, severity: event.target.value })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
+            {severityOptions.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+          <input value={form.businessNo || ''} onChange={event => setForm({ ...form, businessNo: event.target.value })} placeholder="业务编号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+          <input value={form.orderNo || ''} onChange={event => setForm({ ...form, orderNo: event.target.value })} placeholder="订单号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+          <input value={form.refundNo || ''} onChange={event => setForm({ ...form, refundNo: event.target.value })} placeholder="退款号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+          <input value={form.paymentNo || ''} onChange={event => setForm({ ...form, paymentNo: event.target.value })} placeholder="支付号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+          <input value={form.ticketNo || ''} onChange={event => setForm({ ...form, ticketNo: event.target.value })} placeholder="票号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+          <textarea value={form.reason || ''} onChange={event => setForm({ ...form, reason: event.target.value })} rows={5} placeholder="异常原因和需要追踪的处理目标" className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-[#ff1268]" />
+        </div>
+      </Drawer>
+
+      <Modal
+        open={Boolean(actionTarget)}
+        onClose={() => { setActionTarget(null); setActionResult('') }}
+        title={actionTarget?.action === 'resolve' ? '填写处理结果' : '填写关闭原因'}
+        size="md"
+        loading={actionTarget ? actingId === actionTarget.taskId : false}
+        footer={(
+          <>
+            <button type="button" onClick={() => { setActionTarget(null); setActionResult('') }} disabled={Boolean(actionTarget && actingId === actionTarget.taskId)} className="h-9 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60">
+              取消
+            </button>
+            <button type="button" onClick={submitAction} disabled={Boolean(actionTarget && actingId === actionTarget.taskId)} className="h-9 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">
+              {actionTarget && actingId === actionTarget.taskId ? '提交中...' : '提交'}
+            </button>
+          </>
+        )}
+      >
+        <textarea
+          value={actionResult}
+          onChange={event => setActionResult(event.target.value)}
+          rows={4}
+          placeholder={actionTarget?.action === 'resolve' ? '例如：已核对渠道流水并补偿用户' : '例如：重复任务，已合并处理'}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-[#ff1268]"
+        />
+      </Modal>
     </div>
   )
 }

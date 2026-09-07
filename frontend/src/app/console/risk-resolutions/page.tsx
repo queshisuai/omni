@@ -5,9 +5,17 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { getUser } from '@/lib/auth'
 import { listActivityRiskResolutions, reviewActivityRiskResolution } from '@/lib/api'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
+import { Modal } from '@/components/ui/Modal'
 import type { ActivityRiskResolutionVO } from '@/types/api'
 
 type ResolutionStatus = 'pending' | 'approved' | 'rejected' | ''
+type ResolutionReviewAction = 'approve' | 'reject'
+
+interface ResolutionReviewDialog {
+  item: ActivityRiskResolutionVO
+  action: ResolutionReviewAction
+  note: string
+}
 
 const STATUS_OPTIONS: { value: ResolutionStatus; label: string }[] = [
   { value: 'pending', label: '待审核' },
@@ -49,7 +57,8 @@ function RiskResolutionsContent() {
   const [userId, setUserId] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [notes, setNotes] = useState<Record<number, string>>({})
+  const [resolutionReviewDialog, setResolutionReviewDialog] = useState<ResolutionReviewDialog | null>(null)
+  const [reviewError, setReviewError] = useState('')
   const [processingId, setProcessingId] = useState<number | null>(null)
   const [page, setPage] = useState(1)
   const status = normalizeStatus(searchParams.get('status'))
@@ -90,21 +99,41 @@ function RiskResolutionsContent() {
 
   const pageItems = useMemo(() => items.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [items, page])
 
-  const review = async (item: ActivityRiskResolutionVO, action: 'approve' | 'reject') => {
+  const openResolutionReviewDialog = (item: ActivityRiskResolutionVO) => {
     if (!isReviewableRiskResolutionStatus(item.status)) {
       setError('恢复售票审核状态待核对，请刷新后再操作')
       return
     }
+    setError('')
+    setReviewError('')
+    setResolutionReviewDialog({ item, action: 'approve', note: '' })
+  }
+
+  const closeResolutionReviewDialog = () => {
+    if (processingId) return
+    setResolutionReviewDialog(null)
+    setReviewError('')
+  }
+
+  const submitResolutionReview = async () => {
+    if (!resolutionReviewDialog) return
+    const { item, action } = resolutionReviewDialog
+    if (!isReviewableRiskResolutionStatus(item.status)) {
+      setError('恢复售票审核状态待核对，请刷新后再操作')
+      closeResolutionReviewDialog()
+      return
+    }
+    const note = resolutionReviewDialog.note.trim()
+    if (action === 'reject' && !note) {
+      setReviewError('拒绝原因不能为空')
+      return
+    }
     setProcessingId(item.id)
     setError('')
+    setReviewError('')
     try {
-      const note = notes[item.id] || ''
-      await reviewActivityRiskResolution(item.id, { userId, action, reviewNote: note.trim() || null })
-      setNotes(current => {
-        const next = { ...current }
-        delete next[item.id]
-        return next
-      })
+      await reviewActivityRiskResolution(item.id, { userId, action, reviewNote: note || null })
+      setResolutionReviewDialog(null)
       await loadData(status)
     } catch (err) {
       setError(err instanceof Error ? err.message : '审核恢复申请失败')
@@ -151,18 +180,7 @@ function RiskResolutionsContent() {
                 <div className="mt-1 text-[13px] text-[#666]">处理说明：{item.resolutionNote || '未填写'}</div>
                 {item.reviewNote && <div className="mt-1 text-[13px] text-[#666]">审核备注：{item.reviewNote}</div>}
                 {reviewable ? (
-                  <>
-                    <textarea
-                      value={notes[item.id] || ''}
-                      onChange={event => setNotes(current => ({ ...current, [item.id]: event.target.value }))}
-                      className="mt-3 h-20 w-full rounded-xl border border-[#ddd] p-3 text-[14px]"
-                      placeholder="审核备注"
-                    />
-                    <div className="mt-3 flex gap-2">
-                      <button disabled={processingId === item.id} onClick={() => review(item, 'approve')} className="rounded-full bg-[#16a34a] px-4 py-2 text-[13px] text-white disabled:opacity-60">通过恢复</button>
-                      <button disabled={processingId === item.id} onClick={() => review(item, 'reject')} className="rounded-full bg-[#ef4444] px-4 py-2 text-[13px] text-white disabled:opacity-60">拒绝</button>
-                    </div>
-                  </>
+                  <button disabled={processingId === item.id} onClick={() => openResolutionReviewDialog(item)} className="mt-3 rounded-full bg-[#ff1268] px-4 py-2 text-[13px] text-white disabled:opacity-60">审核处理</button>
                 ) : (
                   <div className="mt-3 text-[12px] text-[#999]">{isKnownRiskResolutionStatus(item.status) ? '历史记录仅供查看。' : '状态待核对'}</div>
                 )}
@@ -172,6 +190,48 @@ function RiskResolutionsContent() {
           <GlobalPagination page={page} total={items.length} loading={loading} onChange={setPage} />
         </div>
       )}
+      <Modal
+        open={Boolean(resolutionReviewDialog)}
+        onClose={closeResolutionReviewDialog}
+        title="恢复售票审核处理"
+        size="md"
+        danger={resolutionReviewDialog?.action === 'reject'}
+        loading={Boolean(processingId)}
+        footer={(
+          <>
+            <button type="button" onClick={closeResolutionReviewDialog} disabled={Boolean(processingId)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60">取消</button>
+            <button type="button" onClick={submitResolutionReview} disabled={Boolean(processingId)} className={`rounded-lg px-4 py-2 text-[14px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${resolutionReviewDialog?.action === 'reject' ? 'bg-[#f53f3f] hover:bg-[#d92d2d]' : 'bg-[#16a34a] hover:bg-[#13813b]'}`}>
+              {processingId ? '提交中...' : resolutionReviewDialog?.action === 'reject' ? '确认拒绝' : '确认通过'}
+            </button>
+          </>
+        )}
+      >
+        {resolutionReviewDialog ? (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-[#fafafa] p-3 text-[13px] text-[#666]">
+              {resolutionReviewDialog.item.activityName || `活动编号：${resolutionReviewDialog.item.activityId}`}
+            </div>
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#e5e5e5] p-2 text-[13px]">
+              <button type="button" onClick={() => setResolutionReviewDialog({ ...resolutionReviewDialog, action: 'approve' })} className={`rounded-lg px-3 py-2 ${resolutionReviewDialog.action === 'approve' ? 'bg-[#16a34a] text-white' : 'bg-white text-[#666]'}`}>通过恢复</button>
+              <button type="button" onClick={() => setResolutionReviewDialog({ ...resolutionReviewDialog, action: 'reject' })} className={`rounded-lg px-3 py-2 ${resolutionReviewDialog.action === 'reject' ? 'bg-[#f53f3f] text-white' : 'bg-white text-[#666]'}`}>拒绝恢复</button>
+            </div>
+            <label className="block text-[13px] font-medium text-[#333]">
+              {resolutionReviewDialog.action === 'reject' ? '拒绝原因 *' : '审核意见'}
+              <textarea
+                value={resolutionReviewDialog.note}
+                onChange={event => {
+                  setResolutionReviewDialog({ ...resolutionReviewDialog, note: event.target.value })
+                  if (event.target.value.trim()) setReviewError('')
+                }}
+                rows={4}
+                placeholder={resolutionReviewDialog.action === 'reject' ? '请输入拒绝原因（必填）' : '请输入审核意见（可选）'}
+                className={`mt-1 w-full resize-none rounded-xl border p-3 text-[14px] outline-none ${reviewError ? 'border-[#dc2626]' : 'border-[#e5e5e5] focus:border-[#ff1268]'}`}
+              />
+            </label>
+            {reviewError && <div className="text-[13px] text-[#dc2626]">{reviewError}</div>}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

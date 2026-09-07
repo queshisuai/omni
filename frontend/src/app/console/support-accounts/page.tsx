@@ -5,12 +5,17 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Check, Headphones, MessageSquareText, Pencil, Plus, ShieldOff, Trash2, X } from 'lucide-react'
 import { globalConfirm } from '@/components/GlobalDialog'
+import { Modal } from '@/components/ui/Modal'
 import { createSupportAccount, deactivateSupportAccount, deleteSupportAccount, getUserInfo, listSupportAccounts, updateSupportAccount } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import { getSupportConversationRecordsHref } from '@/lib/support-tools'
 import type { SupportAccountVO } from '@/types/api'
 
 type SupportRole = 'support_manager' | 'support_agent'
+type AccountDialog = { mode: 'create' } | { mode: 'edit'; accountId: number }
+
+const emptyCreateForm: { phone: string; nickname: string; password: string; supportRole: SupportRole } = { phone: '', nickname: '', password: '', supportRole: 'support_agent' }
+const emptyEditForm: { phone: string; nickname: string; password: string; status: number; supportRole: SupportRole } = { phone: '', nickname: '', password: '', status: 1, supportRole: 'support_agent' }
 
 const supportRoleOptions: Array<{ value: SupportRole; label: string }> = [
   { value: 'support_agent', label: '普通客服' },
@@ -52,9 +57,9 @@ export default function SupportAccountsPage() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [form, setForm] = useState<{ phone: string; nickname: string; password: string; supportRole: SupportRole }>({ phone: '', nickname: '', password: '', supportRole: 'support_agent' })
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editForm, setEditForm] = useState<{ phone: string; nickname: string; password: string; status: number; supportRole: SupportRole }>({ phone: '', nickname: '', password: '', status: 1, supportRole: 'support_agent' })
+  const [form, setForm] = useState(emptyCreateForm)
+  const [accountDialog, setAccountDialog] = useState<AccountDialog | null>(null)
+  const [editForm, setEditForm] = useState(emptyEditForm)
 
   const load = async () => {
     const data = await listSupportAccounts()
@@ -89,7 +94,8 @@ export default function SupportAccountsPage() {
         password: form.password.trim(),
         supportRole: form.supportRole,
       })
-      setForm({ phone: '', nickname: '', password: '', supportRole: 'support_agent' })
+      setForm(emptyCreateForm)
+      setAccountDialog(null)
       await load()
       setMessage('客服账号已创建')
     } catch (err: unknown) {
@@ -158,7 +164,7 @@ export default function SupportAccountsPage() {
       setError('账号状态待核对，请刷新后再操作')
       return
     }
-    setEditingId(account.id)
+    setAccountDialog({ mode: 'edit', accountId: account.id })
     setEditForm({
       phone: account.phone,
       nickname: account.nickname || '',
@@ -169,12 +175,12 @@ export default function SupportAccountsPage() {
   }
 
   const cancelEdit = () => {
-    setEditingId(null)
-    setEditForm({ phone: '', nickname: '', password: '', status: 1, supportRole: 'support_agent' })
+    setAccountDialog(null)
+    setEditForm(emptyEditForm)
   }
 
   const saveEdit = async () => {
-    if (!editingId) return
+    if (!accountDialog || accountDialog.mode !== 'edit') return
     setMessage('')
     setError('')
     if (!editForm.phone.trim() || !editForm.nickname.trim()) {
@@ -183,7 +189,7 @@ export default function SupportAccountsPage() {
     }
     setSaving(true)
     try {
-      await updateSupportAccount(editingId, {
+      await updateSupportAccount(accountDialog.accountId, {
         phone: editForm.phone.trim(),
         nickname: editForm.nickname.trim(),
         password: editForm.password.trim() || undefined,
@@ -211,10 +217,25 @@ export default function SupportAccountsPage() {
           <h1 className="text-[24px] font-bold text-[#111]">客服账号管理</h1>
           <p className="mt-2 text-[14px] text-gray-500">具备客服账号管理权限的后台账号可创建、编辑和停用人工客服；普通客服仍通过客服工作台处理在线咨询。</p>
         </div>
-        <Link href={getSupportConversationRecordsHref()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
-          <MessageSquareText className="h-4 w-4" />
-          查看用户会话记录
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href={getSupportConversationRecordsHref()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]">
+            <MessageSquareText className="h-4 w-4" />
+            查看用户会话记录
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setMessage('')
+              setError('')
+              setForm(emptyCreateForm)
+              setAccountDialog({ mode: 'create' })
+            }}
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white hover:bg-[#e0105a]"
+          >
+            <Plus className="h-4 w-4" />
+            新建客服
+          </button>
+        </div>
       </div>
 
       {(message || error) && (
@@ -222,22 +243,6 @@ export default function SupportAccountsPage() {
           {error || message}
         </div>
       )}
-
-      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2 text-[16px] font-bold text-[#111]">
-          <Plus className="h-4 w-4 text-[#ff1268]" />
-          新建人工客服
-        </div>
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_140px_auto]">
-          <input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} placeholder="手机号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <input value={form.nickname} onChange={event => setForm({ ...form, nickname: event.target.value })} placeholder="客服昵称" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <input value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} placeholder="初始密码" type="password" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-          <select value={form.supportRole} onChange={event => setForm({ ...form, supportRole: event.target.value as SupportRole })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
-            {supportRoleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-          <button onClick={submit} disabled={saving} className="h-10 rounded-lg bg-[#ff1268] px-4 text-[13px] font-medium text-white disabled:opacity-60">创建</button>
-        </div>
-      </section>
 
       <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
         <div className="border-b border-gray-100 px-5 py-4 text-[16px] font-bold text-[#111]">人工客服列表</div>
@@ -250,77 +255,85 @@ export default function SupportAccountsPage() {
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fff0f5] text-[#ff1268]">
                   <Headphones className="h-5 w-5" />
                 </div>
-                {editingId === account.id ? (
-                  <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-[150px_150px_150px_120px_110px]">
-                    <input value={editForm.phone} onChange={event => setEditForm({ ...editForm, phone: event.target.value })} placeholder="手机号" className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-                    <input value={editForm.nickname} onChange={event => setEditForm({ ...editForm, nickname: event.target.value })} placeholder="客服昵称" className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-                    <input value={editForm.password} onChange={event => setEditForm({ ...editForm, password: event.target.value })} placeholder="新密码（可不填）" type="password" className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
-                    <select value={editForm.supportRole} onChange={event => setEditForm({ ...editForm, supportRole: event.target.value as SupportRole })} className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
-                      {supportRoleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                    <select value={editForm.status} onChange={event => setEditForm({ ...editForm, status: Number(event.target.value) })} className="h-9 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
-                      <option value={1}>启用</option>
-                      <option value={0}>停用</option>
-                    </select>
-                  </div>
-                ) : (
-                  <div className="min-w-0">
-                    <div className="truncate text-[14px] font-semibold text-[#111]">{account.nickname || '未命名客服'}</div>
-                    <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {formatSupportRole(account.supportRole)} · {formatSupportAccountStatus(account.status)}</div>
-                  </div>
-                )}
+                <div className="min-w-0">
+                  <div className="truncate text-[14px] font-semibold text-[#111]">{account.nickname || '未命名客服'}</div>
+                  <div className="mt-1 text-[12px] text-gray-500">{account.phone} · {formatSupportRole(account.supportRole)} · {formatSupportAccountStatus(account.status)}</div>
+                </div>
               </div>
-              {editingId === account.id ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={saveEdit}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#ff1268] px-3 py-2 text-[13px] text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Check className="h-4 w-4" />
-                    保存
-                  </button>
-                  <button
-                    onClick={cancelEdit}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <X className="h-4 w-4" />
-                    取消
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => startEdit(account)}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    编辑
-                  </button>
-                  <button
-                    onClick={() => toggleStatus(account)}
-                    disabled={saving || !canToggleSupportAccountStatus(account.status)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isEnabledSupportAccountStatus(account.status) ? <ShieldOff className="h-4 w-4" /> : isKnownSupportAccountStatus(account.status) ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
-                    {formatSupportAccountStatusAction(account.status)}
-                  </button>
-                  <button
-                    onClick={() => remove(account)}
-                    disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-red-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    删除
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <button
+                  onClick={() => startEdit(account)}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Pencil className="h-4 w-4" />
+                  编辑
+                </button>
+                <button
+                  onClick={() => toggleStatus(account)}
+                  disabled={saving || !canToggleSupportAccountStatus(account.status)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isEnabledSupportAccountStatus(account.status) ? <ShieldOff className="h-4 w-4" /> : isKnownSupportAccountStatus(account.status) ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                  {formatSupportAccountStatusAction(account.status)}
+                </button>
+                <button
+                  onClick={() => remove(account)}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-red-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  删除
+                </button>
+              </div>
             </div>
           ))}
         </div>
       </section>
+
+      {accountDialog && (
+        <Modal
+          open={Boolean(accountDialog)}
+          onClose={cancelEdit}
+          title={accountDialog.mode === 'edit' ? '编辑客服账号' : '新建人工客服'}
+          size="md"
+          loading={saving}
+          footer={(
+            <>
+              <button type="button" onClick={cancelEdit} disabled={saving} className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:opacity-60">
+                取消
+              </button>
+              <button type="button" onClick={accountDialog.mode === 'edit' ? saveEdit : submit} disabled={saving} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-60">
+                {saving ? '保存中...' : accountDialog.mode === 'edit' ? '保存' : '创建'}
+              </button>
+            </>
+          )}
+        >
+          {accountDialog.mode === 'edit' ? (
+            <div className="grid gap-4">
+              <input value={editForm.phone} onChange={event => setEditForm({ ...editForm, phone: event.target.value })} placeholder="手机号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <input value={editForm.nickname} onChange={event => setEditForm({ ...editForm, nickname: event.target.value })} placeholder="客服昵称" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <input value={editForm.password} onChange={event => setEditForm({ ...editForm, password: event.target.value })} placeholder="新密码（可不填）" type="password" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <select value={editForm.supportRole} onChange={event => setEditForm({ ...editForm, supportRole: event.target.value as SupportRole })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
+                {supportRoleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <select value={editForm.status} onChange={event => setEditForm({ ...editForm, status: Number(event.target.value) })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
+                <option value={1}>启用</option>
+                <option value={0}>停用</option>
+              </select>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              <input value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} placeholder="手机号" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <input value={form.nickname} onChange={event => setForm({ ...form, nickname: event.target.value })} placeholder="客服昵称" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <input value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} placeholder="初始密码" type="password" className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]" />
+              <select value={form.supportRole} onChange={event => setForm({ ...form, supportRole: event.target.value as SupportRole })} className="h-10 rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]">
+                {supportRoleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   )
 }

@@ -5,9 +5,15 @@ import { getUser, updateStoredUser } from '@/lib/auth'
 import { approveStationConfigVersion, getUserInfo, listStationConfigReviews, rejectStationConfigVersion } from '@/lib/api'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import { formatStationConfigChangeType, formatStationConfigStatus, isReviewableStationConfigStatus } from '@/lib/operation-display'
-import { globalPrompt } from '@/components/GlobalDialog'
+import { Modal } from '@/components/ui/Modal'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import type { StationConfigVersionVO } from '@/types/api'
+
+interface StationReviewDialog {
+  item: StationConfigVersionVO
+  action: 'approve' | 'reject'
+  reviewNote: string
+}
 
 export default function StationConfigReviewsPage() {
   const [items, setItems] = useState<StationConfigVersionVO[]>([])
@@ -15,6 +21,8 @@ export default function StationConfigReviewsPage() {
   const [error, setError] = useState('')
   const [forbidden, setForbidden] = useState(false)
   const [processingId, setProcessingId] = useState<number | null>(null)
+  const [stationReviewDialog, setStationReviewDialog] = useState<StationReviewDialog | null>(null)
+  const [reviewError, setReviewError] = useState('')
   const [page, setPage] = useState(1)
   const pageItems = useMemo(() => items.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [items, page])
 
@@ -60,24 +68,36 @@ export default function StationConfigReviewsPage() {
       setError('站点配置状态待核对，请刷新后再操作')
       return
     }
-    const reviewNote = await globalPrompt({
-      title: action === 'approve' ? '通过备注' : '驳回原因',
-      content: action === 'approve' ? '请输入通过备注（可留空）' : '请输入驳回原因（可留空）',
-      type: 'reason',
-    })
-    if (reviewNote === null) return
-    setProcessingId(item.id)
     setError('')
+    setReviewError('')
+    setStationReviewDialog({ item, action, reviewNote: '' })
+  }
+
+  const submitStationReview = async () => {
+    if (!stationReviewDialog) return
+    if (!isReviewableStationConfigStatus(stationReviewDialog.item.status)) {
+      setReviewError('站点配置状态待核对，请刷新后再操作')
+      return
+    }
+    const reviewNote = stationReviewDialog.reviewNote.trim()
+    if (stationReviewDialog.action === 'reject' && !reviewNote) {
+      setReviewError('驳回原因不能为空')
+      return
+    }
+    setProcessingId(stationReviewDialog.item.id)
+    setError('')
+    setReviewError('')
     try {
-      const body = { reviewNote: reviewNote.trim() || null }
-      if (action === 'approve') {
-        await approveStationConfigVersion(item.id, body)
+      const body = { reviewNote: reviewNote || null }
+      if (stationReviewDialog.action === 'approve') {
+        await approveStationConfigVersion(stationReviewDialog.item.id, body)
       } else {
-        await rejectStationConfigVersion(item.id, body)
+        await rejectStationConfigVersion(stationReviewDialog.item.id, body)
       }
+      setStationReviewDialog(null)
       await loadReviews()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '操作失败')
+      setReviewError(err instanceof Error ? err.message : '操作失败')
     } finally {
       setProcessingId(null)
     }
@@ -155,6 +175,47 @@ export default function StationConfigReviewsPage() {
           </div>
         ) : null}
       </div>
+      <Modal
+        open={Boolean(stationReviewDialog)}
+        onClose={() => {
+          if (processingId) return
+          setStationReviewDialog(null)
+          setReviewError('')
+        }}
+        title={stationReviewDialog?.action === 'approve' ? '通过站点变更' : '驳回站点变更'}
+        danger={stationReviewDialog?.action === 'reject'}
+        loading={Boolean(processingId)}
+        footer={(
+          <>
+            <button type="button" onClick={() => { if (!processingId) { setStationReviewDialog(null); setReviewError('') } }} disabled={Boolean(processingId)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[13px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60">取消</button>
+            <button type="button" onClick={submitStationReview} disabled={Boolean(processingId)} className={`rounded-lg px-4 py-2 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-60 ${stationReviewDialog?.action === 'reject' ? 'bg-[#f53f3f] hover:bg-[#d92d2d]' : 'bg-[#22c55e] hover:bg-[#16a34a]'}`}>{processingId ? '提交中...' : '确认提交'}</button>
+          </>
+        )}
+      >
+        {stationReviewDialog ? (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-[#fafafa] p-3 text-[13px] leading-6 text-[#666]">
+              <div>站点：{stationReviewDialog.item.stationName || (stationReviewDialog.item.city ? `${stationReviewDialog.item.city}站` : '未命名站点')}</div>
+              <div>变更类型：{formatStationConfigChangeType(stationReviewDialog.item.changeType)}</div>
+              <div>原因：{stationReviewDialog.item.reason || '-'}</div>
+            </div>
+            <label className="block text-[13px] font-medium text-[#333]">
+              {stationReviewDialog.action === 'reject' ? '驳回原因 *' : '通过备注'}
+              <textarea
+                value={stationReviewDialog.reviewNote}
+                onChange={event => {
+                  setStationReviewDialog({ ...stationReviewDialog, reviewNote: event.target.value })
+                  if (event.target.value.trim()) setReviewError('')
+                }}
+                rows={4}
+                placeholder={stationReviewDialog.action === 'reject' ? '请输入驳回原因' : '请输入通过备注（可选）'}
+                className="mt-1 w-full resize-none rounded-lg border border-[#e5e5e5] px-3 py-2 text-[14px] outline-none focus:border-[#ff1268]"
+              />
+            </label>
+            {reviewError ? <div className="text-[13px] text-[#ef4444]">{reviewError}</div> : null}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

@@ -24,6 +24,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
@@ -189,6 +190,9 @@ class AdminOrderManagementTest {
             Session s2 = session(2002L, 200L);
             when(sessionMapper.selectList(any())).thenReturn(List.of(s1, s2));
             OrderInfoResponse o1 = order(5001L, 1001L, 2);
+            o1.setActivityPoster("/seed-posters/activity-100.jpg");
+            o1.setSessionTime(LocalDateTime.of(2026, 6, 26, 19, 30));
+            o1.setTicketName("VIP内场票");
             OrderInfoResponse o2 = order(5002L, 2002L, 2);
             when(orderInternalClient.listPaidBySessions(any(PaidOrdersBySessionsRequest.class), eq("test-token")))
                     .thenReturn(Result.success(List.of(o1, o2)));
@@ -199,6 +203,9 @@ class AdminOrderManagementTest {
             // 确认 activityName 被填充
             assertNotNull(o1.getActivityName());
             assertNotNull(o2.getActivityName());
+            assertEquals("/seed-posters/activity-100.jpg", result.get(0).getActivityPoster());
+            assertEquals(LocalDateTime.of(2026, 6, 26, 19, 30), result.get(0).getSessionTime());
+            assertEquals("VIP内场票", result.get(0).getTicketName());
         }
 
         @Test

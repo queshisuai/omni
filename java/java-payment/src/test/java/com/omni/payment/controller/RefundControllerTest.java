@@ -3,9 +3,12 @@ package com.omni.payment.controller;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
 import com.omni.common.result.Result;
+import com.omni.common.util.JwtUtil;
 import com.omni.payment.dto.ApplyRefundRequest;
+import com.omni.payment.dto.BatchReviewRefundRequest;
 import com.omni.payment.dto.RefundRequestVO;
 import com.omni.payment.service.RefundService;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +26,13 @@ class RefundControllerTest {
 
     private RefundService refundService;
     private RefundController controller;
+
+    @BeforeAll
+    static void jwt() {
+        if (System.getenv("JWT_SECRET") == null || System.getenv("JWT_SECRET").isBlank()) {
+            System.setProperty("JWT_SECRET", "test-jwt-secret-must-be-at-least-32-bytes");
+        }
+    }
 
     @BeforeEach
     void setUp() {
@@ -65,5 +75,24 @@ class RefundControllerTest {
         assertEquals(200, result.getCode());
         assertEquals(List.of(first), result.getData());
         verify(refundService).listUserRefunds(2004L);
+    }
+
+    @Test
+    void batchReviewDelegatesToRefundServiceWithAuthenticatedReviewer() {
+        BatchReviewRefundRequest request = new BatchReviewRefundRequest();
+        request.setIds(List.of(1001L, 1002L));
+        request.setAction("APPROVE");
+        request.setReason("系统核销异常统一批量退款");
+        RefundRequestVO reviewed = new RefundRequestVO();
+        reviewed.setId(1001L);
+        String token = "Bearer " + JwtUtil.generateToken(7L, "13800000001", "admin");
+        when(refundService.batchReview(7L, request.getIds(), "APPROVE", "系统核销异常统一批量退款"))
+                .thenReturn(List.of(reviewed));
+
+        Result<List<RefundRequestVO>> result = controller.batchReview(token, request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(List.of(reviewed), result.getData());
+        verify(refundService).batchReview(7L, request.getIds(), "APPROVE", "系统核销异常统一批量退款");
     }
 }

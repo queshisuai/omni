@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, addSupportNote, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, removeTeamGrabMember, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateSupportTags } from './api.ts'
+import { ApiError, addSupportNote, batchReviewRefunds, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, manualCheckInTicket, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, removeTeamGrabMember, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateSupportTags } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -477,6 +477,36 @@ test('updates reconciliation differences through user console endpoint', async (
   }
 })
 
+test('submits refund batch review through the atomic admin endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: [
+        { id: 1001, orderId: 9001, orderNo: 'O-1', userId: 2004, paymentId: 8001, refundNo: 'RF-1', amount: 188, reason: '重复支付', status: 1, reviewerId: 7, reviewNote: '系统核销异常统一批量退款', alipayRefundNo: null, createTime: '2026-06-01T10:00:00', reviewTime: '2026-06-01T10:01:00', refundTime: null },
+      ],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await batchReviewRefunds([1001, 1002], 'APPROVE', '系统核销异常统一批量退款')
+
+    assert.deepEqual(requested.map(item => [item.url, item.method, item.body]), [
+      ['/api/payment/refunds/admin/batch-review', 'POST', JSON.stringify({
+        ids: [1001, 1002],
+        action: 'APPROVE',
+        reason: '系统核销异常统一批量退款',
+      })],
+    ])
+    assert.equal(result[0].id, 1001)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('creates activity review with paid order id', async () => {
   const originalFetch = globalThis.fetch
   let requestedUrl = ''
@@ -763,6 +793,34 @@ test('loads check-in overview and records through ticket admin endpoint', async 
 
     assert.equal(requested[0], '/api/ticket/admin/check-in/overview?sessionId=910002')
     assert.equal(requested[1], '/api/ticket/admin/check-in/records?sessionId=910002&result=SUCCESS&page=1&size=20')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('submits manual emergency check-in through ticket admin endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: { id: 1, requestId: 'REQ-1', result: 'SUCCESS', ticketNo: 'ET1', sessionId: 910002 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const result = await manualCheckInTicket({ sessionId: 910002, entryCode: ' 1234567890123456 ', deviceCode: ' GATE-1 ' })
+
+    assert.deepEqual(requested.map(item => [item.url, item.method, item.body]), [
+      ['/api/ticket/admin/check-in/manual', 'POST', JSON.stringify({
+        sessionId: 910002,
+        entryCode: '1234567890123456',
+        deviceCode: 'GATE-1',
+      })],
+    ])
+    assert.equal(result.result, 'SUCCESS')
   } finally {
     globalThis.fetch = originalFetch
   }

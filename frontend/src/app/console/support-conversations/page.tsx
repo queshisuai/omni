@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
-import { Headphones, MessageSquareText, RefreshCcw, UserRound } from 'lucide-react'
-import { listAgentSupportConversations, listSupportAudits, listSupportMessages, listSupportNotes } from '@/lib/api'
-import { filterSupportConversations, formatSupportAuditAction, formatSupportConversationStatus, formatSupportSender, formatSupportSlaText, formatSupportTagLabel, shouldPollSupportConversation, type SupportConversationFilter } from '@/lib/support-tools'
-import type { SupportAuditVO, SupportConversationVO, SupportMessageVO, SupportNoteVO } from '@/types/api'
+import { ArrowRightLeft, Headphones, MessageSquareText, RefreshCcw, ShieldAlert, UserRound } from 'lucide-react'
+import { claimSupportConversation, closeSupportConversation, escalateSupportConversation, listAgentSupportConversations, listEnabledSupportAgents, listSupportAudits, listSupportMessages, listSupportNotes, transferSupportConversation } from '@/lib/api'
+import { canClaimSupportConversation, canEditSupportConversation, canRequestSupportClose, filterSupportConversations, formatSupportAuditAction, formatSupportConversationStatus, formatSupportSender, formatSupportSlaText, formatSupportTagLabel, shouldPollSupportConversation, type SupportConversationFilter } from '@/lib/support-tools'
+import { Modal } from '@/components/ui/Modal'
+import type { SupportAccountVO, SupportAuditVO, SupportConversationVO, SupportMessageVO, SupportNoteVO } from '@/types/api'
 
 function formatTime(value?: string | null) {
   if (!value) return ''
@@ -28,16 +29,52 @@ function mergeConversations(items: SupportConversationVO[]) {
   })
 }
 
+type SupportAction = 'claim' | 'transfer' | 'escalate' | 'close'
+
+interface SupportActionDialog {
+  action: SupportAction
+  reason: string
+  targetAgentId: string
+}
+
+const SUPPORT_ACTION_META: Record<SupportAction, { title: string; description: string; confirmText: string; danger?: boolean }> = {
+  claim: {
+    title: '认领会话',
+    description: '将该会话指派给当前登录客服，并进入人工处理状态。',
+    confirmText: '确认认领',
+  },
+  transfer: {
+    title: '转接会话',
+    description: '选择新的客服人员，将当前会话转交处理。',
+    confirmText: '确认转接',
+  },
+  escalate: {
+    title: '升级工单',
+    description: '将该会话标记为高优先级，交由二线主管关注。',
+    confirmText: '确认升级',
+  },
+  close: {
+    title: '结束会话',
+    description: '确认服务已完成，并将会话归档为已结束。',
+    confirmText: '确认结束',
+    danger: true,
+  },
+}
+
 export default function ConsoleSupportConversationsPage() {
   const [conversations, setConversations] = useState<SupportConversationVO[]>([])
   const [active, setActive] = useState<SupportConversationVO | null>(null)
   const [messages, setMessages] = useState<SupportMessageVO[]>([])
   const [notes, setNotes] = useState<SupportNoteVO[]>([])
   const [audits, setAudits] = useState<SupportAuditVO[]>([])
+  const [supportAgents, setSupportAgents] = useState<SupportAccountVO[]>([])
   const [filter, setFilter] = useState<SupportConversationFilter>('active')
   const [loading, setLoading] = useState(true)
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [error, setError] = useState('')
+  const [supportActionDialog, setSupportActionDialog] = useState<SupportActionDialog | null>(null)
+  const [actionError, setActionError] = useState('')
+  const [actionSubmitting, setActionSubmitting] = useState(false)
 
   const visibleConversations = useMemo(
     () => filterSupportConversations(conversations, filter),
@@ -49,6 +86,10 @@ export default function ConsoleSupportConversationsPage() {
     { value: 'closed', label: '已结束', count: filterSupportConversations(conversations, 'closed').length },
     { value: 'all', label: '全部', count: conversations.length },
   ]
+  const canClaimActiveConversation = canClaimSupportConversation(active?.status)
+  const canEditActiveConversation = canEditSupportConversation(active?.status)
+  const canCloseActiveConversation = canRequestSupportClose(active?.status)
+  const transferTargets = supportAgents.filter(agent => agent.status === 1 && agent.id !== active?.assignedAgentId)
 
   const loadConversations = async (showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -109,12 +150,14 @@ export default function ConsoleSupportConversationsPage() {
       listSupportMessages(active.id),
       listSupportNotes(active.id),
       listSupportAudits(active.id),
+      listEnabledSupportAgents(),
     ])
-      .then(([messageData, noteData, auditData]) => {
+      .then(([messageData, noteData, auditData, agentData]) => {
         if (!cancelled) {
           setMessages(messageData || [])
           setNotes(noteData || [])
           setAudits(auditData || [])
+          setSupportAgents(agentData || [])
         }
       })
       .catch(() => {
@@ -122,11 +165,85 @@ export default function ConsoleSupportConversationsPage() {
           setMessages([])
           setNotes([])
           setAudits([])
+          setSupportAgents([])
         }
       })
       .finally(() => { if (!cancelled) setMessagesLoading(false) })
     return () => { cancelled = true }
   }, [active?.id])
+
+  const reloadActiveConversationDetail = async (conversationId: number) => {
+    const [messageData, noteData, auditData, agentData] = await Promise.all([
+      listSupportMessages(conversationId),
+      listSupportNotes(conversationId),
+      listSupportAudits(conversationId),
+      listEnabledSupportAgents(),
+    ])
+    setMessages(messageData || [])
+    setNotes(noteData || [])
+    setAudits(auditData || [])
+    setSupportAgents(agentData || [])
+  }
+
+  const openSupportActionDialog = (action: SupportAction) => {
+    if (!active) return
+    setActionError('')
+    setError('')
+    setSupportActionDialog({
+      action,
+      reason: '',
+      targetAgentId: '',
+    })
+    if (action === 'transfer') {
+      listEnabledSupportAgents()
+        .then(data => setSupportAgents(data || []))
+        .catch(() => setActionError('加载客服人员失败，请刷新后重试'))
+    }
+  }
+
+  const submitSupportAction = async () => {
+    if (!active || !supportActionDialog) return
+    if (supportActionDialog.action === 'claim' && !canClaimSupportConversation(active.status)) {
+      setActionError('当前会话暂不能认领，请刷新后再操作')
+      return
+    }
+    if ((supportActionDialog.action === 'transfer' || supportActionDialog.action === 'escalate') && !canEditSupportConversation(active.status)) {
+      setActionError('当前会话暂不能处理，请刷新后再操作')
+      return
+    }
+    if (supportActionDialog.action === 'close' && !canRequestSupportClose(active.status)) {
+      setActionError('当前会话暂不能结束，请刷新后再操作')
+      return
+    }
+    if (supportActionDialog.action === 'transfer' && !supportActionDialog.targetAgentId) {
+      setActionError('请选择转接客服')
+      return
+    }
+
+    setActionSubmitting(true)
+    setActionError('')
+    try {
+      const reason = supportActionDialog.reason.trim() || undefined
+      let updated: SupportConversationVO
+      if (supportActionDialog.action === 'claim') {
+        updated = await claimSupportConversation(active.id)
+      } else if (supportActionDialog.action === 'transfer') {
+        updated = await transferSupportConversation(active.id, Number(supportActionDialog.targetAgentId), reason)
+      } else if (supportActionDialog.action === 'escalate') {
+        updated = await escalateSupportConversation(active.id, reason)
+      } else {
+        updated = await closeSupportConversation(active.id, reason)
+      }
+      setActive(updated)
+      setSupportActionDialog(null)
+      await loadConversations(false)
+      await reloadActiveConversationDetail(updated.id)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '会话操作失败，请稍后重试')
+    } finally {
+      setActionSubmitting(false)
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -221,7 +338,23 @@ export default function ConsoleSupportConversationsPage() {
                     )}
                     <div className={`mt-1 text-[12px] ${active.slaOverdue ? 'text-red-500' : 'text-gray-500'}`}>{formatSupportSlaText(active)}</div>
                   </div>
-                  <div className="text-[12px] text-gray-400">{formatTime(active.updateTime || active.createTime)}</div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="w-full text-right text-[12px] text-gray-400">{formatTime(active.updateTime || active.createTime)}</div>
+                    <button type="button" onClick={() => openSupportActionDialog('claim')} disabled={!canClaimActiveConversation} className="rounded-lg bg-[#ff1268] px-3 py-1.5 text-[12px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                      认领会话
+                    </button>
+                    <button type="button" onClick={() => openSupportActionDialog('transfer')} disabled={!canEditActiveConversation} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50">
+                      <ArrowRightLeft className="h-3.5 w-3.5" />
+                      转接会话
+                    </button>
+                    <button type="button" onClick={() => openSupportActionDialog('escalate')} disabled={!canEditActiveConversation} className="inline-flex items-center gap-1.5 rounded-lg border border-orange-200 px-3 py-1.5 text-[12px] font-medium text-orange-600 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50">
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                      升级工单
+                    </button>
+                    <button type="button" onClick={() => openSupportActionDialog('close')} disabled={!canCloseActiveConversation} className="rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268] disabled:cursor-not-allowed disabled:opacity-50">
+                      结束会话
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -303,6 +436,78 @@ export default function ConsoleSupportConversationsPage() {
           )}
         </section>
       </div>
+      <Modal
+        open={Boolean(supportActionDialog)}
+        onClose={() => {
+          if (actionSubmitting) return
+          setSupportActionDialog(null)
+          setActionError('')
+        }}
+        title={supportActionDialog ? SUPPORT_ACTION_META[supportActionDialog.action].title : '会话操作'}
+        danger={supportActionDialog ? SUPPORT_ACTION_META[supportActionDialog.action].danger : false}
+        loading={actionSubmitting}
+        footer={(
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                if (actionSubmitting) return
+                setSupportActionDialog(null)
+                setActionError('')
+              }}
+              disabled={actionSubmitting}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-[14px] text-gray-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={submitSupportAction}
+              disabled={actionSubmitting}
+              className={`rounded-lg px-4 py-2 text-[14px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-60 ${supportActionDialog && SUPPORT_ACTION_META[supportActionDialog.action].danger ? 'bg-[#f53f3f] hover:bg-[#d92d2d]' : 'bg-[#ff1268] hover:bg-[#e0105a]'}`}
+            >
+              {actionSubmitting ? '提交中...' : supportActionDialog ? SUPPORT_ACTION_META[supportActionDialog.action].confirmText : '确定'}
+            </button>
+          </>
+        )}
+      >
+        {supportActionDialog ? (
+          <div className="space-y-4">
+            <p className="text-[14px] leading-6 text-gray-600">{SUPPORT_ACTION_META[supportActionDialog.action].description}</p>
+            {supportActionDialog.action === 'transfer' ? (
+              <label className="block text-[13px] font-medium text-[#333]">
+                转接客服 *
+                <select
+                  value={supportActionDialog.targetAgentId}
+                  onChange={event => {
+                    setSupportActionDialog({ ...supportActionDialog, targetAgentId: event.target.value })
+                    if (event.target.value) setActionError('')
+                  }}
+                  className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-[13px] outline-none focus:border-[#ff1268]"
+                >
+                  <option value="">请选择客服人员</option>
+                  {transferTargets.map(agent => (
+                    <option key={agent.id} value={agent.id}>{agent.nickname || agent.phone}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {supportActionDialog.action !== 'claim' ? (
+              <label className="block text-[13px] font-medium text-[#333]">
+                处理说明
+                <textarea
+                  value={supportActionDialog.reason}
+                  onChange={event => setSupportActionDialog({ ...supportActionDialog, reason: event.target.value })}
+                  rows={4}
+                  placeholder="请输入处理说明（选填）"
+                  className="mt-1 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-[13px] outline-none focus:border-[#ff1268]"
+                />
+              </label>
+            ) : null}
+            {actionError ? <div className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-500">{actionError}</div> : null}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

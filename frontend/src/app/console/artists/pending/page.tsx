@@ -4,11 +4,20 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { SafeImage } from '@/components/SafeImage'
+import { Modal } from '@/components/ui/Modal'
 import { getUserInfo, listPendingAdminArtists, reviewAdminArtist, updateAdminArtistRisk } from '@/lib/api'
 import { isAuthenticated } from '@/lib/auth'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import { formatArtistListReviewStatus, isKnownArtistReviewStatus, isReviewableArtistReviewStatus } from '@/lib/console-artists'
 import type { ArtistEntity, UserInfo } from '@/types/api'
+
+type ArtistReviewAction = 'approve' | 'reject' | 'risk'
+
+interface ArtistReviewDialog {
+  artist: ArtistEntity
+  action: ArtistReviewAction
+  note: string
+}
 
 export default function PendingArtistsPage() {
   const router = useRouter()
@@ -17,7 +26,8 @@ export default function PendingArtistsPage() {
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<number | null>(null)
   const [error, setError] = useState('')
-  const [note, setNote] = useState('')
+  const [artistReviewDialog, setArtistReviewDialog] = useState<ArtistReviewDialog | null>(null)
+  const [reviewError, setReviewError] = useState('')
 
   const loadData = async () => {
     setLoading(true)
@@ -60,37 +70,53 @@ export default function PendingArtistsPage() {
     return false
   }
 
-  const review = async (artist: ArtistEntity, action: 'approve' | 'reject') => {
+  const review = (artist: ArtistEntity, action: 'approve' | 'reject') => {
     if (!user) return
     if (!guardReviewableArtist(artist)) return
-    setSavingId(artist.id)
     setError('')
-    try {
-      await reviewAdminArtist(artist.id, { action, note: note.trim() || null })
-      await loadData()
-      setNote('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '审核失败')
-    } finally {
-      setSavingId(null)
-    }
+    setReviewError('')
+    setArtistReviewDialog({ artist, action, note: '' })
   }
 
-  const markRisk = async (artist: ArtistEntity) => {
+  const markRisk = (artist: ArtistEntity) => {
     if (!user) return
     if (!guardReviewableArtist(artist)) return
-    const reason = note.trim()
-    if (!reason) {
-      setError('标记风险艺人必须填写备注')
+    setError('')
+    setReviewError('')
+    setArtistReviewDialog({ artist, action: 'risk', note: '' })
+  }
+
+  const closeArtistReviewDialog = () => {
+    if (savingId) return
+    setArtistReviewDialog(null)
+    setReviewError('')
+  }
+
+  const submitArtistReview = async () => {
+    if (!user || !artistReviewDialog) return
+    const { artist, action } = artistReviewDialog
+    if (!guardReviewableArtist(artist)) {
+      closeArtistReviewDialog()
+      return
+    }
+    const note = artistReviewDialog.note.trim()
+    if ((action === 'reject' || action === 'risk') && !note) {
+      setReviewError(action === 'risk' ? '风险原因不能为空' : '拒绝原因不能为空')
       return
     }
     setSavingId(artist.id)
     setError('')
+    setReviewError('')
     try {
-      await updateAdminArtistRisk(artist.id, { riskStatus: 'risky', reason })
+      if (action === 'risk') {
+        await updateAdminArtistRisk(artist.id, { riskStatus: 'risky', reason: note })
+      } else {
+        await reviewAdminArtist(artist.id, { action, note: note || null })
+      }
+      setArtistReviewDialog(null)
       await loadData()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '标记风险失败')
+      setError(err instanceof Error ? err.message : '审核失败')
     } finally {
       setSavingId(null)
     }
@@ -102,8 +128,6 @@ export default function PendingArtistsPage() {
         <h1 className="text-[24px] font-bold text-[#1a1a2e]">艺人档案审核</h1>
         <p className="mt-1 text-[14px] text-[#666]">审核主办方提交的艺人档案，风险艺人会阻止活动上架。</p>
       </div>
-
-      <textarea value={note} onChange={event => setNote(event.target.value)} className="h-20 w-full rounded-xl border border-[#ddd] p-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="审核备注或风险原因" />
 
       {error && <div className="rounded-xl bg-[#fef2f2] p-3 text-[14px] text-[#dc2626]">{error}</div>}
       {loading ? <div className="text-[14px] text-[#999]">加载中...</div> : items.length === 0 ? <div className="rounded-xl bg-white p-6 text-center text-[#999]">暂无待审核艺人</div> : (
@@ -144,6 +168,44 @@ export default function PendingArtistsPage() {
           ))}
         </div>
       )}
+      <Modal
+        open={Boolean(artistReviewDialog)}
+        onClose={closeArtistReviewDialog}
+        title={artistReviewDialog?.action === 'approve' ? '通过艺人审核' : artistReviewDialog?.action === 'reject' ? '拒绝艺人审核' : '标记风险艺人'}
+        size="md"
+        danger={artistReviewDialog?.action !== 'approve'}
+        loading={Boolean(savingId)}
+        footer={(
+          <>
+            <button type="button" onClick={closeArtistReviewDialog} disabled={Boolean(savingId)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] disabled:cursor-not-allowed disabled:opacity-60">取消</button>
+            <button type="button" onClick={submitArtistReview} disabled={Boolean(savingId)} className={`rounded-lg px-4 py-2 text-[14px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${artistReviewDialog?.action === 'approve' ? 'bg-[#16a34a] hover:bg-[#13813b]' : 'bg-[#f53f3f] hover:bg-[#d92d2d]'}`}>
+              {savingId ? '提交中...' : artistReviewDialog?.action === 'approve' ? '确认通过' : artistReviewDialog?.action === 'reject' ? '确认拒绝' : '确认标记风险'}
+            </button>
+          </>
+        )}
+      >
+        {artistReviewDialog ? (
+          <div className="space-y-4">
+            <div className="rounded-xl bg-[#fafafa] p-3 text-[13px] text-[#666]">
+              {artistReviewDialog.artist.name}{artistReviewDialog.artist.alias ? ` / ${artistReviewDialog.artist.alias}` : ''}
+            </div>
+            <label className="block text-[13px] font-medium text-[#333]">
+              {artistReviewDialog.action === 'approve' ? '审核备注' : artistReviewDialog.action === 'reject' ? '拒绝原因 *' : '风险原因 *'}
+              <textarea
+                value={artistReviewDialog.note}
+                onChange={event => {
+                  setArtistReviewDialog({ ...artistReviewDialog, note: event.target.value })
+                  if (event.target.value.trim()) setReviewError('')
+                }}
+                rows={4}
+                placeholder={artistReviewDialog.action === 'approve' ? '请输入审核备注（可选）' : artistReviewDialog.action === 'reject' ? '请输入拒绝原因（必填）' : '请输入风险原因（必填）'}
+                className={`mt-1 w-full resize-none rounded-xl border p-3 text-[14px] outline-none ${reviewError ? 'border-[#dc2626]' : 'border-[#e5e5e5] focus:border-[#ff1268]'}`}
+              />
+            </label>
+            {reviewError && <div className="text-[13px] text-[#dc2626]">{reviewError}</div>}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

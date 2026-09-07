@@ -107,7 +107,9 @@ public class OrganizerAdminAccountService {
     @Transactional
     public OrganizerAdminAccountResponse delete(Long id) {
         User user = requireOrganizerAdmin(id);
-        userMapper.deleteById(id);
+        user.setStatus(0);
+        user.setUpdateTime(LocalDateTime.now());
+        userMapper.updateById(user);
         return toResponse(user);
     }
 

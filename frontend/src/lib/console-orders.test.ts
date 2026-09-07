@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildConsoleOrderExportCsv, filterConsoleOrdersByStatus, formatConsoleOrderStatusLabel, formatOrderAttendees, getConsoleOrderActivityLabel, getConsoleOrderScopeCopy, getConsoleOrderStatusClassName, getConsoleOrderTicketLabel, getSelectedConsoleOrders } from './console-orders.ts'
+import { buildConsoleOrderExportCsv, CONSOLE_ORDER_STATUS_TABS, countConsoleOrdersByStatus, filterConsoleOrdersByQuery, filterConsoleOrdersByStatus, formatConsoleOrderStatusLabel, formatOrderAttendees, getConsoleOrderActivityLabel, getConsoleOrderScopeCopy, getConsoleOrderStatusClassName, getConsoleOrderTicketLabel, getSelectedConsoleOrders } from './console-orders.ts'
 import type { OrderEntity } from '../types/api.ts'
 
 test('formats order attendees for console display', () => {
@@ -121,6 +121,30 @@ test('keeps selected console order export in table order', () => {
 
   assert.deepEqual(getSelectedConsoleOrders(orders, new Set([3, 1])).map(order => order.id), [1, 3])
   assert.deepEqual(filterConsoleOrdersByStatus(orders, 2).map(order => order.id), [1, 3])
+})
+
+test('exposes pending orders as a first-class console status filter', () => {
+  const orders = [
+    { id: 1, status: 1 },
+    { id: 2, status: 2 },
+    { id: 3, status: 3 },
+    { id: 4, status: 4 },
+  ] as OrderEntity[]
+
+  assert.deepEqual(CONSOLE_ORDER_STATUS_TABS.map(tab => tab.value), ['all', 1, 2, 4, 3])
+  assert.equal(countConsoleOrdersByStatus(orders).pending, 1)
+  assert.deepEqual(filterConsoleOrdersByStatus(orders, 1).map(order => order.id), [1])
+})
+
+test('filters console orders by exact order number or masked user phone', () => {
+  const orders = [
+    { id: 1, orderNo: 'ORD-001', userPhoneMask: '139****0001', status: 1 },
+    { id: 2, orderNo: 'ORD-002', userPhoneMask: '139****0002', status: 2 },
+  ] as unknown as OrderEntity[]
+
+  assert.deepEqual(filterConsoleOrdersByQuery(orders, 'ORD-002').map(order => order.id), [2])
+  assert.deepEqual(filterConsoleOrdersByQuery(orders, '139****0001').map(order => order.id), [1])
+  assert.deepEqual(filterConsoleOrdersByQuery(orders, '').map(order => order.id), [1, 2])
 })
 
 test('describes organizer admin as a platform-side business role', () => {

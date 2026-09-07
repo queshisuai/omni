@@ -7,6 +7,7 @@ import { getUser } from '@/lib/auth'
 import { createStationConfigVersion, getActivityStation, getAdminActivity, listAdminSessions, listAdminVenues, listCategories, submitStationConfigVersion, submitVenueApplication, updateAdminActivity, uploadPrivateAsset, uploadTicketAsset } from '@/lib/api'
 import { isPlatformAdminRole } from '@/lib/console-auth'
 import { ActivityArtistSelector } from '@/components/activity-artist/ActivityArtistSelector'
+import { Drawer } from '@/components/ui/Drawer'
 import { LocalFileUpload } from '@/components/LocalFileUpload'
 import { StationVenueApprovalForm, createEmptyStationVenueApprovalValue, validateStationVenueApproval, type StationVenueApprovalValue } from '@/components/station-config/StationVenueApprovalForm'
 import type { ActivityArtistVO, CategoryVO, PrivateAssetVO, SessionAdminVO, StationConfigVersionDetailVO, UserRole, VenueEntity } from '@/types/api'
@@ -285,33 +286,42 @@ export default function EditActivityPage() {
             <div className="text-[15px] font-semibold text-[#1a1a2e]">场地临时变更申请</div>
             <p className="mt-1 text-[13px] text-[#999]">普通活动可申请更换场馆，城市锁定为当前活动城市；若整个活动已有已支付订单，后端会拒绝提交。</p>
           </div>
-          <button type="button" disabled={!stationDetail?.station?.id} onClick={() => setShowVenueChangeForm(value => !value)} className="rounded-lg border border-[#ff1268] px-4 py-2 text-[13px] font-medium text-[#ff1268] disabled:border-[#ddd] disabled:text-[#aaa]">
-            {showVenueChangeForm ? '收起申请表' : '申请场地变更'}
+          <button type="button" disabled={!stationDetail?.station?.id} onClick={() => setShowVenueChangeForm(true)} className="rounded-lg border border-[#ff1268] px-4 py-2 text-[13px] font-medium text-[#ff1268] disabled:border-[#ddd] disabled:text-[#aaa]">
+            申请场地变更
           </button>
         </div>
         {stationDetail?.station?.city && (
           <div className="mt-3 rounded-lg bg-[#fafafa] px-3 py-2 text-[12px] text-[#666]">当前城市：{stationDetail.station.city}，城市不可变更。</div>
         )}
-        {showVenueChangeForm && stationDetail?.station?.city && (
-          <div className="mt-4 space-y-3">
-            <StationVenueApprovalForm
-              value={{ ...venueChangeValue, city: stationDetail.station.city }}
-              venues={venues}
-              submitting={submittingVenueChange}
-              uploading={uploadingProof}
-              cityLocked
-              onUploadProof={handleVenueProofUpload}
-              onChange={value => setVenueChangeValue({ ...value, city: stationDetail.station.city || '' })}
-            />
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowVenueChangeForm(false)} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666]">取消</button>
-              <button type="button" disabled={submittingVenueChange || uploadingProof} onClick={handleSubmitVenueChange} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-50">
-                {submittingVenueChange ? '提交中...' : '提交场地变更申请'}
-              </button>
-            </div>
+      </div>
+
+      <Drawer
+        open={showVenueChangeForm && Boolean(stationDetail?.station?.city)}
+        onClose={() => setShowVenueChangeForm(false)}
+        title="场地临时变更申请"
+        width="w-[600px]"
+        loading={submittingVenueChange || uploadingProof}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowVenueChangeForm(false)} disabled={submittingVenueChange || uploadingProof} className="rounded-lg border border-[#e5e5e5] px-4 py-2 text-[14px] text-[#666] disabled:opacity-60">取消</button>
+            <button type="button" disabled={submittingVenueChange || uploadingProof} onClick={handleSubmitVenueChange} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-50">
+              {submittingVenueChange ? '提交中...' : '提交场地变更申请'}
+            </button>
           </div>
         )}
-      </div>
+      >
+        {stationDetail?.station?.city ? (
+          <StationVenueApprovalForm
+            value={{ ...venueChangeValue, city: stationDetail.station.city }}
+            venues={venues}
+            submitting={submittingVenueChange}
+            uploading={uploadingProof}
+            cityLocked
+            onUploadProof={handleVenueProofUpload}
+            onChange={value => setVenueChangeValue({ ...value, city: stationDetail.station.city || '' })}
+          />
+        ) : null}
+      </Drawer>
 
       <form onSubmit={handleSubmit} className="max-w-[720px] rounded-xl border border-[#e5e5e5] bg-white p-6">
         <div className="grid gap-4">

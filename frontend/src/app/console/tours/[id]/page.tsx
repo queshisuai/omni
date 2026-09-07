@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useSearchParams } from 'next/navigation'
 import { SafeImage } from '@/components/SafeImage'
+import { Modal } from '@/components/ui/Modal'
 import { getUser } from '@/lib/auth'
 import { getAdminTourDetail, publishStation } from '@/lib/api'
 import type { StationPurchaseDetail, TourAdminDetailVO } from '@/types/api'
@@ -14,6 +15,8 @@ type PublishForm = {
   perUserLimit: string
   scheduleTba: boolean
 }
+
+const emptyPublishForm: PublishForm = { startTime: '', endTime: '', perUserLimit: '', scheduleTba: false }
 
 function formatPrice(min?: number | null, max?: number | null) {
   if (min == null && max == null) return '未公布'
@@ -82,6 +85,7 @@ export default function TourDetailPage() {
   const [loginRequired, setLoginRequired] = useState(false)
   const [publishForms, setPublishForms] = useState<Record<number, PublishForm>>({})
   const [publishErrors, setPublishErrors] = useState<Record<number, string>>({})
+  const [publishDialog, setPublishDialog] = useState<StationPurchaseDetail | null>(null)
   const [publishingStationId, setPublishingStationId] = useState<number | null>(null)
 
   useEffect(() => {
@@ -153,6 +157,7 @@ export default function TourDetailPage() {
         delete next[stationId]
         return next
       })
+      setPublishDialog(null)
     } catch (err) {
       setPublishErrors(prev => ({ ...prev, [stationId]: err instanceof Error ? err.message : '发布失败' }))
     } finally {
@@ -197,6 +202,9 @@ export default function TourDetailPage() {
   const publishMode = searchParams.get('mode') === 'publish'
   const seatcraftMode = searchParams.get('mode') === 'seatcraft'
   const riskMode = searchParams.get('mode') === 'risk'
+  const publishTarget = publishDialog ? stationDetails.find(item => item.station.id === publishDialog.station.id) ?? publishDialog : null
+  const activePublishForm = publishTarget ? publishForms[publishTarget.station.id] || emptyPublishForm : emptyPublishForm
+  const activePublishError = publishTarget ? publishErrors[publishTarget.station.id] : ''
 
   return (
     <div>
@@ -248,8 +256,6 @@ export default function TourDetailPage() {
           const stationCity = item.station.city || '城市待定'
           const stationConfigStatus = formatConfigStatus((item.station as { configStatus?: string | null }).configStatus)
           const stationConfigVersionNo = (item.station as { configVersionNo?: number | null }).configVersionNo
-          const publishForm = publishForms[item.station.id] || { startTime: '', endTime: '', perUserLimit: '', scheduleTba: false }
-          const publishError = publishErrors[item.station.id]
           const canPublish = item.station.publishStatus !== 'published' && item.station.venueApplicationId != null
           const needsVenueBeforeSale = item.station.publishStatus !== 'published' && item.station.venueApplicationId == null
           return <div key={item.station.id} className="rounded-xl border border-[#e5e5e5] bg-white p-5">
@@ -271,39 +277,16 @@ export default function TourDetailPage() {
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Link href={`/console/stations/${item.station.id}/seatcraft`} className="rounded-lg border border-[#ffd0df] px-3 py-1.5 text-[12px] font-medium text-[#ff1268] hover:bg-[#fff0f5]">座位票档</Link>
                     <Link href={`/console/tours/${tourId}/stations/${item.station.id}/venue`} className="rounded-lg border border-[#e5e5e5] px-3 py-1.5 text-[12px] text-[#666] hover:bg-[#fafafa]">添加场馆</Link>
+                    {canPublish && (
+                      <button type="button" onClick={() => setPublishDialog(item)} className="rounded-lg bg-[#ff1268] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#e0105a]">
+                        发布城市站
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
               <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-[12px] text-[#666]">{item.saleStatusText || '未公布'}</span>
             </div>
-            {canPublish && (
-              <div className="mt-4 rounded-xl border border-[#f0f0f0] bg-[#fafafa] p-4">
-                <div className="mb-3 text-[14px] font-semibold text-[#1a1a2e]">发布城市站</div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <label className="flex items-start gap-2 rounded-lg bg-white p-3 text-[13px] text-[#333] sm:col-span-3">
-                    <input type="checkbox" checked={publishForm.scheduleTba} onChange={event => updatePublishForm(item.station.id, 'scheduleTba', event.target.checked)} className="mt-0.5" />
-                    <span><span className="font-medium">场次时间待公布</span>：先发布城市站和场馆，暂不展示具体时间、票价和购买入口。</span>
-                  </label>
-                  <label className="block text-[13px] text-[#666]">
-                    开始时间 *
-                    <input type="datetime-local" value={publishForm.startTime} disabled={publishForm.scheduleTba} onChange={event => updatePublishForm(item.station.id, 'startTime', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]" />
-                  </label>
-                  <label className="block text-[13px] text-[#666]">
-                    结束时间 *
-                    <input type="datetime-local" value={publishForm.endTime} disabled={publishForm.scheduleTba} onChange={event => updatePublishForm(item.station.id, 'endTime', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]" />
-                  </label>
-                  <label className="block text-[13px] text-[#666]">
-                    个人限购
-                    <input type="number" min={1} value={publishForm.perUserLimit} onChange={event => updatePublishForm(item.station.id, 'perUserLimit', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空不限购" />
-                  </label>
-                </div>
-                <p className="mt-2 text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</p>
-                {publishError && <div className="mt-3 rounded-lg bg-[#fff0f3] px-3 py-2 text-[13px] text-[#ff4d4f]">{publishError}</div>}
-                <button onClick={() => handlePublishStation(item.station.id)} disabled={publishingStationId === item.station.id} className="mt-3 rounded-lg bg-[#ff1268] px-4 py-2 text-[14px] font-medium text-white disabled:opacity-60">
-                  {publishingStationId === item.station.id ? '发布中...' : '发布城市站'}
-                </button>
-              </div>
-            )}
             {needsVenueBeforeSale && (
               <div className="mt-4 rounded-xl border border-[#fde68a] bg-[#fffbeb] p-4 text-[13px] text-[#92400e]">
                 城市站已发布：前台会展示该城市站点，场馆、时间、票价和购票入口显示为待公布。后续添加场馆并通过场馆审核资料核验后，可继续配置场次和票档。
@@ -312,6 +295,51 @@ export default function TourDetailPage() {
           </div>
         })}
       </div>
+      <Modal
+        open={Boolean(publishTarget)}
+        onClose={() => {
+          if (!publishingStationId) setPublishDialog(null)
+        }}
+        title="发布城市站点"
+        size="md"
+        loading={Boolean(publishTarget && publishingStationId === publishTarget.station.id)}
+        footer={(
+          <>
+            <button type="button" onClick={() => setPublishDialog(null)} disabled={Boolean(publishingStationId)} className="rounded-lg border border-[#e5e5e5] bg-white px-4 py-2 text-[13px] text-[#666] hover:bg-[#fafafa] disabled:opacity-60">
+              取消
+            </button>
+            <button type="button" onClick={() => publishTarget && handlePublishStation(publishTarget.station.id)} disabled={Boolean(publishTarget && publishingStationId === publishTarget.station.id)} className="rounded-lg bg-[#ff1268] px-4 py-2 text-[13px] font-medium text-white disabled:opacity-60">
+              {publishTarget && publishingStationId === publishTarget.station.id ? '发布中...' : '发布城市站'}
+            </button>
+          </>
+        )}
+      >
+        {publishTarget ? (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-[#fafafa] px-3 py-2 text-[13px] text-[#666]">
+              城市站点：{publishTarget.station.city || '城市待定'} · {publishTarget.station.stationName || '未命名站点'}
+            </div>
+            <label className="flex items-start gap-2 rounded-lg bg-[#fafafa] p-3 text-[13px] text-[#333]">
+              <input type="checkbox" checked={activePublishForm.scheduleTba} onChange={event => updatePublishForm(publishTarget.station.id, 'scheduleTba', event.target.checked)} className="mt-0.5" />
+              <span><span className="font-medium">场次时间待公布</span>：先发布城市站和场馆，暂不展示具体时间、票价和购买入口。</span>
+            </label>
+            <label className="block text-[13px] text-[#666]">
+              开始时间 *
+              <input type="datetime-local" value={activePublishForm.startTime} disabled={activePublishForm.scheduleTba} onChange={event => updatePublishForm(publishTarget.station.id, 'startTime', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]" />
+            </label>
+            <label className="block text-[13px] text-[#666]">
+              结束时间 *
+              <input type="datetime-local" value={activePublishForm.endTime} disabled={activePublishForm.scheduleTba} onChange={event => updatePublishForm(publishTarget.station.id, 'endTime', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] disabled:bg-[#f5f5f5]" />
+            </label>
+            <label className="block text-[13px] text-[#666]">
+              个人限购
+              <input type="number" min={1} value={activePublishForm.perUserLimit} onChange={event => updatePublishForm(publishTarget.station.id, 'perUserLimit', event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="留空不限购" />
+            </label>
+            <p className="text-[12px] text-[#999]">巡演城市站按每个城市站单独限购，不按整轮巡演累计。</p>
+            {activePublishError && <div className="rounded-lg bg-[#fff0f3] px-3 py-2 text-[13px] text-[#ff4d4f]">{activePublishError}</div>}
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

@@ -26,6 +26,7 @@ import {
   updateOrganizerOpsAssignment,
 } from '@/lib/api'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
+import { Drawer } from '@/components/ui/Drawer'
 import { canUseConsoleAction } from '@/lib/console-auth'
 import {
   formatOperationAction,
@@ -209,6 +210,7 @@ export default function OrganizerOpsPage() {
   const [selectedOrganizerId, setSelectedOrganizerId] = useState<number | null>(null)
   const [assignmentForm, setAssignmentForm] = useState<AssignmentForm>(emptyAssignmentForm)
   const [followForm, setFollowForm] = useState<FollowForm>(emptyFollowForm)
+  const [opsDrawerOpen, setOpsDrawerOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<'assignment' | 'follow' | ''>('')
   const [message, setMessage] = useState('')
@@ -511,7 +513,14 @@ export default function OrganizerOpsPage() {
             </Link>
           ) : null}
           {canViewFollow ? (
-            <button type="button" onClick={() => setSelectedOrganizerId(state.assignments[0]?.organizerUserId || null)} className="rounded-lg border border-gray-200 px-4 py-3 text-left text-[13px] text-gray-700 hover:border-[#ff1268] hover:text-[#ff1268]">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedOrganizerId(state.assignments[0]?.organizerUserId || null)
+                setOpsDrawerOpen(Boolean(state.assignments[0]))
+              }}
+              className="rounded-lg border border-gray-200 px-4 py-3 text-left text-[13px] text-gray-700 hover:border-[#ff1268] hover:text-[#ff1268]"
+            >
               跟进队列
             </button>
           ) : null}
@@ -592,7 +601,10 @@ export default function OrganizerOpsPage() {
                       <td className="px-5 py-4 text-right">
                         <button
                           type="button"
-                          onClick={() => setSelectedOrganizerId(assignment.organizerUserId)}
+                          onClick={() => {
+                            setSelectedOrganizerId(assignment.organizerUserId)
+                            setOpsDrawerOpen(true)
+                          }}
                           className="rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-600 hover:border-[#ff1268] hover:text-[#ff1268]"
                         >
                           处理
@@ -612,8 +624,15 @@ export default function OrganizerOpsPage() {
         ) : null}
       </section>
 
-      {selectedAssignment ? (
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+      {selectedAssignment && (
+        <Drawer
+          open={opsDrawerOpen}
+          onClose={() => setOpsDrawerOpen(false)}
+          title="主办方运营处理"
+          width="w-[720px]"
+          loading={Boolean(saving)}
+        >
+        <div className="space-y-4">
           <div className="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -778,8 +797,9 @@ export default function OrganizerOpsPage() {
               </div>
             )}
           </div>
-        </section>
-      ) : null}
+        </div>
+        </Drawer>
+      )}
 
       <section className="rounded-lg border border-gray-100 bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-4 text-[16px] font-bold text-[#111]">

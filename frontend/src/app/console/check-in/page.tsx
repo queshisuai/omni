@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { Download, Search } from 'lucide-react'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
 import { getUser } from '@/lib/auth'
-import { getCheckInOverview, listCheckInRecords } from '@/lib/api'
+import { getCheckInOverview, listCheckInRecords, manualCheckInTicket } from '@/lib/api'
 import { hasConsolePermission } from '@/lib/console-auth'
 import {
   buildConsoleCheckInExceptionExportCsv,
@@ -45,6 +45,10 @@ export default function ConsoleCheckInPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [exportMessage, setExportMessage] = useState('')
+  const [manualEntryCode, setManualEntryCode] = useState('')
+  const [manualDeviceCode, setManualDeviceCode] = useState('')
+  const [manualChecking, setManualChecking] = useState(false)
+  const [manualCheckInToast, setManualCheckInToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [queried, setQueried] = useState(false)
   const [page, setPage] = useState(1)
 
@@ -131,6 +135,44 @@ export default function ConsoleCheckInPage() {
     }
     downloadRecords(buildConsoleCheckInExceptionExportExcelHtml(records), '异常核验记录', 'application/vnd.ms-excel;charset=utf-8', 'xls')
     setExportMessage(`已导出 ${exceptionRecords.length} 条异常核验 Excel 明细`)
+  }
+
+  const showManualCheckInToast = (type: 'success' | 'error', message: string) => {
+    setManualCheckInToast({ type, message })
+    window.setTimeout(() => setManualCheckInToast(null), 3000)
+  }
+
+  const submitManualCheckIn = async () => {
+    if (!sessionId) {
+      setError('场次编号不正确')
+      showManualCheckInToast('error', '场次编号不正确')
+      return
+    }
+    const entryCode = manualEntryCode.trim()
+    if (!entryCode) {
+      showManualCheckInToast('error', '请输入票码')
+      return
+    }
+    setManualChecking(true)
+    setError('')
+    try {
+      const record = await manualCheckInTicket({
+        sessionId,
+        entryCode,
+        deviceCode: manualDeviceCode,
+      })
+      if (record.result === 'SUCCESS') {
+        setManualEntryCode('')
+        showManualCheckInToast('success', `核销成功：${record.ticketNo || '电子票'}`)
+      } else {
+        showManualCheckInToast('error', record.failureReason || formatConsoleCheckInResult(record.result))
+      }
+      await loadCheckInData()
+    } catch (err) {
+      showManualCheckInToast('error', err instanceof Error ? err.message : '手动核验失败')
+    } finally {
+      setManualChecking(false)
+    }
   }
 
   if (!canView) {
@@ -239,13 +281,44 @@ export default function ConsoleCheckInPage() {
         {exportMessage ? <div className="mt-3 text-[13px] text-[#16a34a]">{exportMessage}</div> : null}
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
-        {overviewItems.map(item => (
-          <div key={item.label} className="rounded-xl border border-[#e5e5e5] bg-white p-4">
-            <div className="text-[13px] text-[#666]">{item.label}</div>
-            <div className="mt-2 text-[26px] font-bold leading-none text-[#1a1a2e]">{item.value}</div>
+      <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          {overviewItems.map(item => (
+            <div key={item.label} className="rounded-xl border border-[#e5e5e5] bg-white p-4">
+              <div className="text-[13px] text-[#666]">{item.label}</div>
+              <div className="mt-2 text-[26px] font-bold leading-none text-[#1a1a2e]">{item.value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl border border-[#ffd1e0] bg-white p-4">
+          <div className="text-[15px] font-semibold text-[#1a1a2e]">手动应急核验</div>
+          <div className="mt-1 text-[12px] text-[#999]">支持输入 16 位票码或扫码枪内容。</div>
+          <div className="mt-3 space-y-2">
+            <input
+              value={manualEntryCode}
+              onChange={event => setManualEntryCode(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') void submitManualCheckIn()
+              }}
+              placeholder="请输入票码"
+              className="h-10 w-full rounded-lg border border-[#d9d9d9] px-3 text-[14px] outline-none focus:border-[#ff1268]"
+            />
+            <input
+              value={manualDeviceCode}
+              onChange={event => setManualDeviceCode(event.target.value)}
+              placeholder="验票设备编号（选填）"
+              className="h-10 w-full rounded-lg border border-[#d9d9d9] px-3 text-[14px] outline-none focus:border-[#ff1268]"
+            />
+            <button
+              type="button"
+              onClick={submitManualCheckIn}
+              disabled={manualChecking}
+              className="h-10 w-full rounded-lg bg-[#ff1268] px-4 text-[14px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {manualChecking ? '核验中...' : '立即核销'}
+            </button>
           </div>
-        ))}
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-[#e5e5e5] bg-white">
@@ -294,6 +367,11 @@ export default function ConsoleCheckInPage() {
           </div>
         ) : null}
       </div>
+      {manualCheckInToast ? (
+        <div className={`fixed bottom-6 right-6 z-50 rounded-xl px-4 py-3 text-[13px] shadow-lg ${manualCheckInToast.type === 'success' ? 'bg-[#16a34a] text-white' : 'bg-[#dc2626] text-white'}`}>
+          {manualCheckInToast.message}
+        </div>
+      ) : null}
     </div>
   )
 }
