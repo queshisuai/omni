@@ -1,5 +1,21 @@
 # Implementation Notes
 
+## 2026-09-08 退款审核表格 7 列瘦身
+
+- 根因：`frontend/src/app/console/refunds/page.tsx` 仍按 10 列渲染退款编号、订单与活动、用户编号、状态、申请时间、审核备注/时间等独立列，固定表格在 1080P 宽度下压缩到最右侧操作列不可见。
+- 处理：表格收敛为 7 列：单号与用户、演出活动、退款金额、申请原因、状态与批注、时间记录、操作。批量选择框并入首列；订单号和用户 ID 作为首列副文本；审核备注进入状态 Badge 的 hover 气泡；申请时间和审核时间上下两行展示。
+- 交互：申请原因改为单行截断并通过黑色 Tooltip 展示完整内容；活动名称、退款单号和订单/用户副文本均使用 `truncate`/`title`；待审核操作按钮缩短为“同意 / 拒绝”，处理中为“重试”，完结记录显示“已完结”。
+- 验证：新增退款页结构断言，先确认旧 10 列测试失败，再改为 7 列通过；当前工作区前端在 `localhost:3001` 浏览器实测，表头 7 列，`documentWidth=1920` 等于视口宽度，首行“同意/拒绝”按钮右边界 `1673.33 < 1920`。
+
+## 2026-09-07 艺人头像缺失补齐
+
+- 根因：`omni_ticket_split.artist` 仍有 58 条空 `avatar`，截图中的 `周杰伦(id=1)` 只是其中一条；`SafeImage` 的首字 fallback 属于容错表现，不是数据治理结果。
+- 处理：新增 `sql/production-split/ticket/20260612_artist_avatar_completion.sql` 并加入生产拆库 manifest，回填 58 条空头像。周杰伦、中国儿童艺术剧院、中国摄影家协会、上海交响乐团使用公开 Wikimedia 素材归档；其余基础/演示档案复用仓库已有对应演出宣传图，并在 `sql/seeds/prod-split-real-demo/artist-avatars.json` 记录来源或本地资源关系。
+- 种子同步：`sql/seed.sql` 与 `sql/seeds/prod-split-real-demo/01-ticket.sql` 均不再为这批档案写入空头像；同名演示档案复用同一素材或对应活动图。
+- 偏离说明：Wikimedia 个别缩略图接口返回尺寸错误，未将错误响应保存为图片；中央芭蕾舞团使用仓库已有对应演出宣传图。当前已有 `id=31` 的上传头像仍由运行时 `/uploads/...` 路径提供，不属于本次空值回填。
+- 数据库执行：2026-09-07 已在本地 `omni_ticket_split` 执行回填，`UPDATE 58`；当前 `artist` 共 77 条，空头像数量为 0。
+- 验证：`node --test src/lib/image-rendering-production-entry.test.ts` 通过 6/6；新归档 JPG 已检查为有效 JPEG，所有本次回填路径对应静态资源存在。
+
 ## 2026-09-06 后台三大模块治理与侧边栏折叠修复
 
 - 侧边栏折叠：`frontend/src/app/console/layout.tsx` 原实现把 `groupActive` 与展开状态绑定，当前路由命中分组时会强制 `expanded=true`，导致“运营、客服与审核”等分组点击后无法收回；现改为路由变化时仅把命中分组并入 `openGroups`，渲染时完全以 `openGroups.includes(group.id)` 控制展开，高亮仍由 `groupActive` 独立控制。
@@ -338,3 +354,7 @@
 - 订单快照：根因确认是 `java-ticket` 的 `OrderInfoResponse` 缺失 `activityPoster`、`sessionTime`、`ticketName` 等快照字段，导致 Feign 反序列化丢失；已补齐 DTO。`java-order` 实际在 `OrderService.writeSnapshot()` 已写入活动海报、场次时间、票档名称，前端按真实值展示并仅在 null 时兜底。
 - 退款排版：`/console/refunds` 使用固定列宽、申请原因两行截断 Tooltip、审核备注/处理时间上下分行和右对齐水平操作按钮；拒绝审核使用必填理由 Modal。
 - 验证：`mvn -pl java-ticket "-Dtest=AdminControllerTest" test` 通过 138 项；`mvn -pl java-ticket "-Dtest=AdminOrderManagementTest" test` 通过 20 项；`mvn -pl java-order "-Dtest=OrderSnapshotServiceTest,AdminOrderManagementTest" test` 中实际匹配 `OrderSnapshotServiceTest` 通过 2 项；前端目标测试通过 90 项；`pnpm typecheck` 通过；`scripts/check-production-split-sql.ps1` 通过。
+
+- Seed 偏离补齐：`sql/seeds/prod-split-real-demo/01-ticket.sql` 已移除 `930001~930012` 场馆插入块；苏州、天津场馆改为省略主键并通过 `venue_id_seq` 生成，再由临时映射表供区域和场次引用。座位生成条件收窄到本 seed 自有区域 `940001~940036`，避免重复扫基础场馆模板。
+
+- 数据库执行：2026-09-07 已在本地 `omni_ticket_split` 执行 `20260611_venue_id_cleanup.sql` 与 `20260610_artist_avatar_backfill.sql`。12 条高位场馆及其 `session`、`session_seat`、`venue_area`、`venue_seat`、`venue_default_layout`、`station_config_version`、`venue_application` 引用均已迁移或清理；`venue_id_seq=15`。18 个目标艺人头像字段已回填为 `/avatars/artists/*.webp`，对应 18 个静态文件存在，空头像数量为 0。

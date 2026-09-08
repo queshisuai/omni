@@ -155,7 +155,7 @@ export default function VenuePage() {
           )}
           {canManageVenueRecords && (
             <button onClick={openCreate} className="flex items-center gap-1.5 bg-[#ff1268] text-white px-4 py-2 rounded-lg text-[14px] font-medium hover:bg-[#e0105a] transition-colors border-none cursor-pointer">
-              <Plus className="w-4 h-4" /> + 新增场馆记录
+              <Plus className="w-4 h-4" /> 新增场馆记录
             </button>
           )}
         </div>

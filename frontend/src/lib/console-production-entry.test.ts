@@ -597,10 +597,17 @@ test('console venue list exposes default layout status and seat template configu
   assert.match(content, /默认座位图状态/)
   assert.match(content, /座位模板配置/)
   assert.match(content, /\/console\/venue\/\$\{v\.id\}\/seats/)
-  assert.match(content, /\+ 新增场馆记录/)
+  assert.match(content, /新增场馆记录/)
   assert.match(content, /\+ 提交场馆入驻申请/)
   assert.match(venueSeatsContent, /默认底图模板（Default Layout）/)
   assert.match(venueSeatsContent, /修改不会影响已关联的历史售票场次/)
+})
+
+test('console venue create action does not duplicate the plus sign', () => {
+  const content = source('../app/console/venue/page.tsx')
+
+  assert.doesNotMatch(content, /<Plus[\s\S]*\/>\s*\+ 新增场馆记录/)
+  assert.match(content, /<Plus[\s\S]*\/>\s*新增场馆记录/)
 })
 
 test('console tours page is tour-draft focused and announces cities with clear copy', () => {

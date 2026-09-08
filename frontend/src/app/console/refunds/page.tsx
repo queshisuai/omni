@@ -364,114 +364,122 @@ export default function ConsoleRefundsPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-[#e5e5e5] overflow-hidden">
-          <div>
-            <table className="w-full table-fixed text-[14px]">
-              <thead>
-                <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
-                  <th className="w-10 text-center whitespace-nowrap p-3 font-medium text-[#666]">
+          <table className="w-full table-fixed text-[14px]">
+            <thead>
+              <tr className="border-b border-[#e5e5e5] bg-[#fafafa]">
+                <th className="w-[160px] py-3 pl-4 pr-2 text-left font-medium text-[#666]">
+                  <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       aria-label="选择本页可处理退款"
                       checked={allPageReviewableSelected}
                       disabled={batchSubmitting || pageReviewableRefunds.length === 0}
                       onChange={togglePageSelection}
-                      className="h-4 w-4 accent-[#ff1268]"
+                      className="h-4 w-4 shrink-0 accent-[#ff1268]"
                     />
-                  </th>
-                  <th className="w-40 min-w-[150px] whitespace-nowrap p-3 text-left font-medium text-[#666]">退款编号</th>
-                  <th className="w-64 min-w-[220px] p-3 text-left font-medium text-[#666]">订单与活动信息</th>
-                  <th className="w-20 text-center whitespace-nowrap p-3 font-medium text-[#666]">用户编号</th>
-                  <th className="w-24 text-right whitespace-nowrap p-3 font-medium text-[#666]">退款金额</th>
-                  <th className="w-60 min-w-[200px] p-3 text-left font-medium text-[#666]">申请退款原因</th>
-                  <th className="w-24 min-w-[90px] whitespace-nowrap p-3 text-center font-medium text-[#666]">状态</th>
-                  <th className="w-36 whitespace-nowrap p-3 text-left font-medium text-[#666]">申请时间</th>
-                  <th className="w-44 min-w-[150px] p-3 text-left font-medium text-[#666]">审核备注 / 时间</th>
-                  <th className="w-36 text-right whitespace-nowrap p-3 font-medium text-[#666]">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageRefunds.map(refund => {
-                  const statusLabel = formatConsoleRefundStatus(refund.status)
-                  const statusClassName = getConsoleRefundStatusClassName(refund.status)
-                  const canReview = canReviewConsoleRefund(refund.status)
-                  const actionLabel = formatConsoleRefundActionLabel(refund.status)
-                  const selected = selectedRefundIds.includes(refund.id)
-                  return (
-                    <tr key={refund.id} className="border-b border-[#f0f0f0] align-middle hover:bg-[#fafafa]">
-                      <td className="w-10 p-3 text-center">
+                    <span className="truncate">单号与用户</span>
+                  </div>
+                </th>
+                <th className="w-[180px] px-2 py-3 text-left font-medium text-[#666]">演出活动</th>
+                <th className="w-[90px] px-2 py-3 pr-4 text-right font-medium text-[#666]">退款金额</th>
+                <th className="w-[180px] px-2 py-3 text-left font-medium text-[#666]">申请原因</th>
+                <th className="w-[110px] px-2 py-3 text-center font-medium text-[#666]">状态与批注</th>
+                <th className="w-[160px] px-2 py-3 text-left font-medium text-[#666]">时间记录</th>
+                <th className="w-[140px] px-2 py-3 pr-4 text-right font-medium text-[#666]">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageRefunds.map(refund => {
+                const statusLabel = formatConsoleRefundStatus(refund.status)
+                const statusClassName = getConsoleRefundStatusClassName(refund.status)
+                const canReview = canReviewConsoleRefund(refund.status)
+                const actionLabel = formatConsoleRefundActionLabel(refund.status)
+                const selected = selectedRefundIds.includes(refund.id)
+                const refundNo = refund.refundNo || String(refund.id)
+                const orderNo = refund.orderNo || '-'
+                const activityLabel = getConsoleRefundActivityLabel(refund)
+                return (
+                  <tr key={refund.id} className="border-b border-[#f0f0f0] align-middle hover:bg-[#fafafa]">
+                    <td className="w-[160px] py-3 pl-4 pr-2">
+                      <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          aria-label={`选择退款 ${refund.refundNo || refund.id}`}
+                          aria-label={`选择退款 ${refundNo}`}
                           checked={selected}
                           disabled={!canReview || batchSubmitting}
                           onChange={() => toggleRefundSelection(refund)}
-                          className="h-4 w-4 accent-[#ff1268] disabled:cursor-not-allowed"
+                          className="h-4 w-4 shrink-0 accent-[#ff1268] disabled:cursor-not-allowed"
                         />
-                      </td>
-                      <td className="w-40 min-w-[150px] whitespace-nowrap p-3 font-medium text-[#333]">{refund.refundNo || refund.id}</td>
-                      <td className="w-64 min-w-[220px] p-3 text-[#666]">
-                        <div className="truncate font-medium text-[#333]" title={getConsoleRefundActivityLabel(refund)}>{getConsoleRefundActivityLabel(refund)}</div>
-                        <div className="truncate text-[12px] text-[#666]" title={refund.orderNo || '-'}>订单号：{refund.orderNo || '-'}</div>
-                        <div className="text-[12px] text-[#999]">订单编号：{refund.orderId}</div>
-                      </td>
-                      <td className="w-20 whitespace-nowrap p-3 text-center text-[#666]">{refund.userId}</td>
-                      <td className="w-24 whitespace-nowrap p-3 text-right font-medium text-[#ff1268]">{formatMoney(refund.amount)}</td>
-                      <td className="w-60 min-w-[200px] align-middle p-3 text-[#666]">
-                        <div className="relative group max-w-[220px]">
-                          <p className="line-clamp-2 text-xs text-gray-700 leading-relaxed cursor-default">
-                            {refund.reason || '无申请原因'}
-                          </p>
-                          {shouldShowTooltip(refund.reason, 25) && (
-                            <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden w-max max-w-xs rounded-lg bg-gray-900/95 p-2.5 text-xs leading-5 text-white shadow-xl backdrop-blur-xs transition-all group-hover:block">
-                              {refund.reason}
-                            </div>
-                          )}
+                        <div className="min-w-0 flex flex-col gap-0.5">
+                          <span className="truncate font-mono text-xs font-semibold text-gray-800" title={refundNo}>
+                            {refundNo}
+                          </span>
+                          <span className="truncate font-mono text-[11px] text-gray-400" title={`订单: ${orderNo} | 用户ID: ${refund.userId}`}>
+                            {orderNo} · UID: {refund.userId}
+                          </span>
                         </div>
-                      </td>
-                      <td className="w-24 min-w-[90px] whitespace-nowrap p-3 text-center">
-                        <span className={`text-[12px] px-2 py-0.5 rounded-full ${statusClassName}`}>{statusLabel}</span>
-                      </td>
-                      <td className="w-36 p-3 text-[#999] whitespace-nowrap">{formatTime(refund.createTime)}</td>
-                      <td className="w-44 min-w-[150px] align-middle p-3 text-[#666]">
-                        <div className="relative group max-w-[170px]">
-                          <p className="truncate text-xs text-gray-700 cursor-default">{refund.reviewNote || '-'}</p>
-                          {shouldShowTooltip(refund.reviewNote, 20) && (
-                            <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden w-max max-w-xs rounded-lg bg-gray-900/95 p-2.5 text-xs leading-5 text-white shadow-xl backdrop-blur-xs transition-all group-hover:block">
-                              {refund.reviewNote}
-                            </div>
-                          )}
-                        </div>
-                        <div className="mt-1 font-mono text-[11px] text-gray-400">{formatTime(refund.reviewTime)}</div>
-                      </td>
-                      <td className="w-36 whitespace-nowrap p-3 text-right align-middle">
-                        {canReview && (
-                          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                            <button
-                              onClick={() => startReview(refund, 'approve')}
-                              className="text-[13px] bg-[#ff1268] text-white px-3 py-1.5 rounded-lg border-none cursor-pointer hover:bg-[#e0105a]"
-                            >
-                              {refund.status === 4 ? '重试退款' : '同意退款'}
-                            </button>
-                            {refund.status === 0 && (
-                              <button
-                                onClick={() => startReview(refund, 'reject')}
-                                className="text-[13px] bg-white text-[#666] border border-[#ddd] px-3 py-1.5 rounded-lg cursor-pointer hover:border-[#ff1268] hover:text-[#ff1268]"
-                              >
-                                拒绝退款
-                              </button>
-                            )}
+                      </div>
+                    </td>
+                    <td className="w-[180px] px-2 py-3">
+                      <div className="truncate text-xs font-medium text-gray-800" title={activityLabel}>
+                        {activityLabel}
+                      </div>
+                    </td>
+                    <td className="w-[90px] px-2 py-3 pr-4 text-right font-semibold text-[#ff1268] whitespace-nowrap">{formatMoney(refund.amount)}</td>
+                    <td className="w-[180px] px-2 py-3">
+                      <div className="relative group max-w-[170px]">
+                        <p className="truncate text-xs text-gray-600 cursor-help">
+                          {refund.reason || '无申请原因'}
+                        </p>
+                        {refund.reason && (
+                          <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden w-max max-w-xs rounded-lg bg-gray-900/95 p-2 text-xs leading-relaxed text-white shadow-xl backdrop-blur-xs transition-all group-hover:block">
+                            {refund.reason}
                           </div>
                         )}
-                        {!canReview && (
-                          <div className="text-right text-[13px] text-[#999]">{actionLabel}</div>
+                      </div>
+                    </td>
+                    <td className="w-[110px] px-2 py-3 text-center">
+                      <div className="relative group inline-block">
+                        <span className={`cursor-help rounded-full px-2 py-0.5 text-[12px] ${statusClassName}`}>{statusLabel}</span>
+                        {refund.reviewNote && (
+                          <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 hidden w-max max-w-[200px] -translate-x-1/2 rounded bg-gray-800 p-1.5 text-[11px] leading-relaxed text-white shadow-lg group-hover:block">
+                            审核备注：{refund.reviewNote}
+                          </div>
                         )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                    </td>
+                    <td className="w-[160px] px-2 py-3">
+                      <div className="font-mono text-xs text-gray-600">{formatTime(refund.createTime)}</div>
+                      <div className="mt-1 font-mono text-[11px] text-gray-400">{formatTime(refund.reviewTime)}</div>
+                    </td>
+                    <td className="w-[140px] px-2 py-3 pr-4 text-right align-middle whitespace-nowrap">
+                      {canReview && (
+                        <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                          <button
+                            onClick={() => startReview(refund, 'approve')}
+                            className="rounded-lg border-none bg-[#ff1268] px-2.5 py-1.5 text-[12px] text-white cursor-pointer hover:bg-[#e0105a]"
+                          >
+                            {refund.status === 4 ? '重试' : '同意'}
+                          </button>
+                          {refund.status === 0 && (
+                            <button
+                              onClick={() => startReview(refund, 'reject')}
+                              className="rounded-lg border border-[#f53f3f] bg-white px-2.5 py-1.5 text-[12px] text-[#f53f3f] cursor-pointer hover:bg-[#fff1f2]"
+                            >
+                              拒绝
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {!canReview && (
+                        <div className="text-right text-[13px] text-[#999]">{actionLabel === '无需操作' ? '已完结' : actionLabel}</div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
           <div className="px-4 pb-4">
             <GlobalPagination page={page} total={refunds.length} loading={loading} onChange={setPage} />
           </div>

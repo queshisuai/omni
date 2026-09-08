@@ -160,5 +160,41 @@
     "sourcePage": "https://zh.wikipedia.org/wiki/初音未来",
     "sourceKind": "public-page-archive",
     "bytes": 17026
+  },
+  {
+    "id": 1,
+    "name": "周杰伦",
+    "localPath": "/avatars/artists/artist-1.jpg",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/Jay_Chou_in_Shanghai_2023_(5).jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/周杰伦",
+    "sourceKind": "public-page-archive",
+    "bytes": 24360
+  },
+  {
+    "id": 10,
+    "name": "中国儿童艺术剧院",
+    "localPath": "/avatars/artists/artist-10.jpg",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/China_National_Theatre_for_Children_(20220318164756).jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/中国儿童艺术剧院",
+    "sourceKind": "public-page-archive",
+    "bytes": 76384
+  },
+  {
+    "id": 15,
+    "name": "中国摄影家协会",
+    "localPath": "/avatars/artists/artist-15.jpg",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/China_Photographers_Association_(2023111163409).jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/中国摄影家协会",
+    "sourceKind": "public-page-archive",
+    "bytes": 70484
+  },
+  {
+    "id": 17,
+    "name": "上海交响乐团",
+    "localPath": "/avatars/artists/artist-17.jpg",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/Special:FilePath/Long_Yu_conducts_Ravel_and_Berlioz_with_SSO_(20170908202435).jpg",
+    "sourcePage": "https://zh.wikipedia.org/wiki/上海交响乐团",
+    "sourceKind": "public-page-archive",
+    "bytes": 67170
   }
 ]

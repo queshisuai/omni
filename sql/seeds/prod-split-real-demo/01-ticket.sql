@@ -5,6 +5,26 @@
 
 BEGIN;
 
+CREATE TEMP TABLE omni_seed_dynamic_venues (
+    sort INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    city TEXT NOT NULL,
+    address TEXT NOT NULL,
+    capacity INTEGER NOT NULL
+) ON COMMIT DROP;
+
+INSERT INTO omni_seed_dynamic_venues (sort, name, city, address, capacity) VALUES
+(1, '苏州亲子艺术中心', '苏州', '苏州市工业园区星湖街66号', 1200),
+(2, '天津海河演艺中心', '天津', '天津市河西区友谊路66号', 5000);
+
+CREATE TEMP TABLE omni_seed_previous_venue_ids AS
+SELECT v.id AS venue_id
+FROM venue v
+JOIN omni_seed_dynamic_venues seed
+  ON seed.name = v.name
+ AND seed.city = v.city
+ AND seed.address = v.address;
+
 -- 清理本 seed 保留 ID 段，避免重复执行产生脏数据。
 DELETE FROM activity_review_report
 WHERE activity_id BETWEEN 900001 AND 900120
@@ -32,9 +52,25 @@ DELETE FROM station WHERE activity_id BETWEEN 900001 AND 900120 OR id BETWEEN 90
 DELETE FROM tour WHERE id BETWEEN 904001 AND 904003;
 DELETE FROM activity WHERE id BETWEEN 900001 AND 900120;
 DELETE FROM venue_application WHERE id BETWEEN 906001 AND 906006;
-DELETE FROM venue_seat WHERE venue_id BETWEEN 930001 AND 930012;
-DELETE FROM venue_area WHERE venue_id BETWEEN 930001 AND 930012;
-DELETE FROM venue WHERE id BETWEEN 930001 AND 930012;
+DELETE FROM venue_seat
+WHERE area_id BETWEEN 940001 AND 940036
+   OR venue_id BETWEEN 930001 AND 930012
+   OR venue_id IN (SELECT venue_id FROM omni_seed_previous_venue_ids);
+DELETE FROM venue_area
+WHERE id BETWEEN 940001 AND 940036
+   OR venue_id BETWEEN 930001 AND 930012
+   OR venue_id IN (SELECT venue_id FROM omni_seed_previous_venue_ids);
+DELETE FROM venue_default_layout
+WHERE venue_id BETWEEN 930001 AND 930012
+   OR venue_id IN (SELECT venue_id FROM omni_seed_previous_venue_ids);
+DELETE FROM venue
+WHERE id BETWEEN 930001 AND 930012
+   OR id IN (SELECT venue_id FROM omni_seed_previous_venue_ids);
+
+CREATE TEMP TABLE omni_seed_venue_map (
+    name TEXT PRIMARY KEY,
+    venue_id BIGINT NOT NULL UNIQUE
+) ON COMMIT DROP;
 
 INSERT INTO category (id, name, icon, sort, status) VALUES
 (1, '演唱会', NULL, 1, 1),
@@ -98,58 +134,106 @@ INSERT INTO artist (id, name, description, avatar, status, alias, artist_type, c
 (901046, '中国旅游集团', '中国旅游集团 的演示档案，来源于公开演出信息整理。', '/seed-posters-real/activity-900020.jpg', 1, NULL, '项目/艺人', '公开资料', '中国旅游集团丝路城市旅游展', '旅游展览', 'https://zh.wikipedia.org/wiki/中国旅游集团', '真实项目资料整理；本地演示排期非真实售票', 'normal', 'approved', '资料完整，审核通过', 2007, 2002, CURRENT_TIMESTAMP - INTERVAL '15 days', CURRENT_TIMESTAMP - INTERVAL '75 days', CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, avatar = EXCLUDED.avatar, status = EXCLUDED.status, external_links = EXCLUDED.external_links, source_note = EXCLUDED.source_note, risk_status = EXCLUDED.risk_status, review_status = EXCLUDED.review_status, review_note = EXCLUDED.review_note, update_time = EXCLUDED.update_time;
 
-INSERT INTO venue (id, name, city, address, capacity, status) VALUES
-(930001, '北京星河体育馆', '北京', '北京市朝阳区星河路88号', 18000, 1),
-(930002, '上海海风音乐中心', '上海', '上海市浦东新区滨江大道500号', 12000, 1),
-(930003, '广州珠江体育馆', '广州', '广州市天河区体育东路66号', 15000, 1),
-(930004, '深圳湾演艺中心', '深圳', '深圳市南山区滨海大道100号', 9000, 1),
-(930005, '成都锦城剧院', '成都', '成都市高新区天府大道188号', 1800, 1),
-(930006, '杭州西子音乐厅', '杭州', '杭州市西湖区曙光路28号', 2000, 1),
-(930007, '南京奥体中心体育馆', '南京', '南京市建邺区江东中路222号', 13000, 1),
-(930008, '武汉江城会展中心', '武汉', '武汉市汉阳区鹦鹉大道88号', 10000, 1),
-(930009, '重庆山城文化中心', '重庆', '重庆市渝中区嘉陵江滨江路70号', 3000, 1),
-(930010, '西安长安剧场', '西安', '西安市碑林区南大街99号', 1400, 1),
-(930011, '苏州亲子艺术中心', '苏州', '苏州市工业园区星湖街66号', 1200, 1),
-(930012, '天津海河演艺中心', '天津', '天津市河西区友谊路66号', 5000, 1)
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, city = EXCLUDED.city, address = EXCLUDED.address, capacity = EXCLUDED.capacity, status = EXCLUDED.status;
+UPDATE artist AS a
+SET avatar = mapping.avatar,
+    source_note = CASE
+        WHEN a.source_note LIKE '%头像已本地归档%' THEN a.source_note
+        ELSE a.source_note || '；头像已本地归档'
+    END,
+    update_time = CURRENT_TIMESTAMP
+FROM (VALUES
+    (901001, '/seed-posters-real/activity-900061.jpg'),
+    (901002, '/seed-artist-avatars-real/artist-901002.jpg'),
+    (901003, '/seed-artist-avatars-real/artist-901003.jpg'),
+    (901004, '/seed-posters-real/activity-900021.jpg'),
+    (901005, '/seed-posters-real/activity-900031.png'),
+    (901006, '/seed-posters-real/activity-900041.jpg'),
+    (901007, '/seed-posters-real/activity-900051.jpg'),
+    (901009, '/seed-posters-real/activity-900062.png'),
+    (901011, '/seed-posters-real/activity-900012.png'),
+    (901012, '/seed-posters-real/activity-900022.png'),
+    (901013, '/seed-posters-real/activity-900032.png'),
+    (901014, '/seed-posters-real/activity-900042.png'),
+    (901015, '/seed-posters-real/activity-900043.jpg'),
+    (901016, '/seed-posters-real/activity-900053.jpg'),
+    (901017, '/seed-posters-real/activity-900063.png'),
+    (901018, '/seed-posters-real/activity-900003.jpg'),
+    (901019, '/seed-posters-real/activity-900013.jpg'),
+    (901020, '/seed-posters-real/activity-900023.jpg'),
+    (901021, '/seed-posters-real/activity-900033.jpg'),
+    (901022, '/seed-posters-real/activity-900034.jpg'),
+    (901024, '/seed-posters-real/activity-900054.jpg'),
+    (901025, '/seed-posters-real/activity-900064.png'),
+    (901026, '/seed-posters-real/activity-900004.png'),
+    (901028, '/seed-posters-real/activity-900024.jpg'),
+    (901029, '/seed-posters-real/activity-900015.jpg'),
+    (901031, '/seed-posters-real/activity-900005.jpg'),
+    (901032, '/seed-posters-real/activity-900006.jpg'),
+    (901033, '/seed-posters-real/activity-900016.jpg'),
+    (901036, '/seed-posters-real/activity-900007.jpg'),
+    (901037, '/seed-posters-real/activity-900017.jpg'),
+    (901038, '/seed-posters-real/activity-900018.jpg'),
+    (901039, '/seed-posters-real/activity-900028.jpg'),
+    (901040, '/seed-posters-real/activity-900008.jpg'),
+    (901042, '/seed-posters-real/activity-900019.jpg'),
+    (901043, '/seed-posters-real/activity-900029.jpg'),
+    (901044, '/seed-posters-real/activity-900030.jpg'),
+    (901045, '/seed-posters-real/activity-900010.jpg'),
+    (901046, '/seed-posters-real/activity-900020.jpg')
+) AS mapping(id, avatar)
+WHERE mapping.id = a.id
+  AND NULLIF(BTRIM(a.avatar), '') IS NULL;
+
+SELECT setval('venue_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM venue WHERE id < 930000), 1), 1), true);
+
+WITH inserted AS (
+    INSERT INTO venue (name, city, address, capacity, status)
+    SELECT name, city, address, capacity, 1
+    FROM omni_seed_dynamic_venues
+    ORDER BY sort
+    RETURNING id, name
+)
+INSERT INTO omni_seed_venue_map (name, venue_id)
+SELECT name, id
+FROM inserted;
 
 INSERT INTO venue_area (id, venue_id, name, row_count, seats_per_row, row_start, seat_start, color, sort, status) VALUES
-(940001, 930001, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940002, 930001, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940003, 930001, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940004, 930002, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940005, 930002, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940006, 930002, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940007, 930003, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940008, 930003, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940009, 930003, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940010, 930004, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940011, 930004, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940012, 930004, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940013, 930005, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940014, 930005, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940015, 930005, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940016, 930006, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940017, 930006, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940018, 930006, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940019, 930007, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940020, 930007, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940021, 930007, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940022, 930008, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940023, 930008, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940024, 930008, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940025, 930009, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940026, 930009, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940027, 930009, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940028, 930010, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940029, 930010, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940030, 930010, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940031, 930011, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940032, 930011, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940033, 930011, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
-(940034, 930012, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
-(940035, 930012, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
-(940036, 930012, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1)
+(940001, 1, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940002, 1, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940003, 1, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940004, 3, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940005, 3, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940006, 3, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940007, 5, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940008, 5, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940009, 5, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940010, 6, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940011, 6, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940012, 6, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940013, 7, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940014, 7, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940015, 7, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940016, 8, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940017, 8, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940018, 8, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940019, 9, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940020, 9, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940021, 9, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940022, 10, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940023, 10, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940024, 10, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940025, 12, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940026, 12, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940027, 12, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940028, 11, 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940029, 11, 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940030, 11, '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940031, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940032, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940033, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1),
+(940034, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), 'VIP区', 4, 10, 1, 1, '#ff5a8a', 1, 1),
+(940035, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), 'A区', 5, 12, 1, 1, '#ffb020', 2, 1),
+(940036, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), '看台区', 6, 14, 1, 1, '#4f8cff', 3, 1)
 ON CONFLICT (id) DO UPDATE SET venue_id = EXCLUDED.venue_id, name = EXCLUDED.name, row_count = EXCLUDED.row_count, seats_per_row = EXCLUDED.seats_per_row, color = EXCLUDED.color, sort = EXCLUDED.sort, status = EXCLUDED.status;
 
 INSERT INTO venue_seat (venue_id, area_id, row_no, seat_no, seat_label, x, y, status)
@@ -157,16 +241,16 @@ SELECT va.venue_id, va.id, r.row_no, s.seat_no, '第' || r.row_no || '排' || s.
 FROM venue_area va
 CROSS JOIN LATERAL generate_series(va.row_start, va.row_start + va.row_count - 1) AS r(row_no)
 CROSS JOIN LATERAL generate_series(va.seat_start, va.seat_start + va.seats_per_row - 1) AS s(seat_no)
-WHERE va.venue_id BETWEEN 930001 AND 930012
+WHERE va.id BETWEEN 940001 AND 940036
 ORDER BY va.id, r.row_no, s.seat_no;
 
 INSERT INTO venue_application (id, applicant_id, venue_id, venue_name, city, address, capacity, contact_name, contact_phone, qualification_no, business_scope, description, status, reviewer_id, review_note, review_time, create_time, update_time) VALUES
-(906001, 2003, 930001, '北京星河体育馆', '北京', '北京市朝阳区星河路88号', 18000, '演示联系人', '13800000002', 'VENUE-DEMO-001', '演出及活动场地资料', '真实场馆资料审核演示记录。', 0, NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL '20 days', CURRENT_TIMESTAMP),
-(906002, 2005, 930002, '上海海风音乐中心', '上海', '上海市浦东新区滨江大道500号', 12000, '演示联系人', '13800000003', 'VENUE-DEMO-002', '演出及活动场地资料', '真实场馆资料审核演示记录。', 1, 2002, '资料完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '21 days', CURRENT_TIMESTAMP),
-(906003, 2006, 930003, '广州珠江体育馆', '广州', '广州市天河区体育东路66号', 15000, '演示联系人', '13800000004', 'VENUE-DEMO-003', '演出及活动场地资料', '真实场馆资料审核演示记录。', 1, 2002, '资料完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '4 days', CURRENT_TIMESTAMP - INTERVAL '22 days', CURRENT_TIMESTAMP),
-(906004, 2007, 930004, '深圳湾演艺中心', '深圳', '深圳市南山区滨海大道100号', 9000, '演示联系人', '13800000005', 'VENUE-DEMO-004', '演出及活动场地资料', '真实场馆资料审核演示记录。', 0, NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL '23 days', CURRENT_TIMESTAMP),
-(906005, 2003, 930005, '成都锦城剧院', '成都', '成都市高新区天府大道188号', 1800, '演示联系人', '13800000006', 'VENUE-DEMO-005', '演出及活动场地资料', '真实场馆资料审核演示记录。', 1, 2002, '资料完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '6 days', CURRENT_TIMESTAMP - INTERVAL '24 days', CURRENT_TIMESTAMP),
-(906006, 2005, 930006, '杭州西子音乐厅', '杭州', '杭州市西湖区曙光路28号', 2000, '演示联系人', '13800000002', 'VENUE-DEMO-006', '演出及活动场地资料', '真实场馆资料审核演示记录。', 1, 2002, '资料完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '7 days', CURRENT_TIMESTAMP - INTERVAL '25 days', CURRENT_TIMESTAMP)
+(906001, 2003, 1, '北京星河体育馆', '北京', '北京市朝阳区星河路88号', 18000, '演示联系人', '13800000002', 'VENUE-DEMO-001', '演出及活动场地资料', '真实场馆资料审核演示记录。', 0, NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL '20 days', CURRENT_TIMESTAMP),
+(906002, 2005, 3, '上海海风音乐中心', '上海', '上海市浦东新区滨江大道500号', 12000, '演示联系人', '13800000003', 'VENUE-DEMO-002', '演出及活动场地资料', '真实场馆资料审核演示记录。', 1, 2002, '资料完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '3 days', CURRENT_TIMESTAMP - INTERVAL '21 days', CURRENT_TIMESTAMP),
+(906003, 2006, 5, '广州珠江体育馆', '广州', '广州市天河区体育东路66号', 15000, '演示联系人', '13800000004', 'VENUE-DEMO-003', '演出及活动场地资料', '真实场馆资料审核演示记录。', 1, 2002, '资料完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '4 days', CURRENT_TIMESTAMP - INTERVAL '22 days', CURRENT_TIMESTAMP),
+(906004, 2007, 6, '深圳湾演艺中心', '深圳', '深圳市南山区滨海大道100号', 9000, '演示联系人', '13800000005', 'VENUE-DEMO-004', '演出及活动场地资料', '真实场馆资料审核演示记录。', 0, NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL '23 days', CURRENT_TIMESTAMP),
+(906005, 2003, 7, '成都锦城剧院', '成都', '成都市高新区天府大道188号', 1800, '演示联系人', '13800000006', 'VENUE-DEMO-005', '演出及活动场地资料', '真实场馆资料审核演示记录。', 1, 2002, '资料完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '6 days', CURRENT_TIMESTAMP - INTERVAL '24 days', CURRENT_TIMESTAMP),
+(906006, 2005, 8, '杭州西子音乐厅', '杭州', '杭州市西湖区曙光路28号', 2000, '演示联系人', '13800000002', 'VENUE-DEMO-006', '演出及活动场地资料', '真实场馆资料审核演示记录。', 1, 2002, '资料完整，审核通过', CURRENT_TIMESTAMP - INTERVAL '7 days', CURRENT_TIMESTAMP - INTERVAL '25 days', CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, review_note = EXCLUDED.review_note, review_time = EXCLUDED.review_time, update_time = EXCLUDED.update_time;
 
 -- seed-real-demo:activity-start
@@ -421,126 +505,126 @@ INSERT INTO activity_artist (activity_id, artist_id, sort, is_primary, role_type
 (900120, 901044, 1, TRUE, 'primary', '主项目', 'public', 1);
 
 INSERT INTO session (id, activity_id, venue_id, start_time, end_time, status) VALUES
-(910001, 900001, 930001, CURRENT_DATE + INTERVAL '45 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '45 days 22 hours 0 minutes', 1),
-(910002, 900002, 930001, CURRENT_DATE + INTERVAL '47 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '47 days 22 hours 0 minutes', 1),
-(910003, 900003, 930001, CURRENT_DATE + INTERVAL '49 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '49 days 22 hours 0 minutes', 1),
-(910004, 900004, 930001, CURRENT_DATE + INTERVAL '51 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '51 days 22 hours 0 minutes', 1),
-(910005, 900005, 930001, CURRENT_DATE + INTERVAL '53 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '53 days 22 hours 0 minutes', 1),
-(910006, 900006, 930001, CURRENT_DATE + INTERVAL '55 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '55 days 22 hours 0 minutes', 1),
-(910007, 900007, 930001, CURRENT_DATE + INTERVAL '57 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '57 days 22 hours 0 minutes', 1),
-(910008, 900008, 930001, CURRENT_DATE + INTERVAL '59 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '59 days 22 hours 0 minutes', 1),
-(910009, 900009, 930001, CURRENT_DATE + INTERVAL '61 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '61 days 22 hours 0 minutes', 1),
-(910010, 900010, 930001, CURRENT_DATE + INTERVAL '63 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '63 days 22 hours 0 minutes', 1),
-(910011, 900011, 930002, CURRENT_DATE + INTERVAL '65 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '65 days 22 hours 0 minutes', 1),
-(910012, 900012, 930002, CURRENT_DATE + INTERVAL '67 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '67 days 22 hours 0 minutes', 1),
-(910013, 900013, 930002, CURRENT_DATE + INTERVAL '69 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '69 days 22 hours 0 minutes', 1),
-(910014, 900014, 930002, CURRENT_DATE + INTERVAL '71 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '71 days 22 hours 0 minutes', 1),
-(910015, 900015, 930002, CURRENT_DATE + INTERVAL '73 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '73 days 22 hours 0 minutes', 1),
-(910016, 900016, 930002, CURRENT_DATE + INTERVAL '75 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '75 days 22 hours 0 minutes', 1),
-(910017, 900017, 930002, CURRENT_DATE + INTERVAL '77 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '77 days 22 hours 0 minutes', 1),
-(910018, 900018, 930002, CURRENT_DATE + INTERVAL '79 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '79 days 22 hours 0 minutes', 1),
-(910019, 900019, 930002, CURRENT_DATE + INTERVAL '81 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '81 days 22 hours 0 minutes', 1),
-(910020, 900020, 930002, CURRENT_DATE + INTERVAL '83 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '83 days 22 hours 0 minutes', 1),
-(910021, 900021, 930003, CURRENT_DATE + INTERVAL '85 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '85 days 22 hours 0 minutes', 1),
-(910022, 900022, 930003, CURRENT_DATE + INTERVAL '87 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '87 days 22 hours 0 minutes', 1),
-(910023, 900023, 930003, CURRENT_DATE + INTERVAL '89 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '89 days 22 hours 0 minutes', 1),
-(910024, 900024, 930003, CURRENT_DATE + INTERVAL '91 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '91 days 22 hours 0 minutes', 1),
-(910025, 900025, 930003, CURRENT_DATE + INTERVAL '93 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '93 days 22 hours 0 minutes', 1),
-(910026, 900026, 930003, CURRENT_DATE + INTERVAL '95 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '95 days 22 hours 0 minutes', 1),
-(910027, 900027, 930003, CURRENT_DATE + INTERVAL '97 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '97 days 22 hours 0 minutes', 1),
-(910028, 900028, 930003, CURRENT_DATE + INTERVAL '99 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '99 days 22 hours 0 minutes', 1),
-(910029, 900029, 930003, CURRENT_DATE + INTERVAL '101 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '101 days 22 hours 0 minutes', 1),
-(910030, 900030, 930003, CURRENT_DATE + INTERVAL '103 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '103 days 22 hours 0 minutes', 1),
-(910031, 900031, 930004, CURRENT_DATE + INTERVAL '105 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '105 days 22 hours 0 minutes', 1),
-(910032, 900032, 930004, CURRENT_DATE + INTERVAL '107 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '107 days 22 hours 0 minutes', 1),
-(910033, 900033, 930004, CURRENT_DATE + INTERVAL '109 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '109 days 22 hours 0 minutes', 1),
-(910034, 900034, 930004, CURRENT_DATE + INTERVAL '111 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '111 days 22 hours 0 minutes', 1),
-(910035, 900035, 930004, CURRENT_DATE + INTERVAL '113 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '113 days 22 hours 0 minutes', 1),
-(910036, 900036, 930004, CURRENT_DATE + INTERVAL '115 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '115 days 22 hours 0 minutes', 1),
-(910037, 900037, 930004, CURRENT_DATE + INTERVAL '117 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '117 days 22 hours 0 minutes', 1),
-(910038, 900038, 930004, CURRENT_DATE + INTERVAL '119 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '119 days 22 hours 0 minutes', 1),
-(910039, 900039, 930004, CURRENT_DATE + INTERVAL '121 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '121 days 22 hours 0 minutes', 1),
-(910040, 900040, 930004, CURRENT_DATE + INTERVAL '123 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '123 days 22 hours 0 minutes', 1),
-(910041, 900041, 930005, CURRENT_DATE + INTERVAL '125 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '125 days 22 hours 0 minutes', 1),
-(910042, 900042, 930005, CURRENT_DATE + INTERVAL '127 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '127 days 22 hours 0 minutes', 1),
-(910043, 900043, 930005, CURRENT_DATE + INTERVAL '129 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '129 days 22 hours 0 minutes', 1),
-(910044, 900044, 930005, CURRENT_DATE + INTERVAL '131 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '131 days 22 hours 0 minutes', 1),
-(910045, 900045, 930005, CURRENT_DATE + INTERVAL '133 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '133 days 22 hours 0 minutes', 1),
-(910046, 900046, 930005, CURRENT_DATE + INTERVAL '135 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '135 days 22 hours 0 minutes', 1),
-(910047, 900047, 930005, CURRENT_DATE + INTERVAL '137 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '137 days 22 hours 0 minutes', 1),
-(910048, 900048, 930005, CURRENT_DATE + INTERVAL '139 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '139 days 22 hours 0 minutes', 1),
-(910049, 900049, 930005, CURRENT_DATE + INTERVAL '141 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '141 days 22 hours 0 minutes', 1),
-(910050, 900050, 930005, CURRENT_DATE + INTERVAL '143 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '143 days 22 hours 0 minutes', 1),
-(910051, 900051, 930006, CURRENT_DATE + INTERVAL '145 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '145 days 22 hours 0 minutes', 1),
-(910052, 900052, 930006, CURRENT_DATE + INTERVAL '147 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '147 days 22 hours 0 minutes', 1),
-(910053, 900053, 930006, CURRENT_DATE + INTERVAL '149 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '149 days 22 hours 0 minutes', 1),
-(910054, 900054, 930006, CURRENT_DATE + INTERVAL '151 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '151 days 22 hours 0 minutes', 1),
-(910055, 900055, 930006, CURRENT_DATE + INTERVAL '153 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '153 days 22 hours 0 minutes', 1),
-(910056, 900056, 930006, CURRENT_DATE + INTERVAL '155 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '155 days 22 hours 0 minutes', 1),
-(910057, 900057, 930006, CURRENT_DATE + INTERVAL '157 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '157 days 22 hours 0 minutes', 1),
-(910058, 900058, 930006, CURRENT_DATE + INTERVAL '159 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '159 days 22 hours 0 minutes', 1),
-(910059, 900059, 930006, CURRENT_DATE + INTERVAL '161 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '161 days 22 hours 0 minutes', 1),
-(910060, 900060, 930006, CURRENT_DATE + INTERVAL '163 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '163 days 22 hours 0 minutes', 1),
-(910061, 900061, 930007, CURRENT_DATE + INTERVAL '165 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '165 days 22 hours 0 minutes', 1),
-(910062, 900062, 930007, CURRENT_DATE + INTERVAL '167 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '167 days 22 hours 0 minutes', 1),
-(910063, 900063, 930007, CURRENT_DATE + INTERVAL '169 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '169 days 22 hours 0 minutes', 1),
-(910064, 900064, 930007, CURRENT_DATE + INTERVAL '171 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '171 days 22 hours 0 minutes', 1),
-(910065, 900065, 930007, CURRENT_DATE + INTERVAL '173 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '173 days 22 hours 0 minutes', 1),
-(910066, 900066, 930007, CURRENT_DATE + INTERVAL '175 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '175 days 22 hours 0 minutes', 1),
-(910067, 900067, 930007, CURRENT_DATE + INTERVAL '177 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '177 days 22 hours 0 minutes', 1),
-(910068, 900068, 930007, CURRENT_DATE + INTERVAL '179 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '179 days 22 hours 0 minutes', 1),
-(910069, 900069, 930007, CURRENT_DATE + INTERVAL '181 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '181 days 22 hours 0 minutes', 1),
-(910070, 900070, 930007, CURRENT_DATE + INTERVAL '183 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '183 days 22 hours 0 minutes', 1),
-(910071, 900071, 930008, CURRENT_DATE + INTERVAL '185 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '185 days 22 hours 0 minutes', 1),
-(910072, 900072, 930008, CURRENT_DATE + INTERVAL '187 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '187 days 22 hours 0 minutes', 1),
-(910073, 900073, 930008, CURRENT_DATE + INTERVAL '189 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '189 days 22 hours 0 minutes', 1),
-(910074, 900074, 930008, CURRENT_DATE + INTERVAL '191 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '191 days 22 hours 0 minutes', 1),
-(910075, 900075, 930008, CURRENT_DATE + INTERVAL '193 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '193 days 22 hours 0 minutes', 1),
-(910076, 900076, 930008, CURRENT_DATE + INTERVAL '195 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '195 days 22 hours 0 minutes', 1),
-(910077, 900077, 930008, CURRENT_DATE + INTERVAL '197 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '197 days 22 hours 0 minutes', 1),
-(910078, 900078, 930008, CURRENT_DATE + INTERVAL '199 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '199 days 22 hours 0 minutes', 1),
-(910079, 900079, 930008, CURRENT_DATE + INTERVAL '201 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '201 days 22 hours 0 minutes', 1),
-(910080, 900080, 930008, CURRENT_DATE + INTERVAL '203 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '203 days 22 hours 0 minutes', 1),
-(910081, 900081, 930009, CURRENT_DATE + INTERVAL '205 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '205 days 22 hours 0 minutes', 1),
-(910082, 900082, 930009, CURRENT_DATE + INTERVAL '207 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '207 days 22 hours 0 minutes', 1),
-(910083, 900083, 930009, CURRENT_DATE + INTERVAL '209 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '209 days 22 hours 0 minutes', 1),
-(910084, 900084, 930009, CURRENT_DATE + INTERVAL '211 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '211 days 22 hours 0 minutes', 1),
-(910085, 900085, 930009, CURRENT_DATE + INTERVAL '213 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '213 days 22 hours 0 minutes', 1),
-(910086, 900086, 930009, CURRENT_DATE + INTERVAL '215 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '215 days 22 hours 0 minutes', 1),
-(910087, 900087, 930009, CURRENT_DATE + INTERVAL '217 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '217 days 22 hours 0 minutes', 1),
-(910088, 900088, 930009, CURRENT_DATE + INTERVAL '219 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '219 days 22 hours 0 minutes', 1),
-(910089, 900089, 930009, CURRENT_DATE + INTERVAL '221 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '221 days 22 hours 0 minutes', 1),
-(910090, 900090, 930009, CURRENT_DATE + INTERVAL '223 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '223 days 22 hours 0 minutes', 1),
-(910091, 900091, 930010, CURRENT_DATE + INTERVAL '225 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '225 days 22 hours 0 minutes', 1),
-(910092, 900092, 930010, CURRENT_DATE + INTERVAL '227 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '227 days 22 hours 0 minutes', 1),
-(910093, 900093, 930010, CURRENT_DATE + INTERVAL '229 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '229 days 22 hours 0 minutes', 1),
-(910094, 900094, 930010, CURRENT_DATE + INTERVAL '231 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '231 days 22 hours 0 minutes', 1),
-(910095, 900095, 930010, CURRENT_DATE + INTERVAL '233 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '233 days 22 hours 0 minutes', 1),
-(910096, 900096, 930010, CURRENT_DATE + INTERVAL '235 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '235 days 22 hours 0 minutes', 1),
-(910097, 900097, 930010, CURRENT_DATE + INTERVAL '237 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '237 days 22 hours 0 minutes', 1),
-(910098, 900098, 930010, CURRENT_DATE + INTERVAL '239 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '239 days 22 hours 0 minutes', 1),
-(910099, 900099, 930010, CURRENT_DATE + INTERVAL '241 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '241 days 22 hours 0 minutes', 1),
-(910100, 900100, 930010, CURRENT_DATE + INTERVAL '243 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '243 days 22 hours 0 minutes', 1),
-(910101, 900101, 930011, CURRENT_DATE + INTERVAL '245 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '245 days 22 hours 0 minutes', 1),
-(910102, 900102, 930011, CURRENT_DATE + INTERVAL '247 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '247 days 22 hours 0 minutes', 1),
-(910103, 900103, 930011, CURRENT_DATE + INTERVAL '249 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '249 days 22 hours 0 minutes', 1),
-(910104, 900104, 930011, CURRENT_DATE + INTERVAL '251 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '251 days 22 hours 0 minutes', 1),
-(910105, 900105, 930011, CURRENT_DATE + INTERVAL '253 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '253 days 22 hours 0 minutes', 1),
-(910106, 900106, 930011, CURRENT_DATE + INTERVAL '255 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '255 days 22 hours 0 minutes', 1),
-(910107, 900107, 930011, CURRENT_DATE + INTERVAL '257 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '257 days 22 hours 0 minutes', 1),
-(910108, 900108, 930011, CURRENT_DATE + INTERVAL '259 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '259 days 22 hours 0 minutes', 1),
-(910109, 900109, 930011, CURRENT_DATE + INTERVAL '261 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '261 days 22 hours 0 minutes', 1),
-(910110, 900110, 930011, CURRENT_DATE + INTERVAL '263 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '263 days 22 hours 0 minutes', 1),
-(910111, 900111, 930012, CURRENT_DATE + INTERVAL '265 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '265 days 22 hours 0 minutes', 1),
-(910112, 900112, 930012, CURRENT_DATE + INTERVAL '267 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '267 days 22 hours 0 minutes', 1),
-(910113, 900113, 930012, CURRENT_DATE + INTERVAL '269 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '269 days 22 hours 0 minutes', 1),
-(910114, 900114, 930012, CURRENT_DATE + INTERVAL '271 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '271 days 22 hours 0 minutes', 1),
-(910115, 900115, 930012, CURRENT_DATE + INTERVAL '273 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '273 days 22 hours 0 minutes', 1),
-(910116, 900116, 930012, CURRENT_DATE + INTERVAL '275 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '275 days 22 hours 0 minutes', 1),
-(910117, 900117, 930012, CURRENT_DATE + INTERVAL '277 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '277 days 22 hours 0 minutes', 1),
-(910118, 900118, 930012, CURRENT_DATE + INTERVAL '279 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '279 days 22 hours 0 minutes', 1),
-(910119, 900119, 930012, CURRENT_DATE + INTERVAL '281 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '281 days 22 hours 0 minutes', 1),
-(910120, 900120, 930012, CURRENT_DATE + INTERVAL '283 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '283 days 22 hours 0 minutes', 1)
+(910001, 900001, 1, CURRENT_DATE + INTERVAL '45 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '45 days 22 hours 0 minutes', 1),
+(910002, 900002, 1, CURRENT_DATE + INTERVAL '47 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '47 days 22 hours 0 minutes', 1),
+(910003, 900003, 1, CURRENT_DATE + INTERVAL '49 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '49 days 22 hours 0 minutes', 1),
+(910004, 900004, 1, CURRENT_DATE + INTERVAL '51 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '51 days 22 hours 0 minutes', 1),
+(910005, 900005, 1, CURRENT_DATE + INTERVAL '53 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '53 days 22 hours 0 minutes', 1),
+(910006, 900006, 1, CURRENT_DATE + INTERVAL '55 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '55 days 22 hours 0 minutes', 1),
+(910007, 900007, 1, CURRENT_DATE + INTERVAL '57 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '57 days 22 hours 0 minutes', 1),
+(910008, 900008, 1, CURRENT_DATE + INTERVAL '59 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '59 days 22 hours 0 minutes', 1),
+(910009, 900009, 1, CURRENT_DATE + INTERVAL '61 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '61 days 22 hours 0 minutes', 1),
+(910010, 900010, 1, CURRENT_DATE + INTERVAL '63 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '63 days 22 hours 0 minutes', 1),
+(910011, 900011, 3, CURRENT_DATE + INTERVAL '65 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '65 days 22 hours 0 minutes', 1),
+(910012, 900012, 3, CURRENT_DATE + INTERVAL '67 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '67 days 22 hours 0 minutes', 1),
+(910013, 900013, 3, CURRENT_DATE + INTERVAL '69 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '69 days 22 hours 0 minutes', 1),
+(910014, 900014, 3, CURRENT_DATE + INTERVAL '71 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '71 days 22 hours 0 minutes', 1),
+(910015, 900015, 3, CURRENT_DATE + INTERVAL '73 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '73 days 22 hours 0 minutes', 1),
+(910016, 900016, 3, CURRENT_DATE + INTERVAL '75 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '75 days 22 hours 0 minutes', 1),
+(910017, 900017, 3, CURRENT_DATE + INTERVAL '77 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '77 days 22 hours 0 minutes', 1),
+(910018, 900018, 3, CURRENT_DATE + INTERVAL '79 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '79 days 22 hours 0 minutes', 1),
+(910019, 900019, 3, CURRENT_DATE + INTERVAL '81 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '81 days 22 hours 0 minutes', 1),
+(910020, 900020, 3, CURRENT_DATE + INTERVAL '83 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '83 days 22 hours 0 minutes', 1),
+(910021, 900021, 5, CURRENT_DATE + INTERVAL '85 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '85 days 22 hours 0 minutes', 1),
+(910022, 900022, 5, CURRENT_DATE + INTERVAL '87 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '87 days 22 hours 0 minutes', 1),
+(910023, 900023, 5, CURRENT_DATE + INTERVAL '89 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '89 days 22 hours 0 minutes', 1),
+(910024, 900024, 5, CURRENT_DATE + INTERVAL '91 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '91 days 22 hours 0 minutes', 1),
+(910025, 900025, 5, CURRENT_DATE + INTERVAL '93 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '93 days 22 hours 0 minutes', 1),
+(910026, 900026, 5, CURRENT_DATE + INTERVAL '95 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '95 days 22 hours 0 minutes', 1),
+(910027, 900027, 5, CURRENT_DATE + INTERVAL '97 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '97 days 22 hours 0 minutes', 1),
+(910028, 900028, 5, CURRENT_DATE + INTERVAL '99 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '99 days 22 hours 0 minutes', 1),
+(910029, 900029, 5, CURRENT_DATE + INTERVAL '101 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '101 days 22 hours 0 minutes', 1),
+(910030, 900030, 5, CURRENT_DATE + INTERVAL '103 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '103 days 22 hours 0 minutes', 1),
+(910031, 900031, 6, CURRENT_DATE + INTERVAL '105 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '105 days 22 hours 0 minutes', 1),
+(910032, 900032, 6, CURRENT_DATE + INTERVAL '107 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '107 days 22 hours 0 minutes', 1),
+(910033, 900033, 6, CURRENT_DATE + INTERVAL '109 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '109 days 22 hours 0 minutes', 1),
+(910034, 900034, 6, CURRENT_DATE + INTERVAL '111 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '111 days 22 hours 0 minutes', 1),
+(910035, 900035, 6, CURRENT_DATE + INTERVAL '113 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '113 days 22 hours 0 minutes', 1),
+(910036, 900036, 6, CURRENT_DATE + INTERVAL '115 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '115 days 22 hours 0 minutes', 1),
+(910037, 900037, 6, CURRENT_DATE + INTERVAL '117 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '117 days 22 hours 0 minutes', 1),
+(910038, 900038, 6, CURRENT_DATE + INTERVAL '119 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '119 days 22 hours 0 minutes', 1),
+(910039, 900039, 6, CURRENT_DATE + INTERVAL '121 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '121 days 22 hours 0 minutes', 1),
+(910040, 900040, 6, CURRENT_DATE + INTERVAL '123 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '123 days 22 hours 0 minutes', 1),
+(910041, 900041, 7, CURRENT_DATE + INTERVAL '125 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '125 days 22 hours 0 minutes', 1),
+(910042, 900042, 7, CURRENT_DATE + INTERVAL '127 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '127 days 22 hours 0 minutes', 1),
+(910043, 900043, 7, CURRENT_DATE + INTERVAL '129 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '129 days 22 hours 0 minutes', 1),
+(910044, 900044, 7, CURRENT_DATE + INTERVAL '131 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '131 days 22 hours 0 minutes', 1),
+(910045, 900045, 7, CURRENT_DATE + INTERVAL '133 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '133 days 22 hours 0 minutes', 1),
+(910046, 900046, 7, CURRENT_DATE + INTERVAL '135 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '135 days 22 hours 0 minutes', 1),
+(910047, 900047, 7, CURRENT_DATE + INTERVAL '137 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '137 days 22 hours 0 minutes', 1),
+(910048, 900048, 7, CURRENT_DATE + INTERVAL '139 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '139 days 22 hours 0 minutes', 1),
+(910049, 900049, 7, CURRENT_DATE + INTERVAL '141 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '141 days 22 hours 0 minutes', 1),
+(910050, 900050, 7, CURRENT_DATE + INTERVAL '143 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '143 days 22 hours 0 minutes', 1),
+(910051, 900051, 8, CURRENT_DATE + INTERVAL '145 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '145 days 22 hours 0 minutes', 1),
+(910052, 900052, 8, CURRENT_DATE + INTERVAL '147 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '147 days 22 hours 0 minutes', 1),
+(910053, 900053, 8, CURRENT_DATE + INTERVAL '149 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '149 days 22 hours 0 minutes', 1),
+(910054, 900054, 8, CURRENT_DATE + INTERVAL '151 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '151 days 22 hours 0 minutes', 1),
+(910055, 900055, 8, CURRENT_DATE + INTERVAL '153 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '153 days 22 hours 0 minutes', 1),
+(910056, 900056, 8, CURRENT_DATE + INTERVAL '155 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '155 days 22 hours 0 minutes', 1),
+(910057, 900057, 8, CURRENT_DATE + INTERVAL '157 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '157 days 22 hours 0 minutes', 1),
+(910058, 900058, 8, CURRENT_DATE + INTERVAL '159 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '159 days 22 hours 0 minutes', 1),
+(910059, 900059, 8, CURRENT_DATE + INTERVAL '161 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '161 days 22 hours 0 minutes', 1),
+(910060, 900060, 8, CURRENT_DATE + INTERVAL '163 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '163 days 22 hours 0 minutes', 1),
+(910061, 900061, 9, CURRENT_DATE + INTERVAL '165 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '165 days 22 hours 0 minutes', 1),
+(910062, 900062, 9, CURRENT_DATE + INTERVAL '167 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '167 days 22 hours 0 minutes', 1),
+(910063, 900063, 9, CURRENT_DATE + INTERVAL '169 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '169 days 22 hours 0 minutes', 1),
+(910064, 900064, 9, CURRENT_DATE + INTERVAL '171 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '171 days 22 hours 0 minutes', 1),
+(910065, 900065, 9, CURRENT_DATE + INTERVAL '173 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '173 days 22 hours 0 minutes', 1),
+(910066, 900066, 9, CURRENT_DATE + INTERVAL '175 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '175 days 22 hours 0 minutes', 1),
+(910067, 900067, 9, CURRENT_DATE + INTERVAL '177 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '177 days 22 hours 0 minutes', 1),
+(910068, 900068, 9, CURRENT_DATE + INTERVAL '179 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '179 days 22 hours 0 minutes', 1),
+(910069, 900069, 9, CURRENT_DATE + INTERVAL '181 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '181 days 22 hours 0 minutes', 1),
+(910070, 900070, 9, CURRENT_DATE + INTERVAL '183 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '183 days 22 hours 0 minutes', 1),
+(910071, 900071, 10, CURRENT_DATE + INTERVAL '185 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '185 days 22 hours 0 minutes', 1),
+(910072, 900072, 10, CURRENT_DATE + INTERVAL '187 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '187 days 22 hours 0 minutes', 1),
+(910073, 900073, 10, CURRENT_DATE + INTERVAL '189 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '189 days 22 hours 0 minutes', 1),
+(910074, 900074, 10, CURRENT_DATE + INTERVAL '191 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '191 days 22 hours 0 minutes', 1),
+(910075, 900075, 10, CURRENT_DATE + INTERVAL '193 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '193 days 22 hours 0 minutes', 1),
+(910076, 900076, 10, CURRENT_DATE + INTERVAL '195 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '195 days 22 hours 0 minutes', 1),
+(910077, 900077, 10, CURRENT_DATE + INTERVAL '197 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '197 days 22 hours 0 minutes', 1),
+(910078, 900078, 10, CURRENT_DATE + INTERVAL '199 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '199 days 22 hours 0 minutes', 1),
+(910079, 900079, 10, CURRENT_DATE + INTERVAL '201 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '201 days 22 hours 0 minutes', 1),
+(910080, 900080, 10, CURRENT_DATE + INTERVAL '203 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '203 days 22 hours 0 minutes', 1),
+(910081, 900081, 12, CURRENT_DATE + INTERVAL '205 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '205 days 22 hours 0 minutes', 1),
+(910082, 900082, 12, CURRENT_DATE + INTERVAL '207 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '207 days 22 hours 0 minutes', 1),
+(910083, 900083, 12, CURRENT_DATE + INTERVAL '209 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '209 days 22 hours 0 minutes', 1),
+(910084, 900084, 12, CURRENT_DATE + INTERVAL '211 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '211 days 22 hours 0 minutes', 1),
+(910085, 900085, 12, CURRENT_DATE + INTERVAL '213 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '213 days 22 hours 0 minutes', 1),
+(910086, 900086, 12, CURRENT_DATE + INTERVAL '215 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '215 days 22 hours 0 minutes', 1),
+(910087, 900087, 12, CURRENT_DATE + INTERVAL '217 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '217 days 22 hours 0 minutes', 1),
+(910088, 900088, 12, CURRENT_DATE + INTERVAL '219 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '219 days 22 hours 0 minutes', 1),
+(910089, 900089, 12, CURRENT_DATE + INTERVAL '221 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '221 days 22 hours 0 minutes', 1),
+(910090, 900090, 12, CURRENT_DATE + INTERVAL '223 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '223 days 22 hours 0 minutes', 1),
+(910091, 900091, 11, CURRENT_DATE + INTERVAL '225 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '225 days 22 hours 0 minutes', 1),
+(910092, 900092, 11, CURRENT_DATE + INTERVAL '227 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '227 days 22 hours 0 minutes', 1),
+(910093, 900093, 11, CURRENT_DATE + INTERVAL '229 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '229 days 22 hours 0 minutes', 1),
+(910094, 900094, 11, CURRENT_DATE + INTERVAL '231 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '231 days 22 hours 0 minutes', 1),
+(910095, 900095, 11, CURRENT_DATE + INTERVAL '233 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '233 days 22 hours 0 minutes', 1),
+(910096, 900096, 11, CURRENT_DATE + INTERVAL '235 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '235 days 22 hours 0 minutes', 1),
+(910097, 900097, 11, CURRENT_DATE + INTERVAL '237 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '237 days 22 hours 0 minutes', 1),
+(910098, 900098, 11, CURRENT_DATE + INTERVAL '239 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '239 days 22 hours 0 minutes', 1),
+(910099, 900099, 11, CURRENT_DATE + INTERVAL '241 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '241 days 22 hours 0 minutes', 1),
+(910100, 900100, 11, CURRENT_DATE + INTERVAL '243 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '243 days 22 hours 0 minutes', 1),
+(910101, 900101, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '245 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '245 days 22 hours 0 minutes', 1),
+(910102, 900102, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '247 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '247 days 22 hours 0 minutes', 1),
+(910103, 900103, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '249 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '249 days 22 hours 0 minutes', 1),
+(910104, 900104, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '251 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '251 days 22 hours 0 minutes', 1),
+(910105, 900105, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '253 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '253 days 22 hours 0 minutes', 1),
+(910106, 900106, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '255 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '255 days 22 hours 0 minutes', 1),
+(910107, 900107, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '257 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '257 days 22 hours 0 minutes', 1),
+(910108, 900108, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '259 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '259 days 22 hours 0 minutes', 1),
+(910109, 900109, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '261 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '261 days 22 hours 0 minutes', 1),
+(910110, 900110, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '苏州亲子艺术中心'), CURRENT_DATE + INTERVAL '263 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '263 days 22 hours 0 minutes', 1),
+(910111, 900111, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '265 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '265 days 22 hours 0 minutes', 1),
+(910112, 900112, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '267 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '267 days 22 hours 0 minutes', 1),
+(910113, 900113, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '269 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '269 days 22 hours 0 minutes', 1),
+(910114, 900114, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '271 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '271 days 22 hours 0 minutes', 1),
+(910115, 900115, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '273 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '273 days 22 hours 0 minutes', 1),
+(910116, 900116, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '275 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '275 days 22 hours 0 minutes', 1),
+(910117, 900117, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '277 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '277 days 22 hours 0 minutes', 1),
+(910118, 900118, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '279 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '279 days 22 hours 0 minutes', 1),
+(910119, 900119, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '281 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '281 days 22 hours 0 minutes', 1),
+(910120, 900120, (SELECT venue_id FROM omni_seed_venue_map WHERE name = '天津海河演艺中心'), CURRENT_DATE + INTERVAL '283 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '283 days 22 hours 0 minutes', 1)
 ON CONFLICT (id) DO UPDATE SET activity_id = EXCLUDED.activity_id, venue_id = EXCLUDED.venue_id, start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, status = EXCLUDED.status;
 
 INSERT INTO ticket_type (id, session_id, name, price, total_stock, remain_stock, status) VALUES
@@ -1788,14 +1872,14 @@ INSERT INTO station (id, tour_id, activity_id, city, station_name, poster, descr
 ON CONFLICT (id) DO UPDATE SET activity_id = EXCLUDED.activity_id, city = EXCLUDED.city, station_name = EXCLUDED.station_name, publish_status = EXCLUDED.publish_status, update_time = EXCLUDED.update_time;
 
 INSERT INTO station_config_version (id, station_id, activity_id, tour_id, version_no, change_type, status, city, station_name, venue_id, venue_application_id, venue_name, venue_address, start_time, end_time, schedule_tba, seat_template_source_type, seat_template_source_id, reason, reviewer_id, review_note, review_time, created_by, created_at, updated_at, applied_at) VALUES
-(907001, 905001, 900001, 904001, 2, 'change_venue', 'submitted', '北京', '2026 BY2「撇清关系2.0」十七周年演唱会 北京站', 930001, 906001, '北京星河体育馆', '北京市朝阳区星河路88号', CURRENT_DATE + INTERVAL '120 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '120 days 22 hours 0 minutes', FALSE, 'venue', 930001, '站点变更审核演示：调整场馆或开演时间。', NULL, NULL, NULL, 2003, CURRENT_TIMESTAMP - INTERVAL '12 days', CURRENT_TIMESTAMP, NULL),
-(907002, 905002, 900011, 904002, 2, 'change_schedule', 'approved', '上海', '2026胡夏【那些年·初见之约】演唱会 上海站', 930002, 906002, '上海海风音乐中心', '上海市浦东新区滨江大道500号', CURRENT_DATE + INTERVAL '121 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '121 days 22 hours 0 minutes', FALSE, 'venue', 930002, '站点变更审核演示：调整场馆或开演时间。', 2002, '变更资料完整，同意调整。', CURRENT_TIMESTAMP - INTERVAL '2 days', 2003, CURRENT_TIMESTAMP - INTERVAL '13 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - INTERVAL '1 days'),
-(907003, 905003, 900021, 904003, 2, 'change_venue', 'rejected', '广州', '2026·奥森计划·漾 广州站', 930003, 906003, '广州珠江体育馆', '广州市天河区体育东路66号', CURRENT_DATE + INTERVAL '122 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '122 days 22 hours 0 minutes', FALSE, 'venue', 930003, '站点变更审核演示：调整场馆或开演时间。', 2002, '证明材料不足，暂不通过。', CURRENT_TIMESTAMP - INTERVAL '3 days', 2003, CURRENT_TIMESTAMP - INTERVAL '14 days', CURRENT_TIMESTAMP, NULL),
-(907004, 905004, 900031, 904001, 2, 'change_schedule', 'submitted', '深圳', '民谣30年·不如一见演唱会 深圳站', 930004, 906004, '深圳湾演艺中心', '深圳市南山区滨海大道100号', CURRENT_DATE + INTERVAL '123 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '123 days 22 hours 0 minutes', FALSE, 'venue', 930004, '站点变更审核演示：调整场馆或开演时间。', NULL, NULL, NULL, 2003, CURRENT_TIMESTAMP - INTERVAL '15 days', CURRENT_TIMESTAMP, NULL),
-(907005, 905005, 900041, 904002, 2, 'change_venue', 'submitted', '成都', '2026「良辰·声境如梦」音乐会 成都站', 930005, 906005, '成都锦城剧院', '成都市高新区天府大道188号', CURRENT_DATE + INTERVAL '124 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '124 days 22 hours 0 minutes', FALSE, 'venue', 930005, '站点变更审核演示：调整场馆或开演时间。', NULL, NULL, NULL, 2003, CURRENT_TIMESTAMP - INTERVAL '16 days', CURRENT_TIMESTAMP, NULL),
-(907006, 905006, 900051, 904003, 2, 'change_schedule', 'approved', '杭州', '张泽 2026「张嘴就来」BEATBOX 巡演 杭州站', 930006, 906006, '杭州西子音乐厅', '杭州市西湖区曙光路28号', CURRENT_DATE + INTERVAL '125 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '125 days 22 hours 0 minutes', FALSE, 'venue', 930006, '站点变更审核演示：调整场馆或开演时间。', 2002, '变更资料完整，同意调整。', CURRENT_TIMESTAMP - INTERVAL '6 days', 2003, CURRENT_TIMESTAMP - INTERVAL '17 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - INTERVAL '5 days'),
-(907007, 905007, 900061, 904001, 2, 'change_venue', 'rejected', '南京', '2026微博大眼音乐节 南京站', 930007, NULL, '南京奥体中心体育馆', '南京市建邺区江东中路222号', CURRENT_DATE + INTERVAL '126 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '126 days 22 hours 0 minutes', FALSE, 'venue', 930007, '站点变更审核演示：调整场馆或开演时间。', 2002, '证明材料不足，暂不通过。', CURRENT_TIMESTAMP - INTERVAL '7 days', 2003, CURRENT_TIMESTAMP - INTERVAL '18 days', CURRENT_TIMESTAMP, NULL),
-(907008, 905008, 900071, 904002, 2, 'change_schedule', 'submitted', '武汉', '2026 BY2「撇清关系2.0」十七周年演唱会 武汉站', 930008, NULL, '武汉江城会展中心', '武汉市汉阳区鹦鹉大道88号', CURRENT_DATE + INTERVAL '127 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '127 days 22 hours 0 minutes', FALSE, 'venue', 930008, '站点变更审核演示：调整场馆或开演时间。', NULL, NULL, NULL, 2003, CURRENT_TIMESTAMP - INTERVAL '19 days', CURRENT_TIMESTAMP, NULL)
+(907001, 905001, 900001, 904001, 2, 'change_venue', 'submitted', '北京', '2026 BY2「撇清关系2.0」十七周年演唱会 北京站', 1, 906001, '北京星河体育馆', '北京市朝阳区星河路88号', CURRENT_DATE + INTERVAL '120 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '120 days 22 hours 0 minutes', FALSE, 'venue', 1, '站点变更审核演示：调整场馆或开演时间。', NULL, NULL, NULL, 2003, CURRENT_TIMESTAMP - INTERVAL '12 days', CURRENT_TIMESTAMP, NULL),
+(907002, 905002, 900011, 904002, 2, 'change_schedule', 'approved', '上海', '2026胡夏【那些年·初见之约】演唱会 上海站', 3, 906002, '上海海风音乐中心', '上海市浦东新区滨江大道500号', CURRENT_DATE + INTERVAL '121 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '121 days 22 hours 0 minutes', FALSE, 'venue', 3, '站点变更审核演示：调整场馆或开演时间。', 2002, '变更资料完整，同意调整。', CURRENT_TIMESTAMP - INTERVAL '2 days', 2003, CURRENT_TIMESTAMP - INTERVAL '13 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - INTERVAL '1 days'),
+(907003, 905003, 900021, 904003, 2, 'change_venue', 'rejected', '广州', '2026·奥森计划·漾 广州站', 5, 906003, '广州珠江体育馆', '广州市天河区体育东路66号', CURRENT_DATE + INTERVAL '122 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '122 days 22 hours 0 minutes', FALSE, 'venue', 5, '站点变更审核演示：调整场馆或开演时间。', 2002, '证明材料不足，暂不通过。', CURRENT_TIMESTAMP - INTERVAL '3 days', 2003, CURRENT_TIMESTAMP - INTERVAL '14 days', CURRENT_TIMESTAMP, NULL),
+(907004, 905004, 900031, 904001, 2, 'change_schedule', 'submitted', '深圳', '民谣30年·不如一见演唱会 深圳站', 6, 906004, '深圳湾演艺中心', '深圳市南山区滨海大道100号', CURRENT_DATE + INTERVAL '123 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '123 days 22 hours 0 minutes', FALSE, 'venue', 6, '站点变更审核演示：调整场馆或开演时间。', NULL, NULL, NULL, 2003, CURRENT_TIMESTAMP - INTERVAL '15 days', CURRENT_TIMESTAMP, NULL),
+(907005, 905005, 900041, 904002, 2, 'change_venue', 'submitted', '成都', '2026「良辰·声境如梦」音乐会 成都站', 7, 906005, '成都锦城剧院', '成都市高新区天府大道188号', CURRENT_DATE + INTERVAL '124 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '124 days 22 hours 0 minutes', FALSE, 'venue', 7, '站点变更审核演示：调整场馆或开演时间。', NULL, NULL, NULL, 2003, CURRENT_TIMESTAMP - INTERVAL '16 days', CURRENT_TIMESTAMP, NULL),
+(907006, 905006, 900051, 904003, 2, 'change_schedule', 'approved', '杭州', '张泽 2026「张嘴就来」BEATBOX 巡演 杭州站', 8, 906006, '杭州西子音乐厅', '杭州市西湖区曙光路28号', CURRENT_DATE + INTERVAL '125 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '125 days 22 hours 0 minutes', FALSE, 'venue', 8, '站点变更审核演示：调整场馆或开演时间。', 2002, '变更资料完整，同意调整。', CURRENT_TIMESTAMP - INTERVAL '6 days', 2003, CURRENT_TIMESTAMP - INTERVAL '17 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP - INTERVAL '5 days'),
+(907007, 905007, 900061, 904001, 2, 'change_venue', 'rejected', '南京', '2026微博大眼音乐节 南京站', 9, NULL, '南京奥体中心体育馆', '南京市建邺区江东中路222号', CURRENT_DATE + INTERVAL '126 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '126 days 22 hours 0 minutes', FALSE, 'venue', 9, '站点变更审核演示：调整场馆或开演时间。', 2002, '证明材料不足，暂不通过。', CURRENT_TIMESTAMP - INTERVAL '7 days', 2003, CURRENT_TIMESTAMP - INTERVAL '18 days', CURRENT_TIMESTAMP, NULL),
+(907008, 905008, 900071, 904002, 2, 'change_schedule', 'submitted', '武汉', '2026 BY2「撇清关系2.0」十七周年演唱会 武汉站', 10, NULL, '武汉江城会展中心', '武汉市汉阳区鹦鹉大道88号', CURRENT_DATE + INTERVAL '127 days 19 hours 30 minutes', CURRENT_DATE + INTERVAL '127 days 22 hours 0 minutes', FALSE, 'venue', 10, '站点变更审核演示：调整场馆或开演时间。', NULL, NULL, NULL, 2003, CURRENT_TIMESTAMP - INTERVAL '19 days', CURRENT_TIMESTAMP, NULL)
 ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, review_note = EXCLUDED.review_note, updated_at = EXCLUDED.updated_at;
 
 INSERT INTO activity_risk_resolution (id, activity_id, organizer_id, risk_artist_id, status, resolution_note, review_note, submitted_by, reviewed_by, reviewed_at, create_time, update_time) VALUES
