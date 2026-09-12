@@ -4,6 +4,7 @@ import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.exception.BusinessException;
 import com.omni.user.config.UserSentinelConfig;
 import com.omni.user.dto.ChangePhoneRequest;
@@ -14,6 +15,7 @@ import com.omni.user.dto.LoginResponse;
 import com.omni.user.dto.OrganizerApplicationRequest;
 import com.omni.user.dto.OrganizerApplicationResponse;
 import com.omni.user.dto.OrganizerApplicationReviewRequest;
+import com.omni.user.dto.OrganizerApplicationMaterialResponse;
 import com.omni.user.dto.RegisterRequest;
 import com.omni.user.dto.ResolveAttendeesRequest;
 import com.omni.user.dto.ResolvedAttendeeResponse;
@@ -29,6 +31,7 @@ import com.omni.user.dto.UserInfoResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.omni.user.service.OrganizerApplicationService;
+import com.omni.user.service.OrganizerApplicationMaterialService;
 import com.omni.user.service.RbacService;
 import com.omni.user.service.UserAttendeeService;
 import com.omni.user.service.UserAssetService;
@@ -60,6 +63,7 @@ public class UserController {
     private final UserAssetService userAssetService;
     private final UserAttendeeService userAttendeeService;
     private final UserBrowseHistoryService userBrowseHistoryService;
+    private OrganizerApplicationMaterialService organizerApplicationMaterialService;
     private final String internalApiToken;
     @Value("${omni.sms.mock.enabled:false}")
     private boolean mockSmsEnabled;
@@ -98,6 +102,12 @@ public class UserController {
         this.userBrowseHistoryService = userBrowseHistoryService;
         this.internalApiToken = internalApiToken;
         this.mockSmsEnabled = false;
+    }
+
+    @Autowired
+    public void setOrganizerApplicationMaterialService(
+            OrganizerApplicationMaterialService organizerApplicationMaterialService) {
+        this.organizerApplicationMaterialService = organizerApplicationMaterialService;
     }
 
     public UserController(UserService userService,
@@ -309,12 +319,36 @@ public class UserController {
     }
 
     @GetMapping("/organizer/applications/admin")
-    public Result<List<OrganizerApplicationResponse>> listOrganizerApplicationsForAdmin(
+    public Result<Page<OrganizerApplicationResponse>> listOrganizerApplicationsForAdmin(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @RequestParam(required = false) Integer status) {
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String subjectType) {
         Long reviewerId = requireAuthUserId(authorization);
-        List<OrganizerApplicationResponse> response = organizerApplicationService.listForAdmin(reviewerId, status);
+        Page<OrganizerApplicationResponse> response = organizerApplicationService.listForAdmin(
+                reviewerId, page, size, keyword, status, subjectType);
         return Result.success(response);
+    }
+
+    @PostMapping("/organizer/applications/{id}/materials")
+    public Result<OrganizerApplicationMaterialResponse> uploadOrganizerApplicationMaterial(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestParam String materialType,
+            @RequestPart("file") MultipartFile file) {
+        Long userId = requireAuthUserId(authorization);
+        return Result.success(requireOrganizerApplicationMaterialService()
+                .upload(userId, id, materialType, file));
+    }
+
+    @GetMapping("/organizer/applications/{id}/materials")
+    public Result<List<OrganizerApplicationMaterialResponse>> listOrganizerApplicationMaterials(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id) {
+        Long userId = requireAuthUserId(authorization);
+        return Result.success(requireOrganizerApplicationMaterialService().list(userId, id));
     }
 
     @PostMapping("/organizer/applications/{id}/approve")
@@ -425,5 +459,12 @@ public class UserController {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "浏览历史服务未配置");
         }
         return userBrowseHistoryService;
+    }
+
+    private OrganizerApplicationMaterialService requireOrganizerApplicationMaterialService() {
+        if (organizerApplicationMaterialService == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "入驻材料服务未配置");
+        }
+        return organizerApplicationMaterialService;
     }
 }

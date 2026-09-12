@@ -13,6 +13,7 @@ import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
 import com.omni.exception.BusinessException;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.user.dto.OrganizerAdminAccountRequest;
 import com.omni.user.dto.OrganizerAdminAccountResponse;
 import com.omni.user.dto.OrganizerOpsAssignmentRequest;
@@ -24,6 +25,8 @@ import com.omni.user.dto.RbacPermissionResponse;
 import com.omni.user.dto.RbacRolePermissionUpdateRequest;
 import com.omni.user.dto.RbacRoleResponse;
 import com.omni.user.dto.PlatformOpsSummaryResponse;
+import com.omni.user.dto.OrganizerDirectoryResponse;
+import com.omni.user.dto.OrganizerDirectoryRevokeRequest;
 import com.omni.user.service.OrganizerAdminAccountService;
 import com.omni.user.service.OrganizerOpsService;
 import com.omni.user.service.OperationAuditService;
@@ -32,6 +35,7 @@ import com.omni.user.service.RbacAdminService;
 import com.omni.user.service.RbacService;
 import com.omni.user.service.ExceptionWorkbenchService;
 import com.omni.user.service.ReconciliationService;
+import com.omni.user.service.OrganizerDirectoryService;
 import io.jsonwebtoken.Claims;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,6 +65,7 @@ public class InternalWorkbenchController {
     private final RbacService rbacService;
     private final OrganizerOpsService organizerOpsService;
     private final PlatformOpsSummaryService platformOpsSummaryService;
+    private OrganizerDirectoryService organizerDirectoryService;
 
     public InternalWorkbenchController(ExceptionWorkbenchService exceptionWorkbenchService,
                                        ReconciliationService reconciliationService,
@@ -78,6 +83,44 @@ public class InternalWorkbenchController {
         this.rbacService = rbacService;
         this.organizerOpsService = organizerOpsService;
         this.platformOpsSummaryService = platformOpsSummaryService;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setOrganizerDirectoryService(OrganizerDirectoryService organizerDirectoryService) {
+        this.organizerDirectoryService = organizerDirectoryService;
+    }
+
+    @GetMapping("/organizers")
+    public Result<Page<OrganizerDirectoryResponse>> listOrganizers(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String followUpOperator,
+            @RequestParam(required = false) String cooperationStatus) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        requireAnyPermission(userId, "organizer.review", "organizer.account.manage");
+        if (organizerDirectoryService == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "主办方名录服务未配置");
+        }
+        return Result.success(organizerDirectoryService.list(
+                userId, page, size, keyword, followUpOperator, cooperationStatus));
+    }
+
+    @PostMapping("/organizers/{organizerId}/revoke")
+    public Result<OrganizerDirectoryResponse> revokeOrganizer(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long organizerId,
+            @RequestBody(required = false) OrganizerDirectoryRevokeRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        requireAnyPermission(userId, "organizer.review", "organizer.account.manage");
+        if (organizerDirectoryService == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "主办方名录服务未配置");
+        }
+        return Result.success(organizerDirectoryService.revoke(
+                userId, organizerId, request == null ? null : request.getReason()));
     }
 
     @GetMapping("/rbac/roles")

@@ -175,7 +175,7 @@ export default function ConsoleProfilePage() {
               <div className="mt-5 grid gap-3">
                 {isPlatformAdminRole(role) ? (
                   <>
-                    <ActionLink href="/console/organizer-applications" title="主办方管理" desc="管理主办方入驻申请" />
+                    <ActionLink href="/console/organizer-applications" title="主办方入驻审核和管理" desc="处理主办方入驻申请、名录和合作状态" />
                     <ActionLink href="/console/venue" title="场馆记录" desc="创建和维护场馆记录" />
                   </>
                 ) : role === 'organizer_admin' ? (
@@ -200,7 +200,7 @@ export default function ConsoleProfilePage() {
               <h3 className="text-[18px] font-semibold text-[#111]">角色说明</h3>
               <p className="mt-3 text-sm leading-6 text-[#666]">
                 {isPlatformAdminRole(role)
-                  ? '管理员可访问所有后台功能，并可进入主办方管理页面处理主办方申请。'
+                  ? '管理员可访问所有后台功能，并可进入主办方入驻审核和管理页面处理主办方申请。'
                   : role === 'organizer'
                     ? '主办方可查看自己的商户主体信息和入驻状态，并进入商户后台进行业务管理。'
                     : role === 'organizer_admin'

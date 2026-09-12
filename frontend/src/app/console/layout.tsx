@@ -72,7 +72,7 @@ export const consoleMenuGroups: ConsoleMenuGroup[] = [
     children: [
       { href: '/console/organizer-ops', label: '运营工作台' },
       { href: '/console/activity-engagement', label: '评价问答管理' },
-      { href: '/console/organizer-applications', label: '主办方入驻审核' },
+      { href: '/console/organizer-applications', label: '主办方入驻审核和管理' },
       { href: '/console/venue/applications', label: '场馆资料审核' },
       { href: '/console/artists/pending', label: '艺人档案审核' },
       { href: '/console/risk-resolutions', label: '恢复售票审核' },

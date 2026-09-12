@@ -1,5 +1,14 @@
 # Implementation Notes
 
+## 2026-09-12 主办方入驻审核和管理重构
+
+- 已确认采用“材料关联表 + 复用 `user_asset`”方案；申请历史按申请单保留，驳回后重新提交生成新申请，材料不跨申请复用。
+- 已确认 `PENDING` 申请才允许维护材料，`APPROVED` / `REJECTED` 申请只读；正式主办方名录的在售活动数通过 `java-ticket` 批量接口异步补充，3 秒超时降级为 `-`。
+- 本轮先创建用户库生产迁移 `sql/production-split/user/20260912_organizer_application_material.sql`，新增 `organizer_application_material`，移除申请人唯一索引并改为普通索引；已登记到生产拆库 manifest。
+- 本地数据库迁移尚未执行；后续仅在确认目标为本地 `omni_user` 后执行，不对真实冻结、材料上传等有副作用流程做验收调用。
+- 申请材料边界补齐：`BUSINESS_LICENSE`、`ID_CARD_FRONT`、`ID_CARD_BACK` 重复上传会替换旧材料关联并清理旧资产，`OTHER_QUALIFICATION` 保留多材料能力；正式名录的 `followUpOperator` 已在用户域分页前解析运营员和 assignment，避免分页后过滤造成总数与结果错位。
+- 验证：用户域定向测试 `23/23`、票务域定向测试 `142/142`、前端主办方/API/抽屉测试 `57/57`、`pnpm typecheck`、`verify-microservice-boundaries.ps1`、`check-production-split-sql.ps1`、`check-cross-owner-fks.ps1` 均已通过。
+
 ## 2026-09-09 退款真实交易链路修复
 
 - 根因校正：用户已接入支付宝沙箱并完成真实支付；本地 `payment.id=984058 / order_id=980058` 有真实 `trade_no=2026061122001424640509936851`、`buyer_id=2088722102024642` 和支付宝回执。前一轮把问题归结为“未配置支付宝”不准确。

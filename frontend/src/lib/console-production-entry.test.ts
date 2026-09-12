@@ -514,41 +514,42 @@ test('console organizer application status uses Chinese fallback for unknown cod
   const organizerApplications = source('../app/console/organizer-applications/page.tsx')
   const consoleProfile = source('../app/console/profile/page.tsx')
 
-  for (const content of [organizerApplications, consoleProfile]) {
-    assert.match(content, /status === 2\) return \{ text: '已驳回'/)
-    assert.match(content, /未知入驻状态/)
-  }
+  assert.match(organizerApplications, /function applicationStatusMeta/)
+  assert.match(organizerApplications, /status === 2 \|\| status === 'REJECTED'/)
+  assert.match(organizerApplications, /状态待核对/)
+  assert.match(consoleProfile, /status === 2\) return \{ text: '已驳回'/)
+  assert.match(consoleProfile, /未知入驻状态/)
 })
 
 test('console organizer application review protects unknown statuses from write actions', () => {
   const content = source('../app/console/organizer-applications/page.tsx')
 
-  assert.doesNotMatch(content, /onClick=\{\(\) => handleApprove\(item\.id\)\}/)
-  assert.doesNotMatch(content, /onClick=\{\(\) => handleReject\(item\.id\)\}/)
-  assert.doesNotMatch(content, /disabled=\{savingId === item\.id \|\| item\.status !== 0\}/)
-  assert.match(content, /\bisKnownOrganizerApplicationStatus\b/)
-  assert.match(content, /\bisReviewableOrganizerApplicationStatus\b/)
+  assert.match(content, /function isPendingApplication/)
+  assert.match(content, /return status === 0 \|\| status === 'PENDING'/)
+  assert.match(content, /approveOrganizerApplication/)
+  assert.match(content, /rejectOrganizerApplication/)
+  assert.match(content, /reviewDialog/)
+  assert.match(content, /驳回原因不能为空/)
   assert.match(content, /状态待核对/)
-  assert.match(content, /入驻审核状态待核对，请刷新后再操作/)
 })
 
-test('console organizer account status keeps unknown values visible in Chinese', () => {
+test('console organizer directory status keeps unknown values visible in Chinese', () => {
   const content = source('../app/console/organizer-applications/page.tsx')
 
-  assert.doesNotMatch(content, /return null/)
-  assert.doesNotMatch(content, /userStatusMeta \? \(/)
-  assert.match(content, /未知主办方状态/)
+  assert.match(content, /function isActiveOrganizer/)
+  assert.match(content, /cooperationStatus === 'FROZEN'/)
+  assert.match(content, /状态待核对/)
 })
 
-test('console organizer deactivation protects unknown organizer account statuses', () => {
+test('console organizer freeze uses explicit revoke flow and required reason', () => {
   const content = source('../app/console/organizer-applications/page.tsx')
 
-  assert.doesNotMatch(content, /const isCancelled = item\.organizerStatus === 3 \|\| item\.role === 'user'/)
-  assert.doesNotMatch(content, /disabled=\{savingId === item\.id \|\| item\.status !== 1 \|\| isCancelled\}/)
-  assert.match(content, /\bisKnownOrganizerStatus\b/)
-  assert.match(content, /\bcanDeactivateOrganizerAccount\b/)
-  assert.match(content, /主办方状态待核对，请刷新后再操作/)
-  assert.match(content, /状态待核对/)
+  assert.doesNotMatch(content, /deactivateOrganizer/)
+  assert.match(content, /revokeOrganizer/)
+  assert.match(content, /revokeDialog/)
+  assert.match(content, /取消合作\/冻结原因不能为空/)
+  assert.match(content, /不会自动退款/)
+  assert.match(content, /不会修改历史订单或活动数据/)
 })
 
 test('console profile account status uses Chinese fallback for unknown codes', () => {

@@ -89,6 +89,7 @@ export interface PrivateAssetVO {
 
 export type UserRole = 'user' | 'organizer' | 'admin' | 'platform_super_admin' | 'support' | 'organizer_admin'
 export type OrganizerApplicationStatus = 0 | 1 | 2
+export type OrganizerApplicationQueryStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 export type OrganizerStatus = 0 | 1 | 2 | 3
 export type SubjectType = 'personal' | 'enterprise'
 
@@ -362,6 +363,53 @@ export interface OrganizerApplicationVO {
   createTime: string
   updateTime: string | null
   reviewTime: string | null
+  materials?: OrganizerApplicationMaterialVO[]
+}
+
+export interface OrganizerApplicationMaterialVO {
+  id: number
+  materialType: string
+  assetId: number
+  publicUrl: string
+  originalName: string | null
+  mimeType: string
+  sizeBytes: number
+  createTime: string
+}
+
+export interface OrganizerApplicationListParams {
+  page?: number
+  size?: number
+  keyword?: string
+  status?: OrganizerApplicationQueryStatus
+  subjectType?: SubjectType
+}
+
+export interface OrganizerDirectoryListParams {
+  page?: number
+  size?: number
+  keyword?: string
+  followUpOperator?: number | string
+  cooperationStatus?: string
+}
+
+export interface OrganizerDirectoryVO {
+  organizerId: number
+  organizerName: string
+  subjectType: SubjectType
+  qualificationNo: string | null
+  contactName: string
+  contactPhone: string
+  followUpOperatorId: number | null
+  followUpOperatorName: string | null
+  onsaleActivityCount: number | null
+  cooperationStatus: string
+}
+
+export interface OrganizerOnsaleSummaryVO {
+  organizerId: number
+  onsaleActivityCount: number | null
+  available: boolean
 }
 
 // ========== 票务/活动 ==========

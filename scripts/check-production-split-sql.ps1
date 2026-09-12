@@ -86,6 +86,7 @@ $schemaColumns = @{
     "check_in_device" = New-ColumnSet @("id", "device_code", "device_name", "organizer_id", "session_id", "status", "secret_hash", "last_seen_at", "create_time", "update_time")
     "ticket_check_in_record" = New-ColumnSet @("id", "request_id", "ticket_id", "ticket_no", "order_id", "user_id", "session_id", "ticket_type_id", "device_code", "operator_user_id", "channel", "result", "failure_reason", "checked_in_at", "create_time")
     "organizer_application" = New-ColumnSet @("id", "user_id", "reviewer_id")
+    "organizer_application_material" = New-ColumnSet @("id", "application_id", "asset_id", "material_type", "create_time")
     "payment" = New-ColumnSet @("id")
     "performance_subscription" = New-ColumnSet @("id", "user_id", "target_type", "target_id", "target_value", "target_name", "activity_id", "artist_id", "city", "remind_before_minutes", "status", "create_time", "update_time")
     "privacy_audit_log" = New-ColumnSet @("id", "actor_user_id", "action", "target_type", "target_id", "detail", "create_time")

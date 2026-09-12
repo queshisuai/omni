@@ -96,7 +96,9 @@ test('review flows use dedicated modals instead of shared or inline textarea sta
   assert.match(refunds, /拒绝原因不能为空/)
 
   assert.match(organizerApplications, /@\/components\/ui\/Modal/)
-  assert.match(organizerApplications, /applicationReviewDialog/)
+  assert.match(organizerApplications, /reviewDialog/)
+  assert.match(organizerApplications, /@\/components\/ui\/Drawer/)
+  assert.match(organizerApplications, /selectedMaterial/)
   assert.doesNotMatch(organizerApplications, /const \[reviewNote/)
   assert.doesNotMatch(organizerApplications, /驳回前请在上方备注框填写原因/)
 

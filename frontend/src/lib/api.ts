@@ -11,8 +11,14 @@ import type {
   GrabRequestResult,
   LoginResponse,
   NotificationPreferenceVO,
+  OrganizerApplicationListParams,
+  OrganizerApplicationQueryStatus,
   OrganizerApplicationStatus,
+  OrganizerApplicationMaterialVO,
   OrganizerApplicationVO,
+  OrganizerDirectoryListParams,
+  OrganizerDirectoryVO,
+  OrganizerOnsaleSummaryVO,
   OrganizerOpsAssignmentPayload,
   OrganizerOpsAssignmentVO,
   OrganizerOpsFollowUpPayload,
@@ -306,9 +312,30 @@ export async function getMyOrganizerApplication() {
   return request<OrganizerApplicationVO | null>('/api/user/organizer/applications/my')
 }
 
-export async function listOrganizerApplications(status?: OrganizerApplicationStatus) {
-  const qs = status === undefined ? '' : `?status=${status}`
-  return request<OrganizerApplicationVO[]>(`/api/user/organizer/applications/admin${qs}`)
+const ORGANIZER_APPLICATION_STATUS_QUERY: Record<OrganizerApplicationStatus, OrganizerApplicationQueryStatus> = {
+  0: 'PENDING',
+  1: 'APPROVED',
+  2: 'REJECTED',
+}
+
+export function listOrganizerApplications(status?: OrganizerApplicationStatus): Promise<OrganizerApplicationVO[]>
+export function listOrganizerApplications(params?: OrganizerApplicationListParams): Promise<import('@/types/api').PageResult<OrganizerApplicationVO>>
+export async function listOrganizerApplications(
+  paramsOrStatus?: OrganizerApplicationListParams | OrganizerApplicationStatus,
+) {
+  const isLegacyCall = paramsOrStatus === undefined || typeof paramsOrStatus === 'number'
+  const legacyStatus = typeof paramsOrStatus === 'number' ? ORGANIZER_APPLICATION_STATUS_QUERY[paramsOrStatus] : undefined
+  const params: OrganizerApplicationListParams = isLegacyCall ? { status: legacyStatus } : (paramsOrStatus ?? {})
+  const search = new URLSearchParams()
+  search.set('page', String(params.page || 1))
+  search.set('size', String(params.size || 10))
+  if (params.keyword?.trim()) search.set('keyword', params.keyword.trim())
+  if (params.status) search.set('status', params.status)
+  if (params.subjectType) search.set('subjectType', params.subjectType)
+  const result = await request<import('@/types/api').PageResult<OrganizerApplicationVO>>(
+    `/api/user/organizer/applications/admin?${search.toString()}`,
+  )
+  return isLegacyCall ? result.records : result
 }
 
 export async function approveOrganizerApplication(id: number, reviewNote?: string) {
@@ -633,6 +660,31 @@ export async function deactivateSupportAccount(id: number) {
   assertPositiveInteger(id, '客服账号ID')
   return request<import('@/types/api').SupportAccountVO>(`/api/user/support/admin/accounts/${id}/deactivate`, {
     method: 'POST',
+  })
+}
+
+export async function uploadOrganizerApplicationMaterial(applicationId: number, materialType: string, file: File) {
+  const formData = new FormData()
+  formData.append('materialType', materialType)
+  formData.append('file', file)
+  return multipartRequest<OrganizerApplicationMaterialVO>(`/api/user/organizer/applications/${applicationId}/materials`, formData)
+}
+
+export async function listOrganizers(params: OrganizerDirectoryListParams = {}) {
+  const search = new URLSearchParams()
+  search.set('page', String(params.page || 1))
+  search.set('size', String(params.size || 10))
+  if (params.keyword?.trim()) search.set('keyword', params.keyword.trim())
+  if (params.followUpOperator) search.set('followUpOperator', String(params.followUpOperator))
+  if (params.cooperationStatus?.trim()) search.set('cooperationStatus', params.cooperationStatus.trim())
+  return request<import('@/types/api').PageResult<OrganizerDirectoryVO>>(`/api/user/console/organizers?${search.toString()}`)
+}
+
+export async function revokeOrganizer(organizerId: number, reason: string) {
+  assertPositiveInteger(organizerId, '主办方ID')
+  return request<OrganizerDirectoryVO>(`/api/user/console/organizers/${organizerId}/revoke`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
   })
 }
 
@@ -1778,6 +1830,14 @@ export async function deactivateOrganizer(body: import('@/types/api').Deactivate
   return request<import('@/types/api').RefundImpactResponse>('/api/ticket/admin/organizers/deactivate', {
     method: 'POST', body: JSON.stringify(body),
   })
+}
+
+export async function batchOrganizerOnsaleSummary(organizerIds: number[], options: { timeoutMs?: number } = {}) {
+  const normalizedIds = [...new Set(organizerIds.filter(id => Number.isInteger(id) && id > 0))]
+  return request<OrganizerOnsaleSummaryVO[]>('/api/ticket/admin/organizers/batch-onsale-summary', {
+    method: 'POST',
+    body: JSON.stringify({ organizerIds: normalizedIds }),
+  }, { timeoutMs: options.timeoutMs ?? 3000 })
 }
 
 export async function deleteAdminActivity(id: number, body: { userId: number; reason: string }) {

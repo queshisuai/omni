@@ -106,6 +106,76 @@ public class UserAssetService {
         }
     }
 
+    @Transactional
+    public UserAsset uploadImageAsset(Long userId, String bizType, MultipartFile file) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "上传文件不能为空");
+        }
+        String contentType = file.getContentType();
+        if (!Set.of("image/jpeg", "image/png", "image/webp").contains(contentType)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "仅支持上传 JPG、PNG 或 WEBP 图片");
+        }
+        if (file.getSize() > 10L * 1024L * 1024L) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "材料图片不能超过10MB");
+        }
+        validateImageMagic(contentType, file);
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+
+        LocalDate now = LocalDate.now();
+        String extension = extensionFor(contentType);
+        String storedName = UUID.randomUUID() + "." + extension;
+        String relativePath = String.format(Locale.ROOT, "user/organizer/%04d/%02d/%s",
+                now.getYear(), now.getMonthValue(), storedName);
+        Path target = uploadRoot.resolve(relativePath).normalize();
+        String sha256;
+        try {
+            Files.createDirectories(target.getParent());
+            sha256 = saveFileAndSha256(file, target);
+        } catch (IOException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "材料文件保存失败");
+        }
+
+        try {
+            UserAsset asset = new UserAsset();
+            asset.setUploaderId(userId);
+            asset.setBizType(bizType);
+            asset.setOriginalName(file.getOriginalFilename());
+            asset.setStoredName(storedName);
+            asset.setRelativePath(relativePath.replace('\\', '/'));
+            asset.setPublicUrl("/uploads/" + relativePath.replace('\\', '/'));
+            asset.setMimeType(contentType);
+            asset.setSizeBytes(file.getSize());
+            asset.setSha256(sha256);
+            asset.setStatus(1);
+            userAssetMapper.insert(asset);
+            return asset;
+        } catch (RuntimeException e) {
+            deleteQuietly(target);
+            throw e;
+        }
+    }
+
+    public UserAsset getAsset(Long assetId) {
+        return assetId == null ? null : userAssetMapper.selectById(assetId);
+    }
+
+    @Transactional
+    public void deleteAsset(UserAsset asset) {
+        if (asset == null) {
+            return;
+        }
+        userAssetMapper.deleteById(asset.getId());
+        if (asset.getRelativePath() != null) {
+            deleteQuietly(uploadRoot.resolve(asset.getRelativePath()).normalize());
+        }
+    }
+
     AssetUploadResponse toAssetUploadResponse(UserAsset asset) {
         AssetUploadResponse response = new AssetUploadResponse();
         response.setId(asset.getId());

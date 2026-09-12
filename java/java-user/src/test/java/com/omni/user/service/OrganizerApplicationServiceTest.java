@@ -1,6 +1,5 @@
 package com.omni.user.service;
 
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.exception.BusinessException;
@@ -97,6 +96,18 @@ class OrganizerApplicationServiceTest {
     }
 
     @Test
+    void listForAdminAcceptsOrganizerAccountManagePermission() {
+        User admin = new User();
+        admin.setId(2002L);
+        admin.setRole("admin");
+        when(userMapper.selectById(2002L)).thenReturn(admin);
+        when(rbacService.getInternalAuthContext(2002L)).thenReturn(authContext(List.of("organizer.account.manage")));
+        when(organizerApplicationMapper.selectList(any())).thenReturn(List.of());
+
+        assertEquals(0, service.listForAdmin(2002L, null).size());
+    }
+
+    @Test
     void cancelledOrganizerCanResubmitApprovedApplication() {
         User user = new User();
         user.setId(2003L);
@@ -120,7 +131,11 @@ class OrganizerApplicationServiceTest {
 
         when(userMapper.selectById(2003L)).thenReturn(user);
         when(organizerApplicationMapper.selectOne(any())).thenReturn(application);
-        when(organizerApplicationMapper.update(any(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+        when(organizerApplicationMapper.insert(any(OrganizerApplication.class))).thenAnswer(invocation -> {
+            OrganizerApplication next = invocation.getArgument(0);
+            next.setId(2L);
+            return 1;
+        });
         when(userMapper.updateById(any(User.class))).thenReturn(1);
 
         OrganizerApplicationResponse response = service.submitOrUpdate(2003L, request);
@@ -128,7 +143,8 @@ class OrganizerApplicationServiceTest {
         assertEquals(0, response.getStatus());
         assertEquals(0, response.getOrganizerStatus());
         assertEquals("user", response.getRole());
-        verify(organizerApplicationMapper).update(any(), any(LambdaUpdateWrapper.class));
+        assertEquals(2L, response.getId());
+        verify(organizerApplicationMapper).insert(any(OrganizerApplication.class));
     }
 
     private InternalAuthContextResponse authContext(List<String> permissionCodes) {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, addSupportNote, batchReviewRefunds, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityEngagements, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, manualCheckInTicket, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, removeTeamGrabMember, replyAdminActivityQuestion, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateAdminActivityQuestion, updateAdminActivityReportStatus, updateAdminActivityReviewStatus, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateSupportTags } from './api.ts'
+import { ApiError, addSupportNote, approveOrganizerApplication, batchOrganizerOnsaleSummary, batchReviewRefunds, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityEngagements, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerApplications, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listOrganizers, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, manualCheckInTicket, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, rejectOrganizerApplication, removeTeamGrabMember, replyAdminActivityQuestion, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, revokeOrganizer, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateAdminActivityQuestion, updateAdminActivityReportStatus, updateAdminActivityReviewStatus, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateSupportTags, uploadOrganizerApplicationMaterial } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -1152,6 +1152,108 @@ test('localizes english API errors before displaying them', async () => {
       () => createWaitlistEntry({ sessionId: 101, ticketTypeId: 202, quantity: 1 }),
       (error) => error instanceof ApiError && error.message === '当前票档已售罄',
     )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+function jsonResponse(data: unknown) {
+  return new Response(JSON.stringify({ code: 200, message: '成功', data }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+test('builds organizer application pagination query with enum filters', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input)
+    return jsonResponse({ records: [], total: 0, size: 10, current: 2, pages: 0 })
+  }) as typeof fetch
+
+  try {
+    const result = await listOrganizerApplications({ page: 2, size: 10, keyword: '星河', status: 'PENDING', subjectType: 'enterprise' })
+    assert.equal(requestedUrl, '/api/user/organizer/applications/admin?page=2&size=10&keyword=%E6%98%9F%E6%B2%B3&status=PENDING&subjectType=enterprise')
+    assert.equal(result.current, 2)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('keeps the no-argument organizer application call compatible with existing array consumers', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () => jsonResponse({ records: [{ id: 1 }], total: 1, size: 10, current: 1, pages: 1 })) as typeof fetch
+
+  try {
+    assert.deepEqual(await listOrganizerApplications(), [{ id: 1 }])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('builds organizer directory query and revoke request', async () => {
+  const originalFetch = globalThis.fetch
+  const requests: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    return jsonResponse({ records: [], total: 0, size: 10, current: 1, pages: 0 })
+  }) as typeof fetch
+
+  try {
+    await listOrganizers({ page: 1, size: 10, keyword: '星河', followUpOperator: 2004, cooperationStatus: 'ACTIVE' })
+    await revokeOrganizer(2003, '材料长期未补齐')
+    assert.deepEqual(requests, [
+      { url: '/api/user/console/organizers?page=1&size=10&keyword=%E6%98%9F%E6%B2%B3&followUpOperator=2004&cooperationStatus=ACTIVE', method: 'GET', body: '' },
+      { url: '/api/user/console/organizers/2003/revoke', method: 'POST', body: JSON.stringify({ reason: '材料长期未补齐' }) },
+    ])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('builds organizer review and batch onsale summary requests', async () => {
+  const originalFetch = globalThis.fetch
+  const requests: Array<{ url: string; method: string; body: string; signal: AbortSignal | null | undefined }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? ''), signal: init?.signal })
+    return jsonResponse({})
+  }) as typeof fetch
+
+  try {
+    await approveOrganizerApplication(7, '资料完整')
+    await rejectOrganizerApplication(8, '缺少资质材料')
+    await batchOrganizerOnsaleSummary([2003, 2003, 0, 2005])
+    assert.deepEqual(requests.map(({ url, method, body }) => ({ url, method, body })), [
+      { url: '/api/user/organizer/applications/7/approve', method: 'POST', body: JSON.stringify({ reviewNote: '资料完整' }) },
+      { url: '/api/user/organizer/applications/8/reject', method: 'POST', body: JSON.stringify({ reviewNote: '缺少资质材料' }) },
+      { url: '/api/ticket/admin/organizers/batch-onsale-summary', method: 'POST', body: JSON.stringify({ organizerIds: [2003, 2005] }) },
+    ])
+    assert.ok(requests[2].signal)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('uploads organizer application material as multipart without overriding content type', async () => {
+  const originalFetch = globalThis.fetch
+  let requestedUrl = ''
+  let requestedInit: RequestInit | undefined
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input)
+    requestedInit = init
+    return jsonResponse({ id: 1, materialType: 'LICENSE', assetId: 2, publicUrl: '/asset', originalName: 'license.pdf', mimeType: 'application/pdf', sizeBytes: 10, createTime: '2026-09-12T00:00:00' })
+  }) as typeof fetch
+
+  try {
+    await uploadOrganizerApplicationMaterial(9, 'LICENSE', new File(['x'], 'license.pdf', { type: 'application/pdf' }))
+    assert.equal(requestedUrl, '/api/user/organizer/applications/9/materials')
+    assert.equal(requestedInit?.method, 'POST')
+    assert.equal(new Headers(requestedInit?.headers).get('Content-Type'), null)
+    assert.ok(requestedInit?.body instanceof FormData)
+    const formData = requestedInit?.body as FormData
+    assert.equal(formData.get('materialType'), 'LICENSE')
+    assert.equal((formData.get('file') as File).name, 'license.pdf')
   } finally {
     globalThis.fetch = originalFetch
   }

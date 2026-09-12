@@ -2,6 +2,8 @@ package com.omni.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
@@ -32,18 +34,21 @@ public class OrganizerApplicationService {
     private static final int STATUS_PENDING = 0;
     private static final int STATUS_APPROVED = 1;
     private static final int STATUS_REJECTED = 2;
-    private static final String PERMISSION_ORGANIZER_REVIEW = "organizer.review";
+    private static final Set<String> ORGANIZER_ADMIN_PERMISSIONS =
+            Set.of("organizer.review", "organizer.account.manage");
     private static final Set<String> SUBJECT_TYPES = Set.of("personal", "enterprise");
 
     private final OrganizerApplicationMapper organizerApplicationMapper;
     private final UserMapper userMapper;
     private final TransactionTemplate transactionTemplate;
     private final RbacService rbacService;
+    private final OperationAuditService auditService;
+    private final OrganizerApplicationMaterialService materialService;
 
     public OrganizerApplicationService(OrganizerApplicationMapper organizerApplicationMapper,
                                        UserMapper userMapper,
                                        PlatformTransactionManager transactionManager) {
-        this(organizerApplicationMapper, userMapper, transactionManager, null);
+        this(organizerApplicationMapper, userMapper, transactionManager, null, null, null);
     }
 
     @Autowired
@@ -51,11 +56,23 @@ public class OrganizerApplicationService {
                                        UserMapper userMapper,
                                        PlatformTransactionManager transactionManager,
                                        RbacService rbacService) {
+        this(organizerApplicationMapper, userMapper, transactionManager, rbacService, null, null);
+    }
+
+    @Autowired
+    public OrganizerApplicationService(OrganizerApplicationMapper organizerApplicationMapper,
+                                       UserMapper userMapper,
+                                       PlatformTransactionManager transactionManager,
+                                       RbacService rbacService,
+                                       OperationAuditService auditService,
+                                       OrganizerApplicationMaterialService materialService) {
         this.organizerApplicationMapper = organizerApplicationMapper;
         this.userMapper = userMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
         this.rbacService = rbacService;
+        this.auditService = auditService;
+        this.materialService = materialService;
     }
 
     @Transactional
@@ -83,7 +100,7 @@ public class OrganizerApplicationService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "邮箱格式不正确");
         }
 
-        OrganizerApplication application = findByUserId(userId);
+        OrganizerApplication application = findLatestByUserId(userId);
         LocalDateTime now = LocalDateTime.now();
         if (application == null) {
             application = new OrganizerApplication();
@@ -91,9 +108,12 @@ public class OrganizerApplicationService {
             application.setCreateTime(now);
         } else if (Integer.valueOf(STATUS_APPROVED).equals(application.getStatus()) && !isCancelledOrganizer(user)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "入驻申请已通过");
-        } else if (!Integer.valueOf(STATUS_PENDING).equals(application.getStatus())
-                && !Integer.valueOf(STATUS_REJECTED).equals(application.getStatus())
-                && !(Integer.valueOf(STATUS_APPROVED).equals(application.getStatus()) && isCancelledOrganizer(user))) {
+        } else if (Integer.valueOf(STATUS_REJECTED).equals(application.getStatus())
+                || (Integer.valueOf(STATUS_APPROVED).equals(application.getStatus()) && isCancelledOrganizer(user))) {
+            application = new OrganizerApplication();
+            application.setUserId(userId);
+            application.setCreateTime(now);
+        } else if (!Integer.valueOf(STATUS_PENDING).equals(application.getStatus())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "入驻申请状态不允许修改");
         }
 
@@ -112,16 +132,14 @@ public class OrganizerApplicationService {
             try {
                 insertApplicationInNewTransaction(application);
             } catch (DuplicateKeyException e) {
-                application = findByUserId(userId);
+                application = findLatestByUserId(userId);
                 if (application == null) {
                     throw e;
                 }
                 if (Integer.valueOf(STATUS_APPROVED).equals(application.getStatus()) && !isCancelledOrganizer(user)) {
                     throw new BusinessException(ResultCode.BAD_REQUEST, "入驻申请已通过");
                 }
-                if (!Integer.valueOf(STATUS_PENDING).equals(application.getStatus())
-                        && !Integer.valueOf(STATUS_REJECTED).equals(application.getStatus())
-                        && !(Integer.valueOf(STATUS_APPROVED).equals(application.getStatus()) && isCancelledOrganizer(user))) {
+                if (!Integer.valueOf(STATUS_PENDING).equals(application.getStatus())) {
                     throw new BusinessException(ResultCode.BAD_REQUEST, "入驻申请状态不允许修改");
                 }
                 applyApplicationFields(application, request, organizerName, subjectType, contactName, contactPhone, contactEmail, now);
@@ -139,7 +157,7 @@ public class OrganizerApplicationService {
     }
 
     public OrganizerApplicationResponse getMine(Long userId) {
-        OrganizerApplication application = findByUserId(userId);
+        OrganizerApplication application = findLatestByUserId(userId);
         if (application == null) {
             return null;
         }
@@ -153,20 +171,62 @@ public class OrganizerApplicationService {
         if (status != null) {
             wrapper.eq(OrganizerApplication::getStatus, status);
         }
-        wrapper.orderByDesc(OrganizerApplication::getCreateTime);
+        wrapper.orderByDesc(OrganizerApplication::getCreateTime)
+                .orderByDesc(OrganizerApplication::getId);
         List<OrganizerApplication> applications = organizerApplicationMapper.selectList(wrapper);
-        if (applications.isEmpty()) {
-            return List.of();
+        if (applications.isEmpty()) return List.of();
+        Map<Long, User> users = userMapper.selectBatchIds(applications.stream()
+                        .map(OrganizerApplication::getUserId)
+                        .distinct().collect(Collectors.toList()))
+                .stream().collect(Collectors.toMap(User::getId, Function.identity()));
+        return applications.stream()
+                .map(application -> toResponse(application, users.get(application.getUserId())))
+                .collect(Collectors.toList());
+    }
+
+    public Page<OrganizerApplicationResponse> listForAdmin(Long reviewerId, Integer page, Integer size,
+                                                            String keyword, String status, String subjectType) {
+        requireOrganizerReviewPermission(reviewerId);
+        long current = page == null || page < 1 ? 1 : page;
+        long pageSize = size == null ? 10 : Math.min(Math.max(size, 1), 50);
+        Integer statusCode = statusCode(status);
+        LambdaQueryWrapper<OrganizerApplication> wrapper = new LambdaQueryWrapper<OrganizerApplication>()
+                .orderByDesc(OrganizerApplication::getCreateTime)
+                .orderByDesc(OrganizerApplication::getId);
+        if (statusCode != null) {
+            wrapper.eq(OrganizerApplication::getStatus, statusCode);
         }
+        if (subjectType != null && !subjectType.trim().isEmpty()) {
+            wrapper.eq(OrganizerApplication::getSubjectType, subjectType.trim());
+        }
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String value = keyword.trim();
+            List<Long> matchingUserIds = userMapper.selectList(new LambdaQueryWrapper<User>()
+                            .like(User::getPhone, value)
+                            .or().like(User::getNickname, value)
+                            .or().like(User::getId, value))
+                    .stream().map(User::getId).collect(Collectors.toList());
+            wrapper.and(w -> w.like(OrganizerApplication::getOrganizerName, value)
+                    .or().like(OrganizerApplication::getContactName, value)
+                    .or().like(OrganizerApplication::getContactPhone, value)
+                    .or(!matchingUserIds.isEmpty(), x -> x.in(OrganizerApplication::getUserId, matchingUserIds)));
+        }
+        Page<OrganizerApplication> applicationPage = new Page<>(current, pageSize);
+        Page<OrganizerApplication> selected = organizerApplicationMapper.selectPage(applicationPage, wrapper);
+        List<OrganizerApplication> applications = selected.getRecords();
+        Page<OrganizerApplicationResponse> result = new Page<>(current, pageSize, selected.getTotal());
+        if (applications.isEmpty()) return result;
         List<Long> userIds = applications.stream()
                 .map(OrganizerApplication::getUserId)
                 .distinct()
                 .collect(Collectors.toList());
         Map<Long, User> users = userMapper.selectBatchIds(userIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
-        return applications.stream()
+        List<OrganizerApplicationResponse> records = applications.stream()
                 .map(application -> toResponse(application, users.get(application.getUserId())))
                 .collect(Collectors.toList());
+        result.setRecords(records);
+        return result;
     }
 
     @Transactional
@@ -202,6 +262,7 @@ public class OrganizerApplicationService {
         application.setReviewNote(trimToNull(reviewNote));
         application.setReviewTime(now);
         application.setUpdateTime(now);
+        writeAudit(reviewerId, "organizer_application.approve", application, trimToNull(reviewNote), "审核通过");
         return toResponse(application, user);
     }
 
@@ -237,6 +298,7 @@ public class OrganizerApplicationService {
         application.setReviewNote(note);
         application.setReviewTime(now);
         application.setUpdateTime(now);
+        writeAudit(reviewerId, "organizer_application.reject", application, note, "审核驳回");
         return toResponse(application, user);
     }
 
@@ -319,15 +381,18 @@ public class OrganizerApplicationService {
         if (auth != null
                 && "platform".equals(auth.getScopeType())
                 && auth.getPermissionCodes() != null
-                && auth.getPermissionCodes().contains(PERMISSION_ORGANIZER_REVIEW)) {
+                && auth.getPermissionCodes().stream().anyMatch(ORGANIZER_ADMIN_PERMISSIONS::contains)) {
             return;
         }
         throw new BusinessException(ResultCode.FORBIDDEN, "无权限");
     }
 
-    private OrganizerApplication findByUserId(Long userId) {
+    private OrganizerApplication findLatestByUserId(Long userId) {
         LambdaQueryWrapper<OrganizerApplication> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(OrganizerApplication::getUserId, userId);
+        wrapper.eq(OrganizerApplication::getUserId, userId)
+                .orderByDesc(OrganizerApplication::getCreateTime)
+                .orderByDesc(OrganizerApplication::getId)
+                .last("LIMIT 1");
         return organizerApplicationMapper.selectOne(wrapper);
     }
 
@@ -355,7 +420,37 @@ public class OrganizerApplicationService {
             response.setRole(user.getRole());
             response.setOrganizerStatus(user.getOrganizerStatus());
         }
+        if (materialService != null && application.getId() != null) {
+            response.setMaterials(materialService.listByApplication(application.getId()));
+        }
         return response;
+    }
+
+    private Integer statusCode(String status) {
+        if (status == null || status.trim().isEmpty()) return null;
+        if ("0".equals(status.trim())) return STATUS_PENDING;
+        if ("1".equals(status.trim())) return STATUS_APPROVED;
+        if ("2".equals(status.trim())) return STATUS_REJECTED;
+        if ("PENDING".equalsIgnoreCase(status)) return STATUS_PENDING;
+        if ("APPROVED".equalsIgnoreCase(status)) return STATUS_APPROVED;
+        if ("REJECTED".equalsIgnoreCase(status)) return STATUS_REJECTED;
+        return null;
+    }
+
+    private void writeAudit(Long reviewerId, String action, OrganizerApplication application,
+                            String reason, String result) {
+        if (auditService == null) return;
+        OperationAuditWriteRequest request = new OperationAuditWriteRequest();
+        request.setOperatorId(reviewerId);
+        request.setOperatorRole("platform");
+        request.setAction(action);
+        request.setTargetType("organizer_application");
+        request.setTargetId(application.getId());
+        request.setTargetRef(application.getOrganizerName());
+        request.setReason(reason);
+        request.setResult(result);
+        request.setSuccess(true);
+        auditService.write(request);
     }
 
     private String requireText(String value, String message) {

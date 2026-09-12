@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, UserRound, Building2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, UserRound, Building2, Upload } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
-import { getMyOrganizerApplication, getUserInfo, submitOrganizerApplication } from '@/lib/api'
+import { getMyOrganizerApplication, getUserInfo, submitOrganizerApplication, uploadOrganizerApplicationMaterial } from '@/lib/api'
 import { getUser, isAuthenticated, updateUserRole } from '@/lib/auth'
 import type { OrganizerApplicationStatus, OrganizerApplicationVO, SubjectType, UserInfo, UserRole } from '@/types/api'
 
@@ -70,6 +70,7 @@ export default function MerchantPage() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [application, setApplication] = useState<OrganizerApplicationVO | null>(null)
   const [form, setForm] = useState<ApplicationFormState>(EMPTY_FORM)
+  const [uploadingMaterialType, setUploadingMaterialType] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -179,6 +180,25 @@ export default function MerchantPage() {
       setError(err instanceof Error ? err.message : '提交申请失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleMaterialUpload = async (materialType: string, file: File | undefined) => {
+    if (!file || !application || application.status !== 0) return
+    setUploadingMaterialType(materialType)
+    setError('')
+    setMessage('')
+    try {
+      const uploaded = await uploadOrganizerApplicationMaterial(application.id, materialType, file)
+      setApplication(current => current ? {
+        ...current,
+        materials: [...(current.materials || []).filter(item => item.materialType !== uploaded.materialType), uploaded],
+      } : current)
+      setMessage('材料上传成功。')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '材料上传失败')
+    } finally {
+      setUploadingMaterialType(null)
     }
   }
 
@@ -312,6 +332,50 @@ export default function MerchantPage() {
                     {application.status === 2 && application.reviewNote ? (
                       <div className="mt-2 text-[#111]">驳回原因：{application.reviewNote}</div>
                     ) : null}
+                  </div>
+                ) : null}
+
+                {application?.status === 0 ? (
+                  <section className="mt-6 rounded-2xl border border-[#ececec] bg-[#fcfcfd] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-[#111]">申请材料</h3>
+                        <p className="mt-1 text-xs text-[#888]">请先提交申请，再上传材料；仅待审核申请可上传或更新材料。</p>
+                      </div>
+                      <Upload className="h-4 w-4 text-[#ff1268]" />
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      {[
+                        { type: 'BUSINESS_LICENSE', label: '营业执照' },
+                        { type: 'ID_CARD_FRONT', label: '身份证正面' },
+                        { type: 'ID_CARD_BACK', label: '身份证反面' },
+                      ].map(item => {
+                        const material = application.materials?.find(materialItem => materialItem.materialType === item.type)
+                        return (
+                          <label key={item.type} className="cursor-pointer rounded-xl border border-dashed border-[#e5e5e5] bg-white p-3 hover:border-[#ff1268]">
+                            <div className="text-sm font-medium text-[#333]">{item.label}</div>
+                            <div className="mt-1 truncate text-xs text-[#999]" title={material?.originalName || undefined}>
+                              {material?.originalName || '点击选择图片'}
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="sr-only"
+                              disabled={Boolean(uploadingMaterialType)}
+                              onChange={event => {
+                                const file = event.target.files?.[0]
+                                event.target.value = ''
+                                void handleMaterialUpload(item.type, file)
+                              }}
+                            />
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ) : application?.status === 2 ? (
+                  <div className="mt-6 rounded-2xl border border-[#ffe0e0] bg-[#fff8f8] px-4 py-3 text-sm text-[#b42318]">
+                    当前申请已驳回，请先重新提交申请；新申请单生成后再上传材料。
                   </div>
                 ) : null}
 

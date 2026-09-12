@@ -1,6 +1,7 @@
 package com.omni.user.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class OrganizerApplicationResponse {
 
@@ -24,6 +25,7 @@ public class OrganizerApplicationResponse {
     private String nickname;
     private String role;
     private Integer organizerStatus;
+    private List<OrganizerApplicationMaterialResponse> materials;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -84,4 +86,7 @@ public class OrganizerApplicationResponse {
 
     public Integer getOrganizerStatus() { return organizerStatus; }
     public void setOrganizerStatus(Integer organizerStatus) { this.organizerStatus = organizerStatus; }
+
+    public List<OrganizerApplicationMaterialResponse> getMaterials() { return materials; }
+    public void setMaterials(List<OrganizerApplicationMaterialResponse> materials) { this.materials = materials; }
 }
