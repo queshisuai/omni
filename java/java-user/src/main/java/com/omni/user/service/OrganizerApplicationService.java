@@ -59,7 +59,6 @@ public class OrganizerApplicationService {
         this(organizerApplicationMapper, userMapper, transactionManager, rbacService, null, null);
     }
 
-    @Autowired
     public OrganizerApplicationService(OrganizerApplicationMapper organizerApplicationMapper,
                                        UserMapper userMapper,
                                        PlatformTransactionManager transactionManager,

@@ -13,8 +13,10 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -73,6 +75,15 @@ class OrganizerApplicationServiceTest {
 
         assertEquals(3, response.getOrganizerStatus());
         assertEquals("user", response.getRole());
+    }
+
+    @Test
+    void serviceDeclaresOnlyOneAutowiredConstructorForSpringStartup() {
+        long autowiredConstructors = Arrays.stream(OrganizerApplicationService.class.getDeclaredConstructors())
+                .filter(constructor -> constructor.isAnnotationPresent(Autowired.class))
+                .count();
+
+        assertEquals(1, autowiredConstructors);
     }
 
     @Test

@@ -5,8 +5,9 @@
 - 已确认采用“材料关联表 + 复用 `user_asset`”方案；申请历史按申请单保留，驳回后重新提交生成新申请，材料不跨申请复用。
 - 已确认 `PENDING` 申请才允许维护材料，`APPROVED` / `REJECTED` 申请只读；正式主办方名录的在售活动数通过 `java-ticket` 批量接口异步补充，3 秒超时降级为 `-`。
 - 本轮先创建用户库生产迁移 `sql/production-split/user/20260912_organizer_application_material.sql`，新增 `organizer_application_material`，移除申请人唯一索引并改为普通索引；已登记到生产拆库 manifest。
-- 本地数据库迁移尚未执行；后续仅在确认目标为本地 `omni_user` 后执行，不对真实冻结、材料上传等有副作用流程做验收调用。
+- 本地数据库迁移已在 `localhost:5432/omni_user` 执行：`organizer_application_material` 已创建，`idx_organizer_application_user_id` 已由唯一索引调整为普通索引；未调用真实冻结、材料上传等有副作用业务接口。
 - 申请材料边界补齐：`BUSINESS_LICENSE`、`ID_CARD_FRONT`、`ID_CARD_BACK` 重复上传会替换旧材料关联并清理旧资产，`OTHER_QUALIFICATION` 保留多材料能力；正式名录的 `followUpOperator` 已在用户域分页前解析运营员和 assignment，避免分页后过滤造成总数与结果错位。
+- java-user 启动失败根因：`OrganizerApplicationService` 同时存在两个 `@Autowired` 构造器，Spring 启动时报 `Invalid autowire-marked constructor`；已保留完整依赖构造器注入，移除 4 参数兼容构造器上的 `@Autowired`，并新增单构造器回归测试。
 - 验证：用户域定向测试 `23/23`、票务域定向测试 `142/142`、前端主办方/API/抽屉测试 `57/57`、`pnpm typecheck`、`verify-microservice-boundaries.ps1`、`check-production-split-sql.ps1`、`check-cross-owner-fks.ps1` 均已通过。
 
 ## 2026-09-09 退款真实交易链路修复
@@ -433,3 +434,4 @@
 - 根因：`prod-split` 已按生产安全要求移除本地 fallback；IDEA 从 main 方法或新生成 Run Configuration 直接启动时不会经过 `start-project.ps1`，因此 `java-user` 在创建 `GrabOpsSummaryClient` 时解析不到 `GRAB_SERVICE_URL`，其他业务服务也会陆续缺 Nacos、RabbitMQ、Seata、ES、Alipay 或 JWT 变量。
 - 修复：新增 `LocalProdSplitDefaults`，仅在 `prod-split` 且本地 `target/classes` 启动时向 `SpringApplication` 注入本地默认值；六个 Java 入口统一先应用该本地兜底再启动。jar/生产启动不注入，本地脚本和显式环境变量仍保持最高优先级。
 - 验证：新增 `LocalProdSplitDefaultsTest` 覆盖 user/ticket/payment 本地默认值、非 `prod-split` 跳过、jar 启动跳过和显式变量不覆盖；`java-common` 定向测试通过，六个 Java 模块编译通过，生产默认值守护脚本通过。额外清空 `GRAB_SERVICE_URL` 等变量后用 `prod-split` 启动 `java-user`，已越过原 Feign 占位符解析阶段，当前 shell 验证止于本机 Tomcat loopback 异常。
+
