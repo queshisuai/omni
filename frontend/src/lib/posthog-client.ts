@@ -11,6 +11,7 @@ type PostHogInitOptions = {
   api_host: string
   autocapture: false
   capture_pageview: false
+  capture_performance: false
   disable_session_recording: true
   person_profiles: 'never'
 }
@@ -43,6 +44,7 @@ export function initializePostHogAnalytics(
     api_host: config.host,
     autocapture: false,
     capture_pageview: false,
+    capture_performance: false,
     disable_session_recording: true,
     person_profiles: 'never',
   })

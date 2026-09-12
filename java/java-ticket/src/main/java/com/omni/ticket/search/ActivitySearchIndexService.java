@@ -1,5 +1,6 @@
 package com.omni.ticket.search;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
@@ -7,10 +8,12 @@ import com.omni.ticket.dto.ActivityArtistDto;
 import com.omni.ticket.dto.ActivityDetailVO;
 import com.omni.ticket.dto.ActivityVO;
 import com.omni.ticket.entity.Activity;
+import com.omni.ticket.entity.ActivityReview;
 import com.omni.ticket.entity.Category;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Venue;
+import com.omni.ticket.mapper.ActivityReviewMapper;
 import com.omni.ticket.service.ActivityService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -29,6 +32,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -53,24 +57,27 @@ public class ActivitySearchIndexService {
     private final ElasticsearchOperations operations;
     private final ActivitySearchDocumentBuilder documentBuilder;
     private final ActivitySearchProperties properties;
+    private final ActivityReviewMapper reviewMapper;
 
     @Autowired
     public ActivitySearchIndexService(ActivityService activityService,
                                       ElasticsearchOperations operations,
                                       ActivitySearchDocumentBuilder documentBuilder,
-                                      ActivitySearchProperties properties) {
+                                      ActivitySearchProperties properties,
+                                      ActivityReviewMapper reviewMapper) {
         this(activityService::listActivities,
                 activityService,
                 operations,
                 documentBuilder,
-                properties);
+                properties,
+                reviewMapper);
     }
 
     public ActivitySearchIndexService(RebuildPageSource rebuildPageSource,
                                       ElasticsearchOperations operations,
                                       ActivitySearchDocumentBuilder documentBuilder,
                                       ActivitySearchProperties properties) {
-        this(rebuildPageSource, null, operations, documentBuilder, properties);
+        this(rebuildPageSource, null, operations, documentBuilder, properties, null);
     }
 
     public ActivitySearchIndexService(RebuildPageSource rebuildPageSource,
@@ -78,11 +85,21 @@ public class ActivitySearchIndexService {
                                       ElasticsearchOperations operations,
                                       ActivitySearchDocumentBuilder documentBuilder,
                                       ActivitySearchProperties properties) {
+        this(rebuildPageSource, activityService, operations, documentBuilder, properties, null);
+    }
+
+    public ActivitySearchIndexService(RebuildPageSource rebuildPageSource,
+                                      ActivityService activityService,
+                                      ElasticsearchOperations operations,
+                                      ActivitySearchDocumentBuilder documentBuilder,
+                                      ActivitySearchProperties properties,
+                                      ActivityReviewMapper reviewMapper) {
         this.rebuildPageSource = rebuildPageSource;
         this.activityService = activityService;
         this.operations = operations;
         this.documentBuilder = documentBuilder;
         this.properties = properties == null ? new ActivitySearchProperties() : properties;
+        this.reviewMapper = reviewMapper;
     }
 
     @FunctionalInterface
@@ -112,6 +129,7 @@ public class ActivitySearchIndexService {
                 break;
             }
             for (ActivityVO activity : records) {
+                enrichReviewMetrics(activity);
                 operations.save(documentBuilder.fromActivityVo(activity), indexCoordinates);
                 indexedCount++;
             }
@@ -157,7 +175,9 @@ public class ActivitySearchIndexService {
             }
             throw e;
         }
-        operations.save(documentBuilder.fromActivityVo(toSearchVo(detail)), aliasCoordinates());
+        ActivityVO searchVo = toSearchVo(detail);
+        enrichReviewMetrics(searchVo);
+        operations.save(documentBuilder.fromActivityVo(searchVo), aliasCoordinates());
     }
 
     public void deleteActivity(Long activityId) {
@@ -223,6 +243,37 @@ public class ActivitySearchIndexService {
         vo.setMinPrice(resolveMinPrice(sessions));
         vo.setMaxPrice(resolveMaxPrice(sessions));
         return vo;
+    }
+
+    private void enrichReviewMetrics(ActivityVO vo) {
+        if (vo == null || vo.getId() == null || "tour".equals(vo.getItemType()) || reviewMapper == null) {
+            if (vo != null) {
+                if (vo.getAverageRating() == null) vo.setAverageRating(0.0);
+                if (vo.getReviewCount() == null) vo.setReviewCount(0L);
+            }
+            return;
+        }
+        List<ActivityReview> reviews = reviewMapper.selectList(new LambdaQueryWrapper<ActivityReview>()
+                .eq(ActivityReview::getActivityId, vo.getId())
+                .eq(ActivityReview::getStatus, 1));
+        if (reviews == null || reviews.isEmpty()) {
+            vo.setAverageRating(0.0);
+            vo.setReviewCount(0L);
+            return;
+        }
+        int totalRating = 0;
+        int validCount = 0;
+        for (ActivityReview review : reviews) {
+            Integer rating = review == null ? null : review.getRating();
+            if (rating != null && rating >= 1 && rating <= 5) {
+                totalRating += rating;
+                validCount++;
+            }
+        }
+        vo.setReviewCount((long) validCount);
+        vo.setAverageRating(validCount == 0 ? 0.0 : BigDecimal.valueOf(totalRating)
+                .divide(BigDecimal.valueOf(validCount), 1, RoundingMode.HALF_UP)
+                .doubleValue());
     }
 
     private String resolveArtistName(ActivityDetailVO detail) {

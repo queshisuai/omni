@@ -27,6 +27,8 @@ public class ActivitySearchDocument {
     private String seatMapVisibility;
     private Boolean realNameRequired;
     private Boolean ticketTransferAllowed;
+    private Double averageRating;
+    private Long reviewCount;
     private Long subscriptionCount;
     private Long paidOrderCount;
     private Double hotScore;
@@ -70,6 +72,10 @@ public class ActivitySearchDocument {
     public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
     public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }
     public void setTicketTransferAllowed(Boolean ticketTransferAllowed) { this.ticketTransferAllowed = ticketTransferAllowed; }
+    public Double getAverageRating() { return averageRating; }
+    public void setAverageRating(Double averageRating) { this.averageRating = averageRating; }
+    public Long getReviewCount() { return reviewCount; }
+    public void setReviewCount(Long reviewCount) { this.reviewCount = reviewCount; }
     public Long getSubscriptionCount() { return subscriptionCount; }
     public void setSubscriptionCount(Long subscriptionCount) { this.subscriptionCount = subscriptionCount; }
     public Long getPaidOrderCount() { return paidOrderCount; }

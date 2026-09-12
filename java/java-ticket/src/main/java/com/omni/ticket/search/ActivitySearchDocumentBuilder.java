@@ -42,6 +42,8 @@ public class ActivitySearchDocumentBuilder {
         document.setSeatMapVisibility(vo.getSeatMapVisibility());
         document.setRealNameRequired(vo.getRealNameRequired());
         document.setTicketTransferAllowed(vo.getTicketTransferAllowed());
+        document.setAverageRating(vo.getAverageRating() == null ? 0.0 : vo.getAverageRating());
+        document.setReviewCount(vo.getReviewCount() == null ? 0L : vo.getReviewCount());
         document.setSubscriptionCount(0L);
         document.setPaidOrderCount(0L);
         document.setHotScore(resolveHotScore(vo));

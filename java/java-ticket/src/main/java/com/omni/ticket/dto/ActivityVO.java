@@ -25,6 +25,8 @@ public class ActivityVO {
     private String seatMapVisibility;
     private Boolean realNameRequired;
     private Boolean ticketTransferAllowed;
+    private Double averageRating;
+    private Long reviewCount;
     private Integer status;
     private List<ActivityArtistDto> artists;
 
@@ -60,6 +62,10 @@ public class ActivityVO {
     public void setRealNameRequired(Boolean realNameRequired) { this.realNameRequired = realNameRequired; }
     public Boolean getTicketTransferAllowed() { return ticketTransferAllowed; }
     public void setTicketTransferAllowed(Boolean ticketTransferAllowed) { this.ticketTransferAllowed = ticketTransferAllowed; }
+    public Double getAverageRating() { return averageRating; }
+    public void setAverageRating(Double averageRating) { this.averageRating = averageRating; }
+    public Long getReviewCount() { return reviewCount; }
+    public void setReviewCount(Long reviewCount) { this.reviewCount = reviewCount; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public List<ActivityArtistDto> getArtists() { return artists; }

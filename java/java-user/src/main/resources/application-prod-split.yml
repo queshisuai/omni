@@ -6,25 +6,25 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/omni_user}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
-    password: ${SPRING_DATASOURCE_PASSWORD:123456}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USER:admin}
-    password: ${RABBITMQ_PASSWORD:123456}
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT}
+    username: ${RABBITMQ_USER}
+    password: ${RABBITMQ_PASSWORD}
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+        server-addr: ${NACOS_HOST}:${NACOS_PORT}
       config:
-        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+        server-addr: ${NACOS_HOST}:${NACOS_PORT}
 
 internal:
   api:
-    token: ${INTERNAL_API_TOKEN:omni-local-internal-token}
+    token: ${INTERNAL_API_TOKEN}
 
 omni:
+  grab-service:
+    url: ${GRAB_SERVICE_URL}
   privacy:
     id-no-key: ${OMNI_ID_NO_KEY:omni-local-dev-id-no-key-change-me}
-  grab-service:
-    url: ${GRAB_SERVICE_URL:http://localhost:3001}

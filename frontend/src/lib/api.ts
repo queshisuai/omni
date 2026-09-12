@@ -889,10 +889,40 @@ export async function createActivityQuestion(activityId: number, content: string
   })
 }
 
-export async function listAdminActivityReviews(params: { activityId?: number; status?: number } = {}) {
+type ActivityEngagementListParams = { activityId?: number; status?: number }
+type ActivityEngagementScopedReviewParams = { itemType?: string; status?: number }
+type ActivityEngagementScopedStringStatusParams = { itemType?: string; status?: string }
+
+export async function listAdminActivityEngagements(params: { page?: number; size?: number; keyword?: string; itemType?: string; todoOnly?: boolean } = {}) {
   const search = new URLSearchParams()
-  if (params.activityId) search.set('activityId', String(params.activityId))
-  if (params.status != null) search.set('status', String(params.status))
+  search.set('page', String(params.page || 1))
+  search.set('size', String(params.size || 10))
+  if (params.keyword?.trim()) search.set('keyword', params.keyword.trim())
+  if (params.itemType) search.set('itemType', params.itemType)
+  if (params.todoOnly != null) search.set('todoOnly', String(params.todoOnly))
+  return request<import('@/types/api').PageResult<import('@/types/api').ActivityEngagementOverviewVO>>(
+    `/api/ticket/admin/activity-engagements?${search.toString()}`,
+    undefined,
+    { timeoutMs: CONSOLE_ADMIN_REQUEST_TIMEOUT_MS }
+  )
+}
+
+export function listAdminActivityReviews(params?: ActivityEngagementListParams): Promise<import('@/types/api').ActivityReviewVO[]>
+export function listAdminActivityReviews(activityId: number, params?: ActivityEngagementScopedReviewParams): Promise<import('@/types/api').ActivityReviewVO[]>
+export async function listAdminActivityReviews(
+  activityIdOrParams: number | ActivityEngagementListParams = {},
+  params: ActivityEngagementScopedReviewParams = {}
+) {
+  const search = new URLSearchParams()
+  if (typeof activityIdOrParams === 'number') {
+    assertPositiveInteger(activityIdOrParams, '活动ID')
+    if (params.itemType) search.set('itemType', params.itemType)
+    if (params.status != null) search.set('status', String(params.status))
+    const qs = search.toString()
+    return request<import('@/types/api').ActivityReviewVO[]>(`/api/ticket/admin/activities/${activityIdOrParams}/reviews${qs ? `?${qs}` : ''}`)
+  }
+  if (activityIdOrParams.activityId) search.set('activityId', String(activityIdOrParams.activityId))
+  if (activityIdOrParams.status != null) search.set('status', String(activityIdOrParams.status))
   const qs = search.toString()
   return request<import('@/types/api').ActivityReviewVO[]>(`/api/ticket/admin/activity-engagement/reviews${qs ? `?${qs}` : ''}`)
 }
@@ -906,9 +936,21 @@ export async function moderateAdminActivityReview(reviewId: number, action: 'APP
   })
 }
 
-export async function listAdminActivityReviewReports(status?: string) {
+export function listAdminActivityReviewReports(status?: string): Promise<import('@/types/api').ActivityReviewReportVO[]>
+export function listAdminActivityReviewReports(activityId: number, params?: ActivityEngagementScopedStringStatusParams): Promise<import('@/types/api').ActivityReviewReportVO[]>
+export async function listAdminActivityReviewReports(
+  statusOrActivityId?: string | number,
+  params: ActivityEngagementScopedStringStatusParams = {}
+) {
   const search = new URLSearchParams()
-  if (status) search.set('status', status)
+  if (typeof statusOrActivityId === 'number') {
+    assertPositiveInteger(statusOrActivityId, '活动ID')
+    if (params.itemType) search.set('itemType', params.itemType)
+    if (params.status) search.set('status', params.status)
+    const qs = search.toString()
+    return request<import('@/types/api').ActivityReviewReportVO[]>(`/api/ticket/admin/activities/${statusOrActivityId}/reports${qs ? `?${qs}` : ''}`)
+  }
+  if (statusOrActivityId) search.set('status', statusOrActivityId)
   const qs = search.toString()
   return request<import('@/types/api').ActivityReviewReportVO[]>(`/api/ticket/admin/activity-engagement/review-reports${qs ? `?${qs}` : ''}`)
 }
@@ -922,10 +964,22 @@ export async function moderateAdminActivityReviewReport(reportId: number, action
   })
 }
 
-export async function listAdminActivityQuestions(params: { activityId?: number; status?: string } = {}) {
+export function listAdminActivityQuestions(params?: { activityId?: number; status?: string }): Promise<import('@/types/api').ActivityQuestionVO[]>
+export function listAdminActivityQuestions(activityId: number, params?: ActivityEngagementScopedStringStatusParams): Promise<import('@/types/api').ActivityQuestionVO[]>
+export async function listAdminActivityQuestions(
+  activityIdOrParams: number | { activityId?: number; status?: string } = {},
+  params: ActivityEngagementScopedStringStatusParams = {}
+) {
   const search = new URLSearchParams()
-  if (params.activityId) search.set('activityId', String(params.activityId))
-  if (params.status) search.set('status', params.status)
+  if (typeof activityIdOrParams === 'number') {
+    assertPositiveInteger(activityIdOrParams, '活动ID')
+    if (params.itemType) search.set('itemType', params.itemType)
+    if (params.status) search.set('status', params.status)
+    const qs = search.toString()
+    return request<import('@/types/api').ActivityQuestionVO[]>(`/api/ticket/admin/activities/${activityIdOrParams}/questions${qs ? `?${qs}` : ''}`)
+  }
+  if (activityIdOrParams.activityId) search.set('activityId', String(activityIdOrParams.activityId))
+  if (activityIdOrParams.status) search.set('status', activityIdOrParams.status)
   const qs = search.toString()
   return request<import('@/types/api').ActivityQuestionVO[]>(`/api/ticket/admin/activity-engagement/questions${qs ? `?${qs}` : ''}`)
 }
@@ -935,6 +989,50 @@ export async function moderateAdminActivityQuestion(questionId: number, params: 
   return request<import('@/types/api').ActivityQuestionVO>(`/api/ticket/admin/activity-engagement/questions/${questionId}/moderation`, {
     method: 'POST',
     body: JSON.stringify(params),
+  })
+}
+
+export async function updateAdminActivityReviewStatus(activityId: number, reviewId: number, body: import('@/types/api').ActivityReviewStatusRequest) {
+  assertPositiveInteger(activityId, '活动ID')
+  assertPositiveInteger(reviewId, '评价ID')
+  const { itemType = 'ACTIVITY', ...payload } = body
+  const search = new URLSearchParams({ itemType })
+  return request<import('@/types/api').ActivityReviewVO>(`/api/ticket/admin/activities/${activityId}/reviews/${reviewId}/status?${search.toString()}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function replyAdminActivityQuestion(activityId: number, questionId: number, body: import('@/types/api').ActivityQuestionReplyRequest) {
+  assertPositiveInteger(activityId, '活动ID')
+  assertPositiveInteger(questionId, '问题ID')
+  const { itemType = 'ACTIVITY', ...payload } = body
+  const search = new URLSearchParams({ itemType })
+  return request<import('@/types/api').ActivityQuestionVO>(`/api/ticket/admin/activities/${activityId}/questions/${questionId}/reply?${search.toString()}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateAdminActivityQuestion(activityId: number, questionId: number, body: import('@/types/api').ActivityQuestionUpdateRequest) {
+  assertPositiveInteger(activityId, '活动ID')
+  assertPositiveInteger(questionId, '问题ID')
+  const { itemType = 'ACTIVITY', ...payload } = body
+  const search = new URLSearchParams({ itemType })
+  return request<import('@/types/api').ActivityQuestionVO>(`/api/ticket/admin/activities/${activityId}/questions/${questionId}?${search.toString()}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateAdminActivityReportStatus(activityId: number, reportId: number, body: import('@/types/api').ActivityReviewReportStatusRequest) {
+  assertPositiveInteger(activityId, '活动ID')
+  assertPositiveInteger(reportId, '举报ID')
+  const { itemType = 'ACTIVITY', ...payload } = body
+  const search = new URLSearchParams({ itemType })
+  return request<import('@/types/api').ActivityReviewReportVO>(`/api/ticket/admin/activities/${activityId}/reports/${reportId}/status?${search.toString()}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
   })
 }
 

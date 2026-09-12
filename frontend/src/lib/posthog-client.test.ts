@@ -55,6 +55,7 @@ test('initializes PostHog SDK with privacy safe options and sanitized transport'
       api_host: 'https://us.i.posthog.com',
       autocapture: false,
       capture_pageview: false,
+      capture_performance: false,
       disable_session_recording: true,
       person_profiles: 'never',
     },

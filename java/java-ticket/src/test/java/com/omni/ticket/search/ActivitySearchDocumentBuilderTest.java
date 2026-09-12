@@ -35,6 +35,8 @@ class ActivitySearchDocumentBuilderTest {
         vo.setSeatMapVisibility("published");
         vo.setRealNameRequired(true);
         vo.setTicketTransferAllowed(false);
+        vo.setAverageRating(4.6);
+        vo.setReviewCount(128L);
         vo.setStatus(1);
 
         ActivitySearchDocument document = builder.fromActivityVo(vo);
@@ -56,6 +58,8 @@ class ActivitySearchDocumentBuilderTest {
         assertEquals("published", document.getSeatMapVisibility());
         assertEquals(true, document.getRealNameRequired());
         assertEquals(false, document.getTicketTransferAllowed());
+        assertEquals(Double.valueOf(4.6), document.getAverageRating());
+        assertEquals(Long.valueOf(128L), document.getReviewCount());
         assertEquals("on_sale", document.getSaleStatus());
     }
 
@@ -102,6 +106,8 @@ class ActivitySearchDocumentBuilderTest {
             assertTrue(mapping.contains("\"artistName\""));
             assertTrue(mapping.contains("\"city\""));
             assertTrue(mapping.contains("\"minPrice\""));
+            assertTrue(mapping.contains("\"averageRating\""));
+            assertTrue(mapping.contains("\"reviewCount\""));
             assertTrue(mapping.contains("\"hotScore\""));
         }
     }

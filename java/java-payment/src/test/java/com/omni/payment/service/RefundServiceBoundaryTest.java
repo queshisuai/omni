@@ -417,6 +417,85 @@ class RefundServiceBoundaryTest {
     }
 
     @Test
+    void approveRefundRejectsUnconfirmedAlipayPaymentBeforeCallingChannel() throws Exception {
+        Long refundId = 615L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("100.00"), 0);
+        pending.setUserId(2004L);
+        pending.setPaymentId(91L);
+        pending.setRefundNo("RF-SEED-UNCONFIRMED-1");
+        pending.setRefundType("full");
+        RefundRequest failed = refund(refundId, 10L, new BigDecimal("100.00"), 3);
+        failed.setUserId(2004L);
+        failed.setPaymentId(91L);
+        failed.setRefundNo("RF-SEED-UNCONFIRMED-1");
+        failed.setRefundType("full");
+        failed.setReviewNote("支付流水未经过支付宝真实回执确认，不能发起渠道退款，请选择真实支付订单重新申请退款");
+        failed.setRawResponse("支付流水未经过支付宝真实回执确认，不能发起渠道退款，请选择真实支付订单重新申请退款");
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, failed);
+        OrderInfoResponse order = order(10L, "DM-TEST-615", new BigDecimal("100.00"), 2);
+        order.setUserId(2004L);
+        order.setActivityId(5004L);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        Payment unconfirmedPayment = successPayment(order);
+        unconfirmedPayment.setId(91L);
+        unconfirmedPayment.setPaymentNo("PAYREAL984006");
+        unconfirmedPayment.setTradeNo("ALI-REAL-980006");
+        unconfirmedPayment.setRawNotify(null);
+        unconfirmedPayment.setCallbackData(null);
+        when(paymentMapper.selectById(91L)).thenReturn(unconfirmedPayment);
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+
+        RefundRequestVO result = service.approve(refundId, reviewerId, "同意退款");
+
+        assertEquals(3, result.getStatus());
+        assertTrue(result.getReviewNote().contains("支付流水未经过支付宝真实回执确认，不能发起渠道退款，请选择真实支付订单重新申请退款"));
+        verify(alipayClient, never()).execute(any(AlipayTradeRefundRequest.class));
+        verify(refundRequestMapper).update(any(), any());
+        verify(orderClient, never()).markRefunded(anyLong(), anyString());
+    }
+
+    @Test
+    void approveRefundMapsRuntimeExceptionFromAlipayToUnknownResult() throws Exception {
+        Long refundId = 614L;
+        Long reviewerId = 2002L;
+        RefundRequest pending = refund(refundId, 10L, new BigDecimal("100.00"), 0);
+        pending.setUserId(2004L);
+        pending.setPaymentId(90L);
+        pending.setRefundNo("RF-UNKNOWN-RUNTIME-1");
+        pending.setRefundType("full");
+        RefundRequest processing = refund(refundId, 10L, new BigDecimal("100.00"), 4);
+        processing.setUserId(2004L);
+        processing.setPaymentId(90L);
+        processing.setRefundNo("RF-UNKNOWN-RUNTIME-1");
+        processing.setRefundType("full");
+        RefundRequest unknown = refund(refundId, 10L, new BigDecimal("100.00"), 4);
+        unknown.setUserId(2004L);
+        unknown.setPaymentId(90L);
+        unknown.setRefundNo("RF-UNKNOWN-RUNTIME-1");
+        unknown.setRefundType("full");
+        when(refundRequestMapper.selectById(refundId)).thenReturn(pending, processing, unknown);
+        OrderInfoResponse order = order(10L, "DM-TEST-614", new BigDecimal("100.00"), 2);
+        order.setUserId(2004L);
+        order.setActivityId(5005L);
+        when(orderClient.getOrder(10L, "test-internal-token")).thenReturn(Result.success(order));
+        when(userInternalClient.getUserRef(reviewerId, "test-internal-token"))
+                .thenReturn(Result.success(adminUser(reviewerId)));
+        when(paymentMapper.selectById(90L)).thenReturn(successPayment(order));
+        when(refundRequestMapper.update(any(), any())).thenReturn(1);
+        when(alipayClient.execute(any(AlipayTradeRefundRequest.class))).thenThrow(new RuntimeException("connection reset"));
+
+        RefundRequestVO result = service.approve(refundId, reviewerId, "同意退款");
+
+        assertEquals(4, result.getStatus());
+        NotificationEventMessage event = captureRefundEvent();
+        assertRefundEvent(event, "REFUND_UNKNOWN", refundId, 10L, 2004L, 5005L);
+        verify(orderClient, never()).markRefunded(anyLong(), anyString());
+    }
+
+    @Test
     void approveRefundPublishesCompensationRequiredNotificationEventWhenOrderUpdateFailsAfterAlipaySuccess() throws Exception {
         Long refundId = 613L;
         Long reviewerId = 2002L;
@@ -815,6 +894,9 @@ class RefundServiceBoundaryTest {
         payment.setTradeNo("ALI-TRADE-1");
         payment.setAmount(order.getAmount());
         payment.setStatus(PaymentService.STATUS_SUCCESS);
+        payment.setPaymentMethod("ALIPAY");
+        payment.setRawNotify("{\"trade_status\":\"TRADE_SUCCESS\",\"trade_no\":\"ALI-TRADE-1\"}");
+        payment.setCallbackData("{\"trade_status\":\"TRADE_SUCCESS\",\"trade_no\":\"ALI-TRADE-1\"}");
         return payment;
     }
 

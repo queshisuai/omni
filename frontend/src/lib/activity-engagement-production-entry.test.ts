@@ -64,20 +64,48 @@ test('activity engagement report moderation protects unknown statuses from write
   assert.match(source, /状态待核对/)
 })
 
-test('activity engagement page preloads all pending tab badges on mount', () => {
-  assert.match(source, /const \[badgeCounts, setBadgeCounts\] = useState/)
-  assert.match(source, /const loadTabBadges = useCallback\(async \(\) => \{[\s\S]*Promise\.allSettled\(\[/)
-  assert.match(source, /listAdminActivityReviews\(\{ status: 0 \}\)/)
-  assert.match(source, /listAdminActivityReviewReports\('PENDING'\)/)
-  assert.match(source, /listAdminActivityQuestions\(\{ status: 'PENDING' \}\)/)
-  assert.match(source, /useEffect\(\(\) => \{\s*void loadTabBadges\(\)\s*\}, \[loadTabBadges\]\)/)
-  assert.match(source, /count: badgeCounts\.reviews/)
-  assert.match(source, /count: badgeCounts\.reports/)
-  assert.match(source, /count: badgeCounts\.questions/)
+test('activity engagement page renders activity aggregate table with filters and shared pagination', () => {
+  assert.match(source, /listAdminActivityEngagements/)
+  assert.match(source, /GlobalPagination/)
+  assert.match(source, /活动关键字/)
+  assert.match(source, /普通活动/)
+  assert.match(source, /大型巡演/)
+  assert.match(source, /仅看有待办/)
+  assert.match(source, /待审核数/)
+  assert.match(source, /待回复数/)
+  assert.match(source, /举报待办数/)
+  assert.match(source, /管理互动/)
 })
 
-test('activity engagement moderation refreshes tab badges after every successful action', () => {
-  assert.match(source, /await loadReviews\(\)\s*await loadTabBadges\(\)/)
-  assert.match(source, /await loadReports\(\)\s*await loadTabBadges\(\)/)
-  assert.match(source, /await loadQuestions\(\)\s*await loadTabBadges\(\)/)
+test('activity engagement drawer loads activity scoped tabs', () => {
+  assert.match(source, /Drawer/)
+  assert.match(source, /selectedTarget/)
+  assert.match(source, /购前问答/)
+  assert.match(source, /评价管理（先审后发）/)
+  assert.match(source, /违规举报/)
+  assert.match(source, /listAdminActivityQuestions\(selectedTarget\.targetId/)
+  assert.match(source, /listAdminActivityReviews\(selectedTarget\.targetId/)
+  assert.match(source, /listAdminActivityReviewReports\(selectedTarget\.targetId/)
+  assert.match(source, /当前前台评分/)
+})
+
+test('activity engagement page requires audit reason for destructive super admin actions', () => {
+  assert.match(source, /auditModal/)
+  assert.match(source, /操作原因\/备注/)
+  assert.match(source, /请填写操作原因\/备注/)
+  assert.match(source, /updateAdminActivityQuestion/)
+  assert.match(source, /updateAdminActivityReviewStatus/)
+  assert.match(source, /updateAdminActivityReportStatus/)
+})
+
+test('activity engagement question replies expose Chinese identity choices', () => {
+  assert.match(source, /OFFICIAL_SUPPORT/)
+  assert.match(source, /ORGANIZER_PROXY/)
+  assert.match(source, /平台官方客服/)
+  assert.match(source, /代主办方/)
+})
+
+test('activity engagement page keeps request wrapper and avoids axios', () => {
+  assert.doesNotMatch(source, /axios/i)
+  assert.match(source, /@\/lib\/api/)
 })

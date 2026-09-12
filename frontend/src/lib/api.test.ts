@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, addSupportNote, batchReviewRefunds, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, manualCheckInTicket, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, removeTeamGrabMember, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateSupportTags } from './api.ts'
+import { ApiError, addSupportNote, batchReviewRefunds, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityEngagements, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, manualCheckInTicket, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, removeTeamGrabMember, replyAdminActivityQuestion, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateAdminActivityQuestion, updateAdminActivityReportStatus, updateAdminActivityReviewStatus, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateSupportTags } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -586,6 +586,49 @@ test('loads and moderates admin activity engagement endpoints', async () => {
       ['/api/ticket/admin/activity-engagement/review-reports/9/moderation', 'POST', JSON.stringify({ action: 'RESOLVE', note: '已隐藏' })],
       ['/api/ticket/admin/activity-engagement/questions?activityId=10&status=PENDING', 'GET', ''],
       ['/api/ticket/admin/activity-engagement/questions/3/moderation', 'POST', JSON.stringify({ action: 'ANSWER', answer: '19:00 开始检票' })],
+    ])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads activity-scoped engagement management endpoints for drawer workflow', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    requested.push({ url, method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    const data = url.includes('/activity-engagements')
+      ? { records: [{ targetId: 10, targetType: 'ACTIVITY', activityName: '测试演出', pendingReviewCount: 1 }], total: 1, size: 20, current: 2, pages: 1 }
+      : url.includes('/reports')
+        ? [{ id: 9, reviewId: 77, activityId: 10, status: 'PENDING' }]
+        : url.includes('/questions')
+          ? { id: 3, activityId: 10, userId: 2004, content: '几点检票', status: 'ANSWERED', replyIdentity: 'OFFICIAL_SUPPORT' }
+          : { id: 77, activityId: 10, userId: 2004, rating: 5, status: 1 }
+    return new Response(JSON.stringify({ code: 200, message: '成功', data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    await listAdminActivityEngagements({ page: 2, size: 20, keyword: '周杰伦', itemType: 'TOUR', todoOnly: true })
+    await listAdminActivityReviews(10, { itemType: 'ACTIVITY', status: 0 })
+    await updateAdminActivityReviewStatus(10, 77, { itemType: 'ACTIVITY', status: 1 })
+    await updateAdminActivityReviewStatus(10, 77, { itemType: 'ACTIVITY', status: 2, reason: '评价包含违规内容' })
+    await listAdminActivityQuestions(10, { itemType: 'ACTIVITY', status: 'PENDING' })
+    await replyAdminActivityQuestion(10, 3, { itemType: 'ACTIVITY', answer: '19:00 开始检票', replyIdentity: 'OFFICIAL_SUPPORT' })
+    await updateAdminActivityQuestion(10, 3, { itemType: 'ACTIVITY', answer: '请以现场公告为准', status: 'HIDDEN', reason: '主办方回复需改写' })
+    await listAdminActivityReviewReports(10, { itemType: 'ACTIVITY', status: 'PENDING' })
+    await updateAdminActivityReportStatus(10, 9, { itemType: 'ACTIVITY', action: 'RESOLVE', reason: '确认违规并隐藏' })
+
+    assert.deepEqual(requested.map(item => [item.url, item.method, item.body]), [
+      ['/api/ticket/admin/activity-engagements?page=2&size=20&keyword=%E5%91%A8%E6%9D%B0%E4%BC%A6&itemType=TOUR&todoOnly=true', 'GET', ''],
+      ['/api/ticket/admin/activities/10/reviews?itemType=ACTIVITY&status=0', 'GET', ''],
+      ['/api/ticket/admin/activities/10/reviews/77/status?itemType=ACTIVITY', 'PUT', JSON.stringify({ status: 1 })],
+      ['/api/ticket/admin/activities/10/reviews/77/status?itemType=ACTIVITY', 'PUT', JSON.stringify({ status: 2, reason: '评价包含违规内容' })],
+      ['/api/ticket/admin/activities/10/questions?itemType=ACTIVITY&status=PENDING', 'GET', ''],
+      ['/api/ticket/admin/activities/10/questions/3/reply?itemType=ACTIVITY', 'POST', JSON.stringify({ answer: '19:00 开始检票', replyIdentity: 'OFFICIAL_SUPPORT' })],
+      ['/api/ticket/admin/activities/10/questions/3?itemType=ACTIVITY', 'PUT', JSON.stringify({ answer: '请以现场公告为准', status: 'HIDDEN', reason: '主办方回复需改写' })],
+      ['/api/ticket/admin/activities/10/reports?itemType=ACTIVITY&status=PENDING', 'GET', ''],
+      ['/api/ticket/admin/activities/10/reports/9/status?itemType=ACTIVITY', 'PUT', JSON.stringify({ action: 'RESOLVE', reason: '确认违规并隐藏' })],
     ])
   } finally {
     globalThis.fetch = originalFetch

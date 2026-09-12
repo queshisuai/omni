@@ -1,5 +1,14 @@
 # Implementation Notes
 
+## 2026-09-09 退款真实交易链路修复
+
+- 根因校正：用户已接入支付宝沙箱并完成真实支付；本地 `payment.id=984058 / order_id=980058` 有真实 `trade_no=2026061122001424640509936851`、`buyer_id=2088722102024642` 和支付宝回执。前一轮把问题归结为“未配置支付宝”不准确。
+- 真实退款不可达原因：报错入口审核的是 `refund_request.id=985009 / REFREAL985009`，它绑定 `payment.id=984006 / DMREAL980006 / ALI-REAL-980006`，该流水来自 `sql/seeds/prod-split-real-demo/03-payment.sql` seed，`raw_notify/callback_data` 为空，不是支付宝真实支付回传交易；真实沙箱支付 `984058 / order 980058` 当前没有对应退款申请。
+- 修复：`RefundService` 新增支付宝可退流水校验，要求 `payment_method=ALIPAY` 且 `raw_notify` 或 `callback_data` 中包含支付宝 `trade_no` 回执；C 端申请退款和内部直接退款会拒绝 seed/伪成功流水，后台审核遇到此类申请会落为 `REFUND_STATUS_FAILED(status=3)` 并返回原因，不再调用 Alipay 真实退款接口。
+- 保留修复：`RefundService.approve()` 对真实 Alipay 调用仍捕获 `AlipayApiException` 与渠道 `RuntimeException`，统一落到“退款结果未知，请稍后重试/查询”，避免渠道异常冒泡为 HTTP 500；成功后订单回写失败仍进入人工补偿分支。
+- 偏离说明：没有重新 POST `POST /api/payment/refunds/985009/approve` 或调用支付宝退款接口，因为审核同意会产生真实退款副作用；当前只做只读 DB 取证和自动化测试。
+- 验证：只读 DB 确认 `985009` 绑定的 `984006` 没有支付宝回执，`984058` 有真实回执但无退款申请；新增 `RefundServiceBoundaryTest.approveRefundRejectsUnconfirmedAlipayPaymentBeforeCallingChannel` 并按红绿验证通过，随后 `mvn -pl java-payment "-Dtest=RefundServiceBoundaryTest,RefundControllerTest" test` 通过 30 项，`mvn -pl java-payment test` 通过 99 项。
+
 ## 2026-09-08 退款审核表格 7 列瘦身
 
 - 根因：`frontend/src/app/console/refunds/page.tsx` 仍按 10 列渲染退款编号、订单与活动、用户编号、状态、申请时间、审核备注/时间等独立列，固定表格在 1080P 宽度下压缩到最右侧操作列不可见。
@@ -358,3 +367,60 @@
 - Seed 偏离补齐：`sql/seeds/prod-split-real-demo/01-ticket.sql` 已移除 `930001~930012` 场馆插入块；苏州、天津场馆改为省略主键并通过 `venue_id_seq` 生成，再由临时映射表供区域和场次引用。座位生成条件收窄到本 seed 自有区域 `940001~940036`，避免重复扫基础场馆模板。
 
 - 数据库执行：2026-09-07 已在本地 `omni_ticket_split` 执行 `20260611_venue_id_cleanup.sql` 与 `20260610_artist_avatar_backfill.sql`。12 条高位场馆及其 `session`、`session_seat`、`venue_area`、`venue_seat`、`venue_default_layout`、`station_config_version`、`venue_application` 引用均已迁移或清理；`venue_id_seq=15`。18 个目标艺人头像字段已回填为 `/avatars/artists/*.webp`，对应 18 个静态文件存在，空头像数量为 0。
+
+## 2026-09-09 Seed 伪交易退款审核单清理
+
+- 根因与范围：`refund_request.id=985009 / REFREAL985009` 绑定 `payment.id=984006 / PAYREAL984006 / DMREAL980006 / ALI-REAL-980006`，该支付流水没有 `raw_notify` / `callback_data` 渠道回执；关联假订单为 `order.id=980006 / DMREAL980006`。
+- 关联排查：`omni_order` 命中 `order_snapshot=1`、`order_seat=1`、`electronic_ticket=1`，未命中 `ticket_transfer`、`order_attendee`、`ticket_check_in_record`；`omni_grab` 命中 `waitlist_entry=1`、`waitlist_offer=1`；`omni_user` 命中 `support_conversation=1`、`support_message=1`、`support_conversation_audit=1`；`omni_ticket_split` 和 `omni_notification` 未命中目标占用或通知。
+- 保护对象：真实沙箱 `payment.id=984058 / order_id=980058 / trade_no=2026061122001424640509936851` 与 `order.id=980058` 在 dry-run 中均为 1，清理脚本不以这些 ID 为删除条件。
+- 脚本：新增并执行 `scripts/cleanup-seed-refund-985009.ps1 -Execute`；脚本默认 dry-run，内置本机库保护、目标主键/单号 guard、每库事务和执行后复核。
+- 执行结果：目标 `refund_request/payment/order/order_snapshot/order_seat/electronic_ticket/waitlist_entry/waitlist_offer/support_conversation/support_message/support_conversation_audit` 均清理为 0；真实沙箱 `payment=984058` 与 `order=980058` 仍为 1。
+- 页面/API 验证：`GET /api/payment/refunds/admin` 返回 200 且目标命中 0；`GET /api/ticket/admin/orders?paidOnly=false` 返回 200 且目标命中 0、真实订单 `DM202606110047432ACEBE` 命中 1；浏览器 `/console/refunds` 无 `REFREAL985009/DMREAL980006`，`/console/orders` 搜 `DMREAL980006` 为 0，搜真实订单为 1。
+
+## 2026-09-09 Seed 伪交易全面清理
+
+- 范围口径：新增 `scripts/cleanup-seed-transactions.ps1`，默认 dry-run，只在显式 `-Execute` 时删除；候选覆盖 `PAYSEED/DMSEED/ALI-SEED`、`PAYREAL/DMREAL/ALI-REAL`、`SEED-`、`MOCK-` 前缀，以及成功但缺失有效支付宝回执的 Alipay 支付。
+- 保护对象：脚本启动时强制确认真实沙箱 `payment.id=984058 / order_id=980058` 存在真实支付宝回执、`order.id=980058 / DM202606110047432ACEBE` 存在，且候选集不得包含这些 ID。
+- dry-run 候选：`payment=56`、`refund_request=9`、`order=56`、`order_snapshot=56`、`order_seat=50`、`electronic_ticket=26`、`ticket_check_in_record=3`，候选中不含已清理的 `984006/980006/985009`，也不含真实沙箱 `984058/980058`。
+- 跨库关联：`omni_ticket_split` 命中 `session_seat.order_id=1`、`activity_review=3`、`stock_log=0`；`omni_grab` 命中 `waitlist_entry=13`、`waitlist_offer=13`、`waitlist_allocation_log=14`；`omni_notification` 命中 `notification=2`；`omni_user` 命中 `exception_task=3`、`reconciliation_detail=2`、`reconciliation_difference=1`、`support_conversation=1`、`support_message=5`、`support_conversation_note=1`、`support_conversation_audit=3`、`support_conversation_tag=3`。
+- 偏离说明：物理拆库下 PostgreSQL 不能在五个独立 database 之间提供单个 ACID 事务；脚本采用每库独立事务、统一候选集、先外围后核心删除、幂等可重跑策略。库存侧只释放实际命中的 `session_seat.order_id`，不盲目调整 `ticket_type.remain_stock`。
+- 执行偏离：首次 `-Execute` 在 `omni_ticket_split` 删除 `activity_review` 时被 `activity_review_report.review_id` 外键拦截；此时 `omni_user`、`omni_notification`、`omni_grab` 外围库已清理提交，核心 `omni_payment` 和 `omni_order` 尚未执行。已补齐脚本先删 `activity_review_report` 再删 `activity_review`，随后幂等重跑成功。
+- 执行结果：`payment=0`、`refund_request=0`、`order=0`、`order_snapshot=0`、`order_seat=0`、`electronic_ticket=0`、`ticket_check_in_record=0`、`session_seat.order_id=0`、`activity_review=0`、`activity_review_report=0`、`waitlist/grab/notification/user` 关联残留均为 0；真实沙箱 `payment=984058` 与 `order=980058` 均仍为 1。
+- API 验证：`GET /api/payment/refunds/admin` 返回 `code=200` 且 seed 退款命中 0；`GET /api/ticket/admin/orders?paidOnly=false` 返回 `code=200` 且 seed 订单命中 0、真实订单 `DM202606110047432ACEBE` 命中 1。
+- 全局残留扫描：`omni_payment`、`omni_order`、`omni_ticket_split`、`omni_grab`、`omni_notification`、`omni_user` 对 `DMREAL9800/DMSEED/PAYREAL9840/PAYSEED/REFREAL9850/REFSEED/ETREAL9830/ETSEED/ALI-REAL-/ALI-SEED-/MOCK-` 和 seed 订单 ID 区间的运行库扫描均为 0。
+
+## 2026-09-09 孤立退款订单 625 清理
+
+- 根因：`订单综合查询` 的“已退款 2”来自 `omni_order."order".status=4` 计数；`退款审核` 只展示 `omni_payment.refund_request`。其中 `order.id=625 / DM20260531180231071182` 为 `status=4`，但 `omni_payment.payment` 与 `refund_request` 均无对应记录，不是可追溯的真实支付退款链路。
+- 处理口径：不补造支付或退款单；按脏数据清理 `order.id=625`，并一并清理其由 `refund:625:session:3:ticket-type:8:quantity:1` 派生的候补过期订单 `order.id=629 / DM20260531192147184F55`，避免保留 source_order 引用。
+- 脚本：新增并执行 `scripts/cleanup-isolated-order-625.ps1 -Execute`；脚本默认 dry-run，执行前强制确认 `625/629` 无支付、无退款，且真实沙箱 `payment=984058 / order=980058` 仍存在。
+- 执行结果：删除 `omni_order` 中 `order=2`、`order_snapshot=2`、`order_seat=2`、`order_attendee=2`；删除 `omni_grab` 中 `waitlist_entry=3`、`waitlist_offer=2`、`waitlist_allocation_log=6`；删除 `omni_notification.notification=4`；`omni_payment` 无需删除，`omni_ticket_split` 仅防御性释放目标座位。
+- 验证：脚本重跑 dry-run 显示目标关联均为 0；DB 状态分布为 `已支付(status=2)=5`、`已退款(status=4)=1`、`已取消(status=3)=623`；后台 API `GET /api/payment/refunds/admin` 返回 1 条，`GET /api/ticket/admin/orders?paidOnly=false` 返回 `paid=5/refunded=1/cancelled=623`，且 `625/629` 命中 0、真实订单 `980058` 命中 1。
+
+## 2026-09-11 PostHog Web Vitals INP 空 entries 报错
+
+- 根因：`reportAllChanges` / `entryGroupId` / `name: "INP"` 未在项目源码中出现；构建产物和本地依赖定位到 `posthog-js@1.383.2` 的 `web-vitals-with-attribution` bundle。该 bundle 在 INP attribution 上报路径中直接访问 `t.entries[0].startTime` / `interactionId`，当首屏或路由切换尚无真实交互条目时会抛出 `Cannot read properties of undefined (reading 'startTime')`。
+- 修复：`frontend/src/lib/posthog-client.ts` 初始化 PostHog 时显式传入 `capture_performance: false`，覆盖 PostHog 远端 `capturePerformance.web_vitals` 配置，避免加载 Web Vitals / attribution 性能探针；保留手动业务埋点、关闭 `autocapture`、关闭 pageview 和 session recording 的既有策略。
+- 回归测试：`frontend/src/lib/posthog-client.test.ts` 增加初始化参数断言，确保即使环境变量开启 PostHog 相关能力，客户端仍不会启用自动性能采集。
+
+## 2026-09-11 后台评价问答方案 A 抽屉重构
+
+- 前端范围：`/console/activity-engagement` 从全局平铺三 Tab 改为活动/巡演聚合主表 + 右侧 Drawer 详情；主表接入 `GlobalPagination`，支持活动关键字、普通活动/大型巡演、仅看待办筛选；抽屉内保留购前问答、评价管理（先审后发）、违规举报三类工作台。
+- 管理闭环：问答回复新增 `OFFICIAL_SUPPORT` / `ORGANIZER_PROXY` 回复主体；改写回复、下架问答、驳回/隐藏评价、确认违规隐藏内容均通过操作留痕弹窗强制填写“操作原因/备注”后提交。
+- 后端范围：`java-ticket` 新增活动维度互动概览和 activity-scoped 管理接口，所有后台入口统一走 `UserAccessService.requirePermission(userId, "activity.review.manage")`；审计通过 `java-user` internal API 写入 `operation_audit_log`，不新增跨库 mapper 或 join。
+- ES 联动：评价状态变为公开/隐藏，以及举报确认违规隐藏评价后，均触发 `ActivitySearchIndexEventPublisher.publishUpsert(activityId)`；ES 文档和 mapping 新增 `averageRating`、`reviewCount`，由公开评价实时重算。
+- 数据库资产：新增 `activity_question.reply_identity` 幂等迁移，生产拆库迁移位于 `sql/production-split/ticket/20260613_activity_engagement_drawer.sql`，本地共享迁移位于 `sql/migrations/shared/20260613_activity_engagement_drawer.sql`。已在本地 `omni_ticket_split` 执行迁移，`activity_question.reply_identity` 存在，已回复但未回填身份的记录数为 0。
+- 验收偏离：`verify-microservice-boundaries.ps1` 首次被既有 prod-split 本地 fallback 拦截；已将 `java-user`、`java-ticket`、`java-order`、`java-payment`、`java-notification` 的生产占位符调整为显式环境变量，保留 `start-project.ps1` 注入本地默认值的运行方式。
+
+## 2026-09-11 评价问答管理 404 启动态排障
+
+- 根因：`:3000/api/ticket/admin/activity-engagements` 的 404 不是前端代理丢路由；3000 前端代理、8088 Gateway、8082 `java-ticket` 均返回同一路径 404。旧路径 `/api/ticket/admin/activity-engagement/reviews` 能返回业务 JSON，说明运行中的 `java-ticket` 仍是未暴露新聚合接口的旧/失败启动状态。
+- 启动失败证据：IDEA 粘贴日志显示 `TicketApplication` 在加载 `prod-split` 时因 `Could not resolve placeholder 'SEATA_ENABLED' in value "${SEATA_ENABLED}"` 失败；截图中除 Gateway 外多个 Spring Boot 服务处于失败态。
+- 本地修复：不回退 `application-prod-split.yml` 的显式环境变量要求；改为在本机 `.idea/workspace.xml` 的 Spring Boot 配置补充 `PROGRAM_PARAMETERS`，显式传入本地拆库、Nacos、RabbitMQ、Seata、ES、Alipay 占位参数，并清理 RunDashboard 的失败状态展示。
+- 验证：用显式本地参数临时启动 `java-ticket` 后，`GET /api/ticket/admin/activity-engagements?page=1&size=10&todoOnly=false` 直连 8082、经 8088 Gateway、经 3000 前端代理均从 HTTP 404 变为业务层 `401 未认证`；再用本地 admin 登录态经 3000 调用该接口返回 `code=200`、`total=154`、`records=10`。
+
+## 2026-09-12 IDEA prod-split 直接启动缺环境变量
+
+- 根因：`prod-split` 已按生产安全要求移除本地 fallback；IDEA 从 main 方法或新生成 Run Configuration 直接启动时不会经过 `start-project.ps1`，因此 `java-user` 在创建 `GrabOpsSummaryClient` 时解析不到 `GRAB_SERVICE_URL`，其他业务服务也会陆续缺 Nacos、RabbitMQ、Seata、ES、Alipay 或 JWT 变量。
+- 修复：新增 `LocalProdSplitDefaults`，仅在 `prod-split` 且本地 `target/classes` 启动时向 `SpringApplication` 注入本地默认值；六个 Java 入口统一先应用该本地兜底再启动。jar/生产启动不注入，本地脚本和显式环境变量仍保持最高优先级。
+- 验证：新增 `LocalProdSplitDefaultsTest` 覆盖 user/ticket/payment 本地默认值、非 `prod-split` 跳过、jar 启动跳过和显式变量不覆盖；`java-common` 定向测试通过，六个 Java 模块编译通过，生产默认值守护脚本通过。额外清空 `GRAB_SERVICE_URL` 等变量后用 `prod-split` 启动 `java-user`，已越过原 Feign 占位符解析阶段，当前 shell 验证止于本机 Tomcat loopback 异常。

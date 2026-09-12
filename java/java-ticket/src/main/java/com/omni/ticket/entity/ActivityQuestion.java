@@ -1,6 +1,7 @@
 package com.omni.ticket.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -15,6 +16,8 @@ public class ActivityQuestion {
     private String content;
     private String answer;
     private Long answeredBy;
+    @TableField("reply_identity")
+    private String replyIdentity;
     private String status;
     private LocalDateTime createTime;
     private LocalDateTime answeredAt;
@@ -31,6 +34,8 @@ public class ActivityQuestion {
     public void setAnswer(String answer) { this.answer = answer; }
     public Long getAnsweredBy() { return answeredBy; }
     public void setAnsweredBy(Long answeredBy) { this.answeredBy = answeredBy; }
+    public String getReplyIdentity() { return replyIdentity; }
+    public void setReplyIdentity(String replyIdentity) { this.replyIdentity = replyIdentity; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public LocalDateTime getCreateTime() { return createTime; }

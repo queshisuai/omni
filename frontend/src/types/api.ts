@@ -541,6 +541,8 @@ export interface ActivityVO {
   realNameRequired?: boolean | null
   ticketTransferAllowed?: boolean | null
   artists?: ActivityArtistVO[]
+  averageRating?: number | null
+  reviewCount?: number | null
 }
 
 export type SearchTrendingTagType = 'BURST' | 'HOT' | 'NEW' | 'NONE' | string
@@ -591,6 +593,8 @@ export interface ActivityEntity {
   ticketTransferAllowed?: boolean | null
   status: number
   createTime: string
+  averageRating?: number | null
+  reviewCount?: number | null
 }
 
 export interface DeleteActivityResponse {
@@ -1682,6 +1686,7 @@ export interface ActivityQuestionVO {
   content: string
   answer?: string | null
   answeredBy?: number | null
+  replyIdentity?: 'OFFICIAL_SUPPORT' | 'ORGANIZER_PROXY' | string | null
   status: 'PENDING' | 'ANSWERED' | 'HIDDEN' | string
   createTime?: string | null
   answeredAt?: string | null
@@ -1690,6 +1695,54 @@ export interface ActivityQuestionVO {
 export interface ActivityQuestionModerationRequest {
   action: 'ANSWER' | 'HIDE' | 'RESTORE'
   answer?: string | null
+}
+
+export type ActivityEngagementTargetType = 'ACTIVITY' | 'TOUR' | string
+
+export interface ActivityEngagementOverviewVO {
+  targetId: number
+  targetType: ActivityEngagementTargetType
+  activityName: string
+  poster?: string | null
+  organizerId?: number | null
+  organizerName?: string | null
+  pendingReviewCount?: number | null
+  publishedReviewCount?: number | null
+  hiddenReviewCount?: number | null
+  totalReviewCount?: number | null
+  pendingQuestionCount?: number | null
+  answeredQuestionCount?: number | null
+  hiddenQuestionCount?: number | null
+  totalQuestionCount?: number | null
+  pendingReportCount?: number | null
+  totalReportCount?: number | null
+  averageRating?: number | null
+}
+
+export interface ActivityQuestionReplyRequest {
+  itemType?: ActivityEngagementTargetType
+  answer: string
+  replyIdentity: 'OFFICIAL_SUPPORT' | 'ORGANIZER_PROXY'
+}
+
+export interface ActivityQuestionUpdateRequest {
+  itemType?: ActivityEngagementTargetType
+  answer?: string | null
+  replyIdentity?: 'OFFICIAL_SUPPORT' | 'ORGANIZER_PROXY' | null
+  status?: 'PENDING' | 'ANSWERED' | 'HIDDEN' | string | null
+  reason: string
+}
+
+export interface ActivityReviewStatusRequest {
+  itemType?: ActivityEngagementTargetType
+  status: number
+  reason?: string | null
+}
+
+export interface ActivityReviewReportStatusRequest {
+  itemType?: ActivityEngagementTargetType
+  action: 'RESOLVE' | 'HIDE' | 'REJECT'
+  reason?: string | null
 }
 
 /** 预约 */

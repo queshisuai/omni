@@ -76,6 +76,8 @@ public class RefundService {
     private static final String DIRECT_REFUND_STATUS_FAILED = "FAILED";
     private static final String DIRECT_REFUND_STATUS_UNKNOWN = "UNKNOWN";
     private static final String DIRECT_REFUND_STATUS_COMPENSATION_REQUIRED = "COMPENSATION_REQUIRED";
+    private static final String ALIPAY_UNCONFIRMED_REFUND_MESSAGE =
+            "支付流水未经过支付宝真实回执确认，不能发起渠道退款，请选择真实支付订单重新申请退款";
 
     private final AlipayProperties alipayProperties;
     private final OrderClient orderClient;
@@ -175,6 +177,7 @@ public class RefundService {
 
         Payment payment = getLatestSuccessfulPayment(order.getOrderNo());
         validatePaymentForOrder(payment, order);
+        requireAlipayRefundablePayment(payment);
 
         if (hasBlockingRefund(orderId)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "该订单已有退款申请，不允许重复申请");
@@ -303,6 +306,12 @@ public class RefundService {
 
         Payment payment = getPaymentOrThrow(refund.getPaymentId(), order.getOrderNo());
         validatePaymentForOrder(payment, order);
+        if (!isAlipayRefundablePayment(payment)) {
+            LocalDateTime now = LocalDateTime.now();
+            markRefundValidationFailed(refund, reviewerId, appendMessage(reviewNote, ALIPAY_UNCONFIRMED_REFUND_MESSAGE),
+                    ALIPAY_UNCONFIRMED_REFUND_MESSAGE, now);
+            return toVO(getRefundOrThrow(refundId), order);
+        }
         validateRefundAmount(refund, order);
         validatePartialRefundBeforeAlipay(refund, reviewerId, reviewNote);
 
@@ -323,37 +332,38 @@ public class RefundService {
         bizContent.put("refund_reason", StringUtils.hasText(refund.getReason()) ? refund.getReason() : "用户申请退款");
         request.setBizContent(buildJson(bizContent));
 
+        AlipayTradeRefundResponse response;
         try {
-            AlipayTradeRefundResponse response = callAlipayChannel(() -> createClient().execute(request));
-            if (response != null && response.isSuccess()) {
-                String alipayRefundNo = firstText(response.getTradeNo(), response.getOutTradeNo());
-                try {
-                    markOrderRefundedByType(order.getId(), refund);
-                } catch (RuntimeException e) {
-                    updateRefundCompensationRequired(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), e.getMessage(), now);
-                    sendRefundNotificationEvent("COMPENSATION_REQUIRED", refund, order);
-                    throw new BusinessException(ResultCode.INTERNAL_ERROR,
-                            "支付宝退款已成功，但订单状态更新失败，需人工补偿");
-                }
-                refund = updateRefundSucceeded(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), now);
-                sendRefundNotificationEvent("REFUND_APPROVED", refund, order);
-                return toVO(refund, order);
-            }
-
-            if (response != null && !response.isSuccess()) {
-                refund = updateRefundFailed(refundId, reviewerId, reviewNote, response.getBody(), now);
-            } else {
-                refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款响应为空，退款结果未知，请稍后重试/查询", now);
-            }
-            if (response == null) {
-                sendRefundNotificationEvent("REFUND_UNKNOWN", refund, order);
-            }
-            return toVO(refund, order);
-        } catch (AlipayApiException e) {
-            refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款异常，退款结果未知，请稍后重试/查询: " + e.getMessage(), now);
+            response = callAlipayChannel(() -> createClient().execute(request));
+        } catch (AlipayApiException | RuntimeException e) {
+            refund = updateRefundUnknown(refundId, reviewerId, reviewNote,
+                    "支付宝退款异常，退款结果未知，请稍后重试/查询: " + e.getMessage(), now);
             sendRefundNotificationEvent("REFUND_UNKNOWN", refund, order);
             return toVO(refund, order);
         }
+
+        if (response != null && response.isSuccess()) {
+            String alipayRefundNo = firstText(response.getTradeNo(), response.getOutTradeNo());
+            try {
+                markOrderRefundedByType(order.getId(), refund);
+            } catch (RuntimeException e) {
+                updateRefundCompensationRequired(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), e.getMessage(), now);
+                sendRefundNotificationEvent("COMPENSATION_REQUIRED", refund, order);
+                throw new BusinessException(ResultCode.INTERNAL_ERROR,
+                        "支付宝退款已成功，但订单状态更新失败，需人工补偿");
+            }
+            refund = updateRefundSucceeded(refundId, reviewerId, reviewNote, alipayRefundNo, response.getBody(), now);
+            sendRefundNotificationEvent("REFUND_APPROVED", refund, order);
+            return toVO(refund, order);
+        }
+
+        if (response != null && !response.isSuccess()) {
+            refund = updateRefundFailed(refundId, reviewerId, reviewNote, response.getBody(), now);
+        } else {
+            refund = updateRefundUnknown(refundId, reviewerId, reviewNote, "支付宝退款响应为空，退款结果未知，请稍后重试/查询", now);
+            sendRefundNotificationEvent("REFUND_UNKNOWN", refund, order);
+        }
+        return toVO(refund, order);
     }
 
     public DirectRefundResponse directRefund(Long orderId, String reason) {
@@ -369,6 +379,7 @@ public class RefundService {
 
             Payment payment = getLatestSuccessfulPayment(order.getOrderNo());
             validatePaymentForOrder(payment, order);
+            requireAlipayRefundablePayment(payment);
 
             AlipayTradeRefundRequest request = new AlipayTradeRefundRequest();
             Map<String, String> bizContent = new LinkedHashMap<>();
@@ -874,6 +885,24 @@ public class RefundService {
         if (!amountEquals(payment.getAmount(), order.getAmount())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "支付流水金额与订单金额不一致");
         }
+    }
+
+    private void requireAlipayRefundablePayment(Payment payment) {
+        if (!isAlipayRefundablePayment(payment)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, ALIPAY_UNCONFIRMED_REFUND_MESSAGE);
+        }
+    }
+
+    private boolean isAlipayRefundablePayment(Payment payment) {
+        return payment != null
+                && "ALIPAY".equalsIgnoreCase(payment.getPaymentMethod())
+                && (containsTradeNo(payment.getRawNotify(), payment.getTradeNo())
+                || containsTradeNo(payment.getCallbackData(), payment.getTradeNo()));
+    }
+
+    private boolean containsTradeNo(String payload, String tradeNo) {
+        return StringUtils.hasText(payload) && StringUtils.hasText(tradeNo)
+                && payload.contains("trade_no") && payload.contains(tradeNo);
     }
 
     private void validateRefundAmount(RefundRequest refund, OrderInfoResponse order) {
