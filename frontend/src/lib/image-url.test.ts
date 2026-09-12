@@ -16,6 +16,13 @@ test('keeps absolute http image urls renderable', () => {
   )
 })
 
+test('keeps blob image urls renderable for protected previews', () => {
+  assert.equal(
+    resolveImageSrc('blob:http://localhost:3000/secure-preview'),
+    'blob:http://localhost:3000/secure-preview',
+  )
+})
+
 test('uses shared fallback for missing image urls', () => {
   assert.equal(resolveImageSrc(''), IMAGE_FALLBACK_SRC)
   assert.equal(resolveImageSrc(null), IMAGE_FALLBACK_SRC)

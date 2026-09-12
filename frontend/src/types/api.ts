@@ -1320,20 +1320,43 @@ export interface StationPurchaseDetail {
 export interface VenueEntity {
   id: number
   name: string
+  venueNameEn?: string | null
+  venueType?: string | null
   address: string
   city: string
+  province?: string | null
+  district?: string | null
   capacity?: number | null
   status?: number
 }
 
 export type VenueApplicationStatus = 0 | 1 | 2
+export type VenueApplicationReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+export type VenueApplicationCapacityScale = 'EXTRA_LARGE' | 'LARGE' | 'MEDIUM' | 'SMALL'
+export type VenueApplicationMaterialType = 'FIRE_SAFETY_PERMIT' | 'VENUE_LEASE_AGREEMENT' | 'LEGACY_GENERAL_PROOF'
+
+export interface VenueApplicationMaterialVO {
+  id?: number | null
+  materialType: VenueApplicationMaterialType | string
+  assetId?: number | null
+  note?: string | null
+  validFrom?: string | null
+  validTo?: string | null
+  asset?: PrivateAssetVO | null
+  label: string
+  legacy?: boolean | null
+}
 
 export interface VenueApplicationVO {
   id: number
   applicantId: number
   venueId: number | null
   venueName: string
+  venueNameEn?: string | null
+  venueType?: string | null
   city: string
+  province?: string | null
+  district?: string | null
   address: string
   capacity: number | null
   contactName: string
@@ -1347,6 +1370,10 @@ export interface VenueApplicationVO {
   proofFileUrl?: string | null
   proofAssetId?: number | null
   proofAsset?: PrivateAssetVO | null
+  materials?: VenueApplicationMaterialVO[]
+  legacyProof?: VenueApplicationMaterialVO | null
+  capacityScale?: VenueApplicationCapacityScale | null
+  materialCompleteness?: string | null
   status: VenueApplicationStatus
   reviewerId: number | null
   reviewNote: string | null

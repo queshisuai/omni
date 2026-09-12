@@ -8,7 +8,7 @@
 - 本地数据库迁移已在 `localhost:5432/omni_user` 执行：`organizer_application_material` 已创建，`idx_organizer_application_user_id` 已由唯一索引调整为普通索引；未调用真实冻结、材料上传等有副作用业务接口。
 - 申请材料边界补齐：`BUSINESS_LICENSE`、`ID_CARD_FRONT`、`ID_CARD_BACK` 重复上传会替换旧材料关联并清理旧资产，`OTHER_QUALIFICATION` 保留多材料能力；正式名录的 `followUpOperator` 已在用户域分页前解析运营员和 assignment，避免分页后过滤造成总数与结果错位。
 - java-user 启动失败根因：`OrganizerApplicationService` 同时存在两个 `@Autowired` 构造器，Spring 启动时报 `Invalid autowire-marked constructor`；已保留完整依赖构造器注入，移除 4 参数兼容构造器上的 `@Autowired`，并新增单构造器回归测试。
-- 验证：用户域定向测试 `23/23`、票务域定向测试 `142/142`、前端主办方/API/抽屉测试 `57/57`、`pnpm typecheck`、`verify-microservice-boundaries.ps1`、`check-production-split-sql.ps1`、`check-cross-owner-fks.ps1` 均已通过。
+- 验证：新增构造器回归测试先按 `2 != 1` 红灯复现，再修复为绿灯；用户域定向测试 `24/24` 通过。使用 `prod-split`、临时端口、固定 `D:\Project\omni\runtime\java-tmp` 启动 `java-user`，已看到 `Started UserApplication`，随后停止临时进程。票务域定向测试 `142/142`、前端主办方/API/抽屉测试 `57/57`、`pnpm typecheck`、`verify-microservice-boundaries.ps1`、`check-production-split-sql.ps1`、`check-cross-owner-fks.ps1` 均已通过。
 
 ## 2026-09-09 退款真实交易链路修复
 
@@ -435,3 +435,18 @@
 - 修复：新增 `LocalProdSplitDefaults`，仅在 `prod-split` 且本地 `target/classes` 启动时向 `SpringApplication` 注入本地默认值；六个 Java 入口统一先应用该本地兜底再启动。jar/生产启动不注入，本地脚本和显式环境变量仍保持最高优先级。
 - 验证：新增 `LocalProdSplitDefaultsTest` 覆盖 user/ticket/payment 本地默认值、非 `prod-split` 跳过、jar 启动跳过和显式变量不覆盖；`java-common` 定向测试通过，六个 Java 模块编译通过，生产默认值守护脚本通过。额外清空 `GRAB_SERVICE_URL` 等变量后用 `prod-split` 启动 `java-user`，已越过原 Feign 占位符解析阶段，当前 shell 验证止于本机 Tomcat loopback 异常。
 
+## 2026-09-12 场馆资料审核高密度表格与资质核验闭环
+
+- 数据模型：在 `omni_ticket_split` 增加 `venue_application_material` 关联表，复用 `private_asset`，仅允许 `FIRE_SAFETY_PERMIT` 与 `VENUE_LEASE_AGREEMENT`；`venue_application` 和 `venue` 增加可空的 `venue_name_en`、`venue_type`、`province`、`district` 字段。生产迁移位于 `sql/production-split/ticket/20260912_venue_application_material.sql`，共享 schema 镜像迁移同步维护，并已登记生产 manifest。
+- 历史兼容：保留 `proofAssetId`、`proofFileUrl`、`proofNote` 原字段。VO 组装层把旧单附件映射为 `LEGACY_GENERAL_PROOF`，后台展示“通用审批综合证明材料（历史凭证）”及“包含通用证明（历史数据）”，不会误判为缺少消防或租赁材料；省份、区县、英文名和场馆类型为空时按既定中文回退展示。
+- 后端闭环：`java-ticket` 负责材料绑定、资产元数据组装、城市/关键字/容量梯队/材料完整度服务端分页筛选；审核通过在同一票务库内关联或创建正式 `venue` 快照；驳回强制要求非空 `reviewNote`，并通过 `UserAccessService.writeOperationAudit()` 写入 `VENUE_REVIEW_APPROVE` / `VENUE_REVIEW_REJECT`，未新增跨库 Mapper、Entity 或 SQL Join。
+- 前端闭环：`/console/venue/apply` 支持结构化字段和两类材料上传；`/console/venue/applications` 改为高密度表格，提供状态 Tab、城市快捷切片、容量规模和资质完整度筛选，详情集中到右侧 Drawer；材料图片通过带 `Authorization` 的受保护下载后交给 `SafeImage` 预览，驳回前执行 `reviewNote.trim()` 校验。
+- 兼容修复：扩展 `PrivateAssetService` 的材料类型集合时，针对历史资产缺少 `bizType` 的情况增加 null-safe 判断，避免 `Set.of(...).contains(null)` 抛出 `NullPointerException`，继续返回预期的无权限业务异常。
+- 最终验证：已在本地 `omni_ticket_split` 执行场馆材料迁移；前端场馆相关组合测试 `74/74`、`pnpm typecheck`、场馆 Java 定向测试 `36/36`、私有资产回归测试 `44/44`、`verify-microservice-boundaries.ps1`（含 Java boundary tests）和 `git diff --check` 均通过，未提交或推送 Git。
+
+## 2026-09-12 场馆材料提报与受保护预览 400 修复
+
+- 根因：结构化材料上传后，`/console/venue/apply` 的前端必填校验仍只认可旧 `proofNote` / `proofAsset`，未把 `FIRE_SAFETY_PERMIT` 和 `VENUE_LEASE_AGREEMENT` 资产计入“已提供凭证”，导致只上传新材料的提报仍可能被前端阻断或进入后端 400 排查路径。
+- 修复：提报校验改为同时认可旧通用凭证、消防证明和租赁协议；提交前“附件上传中”阻断与按钮禁用同步覆盖三类上传状态，避免结构化材料未完成上传时提交。
+- 预览兼容：Drawer 受保护材料通过授权下载生成 `blob:` URL 后再交给 `SafeImage`，因此 `resolveImageSrc()` 显式允许 `blob:` 图片地址，同时继续拒绝 `javascript:` 等不安全 scheme，不放开 `data:`。
+- 验证：新增/更新前端回归覆盖结构化材料校验和 `blob:` 预览；`node --test src/lib/venue-application-review.test.ts src/lib/console-modal-drawer-layout.test.ts src/lib/console-production-entry.test.ts src/lib/image-url.test.ts` 通过 79/79，`pnpm typecheck` 通过，`scripts/verify-microservice-boundaries.ps1` 通过。

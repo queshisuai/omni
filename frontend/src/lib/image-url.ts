@@ -17,7 +17,7 @@ export function isRenderableImageSrc(value: string | null | undefined) {
 
   try {
     const url = new URL(src)
-    return url.protocol === 'http:' || url.protocol === 'https:'
+    return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'blob:'
   } catch {
     return false
   }

@@ -33,13 +33,21 @@ export default function VenueApplyPage() {
   const [applications, setApplications] = useState<VenueApplicationVO[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [uploadingProof, setUploadingProof] = useState(false)
+  const [uploadingFire, setUploadingFire] = useState(false)
+  const [uploadingLease, setUploadingLease] = useState(false)
   const [message, setMessage] = useState('')
   const [applicationsLoading, setApplicationsLoading] = useState(true)
   const [applicationsError, setApplicationsError] = useState('')
   const [proofAsset, setProofAsset] = useState<PrivateAssetVO | null>(null)
+  const [fireAsset, setFireAsset] = useState<PrivateAssetVO | null>(null)
+  const [leaseAsset, setLeaseAsset] = useState<PrivateAssetVO | null>(null)
   const [form, setForm] = useState({
     venueName: '',
+    venueNameEn: '',
+    venueType: '',
     city: '',
+    province: '',
+    district: '',
     address: '',
     capacity: '',
     contactName: '',
@@ -85,7 +93,7 @@ export default function VenueApplyPage() {
     if (!form.validFrom) return '请选择凭证有效开始时间'
     if (!form.validTo) return '请选择凭证有效结束时间'
     if (form.validTo <= form.validFrom) return '凭证有效结束时间必须晚于开始时间'
-    if (!form.proofNote.trim() && !proofAsset) return '请填写场馆审批文件说明或上传审核附件'
+    if (!form.proofNote.trim() && !proofAsset && !fireAsset && !leaseAsset) return '请填写场馆审批文件说明或上传审核附件'
     if (!layoutDraft || ((layoutDraft.blocks?.length ?? 0) === 0 && layoutDraft.sections.length === 0)) return '请绘制至少一个座位区域'
     if ((layoutDraft.blocks?.length ?? 0) > 0 && (layoutDraft.ticketGroups?.length ?? 0) === 0) return '请至少配置一个票档组'
     return ''
@@ -98,7 +106,7 @@ export default function VenueApplyPage() {
       setMessage(error)
       return
     }
-    if (uploadingProof) {
+    if (uploadingProof || uploadingFire || uploadingLease) {
       setMessage('附件上传中，请稍后提交')
       return
     }
@@ -144,11 +152,17 @@ export default function VenueApplyPage() {
         capacity: form.capacity ? Number(form.capacity) : null,
         proofFileUrl: null,
         proofAssetId: proofAsset?.id ?? null,
+        materials: [
+          fireAsset ? { materialType: 'FIRE_SAFETY_PERMIT', assetId: fireAsset.id, validFrom: form.validFrom, validTo: form.validTo } : null,
+          leaseAsset ? { materialType: 'VENUE_LEASE_AGREEMENT', assetId: leaseAsset.id, validFrom: form.validFrom, validTo: form.validTo } : null,
+        ].filter(Boolean),
         layout: layoutPayload,
       })
       setMessage('场馆审核资料已提交，等待平台审核')
-      setForm({ venueName: '', city: '', address: '', capacity: '', contactName: '', contactPhone: '', qualificationNo: '', businessScope: '', description: '', validFrom: '', validTo: '', proofNote: '' })
+      setForm({ venueName: '', venueNameEn: '', venueType: '', city: '', province: '', district: '', address: '', capacity: '', contactName: '', contactPhone: '', qualificationNo: '', businessScope: '', description: '', validFrom: '', validTo: '', proofNote: '' })
       setProofAsset(null)
+      setFireAsset(null)
+      setLeaseAsset(null)
       setLayoutDraft(null)
       loadApplications(userId)
     } catch (err) {
@@ -167,6 +181,20 @@ export default function VenueApplyPage() {
     }
   }
 
+  const handleMaterialUpload = async (file: File, materialType: 'FIRE_SAFETY_PERMIT' | 'VENUE_LEASE_AGREEMENT') => {
+    const setter = materialType === 'FIRE_SAFETY_PERMIT' ? setUploadingFire : setUploadingLease
+    setter(true)
+    try {
+      return await uploadPrivateAsset({
+        userId,
+        bizType: materialType === 'FIRE_SAFETY_PERMIT' ? 'venue-fire-safety' : 'venue-lease-agreement',
+        file,
+      })
+    } finally {
+      setter(false)
+    }
+  }
+
   return (
     <div>
       <h1 className="mb-1 text-[22px] font-bold text-[#1a1a2e]">提交场馆审核资料</h1>
@@ -175,7 +203,17 @@ export default function VenueApplyPage() {
       <form onSubmit={handleSubmit} className="mb-6 rounded-xl border border-[#e5e5e5] bg-white p-5">
         <div className="grid gap-3 lg:grid-cols-2">
           <input value={form.venueName} onChange={e => setForm({ ...form, venueName: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="场馆名称 *" />
+          <input value={form.venueNameEn} onChange={e => setForm({ ...form, venueNameEn: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="场馆英文名（可选）" />
+          <select value={form.venueType} onChange={e => setForm({ ...form, venueType: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]">
+            <option value="">场馆类型（默认综合演艺场馆）</option>
+            <option value="室内体育馆">室内体育馆</option>
+            <option value="室外体育场">室外体育场</option>
+            <option value="演艺大剧院">演艺大剧院</option>
+            <option value="Livehouse">Livehouse</option>
+          </select>
           <input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="城市 *" />
+          <input value={form.province} onChange={e => setForm({ ...form, province: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="省份（可选）" />
+          <input value={form.district} onChange={e => setForm({ ...form, district: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="区县（可选）" />
           <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268] lg:col-span-2" placeholder="地址 *" />
           <input type="number" value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="容量" />
           <input value={form.qualificationNo} onChange={e => setForm({ ...form, qualificationNo: e.target.value })} className="h-10 rounded-lg border border-[#ddd] px-3 text-[14px] outline-none focus:border-[#ff1268]" placeholder="资质编号" />
@@ -203,6 +241,12 @@ export default function VenueApplyPage() {
               hint="支持 PDF、JPEG、PNG、WEBP。附件以私有文件保存，仅供平台审核，不会公开展示。"
             />
           </div>
+          <div>
+            <PrivateFileUpload label="消防安全检查合格证明" value={fireAsset} accept="application/pdf,image/jpeg,image/png,image/webp" uploading={uploadingFire || submitting} onUpload={file => handleMaterialUpload(file, 'FIRE_SAFETY_PERMIT')} onChange={setFireAsset} hint="结构化材料，可选；支持 PDF、JPEG、PNG、WEBP。" />
+          </div>
+          <div>
+            <PrivateFileUpload label="场地租赁/运营授权协议" value={leaseAsset} accept="application/pdf,image/jpeg,image/png,image/webp" uploading={uploadingLease || submitting} onUpload={file => handleMaterialUpload(file, 'VENUE_LEASE_AGREEMENT')} onChange={setLeaseAsset} hint="结构化材料，可选；支持 PDF、JPEG、PNG、WEBP。" />
+          </div>
         </div>
 
         <div className="mt-5">
@@ -216,10 +260,10 @@ export default function VenueApplyPage() {
 
         {message && <div className="mt-3 text-[13px] text-[#666]">{message}</div>}
         <button
-          disabled={submitting || uploadingProof || !layoutDraft || ((layoutDraft.blocks?.length ?? 0) === 0 && layoutDraft.sections.length === 0)}
+          disabled={submitting || uploadingProof || uploadingFire || uploadingLease || !layoutDraft || ((layoutDraft.blocks?.length ?? 0) === 0 && layoutDraft.sections.length === 0)}
           className="mt-4 rounded-lg bg-[#ff1268] px-5 py-2 text-[14px] font-medium text-white disabled:opacity-50"
         >
-          {uploadingProof ? '附件上传中...' : submitting ? '提交中...' : '提交场馆审核资料'}
+          {uploadingProof || uploadingFire || uploadingLease ? '附件上传中...' : submitting ? '提交中...' : '提交场馆审核资料'}
         </button>
       </form>
 

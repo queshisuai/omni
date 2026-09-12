@@ -15,7 +15,11 @@ public class Venue {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String name;
+    private String venueNameEn;
+    private String venueType;
     private String city;
+    private String province;
+    private String district;
     private String address;
     private Integer capacity;
     private Integer status;
@@ -25,8 +29,16 @@ public class Venue {
     public void setId(Long id) { this.id = id; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+    public String getVenueNameEn() { return venueNameEn; }
+    public void setVenueNameEn(String venueNameEn) { this.venueNameEn = venueNameEn; }
+    public String getVenueType() { return venueType; }
+    public void setVenueType(String venueType) { this.venueType = venueType; }
     public String getCity() { return city; }
     public void setCity(String city) { this.city = city; }
+    public String getProvince() { return province; }
+    public void setProvince(String province) { this.province = province; }
+    public String getDistrict() { return district; }
+    public void setDistrict(String district) { this.district = district; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
     public Integer getCapacity() { return capacity; }

@@ -281,7 +281,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void approveWithCreateModeCreatesNewVenueAndApprovesApplication() {
-        when(userAccessService.requirePlatformPermission(2002L, "venue.review")).thenReturn(null);
+        when(userAccessService.requirePermission(2002L, "venue.review")).thenReturn(null);
         VenueApplication application = pendingApplication();
         when(venueApplicationMapper.selectById(301L)).thenReturn(application);
 
@@ -304,7 +304,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void venueReviewerWithPermissionCanApproveApplication() {
-        when(userAccessService.requirePlatformPermission(2100L, "venue.review")).thenReturn(null);
+        when(userAccessService.requirePermission(2100L, "venue.review")).thenReturn(null);
         VenueApplication application = pendingApplication();
         when(venueApplicationMapper.selectById(301L)).thenReturn(application);
 
@@ -312,7 +312,7 @@ class VenueApplicationServiceTest {
 
         assertEquals(1, result.getStatus());
         assertEquals(2100L, result.getReviewerId());
-        verify(userAccessService).requirePlatformPermission(2100L, "venue.review");
+        verify(userAccessService).requirePermission(2100L, "venue.review");
         verify(venueApplicationMapper).updateById(application);
     }
 
@@ -329,7 +329,7 @@ class VenueApplicationServiceTest {
 
     @Test
     void approveWithLinkModeAssociatesExistingVenueWithoutCreatingVenue() {
-        when(userAccessService.requirePlatformPermission(2002L, "venue.review")).thenReturn(null);
+        when(userAccessService.requirePermission(2002L, "venue.review")).thenReturn(null);
         VenueApplication application = pendingApplication();
         when(venueApplicationMapper.selectById(301L)).thenReturn(application);
         when(venueMapper.selectById(99L)).thenReturn(activeVenue(99L));

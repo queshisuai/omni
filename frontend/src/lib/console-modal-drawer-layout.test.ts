@@ -112,10 +112,10 @@ test('review flows use dedicated modals instead of shared or inline textarea sta
   assert.doesNotMatch(riskResolutions, /const \[notes/)
   assert.doesNotMatch(riskResolutions, /<textarea[\s\S]*placeholder="审核备注"/)
 
-  assert.match(venueApplications, /@\/components\/ui\/Modal/)
-  assert.match(venueApplications, /venueReviewDialog/)
-  assert.doesNotMatch(venueApplications, /const \[reviewNote/)
-  assert.doesNotMatch(venueApplications, /reviewingId === item\.id/)
+  assert.match(venueApplications, /@\/components\/ui\/Drawer/)
+  assert.match(venueApplications, /drawerItem/)
+  assert.match(venueApplications, /reviewNote\.trim\(\)/)
+  assert.doesNotMatch(venueApplications, /pageApplications = applications\.slice/)
 
   assert.match(stationConfigReviews, /@\/components\/ui\/Modal/)
   assert.match(stationConfigReviews, /stationReviewDialog/)

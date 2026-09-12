@@ -1299,6 +1299,8 @@ public class AdminController {
     private String normalizePrivateAssetBizType(String bizType) {
         if ("activity-venue-proof".equals(bizType)) return "venue-proof";
         if ("venue-change-proof".equals(bizType)) return "venue-proof";
+        if ("FIRE_SAFETY_PERMIT".equals(bizType)) return "venue-fire-safety";
+        if ("VENUE_LEASE_AGREEMENT".equals(bizType)) return "venue-lease-agreement";
         return bizType;
     }
 
@@ -2024,7 +2026,7 @@ public class AdminController {
             request = new VenueApplicationRequest();
         }
         request.setUserId(operatorId);
-        return Result.success(VenueApplicationResponse.from(venueApplicationService.submit(request)));
+        return Result.success(venueApplicationService.toResponse(venueApplicationService.submit(request)));
     }
 
     @GetMapping("/venue-applications/my")
@@ -2038,7 +2040,6 @@ public class AdminController {
         return Result.success(venueApplicationService.listMine(operatorId));
     }
 
-    @GetMapping("/venue-applications")
     public Result<List<VenueApplicationResponse>> listVenueApplications(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestParam(required = false) Long userId,
@@ -2048,6 +2049,24 @@ public class AdminController {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
         return Result.success(venueApplicationService.listAdmin(operatorId, status));
+    }
+
+    @GetMapping("/venue-applications")
+    public Result<Page<VenueApplicationResponse>> listVenueApplicationsPaged(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String capacityScale,
+            @RequestParam(required = false) String materialCompleteness) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(venueApplicationService.listAdminPage(
+                operatorId, page, size, keyword, status, city, capacityScale, materialCompleteness));
     }
 
     @PostMapping("/venue-applications/{id}/review")
@@ -2069,6 +2088,34 @@ public class AdminController {
         } else {
             application = venueApplicationService.approve(id, operatorId, request.getMode(), request.getVenueId(), request.getReviewNote());
         }
-        return Result.success(VenueApplicationResponse.from(application));
+        return Result.success(venueApplicationService.toResponse(application));
+    }
+
+    @PostMapping("/venue-applications/{id}/approve")
+    public Result<VenueApplicationResponse> approveVenueApplication(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) VenueApplicationReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        String reviewNote = request == null ? null : request.getReviewNote();
+        return Result.success(venueApplicationService.toResponse(
+                venueApplicationService.approve(id, operatorId, null, null, reviewNote)));
+    }
+
+    @PostMapping("/venue-applications/{id}/reject")
+    public Result<VenueApplicationResponse> rejectVenueApplication(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long id,
+            @RequestBody(required = false) VenueApplicationReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        String reviewNote = request == null ? null : request.getReviewNote();
+        return Result.success(venueApplicationService.toResponse(
+                venueApplicationService.reject(id, operatorId, reviewNote)));
     }
 }

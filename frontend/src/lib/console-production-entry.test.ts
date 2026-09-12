@@ -376,10 +376,9 @@ test('console venue application review protects unknown statuses from write acti
   const content = source('../app/console/venue/applications/page.tsx')
 
   assert.doesNotMatch(content, /item\.status === 0 && <button onClick=\{\(\) => openReview\(item\.id\)\}/)
-  assert.match(content, /\bisKnownVenueApplicationStatus\b/)
-  assert.match(content, /\bisReviewableVenueApplicationStatus\b/)
+  assert.match(content, /drawerItem\?\.status === 0/)
+  assert.match(content, /drawerItem\.status === 0/)
   assert.match(content, /状态待核对/)
-  assert.match(content, /场馆审核状态待核对，请刷新后再操作/)
 })
 
 test('console route error messages use Chinese identifier context', () => {

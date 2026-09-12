@@ -1,12 +1,17 @@
 package com.omni.ticket.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class VenueApplicationRequest {
     private Long userId;
     private Long venueId;
     private String venueName;
+    private String venueNameEn;
+    private String venueType;
     private String city;
+    private String province;
+    private String district;
     private String address;
     private Integer capacity;
     private String contactName;
@@ -22,6 +27,7 @@ public class VenueApplicationRequest {
     private String layoutSnapshot;
     private SeatCraftBlockDtos.LayoutRequest layout;
     private Boolean setAsRecommendedLayout;
+    private List<VenueApplicationMaterialRequest> materials;
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
@@ -29,8 +35,16 @@ public class VenueApplicationRequest {
     public void setVenueId(Long venueId) { this.venueId = venueId; }
     public String getVenueName() { return venueName; }
     public void setVenueName(String venueName) { this.venueName = venueName; }
+    public String getVenueNameEn() { return venueNameEn; }
+    public void setVenueNameEn(String venueNameEn) { this.venueNameEn = venueNameEn; }
+    public String getVenueType() { return venueType; }
+    public void setVenueType(String venueType) { this.venueType = venueType; }
     public String getCity() { return city; }
     public void setCity(String city) { this.city = city; }
+    public String getProvince() { return province; }
+    public void setProvince(String province) { this.province = province; }
+    public String getDistrict() { return district; }
+    public void setDistrict(String district) { this.district = district; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
     public Integer getCapacity() { return capacity; }
@@ -61,4 +75,6 @@ public class VenueApplicationRequest {
     public void setLayout(SeatCraftBlockDtos.LayoutRequest layout) { this.layout = layout; }
     public Boolean getSetAsRecommendedLayout() { return setAsRecommendedLayout; }
     public void setSetAsRecommendedLayout(Boolean setAsRecommendedLayout) { this.setAsRecommendedLayout = setAsRecommendedLayout; }
+    public List<VenueApplicationMaterialRequest> getMaterials() { return materials; }
+    public void setMaterials(List<VenueApplicationMaterialRequest> materials) { this.materials = materials; }
 }

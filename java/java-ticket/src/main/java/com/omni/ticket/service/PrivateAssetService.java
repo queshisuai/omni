@@ -35,6 +35,8 @@ public class PrivateAssetService {
 
     private static final String SERVICE_NAME = "ticket";
     private static final String BIZ_TYPE_VENUE_PROOF = "venue-proof";
+    private static final Set<String> VENUE_MATERIAL_BIZ_TYPES = Set.of(
+            "venue-proof", "venue-fire-safety", "venue-lease-agreement");
     private static final String STATUS_PENDING = "pending";
     private static final String STATUS_BOUND = "bound";
     private static final long MAX_FILE_BYTES = 20L * 1024L * 1024L;
@@ -58,7 +60,7 @@ public class PrivateAssetService {
 
     @Transactional
     public PrivateAssetResponse upload(Long uploaderId, String bizType, MultipartFile file) {
-        if (!BIZ_TYPE_VENUE_PROOF.equals(bizType)) {
+        if (!isVenueMaterialBizType(bizType)) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的私有资产类型");
         }
         userAccessService.requireAdminOrOrganizerOrAnyPermission(uploaderId, "activity.manage", "tour.manage");
@@ -110,12 +112,23 @@ public class PrivateAssetService {
 
     @Transactional
     public PrivateAssetResponse bindVenueProof(Long assetId, Long venueApplicationId, Long userId) {
+        return bindVenueMaterial(assetId, venueApplicationId, userId, BIZ_TYPE_VENUE_PROOF);
+    }
+
+    @Transactional
+    public PrivateAssetResponse bindVenueMaterial(Long assetId,
+                                                  Long venueApplicationId,
+                                                  Long userId,
+                                                  String expectedBizType) {
         userAccessService.requireAdminOrOrganizerOrAnyPermission(userId, "activity.manage", "tour.manage");
         if (venueApplicationId == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "场馆审核资料ID不能为空");
         }
+        if (!isVenueMaterialBizType(expectedBizType)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的私有资产类型");
+        }
         PrivateAsset asset = requireAsset(assetId);
-        if (!BIZ_TYPE_VENUE_PROOF.equals(asset.getBizType())) {
+        if (!expectedBizType.equals(asset.getBizType())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "不支持的私有资产类型");
         }
         if (!STATUS_PENDING.equals(asset.getStatus())) {
@@ -165,7 +178,7 @@ public class PrivateAssetService {
     }
 
     private void verifyDownloadPermission(PrivateAsset asset, InternalUserRefResponse user) {
-        if (!BIZ_TYPE_VENUE_PROOF.equals(asset.getBizType())) {
+        if (!isVenueMaterialBizType(asset.getBizType())) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权下载该私有资产");
         }
         if (STATUS_PENDING.equals(asset.getStatus())) {
@@ -199,6 +212,10 @@ public class PrivateAssetService {
             throw new BusinessException(ResultCode.NOT_FOUND, "私有资产不存在");
         }
         return asset;
+    }
+
+    private boolean isVenueMaterialBizType(String bizType) {
+        return bizType != null && VENUE_MATERIAL_BIZ_TYPES.contains(bizType);
     }
 
     private VenueApplication requireVenueApplication(Long applicationId) {

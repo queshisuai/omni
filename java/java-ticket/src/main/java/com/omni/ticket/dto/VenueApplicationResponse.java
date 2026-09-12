@@ -3,13 +3,18 @@ package com.omni.ticket.dto;
 import com.omni.ticket.entity.VenueApplication;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class VenueApplicationResponse {
     private Long id;
     private Long applicantId;
     private Long venueId;
     private String venueName;
+    private String venueNameEn;
+    private String venueType;
     private String city;
+    private String province;
+    private String district;
     private String address;
     private Integer capacity;
     private String contactName;
@@ -23,6 +28,10 @@ public class VenueApplicationResponse {
     private String proofFileUrl;
     private Long proofAssetId;
     private PrivateAssetResponse proofAsset;
+    private List<VenueApplicationMaterialResponse> materials;
+    private VenueApplicationMaterialResponse legacyProof;
+    private String capacityScale;
+    private String materialCompleteness;
     private String layoutSnapshot;
     private Boolean setAsRecommendedLayout;
     private Integer status;
@@ -38,7 +47,11 @@ public class VenueApplicationResponse {
         response.setApplicantId(application.getApplicantId());
         response.setVenueId(application.getVenueId());
         response.setVenueName(application.getVenueName());
+        response.setVenueNameEn(application.getVenueNameEn());
+        response.setVenueType(application.getVenueType());
         response.setCity(application.getCity());
+        response.setProvince(application.getProvince());
+        response.setDistrict(application.getDistrict());
         response.setAddress(application.getAddress());
         response.setCapacity(application.getCapacity());
         response.setContactName(application.getContactName());
@@ -70,8 +83,16 @@ public class VenueApplicationResponse {
     public void setVenueId(Long venueId) { this.venueId = venueId; }
     public String getVenueName() { return venueName; }
     public void setVenueName(String venueName) { this.venueName = venueName; }
+    public String getVenueNameEn() { return venueNameEn; }
+    public void setVenueNameEn(String venueNameEn) { this.venueNameEn = venueNameEn; }
+    public String getVenueType() { return venueType; }
+    public void setVenueType(String venueType) { this.venueType = venueType; }
     public String getCity() { return city; }
     public void setCity(String city) { this.city = city; }
+    public String getProvince() { return province; }
+    public void setProvince(String province) { this.province = province; }
+    public String getDistrict() { return district; }
+    public void setDistrict(String district) { this.district = district; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
     public Integer getCapacity() { return capacity; }
@@ -98,6 +119,14 @@ public class VenueApplicationResponse {
     public void setProofAssetId(Long proofAssetId) { this.proofAssetId = proofAssetId; }
     public PrivateAssetResponse getProofAsset() { return proofAsset; }
     public void setProofAsset(PrivateAssetResponse proofAsset) { this.proofAsset = proofAsset; }
+    public List<VenueApplicationMaterialResponse> getMaterials() { return materials; }
+    public void setMaterials(List<VenueApplicationMaterialResponse> materials) { this.materials = materials; }
+    public VenueApplicationMaterialResponse getLegacyProof() { return legacyProof; }
+    public void setLegacyProof(VenueApplicationMaterialResponse legacyProof) { this.legacyProof = legacyProof; }
+    public String getCapacityScale() { return capacityScale; }
+    public void setCapacityScale(String capacityScale) { this.capacityScale = capacityScale; }
+    public String getMaterialCompleteness() { return materialCompleteness; }
+    public void setMaterialCompleteness(String materialCompleteness) { this.materialCompleteness = materialCompleteness; }
     public String getLayoutSnapshot() { return layoutSnapshot; }
     public void setLayoutSnapshot(String layoutSnapshot) { this.layoutSnapshot = layoutSnapshot; }
     public Boolean getSetAsRecommendedLayout() { return setAsRecommendedLayout; }

@@ -2076,11 +2076,28 @@ export async function listMyVenueApplications(_userId?: number) {
   return request<import('@/types/api').VenueApplicationVO[]>('/api/ticket/admin/venue-applications/my')
 }
 
-export async function listVenueApplications(params: { status?: number } = {}) {
+export async function listVenueApplications(params: {
+  page?: number
+  size?: number
+  keyword?: string
+  status?: import('@/types/api').VenueApplicationReviewStatus
+  city?: string
+  capacityScale?: import('@/types/api').VenueApplicationCapacityScale
+  materialCompleteness?: string
+} = {}) {
   const searchParams = new URLSearchParams()
-  if (params.status !== undefined) searchParams.set('status', String(params.status))
-  const qs = searchParams.toString()
-  return request<import('@/types/api').VenueApplicationVO[]>(`/api/ticket/admin/venue-applications${qs ? `?${qs}` : ''}`)
+  searchParams.set('page', String(params.page || 1))
+  searchParams.set('size', String(params.size || 10))
+  if (params.keyword?.trim()) searchParams.set('keyword', params.keyword.trim())
+  if (params.status) searchParams.set('status', params.status)
+  if (params.city) searchParams.set('city', params.city)
+  if (params.capacityScale) searchParams.set('capacityScale', params.capacityScale)
+  if (params.materialCompleteness) searchParams.set('materialCompleteness', params.materialCompleteness)
+  return request<import('@/types/api').PageResult<import('@/types/api').VenueApplicationVO>>(
+    `/api/ticket/admin/venue-applications?${searchParams.toString()}`,
+    undefined,
+    { timeoutMs: CONSOLE_ADMIN_REQUEST_TIMEOUT_MS },
+  )
 }
 
 export async function reviewVenueApplication(id: number, body: Record<string, unknown>) {
@@ -2088,4 +2105,25 @@ export async function reviewVenueApplication(id: number, body: Record<string, un
   return request<import('@/types/api').VenueApplicationVO>(`/api/ticket/admin/venue-applications/${id}/review`, {
     method: 'POST', body: JSON.stringify(safeBody),
   })
+}
+
+export async function approveVenueApplication(id: number, reviewNote?: string) {
+  assertPositiveInteger(id, '场馆申请编号')
+  return request<import('@/types/api').VenueApplicationVO>(`/api/ticket/admin/venue-applications/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote: reviewNote?.trim() || null }),
+  })
+}
+
+export async function rejectVenueApplication(id: number, reviewNote: string) {
+  assertPositiveInteger(id, '场馆申请编号')
+  return request<import('@/types/api').VenueApplicationVO>(`/api/ticket/admin/venue-applications/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote: reviewNote.trim() }),
+  })
+}
+
+export async function uploadVenueApplicationMaterial(file: File, materialType: 'FIRE_SAFETY_PERMIT' | 'VENUE_LEASE_AGREEMENT', userId: number) {
+  const bizType = materialType === 'FIRE_SAFETY_PERMIT' ? 'venue-fire-safety' : 'venue-lease-agreement'
+  return uploadPrivateAsset({ userId, bizType, file })
 }
