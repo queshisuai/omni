@@ -87,7 +87,7 @@ export const consoleMenuGroups: ConsoleMenuGroup[] = [
     icon: Sliders,
     roles: ['admin'],
     children: [
-      { href: '/console/roles', label: '角色权限配置' },
+      { href: '/console/rbac/roles', label: '角色权限配置' },
       { href: '/console/support-accounts', label: '客服账号管理' },
       { href: '/console/organizer-admins', label: '主办方运营员账号' },
       { href: '/console/reconciliation', label: '日结对账报表' },

@@ -64,7 +64,7 @@ test('builds role-specific console quick actions', () => {
     '/console/audit-logs',
     '/console/exception-tasks',
     '/console/reconciliation',
-    '/console/roles',
+    '/console/rbac/roles',
   ])
   assert.deepEqual(getConsoleQuickActions('organizer_admin').map(item => item.href), [
     '/console/profile',

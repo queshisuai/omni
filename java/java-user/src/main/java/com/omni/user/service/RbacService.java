@@ -4,36 +4,42 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
-import com.omni.user.entity.RbacPermission;
 import com.omni.user.entity.RbacRolePermission;
 import com.omni.user.entity.SupportAccount;
 import com.omni.user.entity.User;
+import com.omni.user.entity.UserPermissionOverride;
 import com.omni.user.mapper.RbacPermissionMapper;
 import com.omni.user.mapper.RbacRolePermissionMapper;
 import com.omni.user.mapper.SupportAccountMapper;
 import com.omni.user.mapper.UserMapper;
+import com.omni.user.mapper.UserPermissionOverrideMapper;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
 public class RbacService {
     private static final String ROLE_PLATFORM_SUPER_ADMIN = "platform_super_admin";
+    private static final String PERMISSION_RBAC_MANAGE = "rbac.manage";
 
     private final UserMapper userMapper;
     private final SupportAccountMapper supportAccountMapper;
-    private final RbacPermissionMapper rbacPermissionMapper;
     private final RbacRolePermissionMapper rbacRolePermissionMapper;
+    private final UserPermissionOverrideMapper userPermissionOverrideMapper;
 
     public RbacService(UserMapper userMapper,
                        SupportAccountMapper supportAccountMapper,
                        RbacPermissionMapper rbacPermissionMapper,
-                       RbacRolePermissionMapper rbacRolePermissionMapper) {
+                       RbacRolePermissionMapper rbacRolePermissionMapper,
+                       UserPermissionOverrideMapper userPermissionOverrideMapper) {
         this.userMapper = userMapper;
         this.supportAccountMapper = supportAccountMapper;
-        this.rbacPermissionMapper = rbacPermissionMapper;
         this.rbacRolePermissionMapper = rbacRolePermissionMapper;
+        this.userPermissionOverrideMapper = userPermissionOverrideMapper;
     }
 
     public InternalAuthContextResponse getInternalAuthContext(Long userId) {
@@ -42,9 +48,11 @@ public class RbacService {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
         String effectiveRole = resolveRole(user, resolveSupportAccount(user));
-        List<String> permissions = ROLE_PLATFORM_SUPER_ADMIN.equals(effectiveRole)
-                ? listAllPermissionCodes()
-                : listRolePermissionCodes(effectiveRole);
+        List<String> permissions = applyUserPermissionOverrides(
+                userId,
+                effectiveRole,
+                listRolePermissionCodes(effectiveRole)
+        );
 
         InternalAuthContextResponse response = new InternalAuthContextResponse();
         response.setUserId(userId);
@@ -61,23 +69,39 @@ public class RbacService {
         List<RbacRolePermission> rolePermissions = rbacRolePermissionMapper.selectList(
                 new LambdaQueryWrapper<RbacRolePermission>().eq(RbacRolePermission::getRoleCode, effectiveRole)
         );
+        if (rolePermissions == null) {
+            return Collections.emptyList();
+        }
         return rolePermissions.stream()
                 .map(RbacRolePermission::getPermissionCode)
                 .collect(Collectors.toList());
     }
 
-    private List<String> listAllPermissionCodes() {
-        return rbacPermissionMapper.selectList(new LambdaQueryWrapper<RbacPermission>().orderByAsc(RbacPermission::getCode))
-                .stream()
-                .map(RbacPermission::getCode)
-                .collect(Collectors.toList());
+    private List<String> applyUserPermissionOverrides(Long userId, String effectiveRole, List<String> inheritedPermissions) {
+        LinkedHashSet<String> effectivePermissions = new LinkedHashSet<>(inheritedPermissions);
+        List<UserPermissionOverride> overrides = userPermissionOverrideMapper.selectList(
+                new LambdaQueryWrapper<UserPermissionOverride>().eq(UserPermissionOverride::getUserId, userId)
+        );
+        if (overrides != null) {
+            for (UserPermissionOverride override : overrides) {
+                if ("ALLOW".equals(override.getOverrideType())) {
+                    effectivePermissions.add(override.getPermissionCode());
+                } else if ("DENY".equals(override.getOverrideType())) {
+                    effectivePermissions.remove(override.getPermissionCode());
+                }
+            }
+        }
+        if (ROLE_PLATFORM_SUPER_ADMIN.equals(effectiveRole)) {
+            effectivePermissions.add(PERMISSION_RBAC_MANAGE);
+        }
+        return new ArrayList<>(effectivePermissions);
     }
 
     public static String resolveRole(User user) {
         return resolveRole(user, null);
     }
 
-    private static String resolveRole(User user, SupportAccount supportAccount) {
+    public static String resolveRole(User user, SupportAccount supportAccount) {
         String role = user.getRole();
         if (role == null) return "user";
         switch (role) {

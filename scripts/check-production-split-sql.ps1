@@ -94,6 +94,7 @@ $schemaColumns = @{
     "rbac_role" = New-ColumnSet @("code", "name", "status", "create_time", "update_time")
     "rbac_permission" = New-ColumnSet @("code", "name", "description", "status", "create_time", "update_time")
     "rbac_role_permission" = New-ColumnSet @("role_code", "permission_code", "create_time")
+    "user_permission_override" = New-ColumnSet @("id", "user_id", "permission_code", "override_type", "reason", "create_by", "create_time", "update_time")
     "operation_audit_log" = New-ColumnSet @("id", "operator_id", "operator_role", "action", "target_type", "target_id", "target_ref", "reason", "result", "success", "error_message", "trace_id", "create_time")
     "organizer_ops_assignment" = New-ColumnSet @("organizer_user_id", "assigned_operator_id", "risk_level", "status", "next_follow_at", "last_follow_at", "create_time", "update_time")
     "organizer_ops_follow_up" = New-ColumnSet @("id", "organizer_user_id", "operator_id", "follow_type", "content", "next_follow_at", "create_time")

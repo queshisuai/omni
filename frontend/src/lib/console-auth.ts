@@ -10,6 +10,7 @@ const PATH_PERMISSION_MAP: Record<string, string[]> = {
   '/console/organizer-ops': ['organizer.review', 'organizer.account.manage', 'organizer.follow.manage', 'organizer.assign.manage'],
   '/console/organizer-applications': ['organizer.review'],
   '/console/organizer-admins': ['organizer.account.manage'],
+  '/console/rbac/roles': ['rbac.manage'],
   '/console/roles': ['rbac.manage'],
   '/console/activities/new': ['activity.manage', 'tour.manage'],
   '/console/activities': ['activity.manage'],

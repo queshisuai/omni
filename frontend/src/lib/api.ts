@@ -871,6 +871,30 @@ export async function updateRbacRolePermissions(roleCode: string, permissionCode
   })
 }
 
+export async function searchRbacUsers(keyword: string) {
+  const normalized = keyword.trim()
+  if (!normalized) return []
+  return request<import('@/types/api').RbacUserPermissionSummaryVO[]>(
+    `/api/user/console/rbac/users?keyword=${encodeURIComponent(normalized)}`,
+  )
+}
+
+export async function getRbacUserPermissions(userId: number) {
+  assertPositiveInteger(userId, '用户ID')
+  return request<import('@/types/api').RbacUserPermissionVO>(`/api/user/console/rbac/users/${userId}/permissions`)
+}
+
+export async function updateRbacUserPermissionOverrides(
+  userId: number,
+  payload: import('@/types/api').RbacUserPermissionOverridePayload,
+) {
+  assertPositiveInteger(userId, '用户ID')
+  return request<import('@/types/api').RbacUserPermissionVO>(`/api/user/console/rbac/users/${userId}/permissions`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 export async function listOrganizerAdminAccounts() {
   return request<import('@/types/api').OrganizerAdminAccountVO[]>('/api/user/console/organizer-admins')
 }

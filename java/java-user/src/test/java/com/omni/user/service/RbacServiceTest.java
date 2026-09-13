@@ -4,10 +4,12 @@ import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.user.entity.RbacPermission;
 import com.omni.user.entity.SupportAccount;
 import com.omni.user.entity.RbacRolePermission;
+import com.omni.user.entity.UserPermissionOverride;
 import com.omni.user.mapper.RbacPermissionMapper;
 import com.omni.user.mapper.RbacRolePermissionMapper;
 import com.omni.user.mapper.SupportAccountMapper;
 import com.omni.user.mapper.UserMapper;
+import com.omni.user.mapper.UserPermissionOverrideMapper;
 import com.omni.user.entity.User;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +26,14 @@ class RbacServiceTest {
     private final SupportAccountMapper supportAccountMapper = mock(SupportAccountMapper.class);
     private final RbacPermissionMapper rbacPermissionMapper = mock(RbacPermissionMapper.class);
     private final RbacRolePermissionMapper rbacRolePermissionMapper = mock(RbacRolePermissionMapper.class);
-    private final RbacService service = new RbacService(userMapper, supportAccountMapper, rbacPermissionMapper, rbacRolePermissionMapper);
+    private final UserPermissionOverrideMapper userPermissionOverrideMapper = mock(UserPermissionOverrideMapper.class);
+    private final RbacService service = new RbacService(
+            userMapper,
+            supportAccountMapper,
+            rbacPermissionMapper,
+            rbacRolePermissionMapper,
+            userPermissionOverrideMapper
+    );
 
     @Test
     void internalAuthContextIncludesRolePermissionsAndSupportRole() {
@@ -93,12 +102,9 @@ class RbacServiceTest {
     @Test
     void platformSuperAdminIncludesAllRegisteredPermissionCodes() {
         when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
-        when(rbacPermissionMapper.selectList(any())).thenReturn(List.of(
-                permission("activity.manage"),
-                permission("tour.manage"),
-                permission("station.review"),
-                permission("organizer.review"),
-                permission("rbac.manage")
+        when(rbacRolePermissionMapper.selectList(any())).thenReturn(List.of(
+                rolePermission("activity.manage"),
+                rolePermission("rbac.manage")
         ));
 
         InternalAuthContextResponse response = service.getInternalAuthContext(1L);
@@ -106,13 +112,42 @@ class RbacServiceTest {
         assertEquals("admin", response.getRole());
         assertEquals("platform_super_admin", response.getEffectiveRole());
         assertEquals("platform", response.getScopeType());
-        assertEquals(List.of(
-                "activity.manage",
-                "tour.manage",
-                "station.review",
-                "organizer.review",
-                "rbac.manage"
-        ), response.getPermissionCodes());
+        assertEquals(List.of("activity.manage", "rbac.manage"), response.getPermissionCodes());
+    }
+
+    @Test
+    void userPermissionOverridesAllowAndDenyRolePermissions() {
+        when(userMapper.selectById(7L)).thenReturn(user(7L, "support", 1));
+        when(supportAccountMapper.selectById(7L)).thenReturn(supportAccount(7L, "support_agent"));
+        when(rbacRolePermissionMapper.selectList(any())).thenReturn(List.of(
+                rolePermission("support.conversation.view"),
+                rolePermission("audit.view")
+        ));
+        when(userPermissionOverrideMapper.selectList(any())).thenReturn(List.of(
+                permissionOverride(7L, "order.view", "ALLOW"),
+                permissionOverride(7L, "audit.view", "DENY")
+        ));
+
+        InternalAuthContextResponse response = service.getInternalAuthContext(7L);
+
+        assertEquals(List.of("support.conversation.view", "order.view"), response.getPermissionCodes());
+    }
+
+    @Test
+    void platformSuperAdminKeepsRbacManageDespiteDenyOverride() {
+        when(userMapper.selectById(1L)).thenReturn(user(1L, "admin", 1));
+        when(rbacRolePermissionMapper.selectList(any())).thenReturn(List.of(
+                rolePermission("activity.manage"),
+                rolePermission("rbac.manage")
+        ));
+        when(userPermissionOverrideMapper.selectList(any())).thenReturn(List.of(
+                permissionOverride(1L, "rbac.manage", "DENY"),
+                permissionOverride(1L, "activity.manage", "DENY")
+        ));
+
+        InternalAuthContextResponse response = service.getInternalAuthContext(1L);
+
+        assertEquals(List.of("rbac.manage"), response.getPermissionCodes());
     }
 
     private User user(Long id, String role, Integer status) {
@@ -133,6 +168,14 @@ class RbacServiceTest {
         RbacPermission permission = new RbacPermission();
         permission.setCode(code);
         return permission;
+    }
+
+    private UserPermissionOverride permissionOverride(Long userId, String permissionCode, String overrideType) {
+        UserPermissionOverride override = new UserPermissionOverride();
+        override.setUserId(userId);
+        override.setPermissionCode(permissionCode);
+        override.setOverrideType(overrideType);
+        return override;
     }
 
     private SupportAccount supportAccount(Long userId, String supportRole) {

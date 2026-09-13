@@ -4,6 +4,8 @@ import com.omni.common.dto.InternalAuthContextResponse;
 import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.util.JwtUtil;
 import com.omni.user.dto.RbacRolePermissionUpdateRequest;
+import com.omni.user.dto.RbacUserPermissionOverrideUpdateRequest;
+import com.omni.user.dto.RbacUserPermissionResponse;
 import com.omni.user.service.ExceptionWorkbenchService;
 import com.omni.user.service.OrganizerAdminAccountService;
 import com.omni.user.service.OrganizerOpsService;
@@ -63,11 +65,40 @@ class InternalWorkbenchControllerRbacAuditTest {
         ArgumentCaptor<OperationAuditWriteRequest> captor = ArgumentCaptor.forClass(OperationAuditWriteRequest.class);
         verify(operationAuditService).write(captor.capture());
         OperationAuditWriteRequest audit = captor.getValue();
-        assertEquals("rbac.role_permission.update", audit.getAction());
+        assertEquals("RBAC_ROLE_PERMS_UPDATE", audit.getAction());
         assertEquals("rbac_role", audit.getTargetType());
         assertEquals("support_manager", audit.getTargetRef());
         assertEquals("新增权限：客服账号管理（support.account.manage）；移除权限：操作审计（audit.view）；更新后权限数：2",
                 audit.getResult());
+    }
+
+    @Test
+    void writesUserOverrideSummaryToAuditLog() {
+        RbacUserPermissionOverrideUpdateRequest request = new RbacUserPermissionOverrideUpdateRequest();
+        request.setAllowPermissionCodes(List.of("order.view"));
+        request.setDenyPermissionCodes(List.of("audit.view"));
+        request.setReason("临时支援订单查询");
+        RbacUserPermissionResponse response = new RbacUserPermissionResponse();
+        response.setUserId(7L);
+        response.setNickname("张晓");
+        response.setEffectiveRole("support_agent");
+        response.setAllowPermissionCodes(List.of("order.view"));
+        response.setDenyPermissionCodes(List.of("audit.view"));
+        response.setEffectivePermissionCodes(List.of("support.conversation.view", "order.view"));
+        when(rbacService.getInternalAuthContext(2002L)).thenReturn(auth("platform_super_admin", "rbac.manage"));
+        when(rbacAdminService.updateUserPermissionOverrides(7L, request, 2002L)).thenReturn(response);
+
+        var result = controller.updateUserPermissionOverrides(bearer(2002L), 7L, request);
+
+        assertEquals(200, result.getCode());
+        ArgumentCaptor<OperationAuditWriteRequest> captor = ArgumentCaptor.forClass(OperationAuditWriteRequest.class);
+        verify(operationAuditService).write(captor.capture());
+        OperationAuditWriteRequest audit = captor.getValue();
+        assertEquals("USER_PERMISSION_OVERRIDE_UPDATE", audit.getAction());
+        assertEquals("user_permission_override", audit.getTargetType());
+        assertEquals(7L, audit.getTargetId());
+        assertEquals("张晓", audit.getTargetRef());
+        assertEquals("特许开放：order.view；显式禁用：audit.view；生效权限数：2", audit.getResult());
     }
 
     private String bearer(Long userId) {

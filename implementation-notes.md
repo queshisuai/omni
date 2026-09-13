@@ -489,3 +489,13 @@
 - 列宽：四个审核列表继续使用 `table-fixed w-full`；状态、操作、城市/版本、类目/变更类型、资质和经办人等短列改为明确 Tailwind 固定宽度，操作列统一右对齐并使用 `pr-4`。
 - 弹性列：艺人基本信息/代表作品、活动与停售原因/整改摘要、站点项目/申请事由、场馆信息/地址/资质说明不再设置固定列宽，由表格布局吸收剩余空间；外层 `overflow-x-auto` 仅作为窄屏兜底。
 - 验证：扩展结构测试覆盖 `1680px` 工作台上限和短列固定规则；结构测试 `6/6`、`pnpm typecheck`、`git diff --check` 通过。
+
+## 2026-09-13 RBAC 角色权限工作台深度重构
+
+- 前端范围：`/console/rbac/roles` 接入 `按职位角色` / `按指定账号` 双模式；旧 `/console/roles` 保留实现并由规范路径复用。职位角色强制按 `platform_super_admin`、`organizer`、`organizer_admin`、`support_manager`、`support_agent` 展示，平台超管默认首位。
+- 权限分类：新增四大业务域映射，27 个 `permission_code` 全部归入演出与票务、订单与履约、运营客服审核、系统治理财务四类；移除“其他”分类口径，场次、巡演、场馆、核验、客服、审计等权限均回到对应业务域。
+- 交互与视觉：权限项改为紧凑 Check-Chip 和四域 Accordion；权限变更预览收敛为单行 Alert；平台超管及超管账号的 `rbac.manage` 保持勾选禁用，展示锁图标、`[系统自保]` 和中文死锁防护说明，其余业务权限可正常勾选或取消。
+- 后端范围：`java-user` 新增 `user_permission_override` 实体、Mapper、DTO、管理接口和权限计算逻辑；生效权限按 `(继承角色权限 ∪ ALLOW) \ DENY` 计算，超管账号服务层强制保留 `rbac.manage`，防止后端接口层误锁死。
+- 审计与迁移：角色权限保存同事务写入 `RBAC_ROLE_PERMS_UPDATE`，账号覆盖保存同事务写入 `USER_PERMISSION_OVERRIDE_UPDATE`；生产拆库和 shared 本地迁移均只新增 `omni_user.user_permission_override`，未访问或 join `omni_ticket_split`。
+- 迁移执行：已在获得授权后对本机 `omni_user` 执行 `sql/production-split/user/20260913_user_permission_override.sql`；验证到 `user_permission_override` 表、`uk_user_perm` 唯一约束、`override_type` CHECK 约束和 `idx_user_perm_uid` 索引存在，且 `omni_ticket_split` 未创建该表。
+- 验证：前端 RBAC/API 定向测试 `54/54` 通过，`pnpm typecheck` 通过；Java RBAC 定向测试 `16/16` 通过；`check-production-split-sql.ps1`、`verify-microservice-boundaries.ps1` 和 `git diff --check` 通过。新增 `user_permission_override` 已同步登记生产 SQL 静态表清单与跨库 FK owner map。

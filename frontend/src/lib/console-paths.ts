@@ -26,7 +26,7 @@ const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href:
   { permission: 'audit.view', label: '操作审计', href: '/console/audit-logs' },
   { permission: 'compensation.execute', label: '异常任务', href: '/console/exception-tasks' },
   { permission: 'reconcile.view', label: '日结对账', href: '/console/reconciliation' },
-  { permission: 'rbac.manage', label: '角色权限', href: '/console/roles' },
+  { permission: 'rbac.manage', label: '角色权限', href: '/console/rbac/roles' },
 ]
 
 const SCOPED_BACKSTAGE_QUICK_ACTIONS = new Set([

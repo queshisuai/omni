@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ApiError, addSupportNote, approveOrganizerApplication, batchOrganizerOnsaleSummary, batchReviewRefunds, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityEngagements, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerApplications, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listOrganizers, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, manualCheckInTicket, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, rejectOrganizerApplication, removeTeamGrabMember, replyAdminActivityQuestion, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, revokeOrganizer, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateAdminActivityQuestion, updateAdminActivityReportStatus, updateAdminActivityReviewStatus, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateSupportTags, uploadOrganizerApplicationMaterial } from './api.ts'
+import { ApiError, addSupportNote, approveOrganizerApplication, batchOrganizerOnsaleSummary, batchReviewRefunds, claimExceptionTask, closeExceptionTask, closeSupportConversation, createActivityReview, createAlipayQrPay, createOrganizerAdminAccount, createOrganizerOpsFollowUp, createReconciliationBatch, createWaitlistEntry, deactivateOrganizerAdminAccount, deleteOrganizerAdminAccount, escalateSupportConversation, exportUserAttendees, getActivityMarketing, getCheckInOverview, getGrabOpsSummary, getGrabProgress, getGrabVisibleStock, getPlatformOpsSummary, getRbacUserPermissions, getReconciliationBatchDetail, getSeatCraftDraft, getSessionSeatLayout, getSupportConversationContext, getTeamGrabProgress, ignoreReconciliationDifference, joinTeamGrab, listActivities, listAdminActivityEngagements, listAdminActivityQuestions, listAdminActivityReviewReports, listAdminActivityReviews, listCheckInRecords, listEnabledSupportAgents, listExceptionTasks, listOperationAuditLogs, listOrganizerAdminAccounts, listOrganizerApplications, listOrganizerOpsAssignments, listOrganizerOpsFollowUps, listOrganizers, listRbacPermissions, listRbacRoles, listReconciliationBatches, listSupportAudits, listSupportNotes, listSupportQuickReplies, manualCheckInTicket, moderateAdminActivityQuestion, moderateAdminActivityReview, moderateAdminActivityReviewReport, notifyActivityBuyers, rejectCloseSupportConversation, rejectOrganizerApplication, removeTeamGrabMember, replyAdminActivityQuestion, reportActivityReview, resolveExceptionTask, resolveReconciliationDifference, revokeOrganizer, searchRbacUsers, sendSupportMessage, startSupportConversation, transferSupportConversation, updateActivityMarketing, updateAdminActivityQuestion, updateAdminActivityReportStatus, updateAdminActivityReviewStatus, updateOrganizerAdminAccount, updateOrganizerOpsAssignment, updateRbacRolePermissions, updateRbacUserPermissionOverrides, updateSupportTags, uploadOrganizerApplicationMaterial } from './api.ts'
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -731,6 +731,57 @@ test('manages organizer admin accounts through user console endpoint', async () 
     assert.equal(requested[4].method, 'DELETE')
     assert.equal(accounts[0].role, 'organizer_admin')
     assert.equal(created.id, 12)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('loads and updates rbac user permission overrides through user console endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const requested: Array<{ url: string; method: string; body: string }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requested.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
+    const url = String(input)
+    return new Response(JSON.stringify({
+      code: 200,
+      message: '成功',
+      data: url.includes('/permissions')
+        ? {
+            userId: 7,
+            nickname: '张晓',
+            phone: '13900000007',
+            role: 'support',
+            effectiveRole: 'support_agent',
+            baseRoleName: '普通客服',
+            inheritedPermissionCodes: ['support.conversation.view'],
+            allowPermissionCodes: ['order.view'],
+            denyPermissionCodes: [],
+            effectivePermissionCodes: ['support.conversation.view', 'order.view'],
+          }
+        : [{ userId: 7, nickname: '张晓', phone: '13900000007', role: 'support', effectiveRole: 'support_agent', baseRoleName: '普通客服' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const users = await searchRbacUsers('张晓')
+    const permissions = await getRbacUserPermissions(7)
+    await updateRbacUserPermissionOverrides(7, {
+      allowPermissionCodes: ['order.view'],
+      denyPermissionCodes: ['audit.view'],
+      reason: '临时支援订单查询',
+    })
+
+    assert.equal(requested[0].url, '/api/user/console/rbac/users?keyword=%E5%BC%A0%E6%99%93')
+    assert.equal(requested[1].url, '/api/user/console/rbac/users/7/permissions')
+    assert.equal(requested[2].url, '/api/user/console/rbac/users/7/permissions')
+    assert.equal(requested[2].method, 'PUT')
+    assert.equal(requested[2].body, JSON.stringify({
+      allowPermissionCodes: ['order.view'],
+      denyPermissionCodes: ['audit.view'],
+      reason: '临时支援订单查询',
+    }))
+    assert.equal(users[0].baseRoleName, '普通客服')
+    assert.deepEqual(permissions.effectivePermissionCodes, ['support.conversation.view', 'order.view'])
   } finally {
     globalThis.fetch = originalFetch
   }

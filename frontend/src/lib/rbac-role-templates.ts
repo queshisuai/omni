@@ -1,3 +1,5 @@
+import { orderRbacPermissionCodes } from './rbac-permission-groups.ts'
+
 export interface RbacRoleTemplate {
   code: string
   name: string
@@ -19,16 +21,25 @@ const RBAC_ROLE_TEMPLATE_DEFINITIONS: RbacRoleTemplateDefinition[] = [
   {
     code: 'support_manager_standard',
     name: '客服主管标准模板',
-    description: '客服账号、会话查询和操作审计。',
+    description: '客服管理、质检、订单退款协查、风险查看和审计。',
     roleCodes: ['support_manager'],
-    permissionCodes: ['support.account.manage', 'support.conversation.view', 'audit.view'],
+    permissionCodes: [
+      'support.account.manage',
+      'support.conversation.view',
+      'cs.manage',
+      'cs.review',
+      'order.view',
+      'refund.review',
+      'risk.view',
+      'audit.view',
+    ],
   },
   {
     code: 'support_agent_standard',
     name: '普通客服标准模板',
-    description: '仅保留客服会话查询。',
+    description: '客服会话、订单、退款和核验协查。',
     roleCodes: ['support_agent'],
-    permissionCodes: ['support.conversation.view'],
+    permissionCodes: ['support.conversation.view', 'order.view', 'refund.review', 'checkin.view'],
   },
   {
     code: 'organizer_standard',
@@ -50,25 +61,15 @@ const RBAC_ROLE_TEMPLATE_DEFINITIONS: RbacRoleTemplateDefinition[] = [
   {
     code: 'organizer_admin_standard',
     name: '平台主办方运营员标准模板',
-    description: '主办方运营、活动管理、订单退款、核验、评价问答和操作审计。',
+    description: '主办方入驻、跟进、账号、分配、场馆和站点审核。',
     roleCodes: ['organizer_admin'],
     permissionCodes: [
-      'activity.manage',
-      'tour.manage',
-      'session.manage',
-      'artist.manage',
-      'order.view',
-      'refund.review',
-      'venue.manage',
       'organizer.review',
-      'organizer.account.manage',
-      'venue.review',
-      'audit.view',
-      'checkin.view',
-      'checkin.device.manage',
       'organizer.follow.manage',
+      'organizer.account.manage',
       'organizer.assign.manage',
-      'activity.review.manage',
+      'venue.review',
+      'station.review',
     ],
   },
 ]
@@ -90,9 +91,20 @@ export function getRbacRoleTemplatesForRole(
   availablePermissionCodes: string[],
 ): RbacRoleTemplate[] {
   const normalizedRoleCode = roleCode?.trim()
-  if (!normalizedRoleCode || normalizedRoleCode === 'platform_super_admin') return []
+  if (!normalizedRoleCode) return []
 
   const availablePermissionSet = new Set(uniquePermissionCodes(availablePermissionCodes))
+  if (normalizedRoleCode === 'platform_super_admin') {
+    return [{
+      code: 'platform_super_admin_full',
+      name: '平台超管全权限模板',
+      description: '默认包含全部已启用后台权限，仅角色权限管理受系统自保锁定。',
+      roleCodes: ['platform_super_admin'],
+      permissionCodes: orderRbacPermissionCodes([...availablePermissionSet]),
+      missingPermissionCodes: [],
+    }]
+  }
+
   return RBAC_ROLE_TEMPLATE_DEFINITIONS
     .filter(template => template.roleCodes.includes(normalizedRoleCode))
     .map(template => {

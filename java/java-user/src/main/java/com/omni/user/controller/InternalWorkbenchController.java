@@ -24,6 +24,9 @@ import com.omni.user.dto.OperationAuditLogResponse;
 import com.omni.user.dto.RbacPermissionResponse;
 import com.omni.user.dto.RbacRolePermissionUpdateRequest;
 import com.omni.user.dto.RbacRoleResponse;
+import com.omni.user.dto.RbacUserPermissionOverrideUpdateRequest;
+import com.omni.user.dto.RbacUserPermissionResponse;
+import com.omni.user.dto.RbacUserPermissionSummaryResponse;
 import com.omni.user.dto.PlatformOpsSummaryResponse;
 import com.omni.user.dto.OrganizerDirectoryResponse;
 import com.omni.user.dto.OrganizerDirectoryRevokeRequest;
@@ -50,6 +53,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
 
 @RestController
 @RequestMapping("/api/user/console")
@@ -141,6 +145,7 @@ public class InternalWorkbenchController {
         return Result.success(rbacAdminService.listPermissions());
     }
 
+    @Transactional
     @PutMapping("/rbac/roles/{roleCode}/permissions")
     public Result<Void> updateRolePermissions(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -151,9 +156,46 @@ public class InternalWorkbenchController {
         requirePermission(userId, "rbac.manage");
         RbacAdminService.RolePermissionUpdateResult updateResult =
                 rbacAdminService.updateRolePermissions(roleCode, request == null ? null : request.getPermissionCodes());
-        auditSuccess(userId, "rbac.role_permission.update", "rbac_role", null, roleCode,
+        auditSuccess(userId, "RBAC_ROLE_PERMS_UPDATE", "rbac_role", null, roleCode,
                 "更新角色授权", updateResult.toAuditSummary());
         return Result.success();
+    }
+
+    @GetMapping("/rbac/users")
+    public Result<java.util.List<RbacUserPermissionSummaryResponse>> searchRbacUsers(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(required = false) String keyword) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        requirePermission(userId, "rbac.manage");
+        return Result.success(rbacAdminService.searchUsersForPermissionOverride(keyword));
+    }
+
+    @GetMapping("/rbac/users/{targetUserId}/permissions")
+    public Result<RbacUserPermissionResponse> getUserPermissionOverrides(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long targetUserId) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        requirePermission(userId, "rbac.manage");
+        return Result.success(rbacAdminService.getUserPermissionOverrides(targetUserId));
+    }
+
+    @Transactional
+    @PutMapping("/rbac/users/{targetUserId}/permissions")
+    public Result<RbacUserPermissionResponse> updateUserPermissionOverrides(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable Long targetUserId,
+            @RequestBody(required = false) RbacUserPermissionOverrideUpdateRequest request) {
+        Long userId = parseUserId(authorization);
+        if (userId == null) return Result.fail(ResultCode.UNAUTHORIZED);
+        requirePermission(userId, "rbac.manage");
+        RbacUserPermissionResponse response = rbacAdminService.updateUserPermissionOverrides(targetUserId, request, userId);
+        auditSuccess(userId, "USER_PERMISSION_OVERRIDE_UPDATE", "user_permission_override", targetUserId,
+                response.getNickname() == null ? String.valueOf(targetUserId) : response.getNickname(),
+                request == null || !StringUtils.hasText(request.getReason()) ? "更新账号权限微调" : request.getReason().trim(),
+                response.toAuditSummary());
+        return Result.success(response);
     }
 
     @GetMapping("/organizer-admins")

@@ -1138,6 +1138,28 @@ export interface RbacPermissionVO {
   description?: string | null
 }
 
+export interface RbacUserPermissionSummaryVO {
+  userId: number
+  nickname: string | null
+  phone: string | null
+  role: string | null
+  effectiveRole: string
+  baseRoleName: string
+}
+
+export interface RbacUserPermissionVO extends RbacUserPermissionSummaryVO {
+  inheritedPermissionCodes: string[]
+  allowPermissionCodes: string[]
+  denyPermissionCodes: string[]
+  effectivePermissionCodes: string[]
+}
+
+export interface RbacUserPermissionOverridePayload {
+  allowPermissionCodes: string[]
+  denyPermissionCodes: string[]
+  reason?: string | null
+}
+
 export interface OrganizerAdminAccountVO {
   id: number
   phone: string
