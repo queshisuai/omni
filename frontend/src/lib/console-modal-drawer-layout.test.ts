@@ -159,20 +159,20 @@ test('reconciliation batch generation is wrapped in a standard modal', () => {
 })
 
 test('account management pages keep create and edit forms inside modals', () => {
+  const accounts = source('../app/console/accounts/page.tsx')
   const organizerAdmins = source('../app/console/organizer-admins/page.tsx')
   const supportAccounts = source('../app/console/support-accounts/page.tsx')
 
-  assert.match(organizerAdmins, /@\/components\/ui\/Modal/)
-  assert.match(organizerAdmins, /accountDialog/)
-  assert.match(organizerAdmins, /<Modal[\s\S]*title=\{accountDialog\.mode === 'edit' \? '编辑平台主办方运营员账号' : '新建平台主办方运营员账号'\}/)
-  assert.doesNotMatch(organizerAdmins, /editingId === account\.id \? \(/)
-  assert.doesNotMatch(organizerAdmins, /md:grid-cols-\[170px_170px_170px_110px\]/)
+  assert.match(accounts, /@\/components\/ui\/Modal/)
+  assert.match(accounts, /accountDialog/)
+  assert.match(accounts, /title=\{`\$\{accountDialog\.mode === 'edit' \? '编辑' : '新建'\}\$\{dialogConfig\.label\}账号`\}/)
+  assert.match(accounts, /确认创建/)
+  assert.match(accounts, /确认保存/)
+  assert.doesNotMatch(accounts, /editingId === account\.id \? \(/)
+  assert.doesNotMatch(accounts, /md:grid-cols-\[150px_150px_150px_120px_110px\]/)
 
-  assert.match(supportAccounts, /@\/components\/ui\/Modal/)
-  assert.match(supportAccounts, /accountDialog/)
-  assert.match(supportAccounts, /<Modal[\s\S]*title=\{accountDialog\.mode === 'edit' \? '编辑客服账号' : '新建人工客服'\}/)
-  assert.doesNotMatch(supportAccounts, /editingId === account\.id \? \(/)
-  assert.doesNotMatch(supportAccounts, /md:grid-cols-\[150px_150px_150px_120px_110px\]/)
+  assert.match(supportAccounts, /redirect\('\/console\/accounts\?type=support'\)/)
+  assert.match(organizerAdmins, /redirect\('\/console\/accounts\?type=organizer'\)/)
 })
 
 test('exception task page moves complex create and row actions out of inline blocks', () => {

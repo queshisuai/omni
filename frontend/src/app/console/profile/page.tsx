@@ -179,10 +179,10 @@ export default function ConsoleProfilePage() {
                     <ActionLink href="/console/venue" title="场馆记录" desc="创建和维护场馆记录" />
                   </>
                 ) : role === 'organizer_admin' ? (
-                  <ActionLink href="/console/organizer-admins" title="平台主办方运营员" desc="分配和解除平台主办方运营员账号" />
+                  <ActionLink href="/console/accounts?type=organizer" title="平台账号管理" desc="分配和解除平台主办方运营员账号" />
                 ) : role === 'support' ? (
                   <>
-                    {user.permissionCodes?.includes('support.account.manage') ? <ActionLink href="/console/support-accounts" title="客服账号管理" desc="创建、编辑和停用客服账号" /> : null}
+                    {user.permissionCodes?.includes('support.account.manage') ? <ActionLink href="/console/accounts?type=support" title="平台账号管理" desc="创建、编辑和停用客服账号" /> : null}
                     {user.permissionCodes?.includes('support.conversation.view') ? <ActionLink href="/console/customer-service/sessions" title="客服会话工作台" desc="查看人工客服会话记录" /> : null}
                     {user.permissionCodes?.includes('audit.view') ? <ActionLink href="/console/audit-logs" title="操作审计" desc="查看后台人工操作日志" /> : null}
                   </>
@@ -214,7 +214,6 @@ export default function ConsoleProfilePage() {
     </div>
   )
 }
-
 function InfoCard({ icon, title, value }: { icon: React.ReactNode; title: string; value: string }) {
   return (
     <div className="rounded-2xl bg-[#fafafa] p-4">

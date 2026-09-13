@@ -8,7 +8,7 @@ import { getUser, isAuthenticated, logout, updateStoredUser } from '@/lib/auth'
 import { getUserInfo } from '@/lib/api'
 import { canAccessConsolePath, canEnterConsole, getConsoleBrandLabel, getConsoleRoleLabel, getDefaultConsolePath, isPlatformAdminRole } from '@/lib/console-auth'
 import { isConsolePathAllowedForRole } from '@/lib/console-paths'
-import { CalendarDays, ChevronDown, LayoutDashboard, LogOut, Menu, ShieldCheck, ShoppingCart, Sliders, UserCircle2, X } from 'lucide-react'
+import { CalendarDays, ChevronDown, LayoutDashboard, LogOut, Menu, ShieldCheck, ShoppingCart, Sliders, UserCircle2, Users, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 type ConsoleMenuRole = 'admin' | 'organizer' | 'organizer_admin' | 'support'
@@ -88,8 +88,7 @@ export const consoleMenuGroups: ConsoleMenuGroup[] = [
     roles: ['admin'],
     children: [
       { href: '/console/rbac/roles', label: '角色权限配置' },
-      { href: '/console/support-accounts', label: '客服账号管理' },
-      { href: '/console/organizer-admins', label: '主办方运营员账号' },
+      { href: '/console/accounts', label: '平台账号管理', icon: Users, roles: ['admin'] },
       { href: '/console/reconciliation', label: '日结对账报表' },
       { href: '/console/exception-tasks', label: '异常补偿任务' },
       { href: '/console/audit-logs', label: '操作审计日志' },
@@ -107,6 +106,13 @@ const ORGANIZER_CONSOLE_LABELS: Record<string, string> = {
   '/console/check-in': '现场入场核验',
   '/console/refunds': '主办方退款处理',
 }
+
+const CONSOLE_COMPATIBILITY_PATHS = [
+  '/console/accounts',
+  '/console/support-accounts',
+  '/console/organizer-admins',
+  '/console/support-conversations',
+]
 
 function normalizeConsoleMenuRole(role: string | null | undefined): ConsoleMenuRole | null {
   if (isPlatformAdminRole(role)) return 'admin'
@@ -188,6 +194,7 @@ function canOpenConsolePath(role: string, pathname: string, permissionCodes: str
   if (role === 'organizer') return isConsolePathAllowedForRole(role, pathname)
   if (!canAccessConsolePath(pathname, permissionCodes)) return false
   if (pathname === '/console' || isConsoleMenuHrefActive(pathname, '/console/profile')) return true
+  if (CONSOLE_COMPATIBILITY_PATHS.some(path => isConsoleMenuHrefActive(pathname, path))) return true
 
   return buildVisibleConsoleMenuGroups(role, permissionCodes)
     .some(group => group.children.some(child => isConsoleMenuHrefActive(pathname, child.href)))

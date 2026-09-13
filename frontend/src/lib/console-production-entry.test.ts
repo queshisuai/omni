@@ -442,11 +442,13 @@ test('activity artist selector does not use artist id as fallback display name',
   assert.match(content, /艺人信息待同步/)
 })
 
-test('console support account roles use Chinese fallback for unknown codes', () => {
-  const content = source('../app/console/support-accounts/page.tsx')
+test('console account page separates support roles into manager and agent tabs', () => {
+  const content = source('../app/console/accounts/page.tsx')
 
-  assert.doesNotMatch(content, /supportRoleOptions\.find\(option => option\.value === role\)\?\.label \|\| '普通客服'/)
-  assert.match(content, /未知客服角色/)
+  assert.match(content, /type AccountTab = 'MANAGER' \| 'AGENT' \| 'ORGANIZER'/)
+  assert.match(content, /supportRole: 'support_manager'/)
+  assert.match(content, /supportRole: 'support_agent'/)
+  assert.match(content, /supportAccounts\.filter\(account => account\.supportRole === supportRole\)/)
 })
 
 test('console roles page shows permission change preview before saving', () => {
@@ -470,8 +472,8 @@ test('console roles page offers role templates before saving', () => {
   assert.match(content, /请核对权限变更预览后保存/)
 })
 
-test('console support account status uses Chinese fallback for unknown codes', () => {
-  const content = source('../app/console/support-accounts/page.tsx')
+test('console account status uses Chinese fallback for unknown codes', () => {
+  const content = source('../app/console/accounts/page.tsx')
 
   assert.doesNotMatch(content, /account\.status === 1 \? '启用中' : '已停用'/)
   assert.doesNotMatch(content, /account\.status === 1 \? '停用' : '启用'/)
@@ -479,34 +481,23 @@ test('console support account status uses Chinese fallback for unknown codes', (
   assert.match(content, /状态待核对/)
 })
 
-test('console support account status protects unknown statuses from edit and toggle actions', () => {
-  const content = source('../app/console/support-accounts/page.tsx')
+test('console account status protects unknown statuses from edit and toggle actions', () => {
+  const content = source('../app/console/accounts/page.tsx')
 
-  assert.match(content, /\bisKnownSupportAccountStatus\b/)
-  assert.match(content, /!isKnownSupportAccountStatus\(account\.status\)/)
+  assert.match(content, /\bisKnownAccountStatus\b/)
+  assert.match(content, /!isKnownAccountStatus\(account\.status\)/)
   assert.match(content, /账号状态待核对，请刷新后再操作/)
   assert.doesNotMatch(content, /账号状态未知，请先核对后再操作/)
   assert.doesNotMatch(content, /account\.status === 1 \? <ShieldOff/)
   assert.doesNotMatch(content, /disabled=\{saving \|\| \(account\.status !== 1 && account\.status !== 0\)\}/)
 })
 
-test('console organizer admin account status uses Chinese fallback for unknown codes', () => {
-  const content = source('../app/console/organizer-admins/page.tsx')
+test('legacy account pages redirect to unified platform account management', () => {
+  const supportAccounts = source('../app/console/support-accounts/page.tsx')
+  const organizerAdmins = source('../app/console/organizer-admins/page.tsx')
 
-  assert.doesNotMatch(content, /account\.status === 1 \? '启用中' : '已停用'/)
-  assert.doesNotMatch(content, /account\.status === 1 \? '停用' : '启用'/)
-  assert.match(content, /未知账号状态/)
-  assert.match(content, /状态待核对/)
-})
-
-test('console organizer admin account status protects unknown statuses from edit and toggle actions', () => {
-  const content = source('../app/console/organizer-admins/page.tsx')
-
-  assert.match(content, /\bisKnownOrganizerAdminAccountStatus\b/)
-  assert.match(content, /!isKnownOrganizerAdminAccountStatus\(account\.status\)/)
-  assert.match(content, /账号状态待核对，请刷新后再操作/)
-  assert.doesNotMatch(content, /账号状态未知，请先核对后再操作/)
-  assert.doesNotMatch(content, /account\.status === 1 \? <ShieldOff/)
+  assert.match(supportAccounts, /redirect\('\/console\/accounts\?type=support'\)/)
+  assert.match(organizerAdmins, /redirect\('\/console\/accounts\?type=organizer'\)/)
 })
 
 test('console organizer application status uses Chinese fallback for unknown codes', () => {

@@ -16,12 +16,12 @@ const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href:
   { permission: 'refund.review', label: '退款审核', href: '/console/refunds' },
   { permission: 'venue.manage', label: '场馆记录', href: '/console/venue' },
   { permission: 'organizer.review', label: '主办方入驻审核和管理', href: '/console/organizer-applications' },
-  { permission: 'organizer.account.manage', label: '平台主办方运营员账号管理', href: '/console/organizer-admins' },
+  { permission: 'organizer.account.manage', label: '平台账号管理', href: '/console/accounts' },
   { permission: 'venue.review', label: '场馆资料审核', href: '/console/venue/applications' },
   { permission: 'station.review', label: '站点变更审核', href: '/console/station-config-reviews' },
   { permission: 'risk.review', label: '恢复售票审核', href: '/console/risk-resolutions' },
   { permission: 'risk.view', label: '风险案例管理', href: '/console/risk-cases' },
-  { permission: 'support.account.manage', label: '客服账号管理', href: '/console/support-accounts' },
+  { permission: 'support.account.manage', label: '平台账号管理', href: '/console/accounts' },
   { permission: 'support.conversation.view', label: '客服会话工作台', href: '/console/customer-service/sessions' },
   { permission: 'audit.view', label: '操作审计', href: '/console/audit-logs' },
   { permission: 'compensation.execute', label: '异常任务', href: '/console/exception-tasks' },
@@ -35,10 +35,12 @@ const SCOPED_BACKSTAGE_QUICK_ACTIONS = new Set([
   'refund.review',
   'activity.review.manage',
   'organizer.review',
+  'organizer.account.manage',
   'venue.review',
   'station.review',
   'risk.review',
   'risk.view',
+  'support.account.manage',
   'support.conversation.view',
 ])
 
@@ -49,6 +51,8 @@ const ORGANIZER_BLOCKED_PREFIXES = [
   '/console/venue/applications',
   '/console/station-config-reviews',
   '/console/organizer-applications',
+  '/console/organizer-admins',
+  '/console/accounts',
   '/console/support-accounts',
   '/console/customer-service/sessions',
 ]
@@ -69,6 +73,15 @@ const ORGANIZER_ALLOWED_PREFIXES = [
 
 function matchesPath(pathname: string, prefix: string) {
   return pathname === prefix || pathname.startsWith(`${prefix}/`)
+}
+
+function dedupeConsoleQuickActions(actions: ConsoleQuickAction[]) {
+  const seen = new Set<string>()
+  return actions.filter(action => {
+    if (seen.has(action.href)) return false
+    seen.add(action.href)
+    return true
+  })
 }
 
 export function isConsolePathAllowedForRole(role: UserRole | string | null | undefined, pathname: string) {
@@ -92,7 +105,7 @@ export function getConsoleQuickActions(role: UserRole | string | null | undefine
     const actions = PERMISSION_QUICK_ACTIONS
       .filter(action => permissionCodes.includes(action.permission))
       .map(({ label, href }) => ({ label, href }))
-    return hasOrganizerOpsHome ? [{ label: '运营工作台', href: '/console/organizer-ops' }, ...actions] : actions
+    return dedupeConsoleQuickActions(hasOrganizerOpsHome ? [{ label: '运营工作台', href: '/console/organizer-ops' }, ...actions] : actions)
   }
 
   if (role === 'organizer') {
@@ -108,22 +121,22 @@ export function getConsoleQuickActions(role: UserRole | string | null | undefine
   }
 
   if (role === 'organizer_admin') {
-    return [
+    return dedupeConsoleQuickActions([
       ...(hasOrganizerOpsHome ? [{ label: '运营工作台', href: '/console/organizer-ops' }] : []),
       ...PERMISSION_QUICK_ACTIONS
         .filter(action => SCOPED_BACKSTAGE_QUICK_ACTIONS.has(action.permission) && permissionCodes.includes(action.permission))
         .map(({ label, href }) => ({ label, href })),
       { label: '个人中心', href: '/console/profile' },
-    ]
+    ])
   }
 
   if (role === 'support') {
-    return [
+    return dedupeConsoleQuickActions([
       ...PERMISSION_QUICK_ACTIONS
         .filter(action => SCOPED_BACKSTAGE_QUICK_ACTIONS.has(action.permission) && permissionCodes.includes(action.permission))
         .map(({ label, href }) => ({ label, href })),
       { label: '个人中心', href: '/console/profile' },
-    ]
+    ])
   }
 
   return []

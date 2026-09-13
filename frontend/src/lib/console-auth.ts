@@ -1,4 +1,5 @@
 const PATH_PERMISSION_MAP: Record<string, string[]> = {
+  '/console/accounts': ['support.account.manage', 'organizer.account.manage'],
   '/console/support-accounts': ['support.account.manage'],
   '/console/support-conversations': ['support.conversation.view', 'cs.manage', 'cs.review'],
   '/console/customer-service/sessions': ['support.conversation.view', 'cs.manage', 'cs.review'],

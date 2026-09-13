@@ -21,6 +21,13 @@ test('console layout defines five grouped business menu sections and fixed profi
   assert.match(layoutSource, /href="\/console\/profile"[\s\S]*个人中心/)
 })
 
+test('console layout replaces split account entries with unified platform account management', () => {
+  assert.match(layoutSource, /href: '\/console\/accounts'/)
+  assert.match(layoutSource, /label: '平台账号管理'/)
+  assert.doesNotMatch(layoutSource, /href: '\/console\/support-accounts'/)
+  assert.doesNotMatch(layoutSource, /href: '\/console\/organizer-admins'/)
+})
+
 test('console layout filters children by role and permission before hiding empty groups', () => {
   assert.match(layoutSource, /buildVisibleConsoleMenuGroups/)
   assert.match(layoutSource, /canAccessConsolePath\(child\.href, permissionCodes\)/)

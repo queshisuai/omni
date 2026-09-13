@@ -1,5 +1,14 @@
 # Implementation Notes
 
+## 2026-09-13 平台账号管理合并
+
+- 前端新增 `/console/accounts`，合并客服主管、普通客服、平台主办方运营员三类账号管理；客服列表复用 `/api/user/support/admin/accounts` 并按 `supportRole` 拆 Tab，运营员列表继续走 `/api/user/console/organizer-admins`。
+- 侧边栏“系统、安全与财务”移除 `/console/support-accounts` 与 `/console/organizer-admins`，新增“平台账号管理”；权限表新增 `/console/accounts`，具备 `support.account.manage` 或 `organizer.account.manage` 任一权限即可进入。
+- 旧账号路由保留为兼容跳转：客服账号页跳 `/console/accounts?type=support`，运营员账号页跳 `/console/accounts?type=organizer`；个人中心、运营工作台和快捷入口同步改到新路由；`/console/support-conversations` 继续作为“查看会话记录”的兼容入口并在布局守卫中放行。
+- 页面采用三级并列 Tab、高密度 `ConsoleTable`、`ConsoleTableSkeleton` 加载态、中文表单标签和 11 位手机号校验；提交按钮带保存态，行操作继续使用编辑、启用/停用、删除。
+- 偏离说明：运行较宽的前端静态测试时命中既有非账号页面断言失败，涉及艺人审核、风险审核、站点变更审核和客服会话旧断言；本轮未修改这些页面。
+- 验证：新增账号路由与页面静态测试先红后绿；`node --test src\lib\console-auth.test.ts src\lib\console-layout-menu.test.ts src\lib\console-paths.test.ts src\lib\console-accounts-page.test.ts` 通过 `24/24`；`pnpm typecheck` 通过。未提交或推送 Git，未调用真实账号写操作接口。
+
 ## 2026-09-13 客服技能组树与三栏工作台实现
 
 - 已按批准的兼容式增量方案完成设计与实现：复用 `support_conversation`、`support_message`、`support_conversation_note`、`support_conversation_audit`，不新建平行 `cs_session` 数据域。

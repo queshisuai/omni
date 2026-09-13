@@ -8,6 +8,12 @@ test('support manager can access support pages but not audit pages', () => {
   assert.equal(canAccessConsolePath('/console/audit-logs', permissions), false)
 })
 
+test('platform account management route accepts support or organizer account permissions', () => {
+  assert.equal(canAccessConsolePath('/console/accounts', ['support.account.manage']), true)
+  assert.equal(canAccessConsolePath('/console/accounts', ['organizer.account.manage']), true)
+  assert.equal(canAccessConsolePath('/console/accounts', ['support.conversation.view']), false)
+})
+
 test('organizer admin can only access own scope pages', () => {
   const permissions = ['activity.manage', 'station.review']
   assert.equal(canAccessConsolePath('/console/activities', permissions), true)

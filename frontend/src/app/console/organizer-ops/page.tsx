@@ -488,7 +488,7 @@ export default function OrganizerOpsPage() {
           title="平台主办方运营员"
           value={state.accountError && state.accounts.length === 0 ? '-' : state.accounts.length}
           hint={state.accountError || `启用 ${activeAccountCount} 个，停用 ${inactiveAccountCount} 个。`}
-          href={canManageOpsAccounts ? '/console/organizer-admins' : undefined}
+          href={canManageOpsAccounts ? '/console/accounts?type=organizer' : undefined}
         />
         <MetricCard
           icon={ShieldCheck}
@@ -525,7 +525,7 @@ export default function OrganizerOpsPage() {
             </button>
           ) : null}
           {canManageOpsAccounts ? (
-            <Link href="/console/organizer-admins" className="rounded-lg border border-gray-200 px-4 py-3 text-[13px] text-gray-700 hover:border-[#ff1268] hover:text-[#ff1268]">
+            <Link href="/console/accounts?type=organizer" className="rounded-lg border border-gray-200 px-4 py-3 text-[13px] text-gray-700 hover:border-[#ff1268] hover:text-[#ff1268]">
               运营员账号
             </Link>
           ) : null}
