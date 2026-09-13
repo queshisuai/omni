@@ -1,6 +1,9 @@
 package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.omni.common.dto.InternalAuthContextResponse;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.ActivityRiskCaseResponse;
@@ -19,8 +22,11 @@ import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.ActivityRiskResolutionMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -39,6 +45,7 @@ public class ActivityRiskResponseService {
     private final NotificationMqProducer notificationProducer;
     private final ActivityAdminService activityAdminService;
     private final String internalToken;
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     public ActivityRiskResponseService(ActivityMapper activityMapper,
                                        ActivityArtistMapper activityArtistMapper,
@@ -58,6 +65,11 @@ public class ActivityRiskResponseService {
         this.notificationProducer = notificationProducer;
         this.activityAdminService = activityAdminService;
         this.internalToken = internalToken;
+    }
+
+    @Autowired(required = false)
+    public void setSearchIndexEventPublisher(ActivitySearchIndexEventPublisher searchIndexEventPublisher) {
+        this.searchIndexEventPublisher = searchIndexEventPublisher;
     }
 
     public int suspendPublishedActivitiesForRiskArtist(Long artistId, String reason) {
@@ -168,9 +180,58 @@ public class ActivityRiskResponseService {
         return resolutionMapper.selectList(wrapper).stream().map(this::toResponse).collect(Collectors.toList());
     }
 
+    public Page<ActivityRiskResolutionResponse> listResolutionsPage(Long userId,
+                                                                    long page,
+                                                                    long size,
+                                                                    String keyword,
+                                                                    String reasonType,
+                                                                    String status) {
+        boolean platformReviewer = userAccessService.hasPlatformPermission(userId, "risk.review");
+        String role = platformReviewer ? "platform" : userAccessService.requireAdminOrOrganizerRole(userId);
+        long current = Math.max(1, page);
+        long pageSize = Math.min(100, Math.max(1, size));
+        LambdaQueryWrapper<ActivityRiskResolution> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(status)) {
+            wrapper.eq(ActivityRiskResolution::getStatus, status.trim());
+        }
+        if ("organizer".equals(role)) {
+            wrapper.eq(ActivityRiskResolution::getOrganizerId, userId);
+        }
+        if (StringUtils.hasText(reasonType)) {
+            List<Long> reasonActivityIds = findActivityIdsByRiskReason(reasonType.trim());
+            if (reasonActivityIds.isEmpty()) {
+                wrapper.eq(ActivityRiskResolution::getActivityId, -1L);
+            } else {
+                wrapper.in(ActivityRiskResolution::getActivityId, reasonActivityIds);
+            }
+        }
+        if (StringUtils.hasText(keyword)) {
+            String term = keyword.trim();
+            Long numericTerm = parseLong(term);
+            List<Long> matchedActivityIds = findActivityIdsByName(term);
+            wrapper.and(query -> {
+                query.like(ActivityRiskResolution::getResolutionNote, term);
+                if (numericTerm != null) {
+                    query.or().eq(ActivityRiskResolution::getId, numericTerm)
+                            .or().eq(ActivityRiskResolution::getActivityId, numericTerm);
+                }
+                if (!matchedActivityIds.isEmpty()) {
+                    query.or().in(ActivityRiskResolution::getActivityId, matchedActivityIds);
+                }
+            });
+        }
+        wrapper.orderByDesc(ActivityRiskResolution::getCreateTime)
+                .orderByDesc(ActivityRiskResolution::getId);
+        Page<ActivityRiskResolution> source = resolutionMapper.selectPage(new Page<>(current, pageSize), wrapper);
+        Page<ActivityRiskResolutionResponse> result = new Page<>(source.getCurrent(), source.getSize(), source.getTotal());
+        result.setRecords(source.getRecords().stream().map(this::toResponse).collect(Collectors.toList()));
+        return result;
+    }
+
+    @Transactional
     public ActivityRiskResolutionResponse reviewResolution(Long id, ActivityRiskResolutionReviewRequest request) {
         if (request == null || request.getUserId() == null) throw new BusinessException(ResultCode.BAD_REQUEST, "审核参数不能为空");
-        userAccessService.requirePlatformPermission(request.getUserId(), "risk.review");
+        InternalAuthContextResponse auth = userAccessService.requirePlatformPermission(request.getUserId(), "risk.review");
         ActivityRiskResolution resolution = resolutionMapper.selectById(id);
         if (resolution == null) throw new BusinessException(ResultCode.NOT_FOUND, "处理申请不存在");
         Activity activity = requireActivity(resolution.getActivityId());
@@ -184,13 +245,19 @@ public class ActivityRiskResponseService {
             throw new BusinessException(ResultCode.BAD_REQUEST, "活动已不处于风险停票状态");
         }
         LocalDateTime now = LocalDateTime.now();
+        String auditAction;
         if ("approve".equals(request.getAction())) {
             activityAdminService.validatePublishableForReview(activity.getId());
             restoreActivity(activity);
             resolution.setStatus("approved");
+            auditAction = "RISK_SALE_RECOVERY_APPROVE";
             notifyUser(activity.getOrganizerId(), "IN_APP", "活动恢复售票申请已通过：" + activity.getName());
         } else if ("reject".equals(request.getAction())) {
+            if (!StringUtils.hasText(request.getReviewNote())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "驳回原因不能为空");
+            }
             resolution.setStatus("rejected");
+            auditAction = "RISK_SALE_RECOVERY_REJECT";
             notifyUser(activity.getOrganizerId(), "IN_APP", "活动恢复售票申请已拒绝：" + activity.getName());
         } else {
             throw new BusinessException(ResultCode.BAD_REQUEST, "审核动作不正确");
@@ -200,6 +267,11 @@ public class ActivityRiskResponseService {
         resolution.setReviewedAt(now);
         resolution.setUpdateTime(now);
         resolutionMapper.updateById(resolution);
+        if ("approve".equals(request.getAction())) {
+            publishSearchUpsert(activity.getId());
+        }
+        writeResolutionAudit(auth, request.getUserId(), auditAction, resolution, request.getReviewNote(),
+                "approve".equals(request.getAction()) ? "恢复售票已批准" : "恢复售票申请已驳回");
         return toResponse(resolution);
     }
 
@@ -267,6 +339,57 @@ public class ActivityRiskResponseService {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
+    private Long parseLong(String value) {
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private List<Long> findActivityIdsByName(String keyword) {
+        if (!StringUtils.hasText(keyword)) return Collections.emptyList();
+        List<Activity> activities = activityMapper.selectList(new LambdaQueryWrapper<Activity>()
+                .like(Activity::getName, keyword)
+                .last("LIMIT 200"));
+        if (activities == null || activities.isEmpty()) return Collections.emptyList();
+        return activities.stream().map(Activity::getId).collect(Collectors.toList());
+    }
+
+    private List<Long> findActivityIdsByRiskReason(String reasonType) {
+        if (!StringUtils.hasText(reasonType)) return Collections.emptyList();
+        List<Activity> activities = activityMapper.selectList(new LambdaQueryWrapper<Activity>()
+                .like(Activity::getRiskSuspendedReason, reasonType)
+                .last("LIMIT 500"));
+        if (activities == null || activities.isEmpty()) return Collections.emptyList();
+        return activities.stream().map(Activity::getId).collect(Collectors.toList());
+    }
+
+    private void publishSearchUpsert(Long activityId) {
+        if (searchIndexEventPublisher != null && activityId != null) {
+            searchIndexEventPublisher.publishUpsert(activityId);
+        }
+    }
+
+    private void writeResolutionAudit(InternalAuthContextResponse auth,
+                                      Long operatorId,
+                                      String action,
+                                      ActivityRiskResolution resolution,
+                                      String reason,
+                                      String result) {
+        OperationAuditWriteRequest audit = new OperationAuditWriteRequest();
+        audit.setOperatorId(operatorId);
+        audit.setOperatorRole(auth == null ? null : auth.getEffectiveRole());
+        audit.setAction(action);
+        audit.setTargetType("activity_risk_resolution");
+        audit.setTargetId(resolution.getId());
+        audit.setTargetRef(resolution.getActivityId() == null ? null : String.valueOf(resolution.getActivityId()));
+        audit.setReason(trimToNull(reason));
+        audit.setResult(result);
+        audit.setSuccess(Boolean.TRUE);
+        userAccessService.writeOperationAudit(audit);
+    }
+
     private ActivityRiskResolutionResponse toResponse(ActivityRiskResolution resolution) {
         ActivityRiskResolutionResponse response = new ActivityRiskResolutionResponse();
         response.setId(resolution.getId());
@@ -274,6 +397,9 @@ public class ActivityRiskResponseService {
         Activity activity = resolution.getActivityId() == null ? null : activityMapper.selectById(resolution.getActivityId());
         if (activity != null) {
             response.setActivityName(activity.getName());
+            response.setActivityPoster(activity.getPoster());
+            response.setRiskSuspendedReason(activity.getRiskSuspendedReason());
+            response.setRiskSuspendedAt(activity.getRiskSuspendedAt());
         }
         response.setOrganizerId(resolution.getOrganizerId());
         response.setRiskArtistId(resolution.getRiskArtistId());
@@ -283,6 +409,8 @@ public class ActivityRiskResponseService {
         response.setSubmittedBy(resolution.getSubmittedBy());
         response.setReviewedBy(resolution.getReviewedBy());
         response.setReviewedAt(resolution.getReviewedAt());
+        response.setCreateTime(resolution.getCreateTime());
+        response.setUpdateTime(resolution.getUpdateTime());
         return response;
     }
 }

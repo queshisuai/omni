@@ -9,6 +9,7 @@ import {
   rejectVenueApplication,
 } from '@/lib/api'
 import { DEFAULT_PAGE_SIZE, GlobalPagination } from '@/components/Pagination'
+import { CONSOLE_TABLE_HEADER_CLASS, ConsoleTable } from '@/components/ConsoleTable'
 import { SafeImage } from '@/components/SafeImage'
 import { Drawer } from '@/components/ui/Drawer'
 import { Modal } from '@/components/ui/Modal'
@@ -259,17 +260,22 @@ export default function VenueApplicationsPage() {
       </div>
 
       {loadError ? <div className="rounded-xl border border-[#ffd9e6] bg-white py-16 text-center text-[14px] text-[#ef4444]">{loadError}</div> : (
-        <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
-          <table className="min-w-[1280px] w-full table-fixed text-left text-[13px]">
-            <thead className="bg-[#fafafa] text-[#777]">
+        <ConsoleTable
+          loading={loading}
+          skeletonRows={6}
+          skeletonColumns={7}
+          footer={<GlobalPagination page={page} total={total} loading={loading} onChange={setPage} />}
+        >
+            <table className="w-full table-fixed text-left text-[13px]">
+            <thead className={CONSOLE_TABLE_HEADER_CLASS}>
               <tr>
-                <th className="w-[240px] px-4 py-3">场馆信息 / 资质编号</th>
-                <th className="w-[210px] px-4 py-3">所属城市与详细地址</th>
-                <th className="w-[160px] px-4 py-3">核定容量与规模梯队</th>
-                <th className="w-[150px] px-4 py-3">提报经办人 / 电话</th>
-                <th className="w-[230px] px-4 py-3">资质审批附件状态</th>
-                <th className="w-[100px] px-4 py-3">审核状态</th>
-                <th className="w-[150px] px-4 py-3">操作</th>
+                <th className="w-[19%] px-4 py-3">场馆信息 / 资质编号</th>
+                <th className="w-[17%] px-4 py-3">所属城市与详细地址</th>
+                <th className="w-[12%] px-4 py-3">核定容量与规模梯队</th>
+                <th className="w-[12%] px-4 py-3">提报经办人 / 电话</th>
+                <th className="w-[19%] px-4 py-3">资质审批附件状态</th>
+                <th className="w-[8%] px-4 py-3">审核状态</th>
+                <th className="w-[13%] whitespace-nowrap px-4 py-3">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#f0f0f0]">
@@ -313,11 +319,9 @@ export default function VenueApplicationsPage() {
                 )
               })}
             </tbody>
-          </table>
-        </div>
+            </table>
+        </ConsoleTable>
       )}
-
-      {!loadError && !loading && <GlobalPagination page={page} total={total} loading={loading} onChange={setPage} />}
 
       <Drawer
         open={Boolean(drawerItem)}

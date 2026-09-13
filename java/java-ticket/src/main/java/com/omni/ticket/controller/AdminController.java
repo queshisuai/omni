@@ -38,6 +38,7 @@ import com.omni.ticket.dto.SeatCraftLayoutDtos;
 import com.omni.ticket.dto.SeatTemplateResponse;
 import com.omni.ticket.dto.SeatTemplateSyncResponse;
 import com.omni.ticket.dto.SessionAdminResponse;
+import com.omni.ticket.dto.StationConfigReviewDiffResponse;
 import com.omni.ticket.dto.StationConfigVersionDetailResponse;
 import com.omni.ticket.dto.StationConfigVersionRequest;
 import com.omni.ticket.dto.StationConfigVersionResponse;
@@ -488,13 +489,36 @@ public class AdminController {
         return Result.success(artistGovernanceService.updateProfile(id, serviceRequest));
     }
 
-    @GetMapping("/artists/pending")
-    public Result<List<Artist>> listPendingArtists(@RequestHeader(value = "Authorization", required = false) String authorization) {
+    public Result<List<Artist>> listPendingArtists(String authorization) {
         Long operatorId = parseOperatorId(authorization);
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
         return Result.success(artistGovernanceService.listPending(operatorId));
+    }
+    @GetMapping("/artists/pending")
+    public Result<Page<Artist>> listPendingArtists(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                                   @RequestParam(defaultValue = "1") long page,
+                                                   @RequestParam(defaultValue = "10") long size,
+                                                   @RequestParam(required = false) String keyword,
+                                                   @RequestParam(required = false) String category,
+                                                   @RequestParam(required = false) String status,
+                                                   @RequestParam(required = false) String riskStatus,
+                                                   @RequestParam(required = false) String qualificationStatus) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        String role = checkArtistManageRole(operatorId);
+        if (role == null) {
+            return Result.fail(ResultCode.FORBIDDEN);
+        }
+        String reviewStatus = StringUtils.hasText(status) && !"all".equalsIgnoreCase(status.trim()) ? status.trim() : null;
+        if (!StringUtils.hasText(status)) {
+            reviewStatus = "pending";
+        }
+        return Result.success(artistAdminService.listManageable(operatorId, role, page, size, keyword, category,
+                reviewStatus, riskStatus, qualificationStatus));
     }
 
     @PostMapping("/artists/{id}/review")
@@ -509,15 +533,54 @@ public class AdminController {
         return Result.success(artistGovernanceService.review(id, serviceRequest));
     }
 
+    @PostMapping("/artists/{id}/approve")
+    public Result<Artist> approveArtist(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                        @PathVariable Long id,
+                                        @RequestBody(required = false) ArtistReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        ArtistReviewRequest serviceRequest = toServiceArtistReviewRequest(operatorId, request);
+        serviceRequest.setAction("approve");
+        return Result.success(artistGovernanceService.review(id, serviceRequest));
+    }
+
+    @PostMapping("/artists/{id}/reject")
+    public Result<Artist> rejectArtist(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                       @PathVariable Long id,
+                                       @RequestBody(required = false) ArtistReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        ArtistReviewRequest serviceRequest = toServiceArtistReviewRequest(operatorId, request);
+        serviceRequest.setAction("reject");
+        return Result.success(artistGovernanceService.review(id, serviceRequest));
+    }
+
     @PostMapping("/artists/{id}/risk")
     public Result<Artist> updateArtistRisk(@RequestHeader(value = "Authorization", required = false) String authorization,
-                                           @PathVariable Long id,
-                                           @RequestBody ArtistRiskRequest request) {
+                                            @PathVariable Long id,
+                                            @RequestBody ArtistRiskRequest request) {
         Long operatorId = parseOperatorId(authorization);
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
         ArtistRiskRequest serviceRequest = toServiceArtistRiskRequest(operatorId, request);
+        return Result.success(artistGovernanceService.updateRisk(id, serviceRequest));
+    }
+
+    @PostMapping("/artists/{id}/mark-risk")
+    public Result<Artist> markRiskArtist(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                         @PathVariable Long id,
+                                         @RequestBody(required = false) ArtistRiskRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        ArtistRiskRequest serviceRequest = toServiceArtistRiskRequest(operatorId, request);
+        serviceRequest.setRiskStatus("risky");
         return Result.success(artistGovernanceService.updateRisk(id, serviceRequest));
     }
 
@@ -586,17 +649,28 @@ public class AdminController {
         return Result.success(activityRiskResponseService.submitResolution(id, request));
     }
 
-    @GetMapping("/risk-resolutions")
-    public Result<List<ActivityRiskResolutionResponse>> listRiskResolutions(
-                                                                             @RequestHeader(value = "Authorization", required = false) String authorization,
-                                                                             @RequestParam(required = false) Long userId,
-                                                                             @RequestParam(required = false) String status) {
+    public Result<List<ActivityRiskResolutionResponse>> listRiskResolutions(String authorization,
+                                                                            Long userId,
+                                                                            String status) {
         Long operatorId = parseOperatorId(authorization);
         if (operatorId == null) {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
-        userId = operatorId;
-        return Result.success(activityRiskResponseService.listResolutions(userId, status));
+        return Result.success(activityRiskResponseService.listResolutions(operatorId, status));
+    }
+    @GetMapping("/risk-resolutions")
+    public Result<Page<ActivityRiskResolutionResponse>> listRiskResolutions(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String reasonType,
+            @RequestParam(required = false) String status) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(activityRiskResponseService.listResolutionsPage(operatorId, page, size, keyword, reasonType, status));
     }
 
     @PostMapping("/risk-resolutions/{id}/review")
@@ -611,6 +685,38 @@ public class AdminController {
             request = new ActivityRiskResolutionReviewRequest();
         }
         request.setUserId(operatorId);
+        return Result.success(activityRiskResponseService.reviewResolution(id, request));
+    }
+
+    @PostMapping("/risk-resolutions/{id}/approve")
+    public Result<ActivityRiskResolutionResponse> approveRiskResolution(@PathVariable Long id,
+                                                                       @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                       @RequestBody(required = false) ActivityRiskResolutionReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        if (request == null) {
+            request = new ActivityRiskResolutionReviewRequest();
+        }
+        request.setUserId(operatorId);
+        request.setAction("approve");
+        return Result.success(activityRiskResponseService.reviewResolution(id, request));
+    }
+
+    @PostMapping("/risk-resolutions/{id}/reject")
+    public Result<ActivityRiskResolutionResponse> rejectRiskResolution(@PathVariable Long id,
+                                                                      @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                      @RequestBody(required = false) ActivityRiskResolutionReviewRequest request) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        if (request == null) {
+            request = new ActivityRiskResolutionReviewRequest();
+        }
+        request.setUserId(operatorId);
+        request.setAction("reject");
         return Result.success(activityRiskResponseService.reviewResolution(id, request));
     }
 
@@ -759,6 +865,34 @@ public class AdminController {
         return Result.success(stationConfigVersionService.listReviews(operatorId, status));
     }
 
+    @GetMapping("/station-config-reviews")
+    public Result<Page<StationConfigVersionResponse>> listStationConfigReviews(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String changeType,
+            @RequestParam(defaultValue = "submitted") String status) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.listReviewsPage(
+                operatorId, page, size, keyword, city, changeType, status));
+    }
+
+    @GetMapping("/station-config-reviews/{id}/diff")
+    public Result<StationConfigReviewDiffResponse> getStationConfigReviewDiff(
+            @PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        return Result.success(stationConfigVersionService.getReviewDiff(operatorId, id));
+    }
+
     @PostMapping("/station-config-versions/{versionId}/approve")
     public Result<StationConfigVersionResponse> approveStationConfigVersion(@PathVariable Long versionId,
                                                                             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -770,6 +904,13 @@ public class AdminController {
         return Result.success(stationConfigVersionService.approve(operatorId, versionId, request));
     }
 
+    @PostMapping("/station-config-reviews/{id}/approve")
+    public Result<StationConfigVersionResponse> approveStationConfigReview(@PathVariable Long id,
+                                                                           @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                           @RequestBody(required = false) StationConfigVersionReviewRequest request) {
+        return approveStationConfigVersion(id, authorization, request);
+    }
+
     @PostMapping("/station-config-versions/{versionId}/reject")
     public Result<StationConfigVersionResponse> rejectStationConfigVersion(@PathVariable Long versionId,
                                                                            @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -779,6 +920,13 @@ public class AdminController {
             return Result.fail(ResultCode.UNAUTHORIZED);
         }
         return Result.success(stationConfigVersionService.reject(operatorId, versionId, request));
+    }
+
+    @PostMapping("/station-config-reviews/{id}/reject")
+    public Result<StationConfigVersionResponse> rejectStationConfigReview(@PathVariable Long id,
+                                                                          @RequestHeader(value = "Authorization", required = false) String authorization,
+                                                                          @RequestBody(required = false) StationConfigVersionReviewRequest request) {
+        return rejectStationConfigVersion(id, authorization, request);
     }
 
     @GetMapping("/orders")

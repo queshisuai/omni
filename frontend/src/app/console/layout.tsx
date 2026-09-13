@@ -414,8 +414,8 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             返回前台
           </Link>
         </header>
-        <main className="flex-1 p-6 sm:p-8 overflow-y-auto">
-          <div className="max-w-[1200px] mx-auto">
+        <main className="flex-1 min-w-0 p-6 sm:p-8 overflow-y-auto">
+          <div className="w-full min-w-0">
             {checking || redirecting ? <div className="text-[14px] text-[#666] flex items-center justify-center py-20">正在校验后台权限...</div> : children}
           </div>
         </main>

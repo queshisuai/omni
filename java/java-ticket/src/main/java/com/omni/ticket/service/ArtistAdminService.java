@@ -40,6 +40,17 @@ public class ArtistAdminService {
 
     public Page<Artist> listManageable(Long operatorId, String role, long page, long size,
                                        String keyword, String reviewStatus, String riskStatus) {
+        return listManageable(operatorId, role, page, size, keyword, null, reviewStatus, riskStatus);
+    }
+
+    public Page<Artist> listManageable(Long operatorId, String role, long page, long size,
+                                       String keyword, String category, String reviewStatus, String riskStatus) {
+        return listManageable(operatorId, role, page, size, keyword, category, reviewStatus, riskStatus, null);
+    }
+
+    public Page<Artist> listManageable(Long operatorId, String role, long page, long size,
+                                       String keyword, String category, String reviewStatus, String riskStatus,
+                                       String qualificationStatus) {
         long current = Math.max(1, page);
         long pageSize = Math.min(50, Math.max(1, size));
         String term = keyword == null ? "" : keyword.trim();
@@ -54,14 +65,25 @@ public class ArtistAdminService {
         if (StringUtils.hasText(term)) {
             wrapper.and(w -> w.like(Artist::getName, term)
                     .or().like(Artist::getAlias, term)
+                    .or().like(Artist::getAgency, term)
                     .or().like(Artist::getCategoryTags, term)
                     .or().like(Artist::getRepresentativeWorks, term));
+        }
+        if (StringUtils.hasText(category)) {
+            String categoryTerm = category.trim();
+            wrapper.and(w -> w.like(Artist::getCategoryTags, categoryTerm)
+                    .or().like(Artist::getArtistType, categoryTerm));
         }
         if (StringUtils.hasText(reviewStatus)) {
             wrapper.eq(Artist::getReviewStatus, reviewStatus.trim());
         }
         if (StringUtils.hasText(riskStatus)) {
             wrapper.eq(Artist::getRiskStatus, riskStatus.trim());
+        }
+        if ("uploaded".equals(qualificationStatus)) {
+            wrapper.isNotNull(Artist::getSourceNote).ne(Artist::getSourceNote, "");
+        } else if ("pending".equals(qualificationStatus)) {
+            wrapper.and(w -> w.isNull(Artist::getSourceNote).or().eq(Artist::getSourceNote, ""));
         }
         return artistMapper.selectPage(new Page<>(current, pageSize), wrapper);
     }

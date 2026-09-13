@@ -1,6 +1,7 @@
 package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
@@ -14,6 +15,7 @@ import com.omni.ticket.mapper.ActivityRiskResolutionMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mq.NotificationMqProducer;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +28,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -44,6 +47,7 @@ class ActivityRiskResponseServiceTest {
     @Mock private UserAccessService userAccessService;
     @Mock private ActivityAdminService activityAdminService;
     @Mock private NotificationMqProducer notificationProducer;
+    @Mock private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     private ActivityRiskResponseService service;
 
@@ -51,6 +55,7 @@ class ActivityRiskResponseServiceTest {
     void setUp() {
         service = new ActivityRiskResponseService(activityMapper, activityArtistMapper, sessionMapper, ticketTypeMapper,
                 resolutionMapper, userAccessService, notificationProducer, activityAdminService, "test-token");
+        service.setSearchIndexEventPublisher(searchIndexEventPublisher);
     }
 
     @Test
@@ -260,6 +265,90 @@ class ActivityRiskResponseServiceTest {
 
         assertEquals("活动已不处于风险停票状态", error.getMessage());
         verify(activityAdminService, never()).validatePublishableForReview(any());
+    }
+
+    @Test
+    void rejectResolutionRequiresTrimmedReviewNote() {
+        ActivityRiskResolution resolution = new ActivityRiskResolution();
+        resolution.setId(10L);
+        resolution.setActivityId(5L);
+        resolution.setOrganizerId(2003L);
+        resolution.setStatus("pending");
+        resolution.setSubmittedBy(2003L);
+        Activity activity = activity(5L, 2003L, "risk_suspended");
+        ActivityRiskResolutionReviewRequest request = new ActivityRiskResolutionReviewRequest();
+        request.setUserId(2002L);
+        request.setAction("reject");
+        request.setReviewNote("  ");
+
+        when(userAccessService.requirePlatformPermission(2002L, "risk.review")).thenReturn(null);
+        when(resolutionMapper.selectById(10L)).thenReturn(resolution);
+        when(activityMapper.selectById(5L)).thenReturn(activity);
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.reviewResolution(10L, request));
+
+        assertEquals("驳回原因不能为空", error.getMessage());
+        verify(resolutionMapper, never()).updateById(any(ActivityRiskResolution.class));
+        verify(userAccessService, never()).writeOperationAudit(any(OperationAuditWriteRequest.class));
+    }
+
+    @Test
+    void approveResolutionWritesAuditAndPublishesSearchIndex() {
+        ActivityRiskResolution resolution = new ActivityRiskResolution();
+        resolution.setId(10L);
+        resolution.setActivityId(5L);
+        resolution.setOrganizerId(2003L);
+        resolution.setStatus("pending");
+        resolution.setSubmittedBy(2003L);
+        Activity activity = activity(5L, 2003L, "risk_suspended");
+        ActivityRiskResolutionReviewRequest request = new ActivityRiskResolutionReviewRequest();
+        request.setUserId(2002L);
+        request.setAction("approve");
+        request.setReviewNote("复核通过");
+
+        when(userAccessService.requirePlatformPermission(2002L, "risk.review")).thenReturn(null);
+        when(resolutionMapper.selectById(10L)).thenReturn(resolution);
+        when(activityMapper.selectById(5L)).thenReturn(activity);
+        when(sessionMapper.selectList(any())).thenReturn(List.of());
+
+        service.reviewResolution(10L, request);
+
+        verify(searchIndexEventPublisher).publishUpsert(5L);
+        verify(userAccessService).writeOperationAudit(argThat(audit ->
+                "RISK_SALE_RECOVERY_APPROVE".equals(audit.getAction())
+                        && "activity_risk_resolution".equals(audit.getTargetType())
+                        && Long.valueOf(10L).equals(audit.getTargetId())
+                        && "复核通过".equals(audit.getReason())
+                        && Boolean.TRUE.equals(audit.getSuccess())));
+    }
+
+    @Test
+    void rejectResolutionWritesAuditAndKeepsSearchIndexUntouched() {
+        ActivityRiskResolution resolution = new ActivityRiskResolution();
+        resolution.setId(10L);
+        resolution.setActivityId(5L);
+        resolution.setOrganizerId(2003L);
+        resolution.setStatus("pending");
+        resolution.setSubmittedBy(2003L);
+        Activity activity = activity(5L, 2003L, "risk_suspended");
+        ActivityRiskResolutionReviewRequest request = new ActivityRiskResolutionReviewRequest();
+        request.setUserId(2002L);
+        request.setAction("reject");
+        request.setReviewNote("整改材料不足");
+
+        when(userAccessService.requirePlatformPermission(2002L, "risk.review")).thenReturn(null);
+        when(resolutionMapper.selectById(10L)).thenReturn(resolution);
+        when(activityMapper.selectById(5L)).thenReturn(activity);
+
+        service.reviewResolution(10L, request);
+
+        verify(searchIndexEventPublisher, never()).publishUpsert(any());
+        verify(userAccessService).writeOperationAudit(argThat(audit ->
+                "RISK_SALE_RECOVERY_REJECT".equals(audit.getAction())
+                        && "activity_risk_resolution".equals(audit.getTargetType())
+                        && Long.valueOf(10L).equals(audit.getTargetId())
+                        && "整改材料不足".equals(audit.getReason())
+                        && Boolean.TRUE.equals(audit.getSuccess())));
     }
 
     private Activity activity(Long id, Long organizerId, String publishStatus) {

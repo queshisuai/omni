@@ -488,8 +488,11 @@ export interface ArtistListParams {
   page?: number
   size?: number
   keyword?: string
+  category?: string
+  status?: ArtistReviewStatus | 'all' | ''
   reviewStatus?: ArtistReviewStatus | ''
   riskStatus?: ArtistRiskStatus | ''
+  qualificationStatus?: 'uploaded' | 'pending' | ''
 }
 
 export interface ActivityRiskResolutionRequest {
@@ -507,14 +510,28 @@ export interface ActivityRiskResolutionVO {
   id: number
   activityId: number
   activityName?: string | null
+  activityPoster?: string | null
   organizerId: number
   riskArtistId?: number | null
   status: 'awaiting_response' | 'pending' | 'approved' | 'rejected' | string
+  riskSuspendedReason?: string | null
+  riskSuspendedAt?: string | null
   resolutionNote?: string | null
   reviewNote?: string | null
   submittedBy?: number | null
   reviewedBy?: number | null
   reviewedAt?: string | null
+  createTime?: string | null
+  updateTime?: string | null
+  attachmentUrls?: string[] | null
+}
+
+export interface RiskResolutionListParams {
+  page?: number
+  size?: number
+  keyword?: string
+  reasonType?: string
+  status?: 'pending' | 'approved' | 'rejected' | string
 }
 
 export interface NotificationVO {
@@ -664,6 +681,7 @@ export interface ArtistEntity {
   agency?: string | null
   categoryTags?: string | null
   representativeWorks?: string | null
+  sourceNote?: string | null
   reviewStatus?: ArtistReviewStatus | string | null
   reviewNote?: string | null
   submittedBy?: number | null
@@ -1242,6 +1260,40 @@ export interface StationConfigVersionVO {
   createdAt?: string | null
   updatedAt?: string | null
   appliedAt?: string | null
+}
+
+export interface StationConfigReviewListParams {
+  page?: number
+  size?: number
+  keyword?: string
+  city?: string
+  changeType?: string
+  status?: StationConfigVersionStatus | ''
+}
+
+export interface StationConfigReviewSnapshotVO {
+  stationId?: number | null
+  activityId?: number | null
+  tourId?: number | null
+  city?: string | null
+  stationName?: string | null
+  venueId?: number | null
+  venueName?: string | null
+  venueAddress?: string | null
+  startTime?: string | null
+  endTime?: string | null
+  scheduleTba?: boolean | null
+  seatTemplateSourceType?: string | null
+  seatTemplateSourceId?: number | null
+  totalStock?: number | null
+}
+
+export interface StationConfigReviewDiffVO {
+  current?: StationConfigReviewSnapshotVO | null
+  target?: StationConfigReviewSnapshotVO | null
+  version: StationConfigVersionVO
+  highRisk?: boolean | null
+  warning?: string | null
 }
 
 export interface ActivityDraftPayload {

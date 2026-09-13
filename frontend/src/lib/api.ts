@@ -69,6 +69,7 @@ const PARAMETER_LABELS: Record<string, string> = {
   artistId: '艺人ID',
   activityId: '活动ID',
   resolutionId: '风险处理ID',
+  stationConfigReviewId: '站点变更审核ID',
 }
 
 class ApiError extends Error {
@@ -1127,6 +1128,8 @@ export async function listAdminArtists(params: import('@/types/api').ArtistListP
   search.set('page', String(params.page ?? 1))
   search.set('size', String(params.size ?? 10))
   if (params.keyword?.trim()) search.set('keyword', params.keyword.trim())
+  if (params.category?.trim()) search.set('category', params.category.trim())
+  if (params.status) search.set('status', params.status)
   if (params.reviewStatus) search.set('reviewStatus', params.reviewStatus)
   if (params.riskStatus) search.set('riskStatus', params.riskStatus)
   return request<import('@/types/api').PageResult<import('@/types/api').ArtistEntity>>(`/api/ticket/admin/artists?${search.toString()}`)
@@ -1152,8 +1155,17 @@ export async function submitAdminArtist(params: import('@/types/api').ArtistSubm
   })
 }
 
-export async function listPendingAdminArtists() {
-  return request<import('@/types/api').ArtistEntity[]>('/api/ticket/admin/artists/pending')
+export async function listPendingAdminArtists(params: import('@/types/api').ArtistListParams = {}) {
+  const search = new URLSearchParams()
+  search.set('page', String(params.page ?? 1))
+  search.set('size', String(params.size ?? 10))
+  if (params.keyword?.trim()) search.set('keyword', params.keyword.trim())
+  if (params.category?.trim()) search.set('category', params.category.trim())
+  if (params.status) search.set('status', params.status)
+  if (params.reviewStatus) search.set('status', params.reviewStatus)
+  if (params.riskStatus) search.set('riskStatus', params.riskStatus)
+  if (params.qualificationStatus) search.set('qualificationStatus', params.qualificationStatus)
+  return request<import('@/types/api').PageResult<import('@/types/api').ArtistEntity>>(`/api/ticket/admin/artists/pending?${search.toString()}`)
 }
 
 export async function reviewAdminArtist(id: number, params: import('@/types/api').ArtistReviewRequest) {
@@ -1164,11 +1176,39 @@ export async function reviewAdminArtist(id: number, params: import('@/types/api'
   })
 }
 
+export async function approveAdminArtist(id: number, params: Pick<import('@/types/api').ArtistReviewRequest, 'note'> = {}) {
+  assertPositiveInteger(id, 'artistId')
+  return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function rejectAdminArtist(id: number, params: Pick<import('@/types/api').ArtistReviewRequest, 'note'>) {
+  assertPositiveInteger(id, 'artistId')
+  const note = params.note?.trim()
+  if (!note) throw new ApiError(400, '驳回原因不能为空')
+  return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+  })
+}
+
 export async function updateAdminArtistRisk(id: number, params: import('@/types/api').ArtistRiskRequest) {
   assertPositiveInteger(id, 'artistId')
   return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}/risk`, {
     method: 'POST',
     body: JSON.stringify(params),
+  })
+}
+
+export async function markRiskAdminArtist(id: number, params: { reason?: string | null }) {
+  assertPositiveInteger(id, 'artistId')
+  const reason = params.reason?.trim()
+  if (!reason) throw new ApiError(400, '风险原因不能为空')
+  return request<import('@/types/api').ArtistEntity>(`/api/ticket/admin/artists/${id}/mark-risk`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
   })
 }
 
@@ -1181,11 +1221,15 @@ export async function submitActivityRiskResolution(id: number, params: import('@
   })
 }
 
-export async function listActivityRiskResolutions(status?: string) {
-  const params = new URLSearchParams()
-  if (status) params.set('status', status)
-  const qs = params.toString()
-  return request<import('@/types/api').ActivityRiskResolutionVO[]>(`/api/ticket/admin/risk-resolutions${qs ? `?${qs}` : ''}`)
+export async function listActivityRiskResolutions(paramsOrStatus: import('@/types/api').RiskResolutionListParams | string = {}) {
+  const params: import('@/types/api').RiskResolutionListParams = typeof paramsOrStatus === 'string' ? { status: paramsOrStatus } : paramsOrStatus
+  const search = new URLSearchParams()
+  search.set('page', String(params.page ?? 1))
+  search.set('size', String(params.size ?? 10))
+  if (params.keyword?.trim()) search.set('keyword', params.keyword.trim())
+  if (params.reasonType?.trim()) search.set('reasonType', params.reasonType.trim())
+  if (params.status) search.set('status', params.status)
+  return request<import('@/types/api').PageResult<import('@/types/api').ActivityRiskResolutionVO>>(`/api/ticket/admin/risk-resolutions?${search.toString()}`)
 }
 
 export async function listMyNotifications() {
@@ -1264,6 +1308,24 @@ export async function reviewActivityRiskResolution(id: number, params: import('@
   return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/risk-resolutions/${id}/review`, {
     method: 'POST',
     body: JSON.stringify(safeParams),
+  })
+}
+
+export async function approveActivityRiskResolution(id: number, params: { reviewNote?: string | null } = {}) {
+  assertPositiveInteger(id, 'resolutionId')
+  return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/risk-resolutions/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote: params.reviewNote?.trim() || null }),
+  })
+}
+
+export async function rejectActivityRiskResolution(id: number, params: { reviewNote?: string | null }) {
+  assertPositiveInteger(id, 'resolutionId')
+  const reviewNote = params.reviewNote?.trim()
+  if (!reviewNote) throw new ApiError(400, '驳回原因不能为空')
+  return request<import('@/types/api').ActivityRiskResolutionVO>(`/api/ticket/admin/risk-resolutions/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote }),
   })
 }
 
@@ -1744,11 +1806,20 @@ export async function withdrawStationConfigVersion(versionId: number) {
   })
 }
 
-export async function listStationConfigReviews(params: { status?: string } = {}) {
+export async function listStationConfigReviews(params: import('@/types/api').StationConfigReviewListParams = {}) {
   const searchParams = new URLSearchParams()
+  searchParams.set('page', String(params.page ?? 1))
+  searchParams.set('size', String(params.size ?? 10))
+  if (params.keyword?.trim()) searchParams.set('keyword', params.keyword.trim())
+  if (params.city?.trim()) searchParams.set('city', params.city.trim())
+  if (params.changeType?.trim()) searchParams.set('changeType', params.changeType.trim())
   if (params.status) searchParams.set('status', params.status)
-  const qs = searchParams.toString()
-  return request<import('@/types/api').StationConfigVersionVO[]>(`/api/ticket/admin/station-config-versions/reviews${qs ? `?${qs}` : ''}`)
+  return request<import('@/types/api').PageResult<import('@/types/api').StationConfigVersionVO>>(`/api/ticket/admin/station-config-reviews?${searchParams.toString()}`)
+}
+
+export async function getStationConfigReviewDiff(id: number) {
+  assertPositiveInteger(id, 'stationConfigReviewId')
+  return request<import('@/types/api').StationConfigReviewDiffVO>(`/api/ticket/admin/station-config-reviews/${id}/diff`)
 }
 
 export async function approveStationConfigVersion(versionId: number, body: { reviewNote?: string | null } = {}) {
@@ -1762,6 +1833,24 @@ export async function rejectStationConfigVersion(versionId: number, body: { revi
   assertPositiveInteger(versionId, '站点配置版本ID')
   return request<import('@/types/api').StationConfigVersionVO>(`/api/ticket/admin/station-config-versions/${versionId}/reject`, {
     method: 'POST', body: JSON.stringify(body),
+  })
+}
+
+export async function approveStationConfigReview(id: number, body: { reviewNote?: string | null } = {}) {
+  assertPositiveInteger(id, 'stationConfigReviewId')
+  return request<import('@/types/api').StationConfigVersionVO>(`/api/ticket/admin/station-config-reviews/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote: body.reviewNote?.trim() || null }),
+  })
+}
+
+export async function rejectStationConfigReview(id: number, body: { reviewNote?: string | null }) {
+  assertPositiveInteger(id, 'stationConfigReviewId')
+  const reviewNote = body.reviewNote?.trim()
+  if (!reviewNote) throw new ApiError(400, '驳回原因不能为空')
+  return request<import('@/types/api').StationConfigVersionVO>(`/api/ticket/admin/station-config-reviews/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reviewNote }),
   })
 }
 

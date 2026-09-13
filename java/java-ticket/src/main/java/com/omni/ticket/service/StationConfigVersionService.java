@@ -1,6 +1,9 @@
 package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.omni.common.dto.InternalAuthContextResponse;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
@@ -8,6 +11,7 @@ import com.omni.ticket.client.OrderInternalClient;
 import com.omni.ticket.dto.InternalUserRefResponse;
 import com.omni.ticket.dto.PaidOrderCountRequest;
 import com.omni.ticket.dto.PaidOrderCountResponse;
+import com.omni.ticket.dto.StationConfigReviewDiffResponse;
 import com.omni.ticket.dto.StationConfigVersionDetailResponse;
 import com.omni.ticket.dto.StationConfigVersionRequest;
 import com.omni.ticket.dto.StationConfigVersionResponse;
@@ -16,6 +20,7 @@ import com.omni.ticket.entity.Activity;
 import com.omni.ticket.entity.Session;
 import com.omni.ticket.entity.Station;
 import com.omni.ticket.entity.StationConfigVersion;
+import com.omni.ticket.entity.TicketType;
 import com.omni.ticket.entity.Tour;
 import com.omni.ticket.entity.Venue;
 import com.omni.ticket.entity.VenueApplication;
@@ -23,9 +28,11 @@ import com.omni.ticket.mapper.ActivityMapper;
 import com.omni.ticket.mapper.SessionMapper;
 import com.omni.ticket.mapper.StationConfigVersionMapper;
 import com.omni.ticket.mapper.StationMapper;
+import com.omni.ticket.mapper.TicketTypeMapper;
 import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.mapper.VenueApplicationMapper;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -71,6 +78,8 @@ public class StationConfigVersionService {
     private final VenueMapper venueMapper;
     private final OrderInternalClient orderInternalClient;
     private final String internalApiToken;
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
+    private TicketTypeMapper ticketTypeMapper;
 
     @Autowired
     public StationConfigVersionService(StationConfigVersionMapper versionMapper,
@@ -93,6 +102,16 @@ public class StationConfigVersionService {
         this.venueMapper = venueMapper;
         this.orderInternalClient = orderInternalClient;
         this.internalApiToken = internalApiToken;
+    }
+
+    @Autowired(required = false)
+    public void setSearchIndexEventPublisher(ActivitySearchIndexEventPublisher searchIndexEventPublisher) {
+        this.searchIndexEventPublisher = searchIndexEventPublisher;
+    }
+
+    @Autowired(required = false)
+    public void setTicketTypeMapper(TicketTypeMapper ticketTypeMapper) {
+        this.ticketTypeMapper = ticketTypeMapper;
     }
 
     @Transactional
@@ -164,7 +183,7 @@ public class StationConfigVersionService {
     @Transactional
     public StationConfigVersionResponse approve(Long versionId, StationConfigVersionReviewRequest request) {
         requireReviewRequest(request);
-        userAccessService.requirePlatformPermission(request.getReviewerId(), "station.review");
+        InternalAuthContextResponse auth = userAccessService.requirePlatformPermission(request.getReviewerId(), "station.review");
         StationConfigVersion version = requireVersion(versionId);
         requireStatus(version, STATUS_SUBMITTED, "仅已提交版本可审核通过");
         validateBeforeApprove(version);
@@ -178,6 +197,9 @@ public class StationConfigVersionService {
         version.setAppliedAt(now);
         version.setUpdatedAt(now);
         versionMapper.updateById(version);
+        publishSearchUpsert(resolveActivityId(version, station));
+        writeStationAudit(auth, request.getReviewerId(), "STATION_CONFIG_REVIEW_APPROVE", version,
+                request.getReviewNote(), "站点变更已批准并发布");
         return StationConfigVersionResponse.from(version);
     }
 
@@ -193,16 +215,21 @@ public class StationConfigVersionService {
     @Transactional
     public StationConfigVersionResponse reject(Long versionId, StationConfigVersionReviewRequest request) {
         requireReviewRequest(request);
-        userAccessService.requirePlatformPermission(request.getReviewerId(), "station.review");
+        InternalAuthContextResponse auth = userAccessService.requirePlatformPermission(request.getReviewerId(), "station.review");
         StationConfigVersion version = requireVersion(versionId);
+        if (!StringUtils.hasText(request.getReviewNote())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "驳回原因不能为空");
+        }
         requireStatus(version, STATUS_SUBMITTED, "仅已提交版本可驳回");
         LocalDateTime now = LocalDateTime.now();
         version.setStatus(STATUS_REJECTED);
         version.setReviewerId(request.getReviewerId());
-        version.setReviewNote(request.getReviewNote());
+        version.setReviewNote(request.getReviewNote().trim());
         version.setReviewTime(now);
         version.setUpdatedAt(now);
         versionMapper.updateById(version);
+        writeStationAudit(auth, request.getReviewerId(), "STATION_CONFIG_REVIEW_REJECT", version,
+                version.getReviewNote(), "站点变更已驳回");
         return StationConfigVersionResponse.from(version);
     }
 
@@ -255,6 +282,79 @@ public class StationConfigVersionService {
         return versions.stream().filter(Objects::nonNull)
                 .map(StationConfigVersionResponse::from)
                 .collect(Collectors.toList());
+    }
+
+    public Page<StationConfigVersionResponse> listReviewsPage(Long adminUserId,
+                                                              long page,
+                                                              long size,
+                                                              String keyword,
+                                                              String city,
+                                                              String changeType,
+                                                              String status) {
+        userAccessService.requirePlatformPermission(adminUserId, "station.review");
+        long current = Math.max(1, page);
+        long pageSize = Math.min(100, Math.max(1, size));
+        LambdaQueryWrapper<StationConfigVersion> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(status)) {
+            wrapper.eq(StationConfigVersion::getStatus, status.trim());
+        }
+        if (StringUtils.hasText(city)) {
+            wrapper.like(StationConfigVersion::getCity, city.trim());
+        }
+        if (StringUtils.hasText(changeType)) {
+            wrapper.eq(StationConfigVersion::getChangeType, changeType.trim());
+        }
+        if (StringUtils.hasText(keyword)) {
+            String term = keyword.trim();
+            Long numericTerm = parseLong(term);
+            List<Long> matchedActivityIds = findActivityIdsByName(term);
+            List<Long> matchedTourIds = findTourIdsByTitle(term);
+            wrapper.and(query -> {
+                query.like(StationConfigVersion::getStationName, term)
+                        .or().like(StationConfigVersion::getCity, term)
+                        .or().like(StationConfigVersion::getReason, term);
+                if (numericTerm != null) {
+                    query.or().eq(StationConfigVersion::getId, numericTerm)
+                            .or().eq(StationConfigVersion::getStationId, numericTerm)
+                            .or().eq(StationConfigVersion::getActivityId, numericTerm)
+                            .or().eq(StationConfigVersion::getTourId, numericTerm);
+                }
+                if (!matchedActivityIds.isEmpty()) {
+                    query.or().in(StationConfigVersion::getActivityId, matchedActivityIds);
+                }
+                if (!matchedTourIds.isEmpty()) {
+                    query.or().in(StationConfigVersion::getTourId, matchedTourIds);
+                }
+            });
+        }
+        wrapper.orderByDesc(StationConfigVersion::getUpdatedAt)
+                .orderByDesc(StationConfigVersion::getCreatedAt)
+                .orderByDesc(StationConfigVersion::getId);
+        Page<StationConfigVersion> source = versionMapper.selectPage(new Page<>(current, pageSize), wrapper);
+        Page<StationConfigVersionResponse> result = new Page<>(source.getCurrent(), source.getSize(), source.getTotal());
+        List<StationConfigVersion> records = source.getRecords() == null ? Collections.emptyList() : source.getRecords();
+        result.setRecords(records.stream()
+                .filter(Objects::nonNull)
+                .map(StationConfigVersionResponse::from)
+                .collect(Collectors.toList()));
+        return result;
+    }
+
+    public StationConfigReviewDiffResponse getReviewDiff(Long adminUserId, Long versionId) {
+        userAccessService.requirePlatformPermission(adminUserId, "station.review");
+        StationConfigVersion version = requireVersion(versionId);
+        Station station = requireStation(version.getStationId());
+        StationConfigVersion currentVersion = findLatestAppliedVersion(station.getId());
+        StationConfigReviewDiffResponse response = new StationConfigReviewDiffResponse();
+        response.setVersion(StationConfigVersionResponse.from(version));
+        response.setCurrent(buildCurrentSnapshot(station, currentVersion));
+        response.setTarget(buildTargetSnapshot(station, currentVersion, version, response.getCurrent()));
+        boolean highRisk = isHighRiskChange(version);
+        response.setHighRisk(highRisk);
+        if (highRisk) {
+            response.setWarning("高危风险：该站点已更换物理场馆，原座位图配置将作废！通过后需由主办方重新在 SeatCraft 中配置新座位图方可继续售票，若已有售出订单需评估履约/退换票影响。");
+        }
+        return response;
     }
 
     private void applyToStation(Station station, StationConfigVersion version) {
@@ -526,6 +626,213 @@ public class StationConfigVersionService {
         if (isScheduleChange(version)) {
             validateScheduleChange(version);
         }
+    }
+
+    private StationConfigVersion findLatestAppliedVersion(Long stationId) {
+        if (stationId == null) {
+            return null;
+        }
+        return versionMapper.selectOne(new LambdaQueryWrapper<StationConfigVersion>()
+                .eq(StationConfigVersion::getStationId, stationId)
+                .eq(StationConfigVersion::getStatus, STATUS_APPLIED)
+                .orderByDesc(StationConfigVersion::getVersionNo)
+                .orderByDesc(StationConfigVersion::getAppliedAt)
+                .orderByDesc(StationConfigVersion::getId)
+                .last("LIMIT 1"));
+    }
+
+    private StationConfigReviewDiffResponse.Snapshot buildCurrentSnapshot(Station station, StationConfigVersion currentVersion) {
+        StationConfigReviewDiffResponse.Snapshot snapshot = new StationConfigReviewDiffResponse.Snapshot();
+        snapshot.setStationId(station.getId());
+        snapshot.setActivityId(station.getActivityId());
+        snapshot.setTourId(station.getTourId());
+        snapshot.setCity(station.getCity());
+        snapshot.setStationName(station.getStationName());
+        VenueApplication application = station.getVenueApplicationId() == null ? null : venueApplicationMapper.selectById(station.getVenueApplicationId());
+        Session session = findActiveSession(station.getActivityId());
+        Long venueId = application != null ? application.getVenueId() : (session == null ? null : session.getVenueId());
+        Venue venue = venueId == null ? null : venueMapper.selectById(venueId);
+        snapshot.setVenueId(venueId);
+        snapshot.setVenueName(resolveVenueName(application, venue, currentVersion == null ? null : currentVersion.getVenueName()));
+        snapshot.setVenueAddress(resolveVenueAddress(application, venue, currentVersion == null ? null : currentVersion.getVenueAddress()));
+        snapshot.setStartTime(session == null ? null : session.getStartTime());
+        snapshot.setEndTime(session == null ? null : session.getEndTime());
+        snapshot.setScheduleTba(currentVersion == null ? null : currentVersion.getScheduleTba());
+        snapshot.setSeatTemplateSourceType(currentVersion == null ? null : currentVersion.getSeatTemplateSourceType());
+        snapshot.setSeatTemplateSourceId(currentVersion == null ? null : currentVersion.getSeatTemplateSourceId());
+        snapshot.setTotalStock(sumActivityTotalStock(station.getActivityId()));
+        return snapshot;
+    }
+
+    private StationConfigReviewDiffResponse.Snapshot buildTargetSnapshot(Station station,
+                                                                         StationConfigVersion currentVersion,
+                                                                         StationConfigVersion version,
+                                                                         StationConfigReviewDiffResponse.Snapshot current) {
+        StationConfigReviewDiffResponse.Snapshot snapshot = new StationConfigReviewDiffResponse.Snapshot();
+        snapshot.setStationId(station.getId());
+        snapshot.setActivityId(resolveActivityId(version, station));
+        snapshot.setTourId(version.getTourId() != null ? version.getTourId() : station.getTourId());
+        snapshot.setCity(StringUtils.hasText(version.getCity()) ? version.getCity() : current.getCity());
+        snapshot.setStationName(StringUtils.hasText(version.getStationName()) ? version.getStationName() : current.getStationName());
+        VenueApplication application = version.getVenueApplicationId() == null ? null : venueApplicationMapper.selectById(version.getVenueApplicationId());
+        Long venueId = application != null ? application.getVenueId() : (version.getVenueId() != null ? version.getVenueId() : current.getVenueId());
+        Venue venue = venueId == null ? null : venueMapper.selectById(venueId);
+        snapshot.setVenueId(venueId);
+        snapshot.setVenueName(resolveVenueName(application, venue, StringUtils.hasText(version.getVenueName()) ? version.getVenueName() : current.getVenueName()));
+        snapshot.setVenueAddress(resolveVenueAddress(application, venue, StringUtils.hasText(version.getVenueAddress()) ? version.getVenueAddress() : current.getVenueAddress()));
+        snapshot.setStartTime(version.getStartTime() != null ? version.getStartTime() : current.getStartTime());
+        snapshot.setEndTime(version.getEndTime() != null ? version.getEndTime() : current.getEndTime());
+        snapshot.setScheduleTba(version.getScheduleTba() != null ? version.getScheduleTba() : current.getScheduleTba());
+        snapshot.setSeatTemplateSourceType(StringUtils.hasText(version.getSeatTemplateSourceType())
+                ? version.getSeatTemplateSourceType()
+                : (currentVersion == null ? current.getSeatTemplateSourceType() : currentVersion.getSeatTemplateSourceType()));
+        snapshot.setSeatTemplateSourceId(version.getSeatTemplateSourceId() != null
+                ? version.getSeatTemplateSourceId()
+                : (currentVersion == null ? current.getSeatTemplateSourceId() : currentVersion.getSeatTemplateSourceId()));
+        snapshot.setTotalStock(current.getTotalStock());
+        return snapshot;
+    }
+
+    private Session findActiveSession(Long activityId) {
+        if (activityId == null) {
+            return null;
+        }
+        return sessionMapper.selectOne(new LambdaQueryWrapper<Session>()
+                .eq(Session::getActivityId, activityId)
+                .eq(Session::getStatus, 1)
+                .orderByAsc(Session::getStartTime)
+                .orderByAsc(Session::getId)
+                .last("LIMIT 1"));
+    }
+
+    private Long sumActivityTotalStock(Long activityId) {
+        if (activityId == null || ticketTypeMapper == null) {
+            return null;
+        }
+        List<Session> sessions = sessionMapper.selectList(new LambdaQueryWrapper<Session>()
+                .eq(Session::getActivityId, activityId));
+        if (sessions == null || sessions.isEmpty()) {
+            return 0L;
+        }
+        List<Long> sessionIds = sessions.stream()
+                .map(Session::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (sessionIds.isEmpty()) {
+            return 0L;
+        }
+        List<TicketType> ticketTypes = ticketTypeMapper.selectList(new LambdaQueryWrapper<TicketType>()
+                .in(TicketType::getSessionId, sessionIds));
+        if (ticketTypes == null || ticketTypes.isEmpty()) {
+            return 0L;
+        }
+        return ticketTypes.stream()
+                .map(TicketType::getTotalStock)
+                .filter(Objects::nonNull)
+                .mapToLong(Integer::longValue)
+                .sum();
+    }
+
+    private String resolveVenueName(VenueApplication application, Venue venue, String fallback) {
+        if (application != null && StringUtils.hasText(application.getVenueName())) {
+            return application.getVenueName();
+        }
+        if (venue != null && StringUtils.hasText(venue.getName())) {
+            return venue.getName();
+        }
+        return fallback;
+    }
+
+    private String resolveVenueAddress(VenueApplication application, Venue venue, String fallback) {
+        if (application != null && StringUtils.hasText(application.getAddress())) {
+            return application.getAddress();
+        }
+        if (venue != null && StringUtils.hasText(venue.getAddress())) {
+            return venue.getAddress();
+        }
+        return fallback;
+    }
+
+    private boolean isHighRiskChange(StationConfigVersion version) {
+        String changeType = version == null ? null : version.getChangeType();
+        String seatSourceType = version == null ? null : version.getSeatTemplateSourceType();
+        return CHANGE_CHANGE_VENUE.equals(changeType)
+                || "seat_layout_reset".equals(changeType)
+                || "reset_seat_map".equals(changeType)
+                || "seat_map_reset".equals(changeType)
+                || StringUtils.hasText(seatSourceType);
+    }
+
+    private Long resolveActivityId(StationConfigVersion version, Station station) {
+        if (version != null && version.getActivityId() != null) {
+            return version.getActivityId();
+        }
+        return station == null ? null : station.getActivityId();
+    }
+
+    private void publishSearchUpsert(Long activityId) {
+        if (searchIndexEventPublisher != null && activityId != null) {
+            searchIndexEventPublisher.publishUpsert(activityId);
+        }
+    }
+
+    private void writeStationAudit(InternalAuthContextResponse auth,
+                                   Long operatorId,
+                                   String action,
+                                   StationConfigVersion version,
+                                   String reason,
+                                   String result) {
+        OperationAuditWriteRequest audit = new OperationAuditWriteRequest();
+        audit.setOperatorId(operatorId);
+        audit.setOperatorRole(auth == null ? null : auth.getEffectiveRole());
+        audit.setAction(action);
+        audit.setTargetType("station_config_version");
+        audit.setTargetId(version.getId());
+        audit.setTargetRef(version.getStationId() == null ? null : String.valueOf(version.getStationId()));
+        audit.setReason(trimToNull(reason));
+        audit.setResult(result);
+        audit.setSuccess(Boolean.TRUE);
+        userAccessService.writeOperationAudit(audit);
+    }
+
+    private Long parseLong(String value) {
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private List<Long> findActivityIdsByName(String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return Collections.emptyList();
+        }
+        List<Activity> activities = activityMapper.selectList(new LambdaQueryWrapper<Activity>()
+                .like(Activity::getName, keyword)
+                .last("LIMIT 200"));
+        if (activities == null || activities.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return activities.stream()
+                .map(Activity::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    private List<Long> findTourIdsByTitle(String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return Collections.emptyList();
+        }
+        List<Tour> tours = tourMapper.selectList(new LambdaQueryWrapper<Tour>()
+                .like(Tour::getTitle, keyword)
+                .last("LIMIT 200"));
+        if (tours == null || tours.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return tours.stream()
+                .map(Tour::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
     private int nextVersionNo(Long stationId) {

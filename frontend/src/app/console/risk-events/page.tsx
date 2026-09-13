@@ -82,11 +82,11 @@ export default function OrganizerRiskEventsPage() {
     try {
       const [activitiesPage, resolutionList] = await Promise.all([
         listAdminActivities({ page: 1, size: 100 }),
-        listActivityRiskResolutions(),
+        listActivityRiskResolutions({ page: 1, size: 100 }),
       ])
       const items = (activitiesPage.records || []).filter((a) => a.publishStatus === 'risk_suspended')
       setSuspended(items)
-      setResolutions(resolutionList || [])
+      setResolutions(resolutionList.records || [])
       setPage(1)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '加载风险事件失败')
@@ -187,7 +187,6 @@ export default function OrganizerRiskEventsPage() {
     </div>
   )
 }
-
 function RiskList({ suspended, latestResolutionByActivity, onBlocked, onOpenDialog }: {
   suspended: ActivityEntity[]
   latestResolutionByActivity: Map<number, ActivityRiskResolutionVO>

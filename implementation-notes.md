@@ -450,3 +450,19 @@
 - 修复：提报校验改为同时认可旧通用凭证、消防证明和租赁协议；提交前“附件上传中”阻断与按钮禁用同步覆盖三类上传状态，避免结构化材料未完成上传时提交。
 - 预览兼容：Drawer 受保护材料通过授权下载生成 `blob:` URL 后再交给 `SafeImage`，因此 `resolveImageSrc()` 显式允许 `blob:` 图片地址，同时继续拒绝 `javascript:` 等不安全 scheme，不放开 `data:`。
 - 验证：新增/更新前端回归覆盖结构化材料校验和 `blob:` 预览；`node --test src/lib/venue-application-review.test.ts src/lib/console-modal-drawer-layout.test.ts src/lib/console-production-entry.test.ts src/lib/image-url.test.ts` 通过 79/79，`pnpm typecheck` 通过，`scripts/verify-microservice-boundaries.ps1` 通过。
+
+## 2026-09-12 三类审核高密度表格与抽屉重构
+
+- 范围：`/console/artists/pending`、`/console/risk-resolutions`、`/console/station-config-reviews` 统一下线卡片式平铺，目标为高密度表格、服务端分页和右侧 Drawer 工作台。
+- 后端约束：三类 java-ticket 审核动作继续只操作票务归属数据；驳回、标记风险、恢复售票和站点变更生效必须通过 `UserAccessService.writeOperationAudit()` 写入 java-user 审计表。
+- 测试先行：已新增前端静态结构/API 测试，并在 `ArtistGovernanceServiceTest`、`ActivityRiskResponseServiceTest`、`StationConfigVersionServiceTest` 补充 reason 非空、审计日志与 ES 刷新 RED 用例。
+- 当前偏离：艺人授权公函、恢复售票复批附件等结构化材料字段在现有实体中未独立建模；本轮先使用既有头像/海报/说明和可选附件字段兼容展示，不新增数据库迁移。
+
+- 2026-09-12：艺人资质完整度筛选当前只能基于 artist.source_note/sourceNote 做前端兼容展示，后端实体暂无结构化附件字段；未新增数据库迁移，避免扩大数据模型边界。
+
+## 2026-09-13 控制台表格全局满宽与统一外壳
+
+- 布局：`ConsoleLayout` 主内容区移除全局 `max-w-[1200px]`，改为 `flex-1 min-w-0` 与 `w-full min-w-0`；个人中心、纯表单页面仍可在页面内部按需使用 `max-w-2xl` / `max-w-3xl`。
+- 组件：新增 `frontend/src/components/ConsoleTable.tsx`，统一表格容器、边框圆角、横向滚动兜底、表头样式和分页 footer；`ConsoleTableSkeleton` 增加 `bare` 模式供表格外壳复用。
+- 页面：场馆资料审核、艺人档案审核、恢复售票审核、站点变更审核改为复用 `ConsoleTable`，移除固定 `min-w-[...]` 表宽，改用 `w-full table-fixed` 与百分比列宽，减少常规宽屏下无意义的横向滚动。
+- 验证：新增全局布局、共享表格外壳和四页复用结构测试；结构测试 `6/6`、`pnpm typecheck`、`git diff --check` 通过。

@@ -1,6 +1,8 @@
 package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.omni.common.dto.InternalAuthContextResponse;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.result.ResultCode;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.ArtistReviewRequest;
@@ -16,6 +18,7 @@ import com.omni.ticket.mapper.ArtistMapper;
 import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -127,20 +130,27 @@ public class ArtistGovernanceService {
                 .orderByAsc(Artist::getName));
     }
 
+    @Transactional
     public Artist review(Long artistId, ArtistReviewRequest request) {
         if (request == null || request.getUserId() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "艺人审核参数不能为空");
         }
-        userAccessService.requirePlatformPermission(request.getUserId(), "artist.manage");
-        Artist artist = requireArtist(artistId);
+        InternalAuthContextResponse auth = userAccessService.requirePlatformPermission(request.getUserId(), "artist.manage");
         String status;
+        String action;
         if ("approve".equals(request.getAction())) {
             status = REVIEW_APPROVED;
+            action = "ARTIST_REVIEW_APPROVE";
         } else if ("reject".equals(request.getAction())) {
+            if (!StringUtils.hasText(request.getNote())) {
+                throw new BusinessException(ResultCode.BAD_REQUEST, "驳回原因不能为空");
+            }
             status = REVIEW_REJECTED;
+            action = "ARTIST_REVIEW_REJECT";
         } else {
             throw new BusinessException(ResultCode.BAD_REQUEST, "艺人审核动作不正确");
         }
+        Artist artist = requireArtist(artistId);
         LocalDateTime now = LocalDateTime.now();
         artist.setReviewStatus(status);
         artist.setReviewNote(trimToNull(request.getNote()));
@@ -148,14 +158,17 @@ public class ArtistGovernanceService {
         artist.setReviewedAt(now);
         artist.setUpdateTime(now);
         artistMapper.updateById(artist);
+        writeArtistAudit(auth, request.getUserId(), action, artist, request.getNote(),
+                REVIEW_APPROVED.equals(status) ? "艺人档案已入库" : "艺人档案已驳回");
         return artist;
     }
 
+    @Transactional
     public Artist updateRisk(Long artistId, ArtistRiskRequest request) {
         if (request == null || request.getUserId() == null) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "艺人风险参数不能为空");
         }
-        userAccessService.requirePlatformPermission(request.getUserId(), "artist.manage");
+        InternalAuthContextResponse auth = userAccessService.requirePlatformPermission(request.getUserId(), "artist.manage");
         if (RISK_RISKY.equals(request.getRiskStatus()) && !StringUtils.hasText(request.getReason())) {
             throw new BusinessException(ResultCode.BAD_REQUEST, "标记风险艺人必须填写原因");
         }
@@ -179,6 +192,10 @@ public class ArtistGovernanceService {
         }
         artist.setUpdateTime(now);
         artistMapper.updateById(artist);
+        writeArtistAudit(auth, request.getUserId(),
+                RISK_RISKY.equals(request.getRiskStatus()) ? "ARTIST_MARK_RISK" : "ARTIST_CLEAR_RISK",
+                artist, request.getReason(),
+                RISK_RISKY.equals(request.getRiskStatus()) ? "艺人已列入风险拦截名单" : "艺人风险标记已解除");
         return artist;
     }
 
@@ -195,6 +212,25 @@ public class ArtistGovernanceService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private void writeArtistAudit(InternalAuthContextResponse auth,
+                                  Long operatorId,
+                                  String action,
+                                  Artist artist,
+                                  String reason,
+                                  String result) {
+        OperationAuditWriteRequest audit = new OperationAuditWriteRequest();
+        audit.setOperatorId(operatorId);
+        audit.setOperatorRole(auth == null ? null : auth.getEffectiveRole());
+        audit.setAction(action);
+        audit.setTargetType("artist");
+        audit.setTargetId(artist.getId());
+        audit.setTargetRef(artist.getName());
+        audit.setReason(trimToNull(reason));
+        audit.setResult(result);
+        audit.setSuccess(Boolean.TRUE);
+        userAccessService.writeOperationAudit(audit);
     }
 
     private void publishAffectedActivitySearchUpserts(Long artistId) {

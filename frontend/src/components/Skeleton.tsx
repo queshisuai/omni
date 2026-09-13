@@ -44,10 +44,10 @@ export function TicketWalletSkeleton() {
   )
 }
 
-export function ConsoleTableSkeleton({ rows = 6, columns = 6 }: { rows?: number; columns?: number }) {
-  return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <div className="border-b border-gray-100 bg-gray-50 px-4 py-3">
+export function ConsoleTableSkeleton({ rows = 6, columns = 6, bare = false }: { rows?: number; columns?: number; bare?: boolean }) {
+  const content = (
+    <>
+      <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
         <SkeletonBlock className="h-4 w-40" />
       </div>
       <div className="divide-y divide-gray-100">
@@ -59,8 +59,10 @@ export function ConsoleTableSkeleton({ rows = 6, columns = 6 }: { rows?: number;
           </div>
         ))}
       </div>
-    </div>
+    </>
   )
+
+  return bare ? content : <div className="w-full overflow-hidden rounded-xl border border-gray-200 bg-white">{content}</div>
 }
 
 export function ConsoleDashboardSkeleton() {
@@ -90,4 +92,3 @@ export function ConsoleDashboardSkeleton() {
     </div>
   )
 }
-

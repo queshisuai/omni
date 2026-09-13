@@ -1,6 +1,8 @@
 package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.result.Result;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.client.OrderInternalClient;
@@ -24,6 +26,7 @@ import com.omni.ticket.mapper.StationMapper;
 import com.omni.ticket.mapper.TourMapper;
 import com.omni.ticket.mapper.VenueMapper;
 import com.omni.ticket.mapper.VenueApplicationMapper;
+import com.omni.ticket.search.ActivitySearchIndexEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -66,6 +69,8 @@ class StationConfigVersionServiceTest {
     private VenueMapper venueMapper;
     @Mock
     private OrderInternalClient orderInternalClient;
+    @Mock
+    private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     private StationConfigVersionService service;
 
@@ -74,6 +79,7 @@ class StationConfigVersionServiceTest {
         service = new StationConfigVersionService(versionMapper, stationMapper, venueApplicationMapper,
                 userAccessService, tourMapper, activityMapper, sessionMapper, venueMapper,
                 orderInternalClient, "omni-local-internal-token");
+        service.setSearchIndexEventPublisher(searchIndexEventPublisher);
     }
 
     @Test
@@ -790,6 +796,80 @@ class StationConfigVersionServiceTest {
                 && Long.valueOf(2002L).equals(updated.getReviewerId())
                 && "资料不足".equals(updated.getReviewNote())
                 && updated.getReviewTime() != null));
+    }
+
+    @Test
+    void rejectRequiresTrimmedReviewNote() {
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
+        when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "submitted", "update_city"));
+        StationConfigVersionReviewRequest review = new StationConfigVersionReviewRequest();
+        review.setReviewerId(2002L);
+        review.setReviewNote("  ");
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.reject(100L, review));
+
+        assertEquals("驳回原因不能为空", error.getMessage());
+        verify(versionMapper, never()).updateById(any(StationConfigVersion.class));
+        verify(userAccessService, never()).writeOperationAudit(any(OperationAuditWriteRequest.class));
+    }
+
+    @Test
+    void approveWritesAuditAndPublishesActivitySearchIndex() {
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
+        Station station = station(10L, null, 30L, "北京", "北京站");
+        when(stationMapper.selectById(10L)).thenReturn(station);
+        StationConfigVersion submitted = version(100L, 10L, 2, "submitted", "update_city");
+        submitted.setActivityId(30L);
+        submitted.setCity("上海");
+        submitted.setStationName("上海站");
+        when(versionMapper.selectById(100L)).thenReturn(submitted);
+        StationConfigVersionReviewRequest review = new StationConfigVersionReviewRequest();
+        review.setReviewerId(2002L);
+        review.setReviewNote("同意发布");
+
+        service.approve(100L, review);
+
+        verify(searchIndexEventPublisher).publishUpsert(30L);
+        verify(userAccessService).writeOperationAudit(argThat(audit ->
+                "STATION_CONFIG_REVIEW_APPROVE".equals(audit.getAction())
+                        && "station_config_version".equals(audit.getTargetType())
+                        && Long.valueOf(100L).equals(audit.getTargetId())
+                        && "同意发布".equals(audit.getReason())
+                        && Boolean.TRUE.equals(audit.getSuccess())));
+    }
+
+    @Test
+    void rejectWritesAuditLog() {
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
+        when(versionMapper.selectById(100L)).thenReturn(version(100L, 10L, 1, "submitted", "update_city"));
+        StationConfigVersionReviewRequest review = new StationConfigVersionReviewRequest();
+        review.setReviewerId(2002L);
+        review.setReviewNote("资料不足");
+
+        service.reject(100L, review);
+
+        verify(userAccessService).writeOperationAudit(argThat(audit ->
+                "STATION_CONFIG_REVIEW_REJECT".equals(audit.getAction())
+                        && "station_config_version".equals(audit.getTargetType())
+                        && Long.valueOf(100L).equals(audit.getTargetId())
+                        && "资料不足".equals(audit.getReason())
+                        && Boolean.TRUE.equals(audit.getSuccess())));
+    }
+
+    @Test
+    void listReviewsPageReturnsPagedReviewVersions() {
+        when(userAccessService.requirePlatformPermission(2002L, "station.review")).thenReturn(null);
+        StationConfigVersion submitted = version(100L, 10L, 1, "submitted", "update_city");
+        Page<StationConfigVersion> page = new Page<>(2, 10, 18);
+        page.setRecords(List.of(submitted));
+        when(versionMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(page);
+
+        Page<StationConfigVersionResponse> result = service.listReviewsPage(2002L, 2, 10, "北京", "北京", "update_city", "submitted");
+
+        assertEquals(2, result.getCurrent());
+        assertEquals(18, result.getTotal());
+        assertEquals(1, result.getRecords().size());
+        assertEquals("submitted", result.getRecords().get(0).getStatus());
     }
 
     @Test

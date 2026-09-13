@@ -1,6 +1,7 @@
 package com.omni.ticket.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
@@ -29,8 +30,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
@@ -164,6 +167,43 @@ class ArtistGovernanceServiceTest {
     }
 
     @Test
+    void rejectArtistRequiresTrimmedReason() {
+        ArtistGovernanceService service = service();
+        when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
+        ArtistReviewRequest request = new ArtistReviewRequest();
+        request.setUserId(2002L);
+        request.setAction("reject");
+        request.setNote("   ");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.review(99L, request));
+
+        assertEquals("驳回原因不能为空", exception.getMessage());
+        verify(artistMapper, never()).selectById(99L);
+        verify(userAccessService, never()).writeOperationAudit(any(OperationAuditWriteRequest.class));
+    }
+
+    @Test
+    void rejectArtistWritesOperationAuditLog() {
+        ArtistGovernanceService service = service();
+        Artist artist = artist(99L);
+        when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
+        when(artistMapper.selectById(99L)).thenReturn(artist);
+        ArtistReviewRequest request = new ArtistReviewRequest();
+        request.setUserId(2002L);
+        request.setAction("reject");
+        request.setNote("资料不足");
+
+        service.review(99L, request);
+
+        verify(userAccessService).writeOperationAudit(argThat(audit ->
+                "ARTIST_REVIEW_REJECT".equals(audit.getAction())
+                        && "artist".equals(audit.getTargetType())
+                        && Long.valueOf(99L).equals(audit.getTargetId())
+                        && "资料不足".equals(audit.getReason())
+                        && Boolean.TRUE.equals(audit.getSuccess())));
+    }
+
+    @Test
     void markRiskRequiresReason() {
         ArtistGovernanceService service = service();
         when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
@@ -194,6 +234,27 @@ class ArtistGovernanceServiceTest {
         assertEquals(2002L, updated.getRiskMarkedBy());
         assertNotNull(updated.getRiskMarkedAt());
         verify(artistMapper).updateById(artist);
+    }
+
+    @Test
+    void markRiskWritesOperationAuditLog() {
+        ArtistGovernanceService service = service();
+        Artist artist = artist(99L);
+        when(userAccessService.requirePlatformPermission(2002L, "artist.manage")).thenReturn(null);
+        when(artistMapper.selectById(99L)).thenReturn(artist);
+        ArtistRiskRequest request = new ArtistRiskRequest();
+        request.setUserId(2002L);
+        request.setRiskStatus("risky");
+        request.setReason("劣迹风险");
+
+        service.updateRisk(99L, request);
+
+        verify(userAccessService).writeOperationAudit(argThat(audit ->
+                "ARTIST_MARK_RISK".equals(audit.getAction())
+                        && "artist".equals(audit.getTargetType())
+                        && Long.valueOf(99L).equals(audit.getTargetId())
+                        && "劣迹风险".equals(audit.getReason())
+                        && Boolean.TRUE.equals(audit.getSuccess())));
     }
 
     @Test
