@@ -1,5 +1,21 @@
 # Implementation Notes
 
+## 2026-09-13 客服技能组树与三栏工作台实现
+
+- 已按批准的兼容式增量方案完成设计与实现：复用 `support_conversation`、`support_message`、`support_conversation_note`、`support_conversation_audit`，不新建平行 `cs_session` 数据域。
+- 新增生产迁移 `sql/production-split/user/20260913_customer_service_tree_and_audit.sql`，作用于 `omni_user`；新增 `cs_skill_group`、`cs_agent_member`、`cs_session_audit`，并扩展 `support_conversation.skill_group_id`、`sla_timeout_flag`。本地 `omni_user` 已执行迁移，`omni_ticket_split` 未创建客服表。
+- `java-user` 新增 `/api/user/cs/*` Façade，覆盖组织树、会话分页、消息流、认领、转接、升级、质检和内部备注；状态映射为 `ACTIVE/CLOSED/NEED_AUDIT`，转接、升级、质检均写 `operation_audit_log`。
+- 权限口径：普通客服只能查看本人会话和公共待认领池；`cs.manage`可管理、转接、升级和写入质检；`cs.review`仅可查看待质检队列；平台超管沿用全量权限。
+- `java-ticket` 新增订单画像接口，通过 `java-order` internal API 获取最近两笔订单摘要，接口最终返回数组；票务异常或超时返回空数组，不阻断客服主流程，未新增跨库 Mapper/Entity/SQL。
+- 前端新增 `/console/customer-service/sessions` 三栏工作台，旧 `/console/support-conversations` 兼容跳转；侧边栏、登录默认入口、快捷入口和个人中心均已切换到规范路由。质检查看与质检写入控件已分权。
+- 设计与实施文档：`docs/superpowers/specs/2026-09-13-customer-service-workbench-design.md`、`docs/superpowers/plans/2026-09-13-customer-service-workbench.md`。
+- 验证：前端客服工作台测试 `6/6`、相关路由测试 `42/42`、`pnpm typecheck` 通过；`java-user` 客服定向测试 `8/8`、`java-ticket` 订单画像与控制器测试 `142/142` 通过；生产拆库 SQL、跨 owner FK、微服务边界检查通过。未提交或推送 Git，未调用真实客服写操作接口。
+- 2026-09-13 负载树整改：`CsOrgTreeResponse` 的根、技能组和坐席节点新增 `totalCount`；`activeCount` 仅统计可见未结单会话，`totalCount` 仅统计可见已结单会话。平台超管或 `cs.manage` 统计全平台含未归组数据，`support_manager` 按 `cs_skill_group.leader_user_id` 限定管辖组，普通坐席沿用本人会话与公共池可见范围。
+- 中间流水线保持 `session_id` 单条服务端分页，不再使用前端 `selectCustomerServiceSessions` 二次过滤；树节点筛选通过 `groupId`、`agentId`、`unassignedOnly`、`sourceType` 下推到 `java-user`。
+- 新增 `GET /api/user/cs/users/{userId}/sessions-history`，按当前登录人可见范围返回用户历史会话摘要，服务端按用户条件查询并在服务层二次校验，右侧仅在“用户全历史轨迹”Tab 激活时异步加载。
+- 前端右侧画像拆为“订单与质检 / 用户全历史轨迹”双 Tab；聊天区仍只展示当前选中的单次会话。新增回归测试后 `java-user` 客服及既有支持链路 `53/53`、前端客服工作台测试 `8/8` 通过；本轮未新增数据库迁移、未调用真实客服写操作接口。
+- 2026-09-13 紧急中栏整改：按最新指令将当前服务端分页页内的 `CsSessionVO[]` 按 `userId` 聚合为用户主卡片；同一页同一用户只渲染一张卡片，默认折叠，展开后显示会话子目录，点击子会话仍只加载该 `sessionId` 的聊天流。跨页用户不在客户端合并，完整历史继续由右侧“用户全历史轨迹”按需加载。新增前端回归后客服工作台测试 `10/10` 通过。
+
 ## 2026-09-12 主办方入驻审核和管理重构
 
 - 已确认采用“材料关联表 + 复用 `user_asset`”方案；申请历史按申请单保留，驳回后重新提交生成新申请，材料不跨申请复用。
@@ -466,3 +482,10 @@
 - 组件：新增 `frontend/src/components/ConsoleTable.tsx`，统一表格容器、边框圆角、横向滚动兜底、表头样式和分页 footer；`ConsoleTableSkeleton` 增加 `bare` 模式供表格外壳复用。
 - 页面：场馆资料审核、艺人档案审核、恢复售票审核、站点变更审核改为复用 `ConsoleTable`，移除固定 `min-w-[...]` 表宽，改用 `w-full table-fixed` 与百分比列宽，减少常规宽屏下无意义的横向滚动。
 - 验证：新增全局布局、共享表格外壳和四页复用结构测试；结构测试 `6/6`、`pnpm typecheck`、`git diff --check` 通过。
+
+## 2026-09-13 后台表格短列固定与工作台宽度保护
+
+- 工作台：保留全局横向自适应，在 `ConsoleLayout` 普通内容区增加 `max-w-[1680px] mx-auto`，客服会话页原有全屏特殊布局不变。
+- 列宽：四个审核列表继续使用 `table-fixed w-full`；状态、操作、城市/版本、类目/变更类型、资质和经办人等短列改为明确 Tailwind 固定宽度，操作列统一右对齐并使用 `pr-4`。
+- 弹性列：艺人基本信息/代表作品、活动与停售原因/整改摘要、站点项目/申请事由、场馆信息/地址/资质说明不再设置固定列宽，由表格布局吸收剩余空间；外层 `overflow-x-auto` 仅作为窄屏兜底。
+- 验证：扩展结构测试覆盖 `1680px` 工作台上限和短列固定规则；结构测试 `6/6`、`pnpm typecheck`、`git diff --check` 通过。

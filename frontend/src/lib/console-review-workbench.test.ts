@@ -83,8 +83,8 @@ test('审核 API 暴露新分页查询和独立动作路径', () => {
 test('控制台全局主内容区使用满宽布局', () => {
   const layout = source('../app/console/layout.tsx')
 
-  assert.match(layout, /<main className="flex-1 min-w-0 p-6 sm:p-8 overflow-y-auto">/)
-  assert.match(layout, /<div className="w-full min-w-0">/)
+  assert.match(layout, /<main className={`flex-1 min-w-0/)
+  assert.match(layout, /<div className={`w-full max-w-\[1680px\] min-w-0 mx-auto/)
   assert.doesNotMatch(layout, /max-w-\[1200px\]/)
 })
 
@@ -102,7 +102,28 @@ test('审核列表统一复用 ConsoleTable 外壳并取消固定最小表宽', 
 
   for (const page of [venue, artists, riskResolutions, stationReviews]) {
     assert.match(page, /<ConsoleTable/)
-    assert.doesNotMatch(page, /min-w-\[\d+px\] w-full table-fixed/)
+    assert.match(page, /<table className="w-full table-fixed/)
     assert.doesNotMatch(page, /<div className="overflow-hidden rounded-xl border border-\[#e5e5e5\] bg-white">/)
   }
+
+  assert.match(artists, /<th className="w-32[^"]*">艺术类目标签<\/th>/)
+  assert.match(artists, /<th className="w-40[^"]*">演艺合规资质附件状态<\/th>/)
+  assert.match(artists, /<th className="w-24[^"]*text-center[^"]*">审核状态<\/th>/)
+  assert.match(artists, /<th className="w-28[^"]*pr-4[^"]*text-right[^"]*">操作<\/th>/)
+
+  assert.match(riskResolutions, /<th className="w-40[^"]*">复批证明附件齐全度<\/th>/)
+  assert.match(riskResolutions, /<th className="w-40[^"]*">提报经办人及时间<\/th>/)
+  assert.match(riskResolutions, /<th className="w-24[^"]*text-center[^"]*">状态<\/th>/)
+  assert.match(riskResolutions, /<th className="w-28[^"]*pr-4[^"]*text-right[^"]*">操作<\/th>/)
+
+  assert.match(stationReviews, /<th className="w-20[^"]*">所属城市<\/th>/)
+  assert.match(stationReviews, /<th className="w-20[^"]*">申请变更版本号<\/th>/)
+  assert.match(stationReviews, /<th className="w-32[^"]*">变更核心类型<\/th>/)
+  assert.match(stationReviews, /<th className="w-24[^"]*text-center[^"]*">状态<\/th>/)
+  assert.match(stationReviews, /<th className="w-28[^"]*pr-4[^"]*text-right[^"]*">操作<\/th>/)
+
+  assert.match(venue, /<th className="w-32[^"]*">核定容量与规模梯队<\/th>/)
+  assert.match(venue, /<th className="w-36[^"]*">提报经办人 \/ 电话<\/th>/)
+  assert.match(venue, /<th className="w-24[^"]*text-center[^"]*">审核状态<\/th>/)
+  assert.match(venue, /<th className="w-28[^"]*pr-4[^"]*text-right[^"]*">操作<\/th>/)
 })

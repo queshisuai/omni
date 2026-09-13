@@ -24,7 +24,7 @@ test('support role can enter console when RBAC permissions allow it', () => {
 test('support console default follows grouped sidebar role isolation', () => {
   assert.equal(shouldDefaultToConsoleAfterLogin('support', ['support.conversation.view']), false)
   assert.equal(shouldDefaultToConsoleAfterLogin('support', ['support.account.manage']), true)
-  assert.equal(getDefaultConsolePath('support', ['support.account.manage', 'support.conversation.view']), '/console/support-conversations')
+  assert.equal(getDefaultConsolePath('support', ['support.account.manage', 'support.conversation.view']), '/console/customer-service/sessions')
   assert.equal(getDefaultConsolePath('support', ['audit.view']), '/console')
 })
 

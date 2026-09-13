@@ -269,13 +269,13 @@ export default function VenueApplicationsPage() {
             <table className="w-full table-fixed text-left text-[13px]">
             <thead className={CONSOLE_TABLE_HEADER_CLASS}>
               <tr>
-                <th className="w-[19%] px-4 py-3">场馆信息 / 资质编号</th>
-                <th className="w-[17%] px-4 py-3">所属城市与详细地址</th>
-                <th className="w-[12%] px-4 py-3">核定容量与规模梯队</th>
-                <th className="w-[12%] px-4 py-3">提报经办人 / 电话</th>
-                <th className="w-[19%] px-4 py-3">资质审批附件状态</th>
-                <th className="w-[8%] px-4 py-3">审核状态</th>
-                <th className="w-[13%] whitespace-nowrap px-4 py-3">操作</th>
+                <th className="px-4 py-3">场馆信息 / 资质编号</th>
+                <th className="px-4 py-3">所属城市与详细地址</th>
+                <th className="w-32 whitespace-nowrap px-4 py-3">核定容量与规模梯队</th>
+                <th className="w-36 whitespace-nowrap px-4 py-3">提报经办人 / 电话</th>
+                <th className="px-4 py-3">资质审批附件状态</th>
+                <th className="w-24 whitespace-nowrap px-4 py-3 text-center">审核状态</th>
+                <th className="w-28 whitespace-nowrap py-3 pr-4 pl-2 text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#f0f0f0]">
@@ -307,10 +307,10 @@ export default function VenueApplicationsPage() {
                       </div>
                       <div className="mt-1 text-[12px] text-[#999]">{completenessLabel(item.materialCompleteness)}</div>
                     </td>
-                    <td className="px-4 py-3 align-top">
+                    <td className="px-4 py-3 align-top text-center">
                       <span className={`rounded-full px-2 py-1 text-[12px] ${item.status === 0 ? 'bg-[#fff7e6] text-[#ad6800]' : item.status === 1 ? 'bg-[#ecfdf3] text-[#16803c]' : 'bg-[#fff1f2] text-[#d4383b]'}`}>{statusLabel(item.status)}</span>
                     </td>
-                    <td className="px-4 py-3 align-top">
+                    <td className="px-4 py-3 align-top text-right">
                       <button type="button" onClick={event => { event.stopPropagation(); openDrawer(item) }} className={`rounded-lg px-3 py-1.5 text-[12px] font-medium ${item.status === 0 ? 'bg-[#ff1268] text-white' : 'border border-[#e5e5e5] text-[#666]'}`}>
                         {item.status === 0 ? '审核凭证' : '查看档案'}
                       </button>

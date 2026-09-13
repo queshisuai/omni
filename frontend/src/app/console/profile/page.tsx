@@ -183,7 +183,7 @@ export default function ConsoleProfilePage() {
                 ) : role === 'support' ? (
                   <>
                     {user.permissionCodes?.includes('support.account.manage') ? <ActionLink href="/console/support-accounts" title="客服账号管理" desc="创建、编辑和停用客服账号" /> : null}
-                    {user.permissionCodes?.includes('support.conversation.view') ? <ActionLink href="/console/support-conversations" title="客服会话查询" desc="查看人工客服会话记录" /> : null}
+                    {user.permissionCodes?.includes('support.conversation.view') ? <ActionLink href="/console/customer-service/sessions" title="客服会话工作台" desc="查看人工客服会话记录" /> : null}
                     {user.permissionCodes?.includes('audit.view') ? <ActionLink href="/console/audit-logs" title="操作审计" desc="查看后台人工操作日志" /> : null}
                   </>
                 ) : (

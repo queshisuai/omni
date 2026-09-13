@@ -77,7 +77,7 @@ export const consoleMenuGroups: ConsoleMenuGroup[] = [
       { href: '/console/artists/pending', label: '艺人档案审核' },
       { href: '/console/risk-resolutions', label: '恢复售票审核' },
       { href: '/console/station-config-reviews', label: '站点变更审核' },
-      { href: '/console/support-conversations', label: '客服会话记录' },
+      { href: '/console/customer-service/sessions', label: '客服会话工作台' },
       { href: '/console/risk-cases', label: '风险案例管理' },
     ],
   },
@@ -414,8 +414,8 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             返回前台
           </Link>
         </header>
-        <main className="flex-1 min-w-0 p-6 sm:p-8 overflow-y-auto">
-          <div className="w-full min-w-0">
+        <main className={`flex-1 min-w-0 ${pathname === '/console/customer-service/sessions' ? 'overflow-hidden p-0' : 'overflow-y-auto p-6 sm:p-8'}`}>
+          <div className={`w-full max-w-[1680px] min-w-0 mx-auto ${pathname === '/console/customer-service/sessions' ? 'h-full' : ''}`}>
             {checking || redirecting ? <div className="text-[14px] text-[#666] flex items-center justify-center py-20">正在校验后台权限...</div> : children}
           </div>
         </main>

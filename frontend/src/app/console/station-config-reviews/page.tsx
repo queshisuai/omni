@@ -262,14 +262,14 @@ export default function StationConfigReviewsPage() {
           <table className="w-full table-fixed text-left text-[13px]">
             <thead className={CONSOLE_TABLE_HEADER_CLASS}>
               <tr>
-                <th className="w-[18%] px-4 py-3">巡演项目 / 站点名称及站点 ID</th>
-                <th className="w-[8%] px-4 py-3">所属城市</th>
-                <th className="w-[9%] px-4 py-3">申请变更版本号</th>
-                <th className="w-[13%] px-4 py-3">变更核心类型</th>
-                <th className="w-[19%] px-4 py-3">提报申请事由</th>
-                <th className="w-[13%] px-4 py-3">提报经办人与申请时间</th>
-                <th className="w-[8%] px-4 py-3">状态</th>
-                <th className="w-[12%] whitespace-nowrap px-4 py-3">操作</th>
+                <th className="px-4 py-3">巡演项目 / 站点名称及站点 ID</th>
+                <th className="w-20 whitespace-nowrap px-4 py-3">所属城市</th>
+                <th className="w-20 whitespace-nowrap px-4 py-3">申请变更版本号</th>
+                <th className="w-32 whitespace-nowrap px-4 py-3">变更核心类型</th>
+                <th className="px-4 py-3">提报申请事由</th>
+                <th className="w-40 whitespace-nowrap px-4 py-3">提报经办人与申请时间</th>
+                <th className="w-24 whitespace-nowrap px-4 py-3 text-center">状态</th>
+                <th className="w-28 whitespace-nowrap py-3 pr-4 pl-2 text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#f0f0f0]">
@@ -294,8 +294,8 @@ export default function StationConfigReviewsPage() {
                     <div className="whitespace-nowrap text-[#666]">经办人编号：{item.createdBy || '-'}</div>
                     <div className="mt-1 whitespace-nowrap text-[12px] text-[#999]">{formatDate(item.createdAt)}</div>
                   </td>
-                  <td className="px-4 py-3"><span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] ${statusClassName(item.status)}`}>{formatStationConfigStatus(item.status)}</span></td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-center"><span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] ${statusClassName(item.status)}`}>{formatStationConfigStatus(item.status)}</span></td>
+                  <td className="px-4 py-3 text-right">
                     <button type="button" onClick={event => { event.stopPropagation(); void openDrawer(item) }} className="whitespace-nowrap rounded-lg border border-[#ff1268] px-3 py-1.5 text-[12px] text-[#ff1268] hover:bg-[#fff0f5]">
                       {isReviewableStationConfigStatus(item.status) ? '审查 Diff 变更' : '查看历史版本'}
                     </button>

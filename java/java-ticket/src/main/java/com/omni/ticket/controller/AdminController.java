@@ -7,9 +7,11 @@ import com.omni.common.dto.OperationAuditWriteRequest;
 import com.omni.common.result.Result;
 import com.omni.common.result.ResultCode;
 import com.omni.common.util.JwtUtil;
+import com.omni.exception.BusinessException;
 import com.omni.ticket.dto.DeactivateActivityRequest;
 import com.omni.ticket.dto.DeactivateOrganizerRequest;
 import com.omni.ticket.dto.AdminSummaryResponse;
+import com.omni.ticket.dto.AdminRecentOrderContextResponse;
 import com.omni.ticket.dto.ActivityBuyerNotificationRequest;
 import com.omni.ticket.dto.ActivityBuyerNotificationResponse;
 import com.omni.ticket.dto.DeleteActivityRequest;
@@ -66,6 +68,7 @@ import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivityRiskResponseService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
+import com.omni.ticket.service.AdminOrderContextService;
 import com.omni.ticket.service.CheckInAdminQueryService;
 import com.omni.ticket.service.UserAccessService;
 import com.omni.ticket.service.VenueDefaultLayoutService;
@@ -153,6 +156,7 @@ public class AdminController {
     private final ActivityDraftService activityDraftService;
     private final StationConfigVersionService stationConfigVersionService;
     private final ActivityMarketingService activityMarketingService;
+    private AdminOrderContextService adminOrderContextService;
     private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
 
     public AdminController(ActivityMapper activityMapper, SessionMapper sessionMapper,
@@ -233,6 +237,29 @@ public class AdminController {
     @Autowired(required = false)
     public void setSearchIndexEventPublisher(ActivitySearchIndexEventPublisher searchIndexEventPublisher) {
         this.searchIndexEventPublisher = searchIndexEventPublisher;
+    }
+
+    @Autowired(required = false)
+    public void setAdminOrderContextService(AdminOrderContextService adminOrderContextService) {
+        this.adminOrderContextService = adminOrderContextService;
+    }
+
+    @GetMapping("/orders/user-recent-context")
+    public Result<List<AdminRecentOrderContextResponse.OrderSummary>> getRecentOrderContext(
+            @RequestParam Long userId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        Long operatorId = parseOperatorId(authorization);
+        if (operatorId == null) {
+            return Result.fail(ResultCode.UNAUTHORIZED);
+        }
+        if (adminOrderContextService == null) {
+            return Result.fail(ResultCode.INTERNAL_ERROR, "订单画像服务未配置");
+        }
+        try {
+            return Result.success(adminOrderContextService.getRecentOrderContext(userId, operatorId).getOrders());
+        } catch (BusinessException e) {
+            return Result.fail(e.getCode(), e.getMessage());
+        }
     }
 
     @Autowired

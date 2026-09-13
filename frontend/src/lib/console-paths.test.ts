@@ -60,7 +60,7 @@ test('builds role-specific console quick actions', () => {
     '/console/organizer-applications',
     '/console/organizer-admins',
     '/console/support-accounts',
-    '/console/support-conversations',
+    '/console/customer-service/sessions',
     '/console/audit-logs',
     '/console/exception-tasks',
     '/console/reconciliation',
@@ -100,11 +100,11 @@ test('builds role-specific console quick actions', () => {
     '/console/profile',
   ])
   assert.deepEqual(getConsoleQuickActions('organizer_admin', ['support.conversation.view']).map(item => item.href), [
-    '/console/support-conversations',
+    '/console/customer-service/sessions',
     '/console/profile',
   ])
   assert.deepEqual(getConsoleQuickActions('support', ['support.account.manage', 'support.conversation.view', 'audit.view']).map(item => item.href), [
-    '/console/support-conversations',
+    '/console/customer-service/sessions',
     '/console/profile',
   ])
 })

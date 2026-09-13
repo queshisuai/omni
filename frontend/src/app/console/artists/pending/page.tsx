@@ -284,13 +284,13 @@ export default function PendingArtistsPage() {
           <table className="w-full table-fixed text-left text-[13px]">
             <thead className={CONSOLE_TABLE_HEADER_CLASS}>
               <tr>
-                <th className="w-[24%] px-4 py-3">艺人/团体基本信息</th>
-                <th className="w-[12%] px-4 py-3">艺术类目标签</th>
-                <th className="w-[18%] px-4 py-3">代表作品 / 代表剧目</th>
-                <th className="w-[14%] px-4 py-3">提报主办方</th>
-                <th className="w-[16%] px-4 py-3">演艺合规资质附件状态</th>
-                <th className="w-[9%] px-4 py-3">审核状态</th>
-                <th className="w-[7%] whitespace-nowrap px-4 py-3">操作</th>
+                <th className="px-4 py-3">艺人/团体基本信息</th>
+                <th className="w-32 whitespace-nowrap px-4 py-3">艺术类目标签</th>
+                <th className="px-4 py-3">代表作品 / 代表剧目</th>
+                <th className="w-36 whitespace-nowrap px-4 py-3">提报主办方</th>
+                <th className="w-40 whitespace-nowrap px-4 py-3">演艺合规资质附件状态</th>
+                <th className="w-24 whitespace-nowrap px-4 py-3 text-center">审核状态</th>
+                <th className="w-28 whitespace-nowrap py-3 pr-4 pl-2 text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#f0f0f0]">
@@ -314,12 +314,12 @@ export default function PendingArtistsPage() {
                   <td className="truncate px-4 py-3 text-[#666]" title={item.representativeWorks || ''}>{item.representativeWorks || '-'}</td>
                   <td className="truncate px-4 py-3 text-[#666]" title={item.agency || ''}>{item.agency || '-'}</td>
                   <td className="truncate px-4 py-3 text-[#666]" title={item.sourceNote || ''}>{getQualificationLabel(item)}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-center">
                     <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] ${statusClassName(item.reviewStatus, item.riskStatus)}`}>
                       {item.riskStatus === 'risky' ? '风险拦截' : formatArtistListReviewStatus(item.reviewStatus)}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-right">
                     <button type="button" onClick={event => { event.stopPropagation(); openDrawer(item) }} className="whitespace-nowrap rounded-lg border border-[#ff1268] px-3 py-1.5 text-[12px] text-[#ff1268] hover:bg-[#fff0f5]">
                       {isReviewableArtistReviewStatus(item.reviewStatus) ? '资质审核' : '查看档案'}
                     </button>

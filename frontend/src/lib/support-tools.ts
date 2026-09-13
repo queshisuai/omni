@@ -275,5 +275,5 @@ export function pickDefaultUserSupportConversation<T extends Pick<SupportConvers
 }
 
 export function getSupportConversationRecordsHref() {
-  return '/console/support-conversations'
+  return '/console/customer-service/sessions'
 }

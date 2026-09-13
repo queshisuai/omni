@@ -5,7 +5,7 @@ import { appendQuickReply, buildCloseRequestMessage, buildSupportSubject, canCla
 
 test('routes users to role-specific entry after login', () => {
   assert.equal(getLoginRedirectForRole('support'), '/support')
-  assert.equal(getLoginRedirectForRole('support', ['support.account.manage', 'support.conversation.view', 'audit.view']), '/console/support-conversations')
+  assert.equal(getLoginRedirectForRole('support', ['support.account.manage', 'support.conversation.view', 'audit.view']), '/console/customer-service/sessions')
   assert.equal(getLoginRedirectForRole('support', ['audit.view']), '/console')
   assert.equal(getLoginRedirectForRole('admin'), '/console')
   assert.equal(getLoginRedirectForRole('platform_super_admin'), '/console')
@@ -150,7 +150,7 @@ test('treats only the help page as the customer support conversation window', ()
 })
 
 test('links admin support management to user conversation records instead of agent filtered records', () => {
-  assert.equal(getSupportConversationRecordsHref(), '/console/support-conversations')
+  assert.equal(getSupportConversationRecordsHref(), '/console/customer-service/sessions')
 })
 
 test('formatSupportContextSectionCount returns Chinese labels', () => {

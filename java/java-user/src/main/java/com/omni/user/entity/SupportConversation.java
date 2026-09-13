@@ -16,6 +16,7 @@ public class SupportConversation {
     private String status;
     private String sourceType;
     private Long assignedAgentId;
+    private Long skillGroupId;
     private String lastMessage;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
@@ -30,6 +31,7 @@ public class SupportConversation {
     private Boolean escalatedToAdmin;
     private String escalationReason;
     private LocalDateTime escalatedAt;
+    private Boolean slaTimeoutFlag;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -48,6 +50,9 @@ public class SupportConversation {
 
     public Long getAssignedAgentId() { return assignedAgentId; }
     public void setAssignedAgentId(Long assignedAgentId) { this.assignedAgentId = assignedAgentId; }
+
+    public Long getSkillGroupId() { return skillGroupId; }
+    public void setSkillGroupId(Long skillGroupId) { this.skillGroupId = skillGroupId; }
 
     public String getLastMessage() { return lastMessage; }
     public void setLastMessage(String lastMessage) { this.lastMessage = lastMessage; }
@@ -90,4 +95,7 @@ public class SupportConversation {
 
     public LocalDateTime getEscalatedAt() { return escalatedAt; }
     public void setEscalatedAt(LocalDateTime escalatedAt) { this.escalatedAt = escalatedAt; }
+
+    public Boolean getSlaTimeoutFlag() { return slaTimeoutFlag; }
+    public void setSlaTimeoutFlag(Boolean slaTimeoutFlag) { this.slaTimeoutFlag = slaTimeoutFlag; }
 }

@@ -241,13 +241,13 @@ function RiskResolutionsContent() {
           <table className="w-full table-fixed text-left text-[13px]">
             <thead className={CONSOLE_TABLE_HEADER_CLASS}>
               <tr>
-                <th className="w-[24%] px-4 py-3">演出活动名称及编号</th>
-                <th className="w-[18%] px-4 py-3">停售触发原因</th>
-                <th className="w-[18%] px-4 py-3">主办方整改方案摘要</th>
-                <th className="w-[12%] px-4 py-3">复批证明附件齐全度</th>
-                <th className="w-[13%] px-4 py-3">提报经办人及时间</th>
-                <th className="w-[8%] px-4 py-3">状态</th>
-                <th className="w-[7%] whitespace-nowrap px-4 py-3">操作</th>
+                <th className="px-4 py-3">演出活动名称及编号</th>
+                <th className="px-4 py-3">停售触发原因</th>
+                <th className="px-4 py-3">主办方整改方案摘要</th>
+                <th className="w-40 whitespace-nowrap px-4 py-3">复批证明附件齐全度</th>
+                <th className="w-40 whitespace-nowrap px-4 py-3">提报经办人及时间</th>
+                <th className="w-24 whitespace-nowrap px-4 py-3 text-center">状态</th>
+                <th className="w-28 whitespace-nowrap py-3 pr-4 pl-2 text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#f0f0f0]">
@@ -276,10 +276,10 @@ function RiskResolutionsContent() {
                     <div className="whitespace-nowrap text-[#666]">经办人编号：{item.submittedBy || '-'}</div>
                     <div className="mt-1 whitespace-nowrap text-[12px] text-[#999]">{formatDate(item.createTime)}</div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-center">
                     <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] ${statusClassName(item.status)}`}>{STATUS_LABEL[item.status] || '未知状态'}</span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 text-right">
                     <button type="button" onClick={event => { event.stopPropagation(); openDrawer(item) }} className="whitespace-nowrap rounded-lg border border-[#ff1268] px-3 py-1.5 text-[12px] text-[#ff1268] hover:bg-[#fff0f5]">
                       {item.status === 'pending' ? '恢复处理' : '查看详情'}
                     </button>

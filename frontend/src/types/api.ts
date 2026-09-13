@@ -931,6 +931,133 @@ export interface SupportAuditVO {
   createTime?: string | null
 }
 
+export type CsSessionStatus = 'ACTIVE' | 'CLOSED' | 'NEED_AUDIT'
+export type CsSessionSort = 'latest' | 'sla_waiting' | 'quality'
+
+export interface CsAgentVO {
+  userId: number
+  agentName: string
+  agentStatus: number
+  activeSessionCount: number
+  totalCount: number
+}
+
+export interface CsSkillGroupVO {
+  id: number
+  groupCode: string
+  groupName: string
+  leaderUserId?: number | null
+  leaderName?: string | null
+  activeCount: number
+  totalCount: number
+  waitingCount: number
+  overdueCount: number
+  agents: CsAgentVO[]
+}
+
+export interface CsOrgTreeVO {
+  activeCount: number
+  totalCount: number
+  publicPoolCount: number
+  publicPoolTimeoutCount: number
+  aiResolvedCount: number
+  aiHumanCount: number
+  groups: CsSkillGroupVO[]
+}
+
+export interface CsSessionVO {
+  id: number
+  userId: number
+  userNickname?: string | null
+  userPhoneMask?: string | null
+  subject?: string | null
+  status: CsSessionStatus | string
+  sourceType?: 'AI' | 'HUMAN' | string | null
+  assignedAgentId?: number | null
+  assignedAgentName?: string | null
+  skillGroupId?: number | null
+  skillGroupName?: string | null
+  lastMessage?: string | null
+  createTime?: string | null
+  updateTime?: string | null
+  closedAt?: string | null
+  slaTimeoutFlag?: boolean | null
+  slaOverdue?: boolean | null
+  userWaitingSeconds?: number | null
+  needAudit?: boolean | null
+  latestAuditScore?: number | null
+  escalatedToAdmin?: boolean | null
+}
+
+export interface CsSessionMessageVO {
+  id: number
+  sessionId: number
+  senderUserId?: number | null
+  senderType: SupportMessageSenderType
+  senderDisplayName?: string | null
+  content: string
+  createTime?: string | null
+}
+
+export interface CsSessionQueryParams {
+  groupId?: number
+  agentId?: number
+  unassignedOnly?: boolean
+  sourceType?: string
+  status?: CsSessionStatus
+  slaTimeoutOnly?: boolean
+  keyword?: string
+  page?: number
+  size?: number
+  sort?: CsSessionSort
+}
+
+export interface CsTransferRequest {
+  targetGroupId: number
+  targetAgentId: number
+  transferNote: string
+}
+
+export interface CsAuditRequest {
+  score: number
+  comments: string
+  isResolved: boolean
+}
+
+export interface CsInternalNoteRequest {
+  content: string
+}
+
+export interface CsInternalNoteVO extends CsInternalNoteRequest {
+  id?: number
+  sessionId?: number
+  authorUserId?: number | null
+  authorDisplayName?: string | null
+  createTime?: string | null
+}
+
+export interface CsRecentOrderContextVO {
+  orderId?: number | string | null
+  orderNo?: string | null
+  activityName?: string | null
+  venueName?: string | null
+  sessionTime?: string | null
+  ticketName?: string | null
+  seatLabels?: string | null
+  status?: number | null
+  fulfillmentStatus?: string | null
+}
+
+export interface CsUserSessionHistoryVO {
+  sessionId: number
+  createdAt?: string | null
+  agentName?: string | null
+  category?: string | null
+  status: 'ACTIVE' | 'CLOSED' | string
+  closedAt?: string | null
+  closeReason?: string | null
+}
+
 export interface SupportContextVO {
   conversationId: number
   user: {

@@ -35,6 +35,16 @@ import type {
   TicketTeamVO,
   UpdateTeamGrabStrategyPayload,
   ActivityMarketingRulePayload,
+  CsAuditRequest,
+  CsInternalNoteRequest,
+  CsInternalNoteVO,
+  CsOrgTreeVO,
+  CsRecentOrderContextVO,
+  CsSessionMessageVO,
+  CsSessionQueryParams,
+  CsSessionVO,
+  CsTransferRequest,
+  CsUserSessionHistoryVO,
   UserAttendeeExportVO,
   UserAttendeePayload,
   UserAttendeeVO,
@@ -623,6 +633,82 @@ export async function escalateSupportConversation(conversationId: number, reason
 export async function listSupportAudits(conversationId: number) {
   assertPositiveInteger(conversationId, '客服会话ID')
   return request<import('@/types/api').SupportAuditVO[]>(`/api/user/support/agent/conversations/${conversationId}/audits`)
+}
+
+export async function getCsOrgTree() {
+  return request<CsOrgTreeVO>('/api/user/cs/org-tree')
+}
+
+export async function listCsSessions(params: CsSessionQueryParams = {}) {
+  const searchParams = new URLSearchParams()
+  if (params.groupId) searchParams.set('groupId', String(params.groupId))
+  if (params.agentId) searchParams.set('agentId', String(params.agentId))
+  if (params.unassignedOnly) searchParams.set('unassignedOnly', 'true')
+  if (params.sourceType) searchParams.set('sourceType', params.sourceType)
+  if (params.status) searchParams.set('status', params.status)
+  if (params.slaTimeoutOnly) searchParams.set('slaTimeoutOnly', 'true')
+  if (params.keyword?.trim()) searchParams.set('keyword', params.keyword.trim())
+  searchParams.set('page', String(params.page || 1))
+  searchParams.set('size', String(params.size || 30))
+  if (params.sort) searchParams.set('sort', params.sort)
+  return request<import('@/types/api').PageResult<CsSessionVO>>(`/api/user/cs/sessions?${searchParams.toString()}`)
+}
+
+export async function listCsSessionMessages(sessionId: number) {
+  assertPositiveInteger(sessionId, '客服会话编号')
+  return request<CsSessionMessageVO[]>(`/api/user/cs/sessions/${sessionId}/messages`)
+}
+
+export async function listCsUserSessionHistory(userId: number) {
+  assertPositiveInteger(userId, '用户编号')
+  return request<CsUserSessionHistoryVO[]>(`/api/user/cs/users/${userId}/sessions-history`)
+}
+
+export async function claimCsSession(sessionId: number) {
+  assertPositiveInteger(sessionId, '客服会话编号')
+  return request<CsSessionVO>(`/api/user/cs/sessions/${sessionId}/claim`, { method: 'POST' })
+}
+
+export async function transferCsSession(sessionId: number, body: CsTransferRequest) {
+  assertPositiveInteger(sessionId, '客服会话编号')
+  return request<CsSessionVO>(`/api/user/cs/sessions/${sessionId}/transfer`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function escalateCsSession(sessionId: number, reason?: string) {
+  assertPositiveInteger(sessionId, '客服会话编号')
+  return request<CsSessionVO>(`/api/user/cs/sessions/${sessionId}/escalate`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason?.trim() || null }),
+  })
+}
+
+export async function auditCsSession(sessionId: number, body: CsAuditRequest) {
+  assertPositiveInteger(sessionId, '客服会话编号')
+  return request<CsSessionVO>(`/api/user/cs/sessions/${sessionId}/audit`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function addCsInternalNote(sessionId: number, body: CsInternalNoteRequest) {
+  assertPositiveInteger(sessionId, '客服会话编号')
+  if (!body.content.trim()) throw new ApiError(400, '内部备注不能为空')
+  return request<CsInternalNoteVO>(`/api/user/cs/sessions/${sessionId}/internal-note`, {
+    method: 'POST',
+    body: JSON.stringify({ content: body.content.trim() }),
+  })
+}
+
+export async function getRecentTicketOrderContext(userId: number) {
+  assertPositiveInteger(userId, '用户编号')
+  return request<CsRecentOrderContextVO[]>(
+    `/api/ticket/admin/orders/user-recent-context?userId=${encodeURIComponent(String(userId))}`,
+    undefined,
+    { timeoutMs: 3000 },
+  )
 }
 
 export async function getSupportConversationContext(conversationId: number) {

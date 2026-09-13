@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
@@ -27,6 +28,11 @@ public interface OrderInternalClient {
     @GetMapping("/api/order/internal/{id}")
     Result<OrderInfoResponse> getOrderDetail(@PathVariable("id") Long id,
                                              @RequestHeader("X-Internal-Token") String internalToken);
+
+    @GetMapping("/api/order/internal/users/{userId}/orders")
+    Result<List<OrderInfoResponse>> listInternalUserOrders(@PathVariable("userId") Long userId,
+                                                            @RequestParam("limit") Integer limit,
+                                                            @RequestHeader("X-Internal-Token") String internalToken);
 
     @PostMapping("/api/order/internal/paid-by-sessions")
     Result<List<OrderInfoResponse>> listPaidBySessions(@RequestBody PaidOrdersBySessionsRequest request,

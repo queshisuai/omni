@@ -21,6 +21,7 @@ import com.omni.ticket.dto.ActivityMarketingRuleRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionReviewRequest;
 import com.omni.ticket.dto.ActivityRiskResolutionResponse;
+import com.omni.ticket.dto.AdminRecentOrderContextResponse;
 import com.omni.ticket.dto.ArtistReviewRequest;
 import com.omni.ticket.dto.ArtistRiskRequest;
 import com.omni.ticket.dto.ArtistSearchResponse;
@@ -66,6 +67,7 @@ import com.omni.ticket.service.ArtistGovernanceService;
 import com.omni.ticket.service.ActivityRiskResponseService;
 import com.omni.ticket.service.ActivitySeatLayoutService;
 import com.omni.ticket.service.AdminSummaryService;
+import com.omni.ticket.service.AdminOrderContextService;
 import com.omni.ticket.service.OrderAdminQueryService;
 import com.omni.ticket.service.VenueDefaultLayoutService;
 import com.omni.ticket.service.SeatTemplateService;
@@ -180,6 +182,8 @@ class AdminControllerTest {
     private ActivityMarketingService activityMarketingService;
     @Mock
     private ActivitySearchIndexEventPublisher searchIndexEventPublisher;
+    @Mock
+    private AdminOrderContextService adminOrderContextService;
 
     private void allowActivityRole(Long userId, String role) {
         when(userAccessService.requireAdminOrOrganizerOrAnyPermissionRole(userId, "activity.manage"))
@@ -2372,6 +2376,26 @@ class AdminControllerTest {
 
         assertEquals(401, result.getCode());
         verify(venueDefaultLayoutService, never()).getLayout(any());
+    }
+
+    @Test
+    void returnsRecentOrderContextAsArrayForConsole() {
+        AdminController controller = controller();
+        controller.setAdminOrderContextService(adminOrderContextService);
+        AdminRecentOrderContextResponse context = new AdminRecentOrderContextResponse();
+        context.setUserId(7001L);
+        AdminRecentOrderContextResponse.OrderSummary order = new AdminRecentOrderContextResponse.OrderSummary();
+        order.setOrderNo("ORD-1");
+        order.setActivityName("演唱会A");
+        context.setOrders(List.of(order));
+        when(adminOrderContextService.getRecentOrderContext(7001L, 2002L)).thenReturn(context);
+
+        Result<List<AdminRecentOrderContextResponse.OrderSummary>> result =
+                controller.getRecentOrderContext(7001L, adminToken());
+
+        assertEquals(200, result.getCode());
+        assertEquals(1, result.getData().size());
+        assertEquals("ORD-1", result.getData().get(0).getOrderNo());
     }
 
     private AdminController controller() {

@@ -1,6 +1,7 @@
 const PATH_PERMISSION_MAP: Record<string, string[]> = {
   '/console/support-accounts': ['support.account.manage'],
-  '/console/support-conversations': ['support.conversation.view'],
+  '/console/support-conversations': ['support.conversation.view', 'cs.manage', 'cs.review'],
+  '/console/customer-service/sessions': ['support.conversation.view', 'cs.manage', 'cs.review'],
   '/console/station-config-reviews': ['station.review'],
   '/console/venue/applications': ['venue.review'],
   '/console/risk-resolutions': ['risk.review'],
@@ -27,11 +28,15 @@ const PATH_PERMISSION_MAP: Record<string, string[]> = {
 const SUPPORT_CONSOLE_PERMISSIONS = [
   'support.account.manage',
   'support.conversation.view',
+  'cs.manage',
+  'cs.review',
   'audit.view',
 ]
 
 const SUPPORT_MANAGER_PERMISSIONS = [
   'support.account.manage',
+  'cs.manage',
+  'cs.review',
   'audit.view',
 ]
 
@@ -60,14 +65,14 @@ const ORGANIZER_ADMIN_DEFAULT_PATH_BY_PERMISSION: Array<[string, string]> = [
   ['station.review', '/console/station-config-reviews'],
   ['risk.review', '/console/risk-resolutions'],
   ['risk.view', '/console/risk-cases'],
-  ['support.conversation.view', '/console/support-conversations'],
+  ['support.conversation.view', '/console/customer-service/sessions'],
 ]
 
 const SUPPORT_DEFAULT_PATH_BY_PERMISSION: Array<[string, string]> = [
   ['order.view', '/console/orders'],
   ['checkin.view', '/console/check-in'],
   ['refund.review', '/console/refunds'],
-  ['support.conversation.view', '/console/support-conversations'],
+  ['support.conversation.view', '/console/customer-service/sessions'],
 ]
 
 export function isPlatformAdminRole(role: string | null | undefined): boolean {

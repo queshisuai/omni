@@ -22,7 +22,7 @@ const PERMISSION_QUICK_ACTIONS: Array<{ permission: string; label: string; href:
   { permission: 'risk.review', label: '恢复售票审核', href: '/console/risk-resolutions' },
   { permission: 'risk.view', label: '风险案例管理', href: '/console/risk-cases' },
   { permission: 'support.account.manage', label: '客服账号管理', href: '/console/support-accounts' },
-  { permission: 'support.conversation.view', label: '客服会话查询', href: '/console/support-conversations' },
+  { permission: 'support.conversation.view', label: '客服会话工作台', href: '/console/customer-service/sessions' },
   { permission: 'audit.view', label: '操作审计', href: '/console/audit-logs' },
   { permission: 'compensation.execute', label: '异常任务', href: '/console/exception-tasks' },
   { permission: 'reconcile.view', label: '日结对账', href: '/console/reconciliation' },
@@ -50,7 +50,7 @@ const ORGANIZER_BLOCKED_PREFIXES = [
   '/console/station-config-reviews',
   '/console/organizer-applications',
   '/console/support-accounts',
-  '/console/support-conversations',
+  '/console/customer-service/sessions',
 ]
 
 const ORGANIZER_ALLOWED_PREFIXES = [
