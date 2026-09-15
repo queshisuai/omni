@@ -54,6 +54,12 @@ class GatewayRouteTimeoutConfigTest {
     }
 
     @Test
+    void aiTicketFinderRouteUsesDedicatedTimeoutBeforeGenericTicketRoute() {
+        assertAiTicketFinderRoute(loadGatewayProperties());
+        assertAiTicketFinderRoute(loadYamlProperties("application-prod-split.yml"));
+    }
+
+    @Test
     void prodSplitGatewayRoutesOverrideDefinesCompleteRouteList() {
         Properties properties = loadYamlProperties("application-prod-split.yml");
         Map<String, Integer> routeIndexes = routeIndexes(properties);
@@ -111,6 +117,21 @@ class GatewayRouteTimeoutConfigTest {
             String expectedDefault) {
         int index = requireRoute(routeIndexes, routeId);
         assertConfigDefault(properties, "spring.cloud.gateway.routes[" + index + "].metadata." + metadataKey, expectedDefault);
+    }
+
+    private void assertAiTicketFinderRoute(Properties properties) {
+        Map<String, Integer> routeIndexes = routeIndexes(properties);
+        int aiFinderIndex = requireRoute(routeIndexes, "ai-ticket-finder");
+        int ticketServiceIndex = requireRoute(routeIndexes, "ticket-service");
+
+        assertTrue(aiFinderIndex < ticketServiceIndex, "AI Finder route must precede the generic ticket route");
+        assertEquals("Path=/api/ticket/ai/finder/**",
+                properties.getProperty("spring.cloud.gateway.routes[" + aiFinderIndex + "].predicates[0]"));
+        assertEquals("lb://java-ticket",
+                properties.getProperty("spring.cloud.gateway.routes[" + aiFinderIndex + "].uri"));
+        assertRouteDefault(properties, routeIndexes, "ai-ticket-finder", "connect-timeout", "1000");
+        assertRouteDefault(properties, routeIndexes, "ai-ticket-finder", "response-timeout", "35000");
+        assertRouteDefault(properties, routeIndexes, "ticket-service", "response-timeout", "5000");
     }
 
     private int requireRoute(Map<String, Integer> routeIndexes, String routeId) {

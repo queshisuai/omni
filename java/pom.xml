@@ -14,6 +14,7 @@
 
     <modules>
         <module>java-common</module>
+        <module>java-ai-core</module>
         <module>java-gateway</module>
         <module>java-user</module>
         <module>java-ticket</module>

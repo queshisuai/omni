@@ -58,6 +58,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 5000
 const CONSOLE_ADMIN_REQUEST_TIMEOUT_MS = 20000
 const QR_PAY_REQUEST_TIMEOUT_MS = 15000
 const SUPPORT_MESSAGE_REQUEST_TIMEOUT_MS = 70000
+const AI_FINDER_REQUEST_TIMEOUT_MS = 70000
 const MESSAGE_LABELS: Record<string, string> = {
   'ticket type sold out': '当前票档已售罄',
   'order confirmation pending': '订单确认中，请稍后查看订单结果',
@@ -1015,6 +1016,20 @@ export async function listActivities(params: {
 
 export async function getActivityDetail(id: number) {
   return request<import('@/types/api').ActivityDetailVO>(`/api/ticket/activities/${id}`)
+}
+
+export async function interpretAiTicketFinder(query: string) {
+  return request<import('@/types/api').FinderResponse>('/api/ticket/ai/finder/interpret', {
+    method: 'POST',
+    body: JSON.stringify({ query }),
+  }, { timeoutMs: AI_FINDER_REQUEST_TIMEOUT_MS })
+}
+
+export async function searchAiTicketFinder(query: string) {
+  return request<import('@/types/api').FinderResponse>('/api/ticket/ai/finder/search', {
+    method: 'POST',
+    body: JSON.stringify({ query }),
+  }, { timeoutMs: AI_FINDER_REQUEST_TIMEOUT_MS })
 }
 
 export async function listActivityReviews(activityId: number) {

@@ -13,6 +13,13 @@ import java.util.List;
 
 @Mapper
 public interface SessionSeatMapper extends BaseMapper<SessionSeat> {
+    @Select("SELECT * FROM session_seat WHERE session_id = #{sessionId} " +
+            "AND ticket_type_id = #{ticketTypeId} AND status = 1 AND order_id IS NULL " +
+            "AND lock_expire_time IS NULL AND lock_request_id IS NULL " +
+            "ORDER BY row_no NULLS LAST, seat_no NULLS LAST, id")
+    List<SessionSeat> selectAvailableSeatsForFinder(@Param("sessionId") Long sessionId,
+                                                    @Param("ticketTypeId") Long ticketTypeId);
+
     @Select("SELECT COUNT(*) FROM session_seat ss WHERE ss.session_id = #{sessionId} " +
             "AND (ss.status IN (2, 3) OR ss.order_id IS NOT NULL)")
     Long countTradingSeats(@Param("sessionId") Long sessionId);

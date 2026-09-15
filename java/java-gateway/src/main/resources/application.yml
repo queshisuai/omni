@@ -70,6 +70,13 @@ spring:
           metadata:
             connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
             response-timeout: ${GATEWAY_SHORT_RESPONSE_TIMEOUT_MS:3000}
+        - id: ai-ticket-finder
+          uri: lb://java-ticket
+          predicates:
+            - Path=/api/ticket/ai/finder/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_AI_FINDER_RESPONSE_TIMEOUT_MS:35000}
         - id: ticket-service
           uri: lb://java-ticket
           predicates:

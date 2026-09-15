@@ -115,8 +115,7 @@ class OllamaSupportLocalModelClientTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void includesDefaultContextWindowLimitInPayload() throws Exception {
+    void includesDefaultContextWindowLimitInSharedClient() throws Exception {
         OllamaSupportLocalModelClient client = new OllamaSupportLocalModelClient(
                 true,
                 "http://localhost:11434/api/chat",
@@ -126,9 +125,7 @@ class OllamaSupportLocalModelClientTest {
                 objectMapper
         );
 
-        Map<String, Object> payload = (Map<String, Object>) invokeBuildPayload(client, "票夹在哪里？", "平台规则", false);
-
-        assertEquals(2048, ((Map<String, Object>) payload.get("options")).get("num_ctx"));
+        assertEquals(2048, readField(client, "contextWindow"));
     }
 
     @Test
@@ -234,18 +231,12 @@ class OllamaSupportLocalModelClientTest {
     }
 
     private Object readField(Object target, String fieldName) throws Exception {
+        Field delegate = target.getClass().getDeclaredField("modelClient");
+        delegate.setAccessible(true);
+        target = delegate.get(target);
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         return field.get(target);
     }
 
-    private Object invokeBuildPayload(OllamaSupportLocalModelClient client,
-                                      String question,
-                                      String projectKnowledge,
-                                      boolean stream) throws Exception {
-        java.lang.reflect.Method method = OllamaSupportLocalModelClient.class
-                .getDeclaredMethod("buildPayload", String.class, String.class, boolean.class);
-        method.setAccessible(true);
-        return method.invoke(client, question, projectKnowledge, stream);
-    }
 }

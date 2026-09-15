@@ -1,5 +1,29 @@
 # Implementation Notes
 
+## 2026-09-15 Gateway AI Finder timeout
+
+- 在 `java-gateway` 的基础配置和 `prod-split` profile 中新增 `ai-ticket-finder` 专用路由，放在通用 `ticket-service` 路由之前。
+- 路由只匹配 `/api/ticket/ai/finder/**`，目标仍为 `lb://java-ticket`；沿用现有 `GATEWAY_CONNECT_TIMEOUT_MS`，响应超时默认由 `GATEWAY_AI_FINDER_RESPONSE_TIMEOUT_MS` 配置为 `35000ms`。
+- 普通 `/api/ticket/**` 继续使用 `GATEWAY_DEFAULT_ROUTE_RESPONSE_TIMEOUT_MS` 默认 `5000ms`；未修改其他 Gateway route、认证或业务服务。
+- 验证：完整 Java reactor `compile`、Gateway 全量测试（`java-common 30`、`java-gateway 35`）和 `git diff --check` 通过；重启后的 Gateway 以 `prod-split` 运行并完成 Nacos 注册。
+- 运行态诊断确认 `POST /api/ticket/ai/finder/interpret` 命中 `routeId=ai-ticket-finder`、目标 `lb://java-ticket`；`GET /api/ticket/categories` 命中通用 `routeId=ticket-service`，活动列表仍命中原有 `ticket-hot-read-service`。
+- Actuator 未引入，`/actuator/gateway/routes`、`/actuator/routes` 和 `/actuator/health` 均为 `404`，因此使用既有 Gateway diagnostics 日志和真实请求进行验证。带有效 JWT 的真实 Finder 请求耗时 `8721ms` 后返回 java-ticket 的 `502 AI 找票解析结果格式不正确`，未出现 Gateway `5000ms` 截断；该模型输出格式问题属于本轮明确不处理的剩余联调阻塞。
+- 首次重启曾因本机 JDK 17/Windows Netty selector 的 Unix domain socket `Invalid argument` 失败；未改源码或配置，按既有本地运行记录仅为 Gateway 进程增加 `-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime` 后启动成功。
+
+## 2026-09-15 AI 功能详细技术设计文档化
+
+- 按用户明确要求，将第二阶段设计保存为根目录 `Omni AI 功能详细技术设计 V1.md`，包含 14 个主题、找票与 Copilot 调用链、DTO/Schema、API、表设计、Prompt、前端、权限和测试计划。
+- 文档区分现有源码与拟新增能力；保留场次级核验、连座未知状态、Copilot 草稿隔离和微服务数据边界。
+- 文档整理说明：将首轮幂等字段 `initial_request_id` 合并进建表定义，并明确 SSE 终态互斥及事件 JSON 编码规则；SQL 仅作设计展示，未执行。
+- 范围：本次只新增设计文档并同步本说明，未修改业务代码或配置，未创建功能文件，未执行数据库迁移、构建、业务测试、下载、提交或推送；既有审计文档保持原状。
+
+## 2026-09-14 AI 改造前审计报告文档化
+
+- 按用户后续明确要求，将只读审计整理为根目录 `Omni AI 改造前项目审计报告.md`，参考既有架构文档格式，保留 26 个主题、调用链、源码索引及风险边界。
+- 报告区分源码已实现、配置能力、未动态验证和建议新增内容；保留现有 LLM/SSE、搜索聚合限制、客服上下文、RBAC 及拆库约束。
+- 范围：仅文档变更，未修改业务代码、配置或数据库，未实现 AI 功能，未执行构建/业务测试、下载、迁移、提交或推送。
+- 偏离说明：原审计阶段禁止创建文件；本次用户已明确授权保存根目录 Markdown，因此只新增报告，并按项目规则同步本说明。
+
 ## 2026-09-13 平台账号管理合并
 
 - 前端新增 `/console/accounts`，合并客服主管、普通客服、平台主办方运营员三类账号管理；客服列表复用 `/api/user/support/admin/accounts` 并按 `supportRole` 拆 Tab，运营员列表继续走 `/api/user/console/organizer-admins`。
@@ -508,3 +532,257 @@
 - 审计与迁移：角色权限保存同事务写入 `RBAC_ROLE_PERMS_UPDATE`，账号覆盖保存同事务写入 `USER_PERMISSION_OVERRIDE_UPDATE`；生产拆库和 shared 本地迁移均只新增 `omni_user.user_permission_override`，未访问或 join `omni_ticket_split`。
 - 迁移执行：已在获得授权后对本机 `omni_user` 执行 `sql/production-split/user/20260913_user_permission_override.sql`；验证到 `user_permission_override` 表、`uk_user_perm` 唯一约束、`override_type` CHECK 约束和 `idx_user_perm_uid` 索引存在，且 `omni_ticket_split` 未创建该表。
 - 验证：前端 RBAC/API 定向测试 `54/54` 通过，`pnpm typecheck` 通过；Java RBAC 定向测试 `16/16` 通过；`check-production-split-sql.ps1`、`verify-microservice-boundaries.ps1` 和 `git diff --check` 通过。新增 `user_permission_override` 已同步登记生产 SQL 静态表清单与跨库 FK owner map。
+
+## 2026-09-15 java-ai-core 第一阶段
+
+- 范围：依照已批准 V1 抽取共享模型基础层；不实现找票、Copilot、前端、RAG、Agent、工具调用或交易动作，不修改数据库。
+- 结构：父 POM 位于 java/pom.xml，新增 java/java-ai-core 普通 JAR；java-user 依赖 core，core 仅依赖 Jackson、SLF4J 和 JDK，不依赖 java-common 或业务模块。
+- 实施计划：先运行客服基线并添加 DTO、协议、异常、取消和 Prompt 测试；再将旧客户端的 HTTP/NDJSON/SSE/think 过滤迁入 core；旧类保留为兼容适配层；复用原配置键、默认值和回退语义；最后执行离线 compile、相关 test、边界检查和 diff 审查。
+- Prompt：原客服 system prompt 原文移入业务资源目录，由共享模板加载并计算版本 hash，FAQ 不变。
+- 验证边缘情况：首次 Maven 参数在 PowerShell 被拆分，改为完整引号；原始客服基线 21 项中 5 项因 JDK loopback 连接错误失败、13 项规则层测试通过，继续检查仅进程 IPv4 参数，不将环境失败报告为通过。
+- 状态：第一阶段完成。保留本文件原有用户改动；不提交、推送或合并 Git。
+- 实施完成：新增 AiModelClient.generate/stream、不可变 DTO、AiCancellationToken、安全中文异常和元数据日志；旧客服类仅保留适配与 HTTP 非 2xx 回退，配置表达式及默认值原样迁入 SupportAiModelConfig。
+- 协议：支持 Ollama NDJSON、SSE 多行 data/元数据/[DONE]、既有 OpenAI choices；对 Chat Completions 的新增可选 temperature/maxTokens 做顶层映射，其余沿用原 num_ctx 请求。缺失 token 统计返回 null。
+- 必要偏离：真实 chunked HTTP 测试证明 HttpURLConnection.disconnect 会等待读取锁。将唯一传输升级到 JDK HttpClient.sendAsync + 原始 body.close，保留已抽取 payload、解析和 think 过滤；取消覆盖响应头前、正文阻塞和交付竞态，不保留第二份 Ollama HTTP 实现。
+- 异常边界：沿用 timeout-ms 最小 1000ms，并作为单次总预算；严格拒绝尾随 JSON 和缺失完成标记的截断流；部分输出后不自动模型重试。这些收紧用于防止无限流和部分响应误报成功，旧客服仍通过 Optional.empty 进入原规则兜底。
+- Prompt 原文 UTF-8 SHA-256 为 4c51245bbd1f5cf30a3d4cd9124b3280a18c3ab049bb732790a862cb7275bee5，迁移前后逐字节一致；资源目录以 .gitattributes 固定 LF，避免 Windows autocrlf 改变摘要。
+- 启动兼容补充：start-project.ps1 原先仅后台安装 java-common，现从父 POM 顺序安装 java-common/java-ai-core 并检查退出码，避免单模块启动缺新 JAR；未执行启动脚本、未重启服务。
+- 环境排障：IPv4 参数无效；根因位于本机 Windows JDK17 UnixDomainSockets。测试进程加入 -Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime 后旧 HTTP stub 恢复。未修改系统配置或下载依赖。
+- 最终验收：mvn -o -f java/pom.xml compile 的 9 个 reactor 项目通过；核心 32 项 + 客服相关 110 项测试全部通过，无失败或跳过；verify-microservice-boundaries.ps1 通过；启动脚本语法检查与 git diff --check 通过。相关命令见 java/java-ai-core/README.md。
+- 验证范围：使用内存协议 stub 与真实本地 HttpServer 验证，未连接真实 Ollama，不声称完成模型联调。独立代码复核发现的取消阻塞、日志 Unicode、null role 与尾随 JSON 问题均修复并补测。
+- 本阶段停止于共享 AI 基础能力；order、payment、grab-service、ticket 搜索及前端源码均无修改；未改数据库、提交、推送或合并 Git。
+# 2026-09-15 AI 智能找票 Backend 第二阶段
+
+## 实际实现内容
+
+- 仅在 `java-ticket` 实现无状态 AI Finder Backend。
+- 使用共享 `java-ai-core` 的 `AiModelClient` 做意图解析和事实包解释；未修改 `java-ai-core`。
+- Elasticsearch 通过现有 `ActivitySearchProvider` 做活动候选召回；ES 故障直接返回错误，不使用 `DbActivitySearchProvider` 静默降级。
+- 通过 `java-ticket` 当前 Mapper 查询真实活动、场次、场馆、票档、实时库存和可售座位。
+- 最终价格、库存、销售状态、座位连座判断和排序均由 Java/数据库确定，不由 LLM 决定。
+- 连座判断使用只读 `SeatAdjacencyEvaluator` 与只读座位查询，没有调用锁座或购买链路。
+- 未新增数据库表、Migration、跨服务 API、internal token API、购买/支付/退款/锁库存/锁座逻辑。
+
+## 实际修改文件
+
+- `java/java-ticket/pom.xml`
+- `java/java-ticket/src/main/resources/application.yml`
+- `java/java-ticket/src/main/java/com/omni/ticket/config/TicketAiModelConfig.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/mapper/SessionSeatMapper.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/ai/*`
+- `java/java-ticket/src/main/java/com/omni/ticket/service/AiTicketFinderService.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/service/SeatAdjacencyEvaluator.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/service/TicketAvailabilityQueryService.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/service/TicketFinderResult.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/service/TicketResultFormatter.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/controller/AiTicketFinderController.java`
+- `java/java-ticket/src/main/resources/prompts/ticket-finder-intent-v1.txt`
+- `java/java-ticket/src/main/resources/prompts/ticket-finder-explanation-v1.txt`
+
+## API
+
+- `POST /api/ticket/ai/finder/interpret`
+- `POST /api/ticket/ai/finder/search`
+- 本阶段未实现 `/search/stream`。
+
+## DTO
+
+- `TicketIntent`
+- `FinderQueryRequest`
+- `FinderResponse`
+- `FinderClarification`
+- `TicketFinderResult`
+- `TicketIntentModelOutput`
+- `TicketIntentParseResult`
+
+未提供的意图字段保持 `null`；`peopleCount` 不默认 `1`；未提供日期不设置默认日期；模糊价格不生成具体金额。
+
+## 核心调用链
+
+`FinderController -> AiTicketFinderService -> TicketIntentParser -> AiModelClient -> ActivitySearchProvider -> TicketAvailabilityQueryService -> SeatAdjacencyEvaluator -> Java 确定性排序 -> TicketResultFormatter`
+
+## 关键架构决策
+
+- Finder API 要求当前用户携带有效 Bearer JWT；未登录返回 `401`。
+- 条件不足通过 `clarification` 返回，不通过异常表达。
+- LLM 输出使用严格 JSON、未知字段拒绝、字段类型和业务边界校验；模型输出中的 URL/SQL 片段拒绝或回退为确定性中文说明。
+- ES 结果只作为候选，不作为最终业务事实；只处理真实活动候选，不把巡演聚合项直接伪装为活动场次。
+- 找票结果只返回真实购买链路需要的活动、场次和票档 ID，不触发任何购买动作。
+
+## 测试结果
+
+- AI Finder 定向测试：已通过 25 项。
+- 全量 `java-ticket` 测试：`1097` 项通过。
+- 同一 Maven reactor 中 `java-ai-core` 测试：`32` 项通过。
+- Maven 全 reactor `compile`：9 个模块通过。
+- 边界静态检查：service boundary、cross-owner FK、production split SQL 均通过。
+
+## 已知限制
+
+- ES 当前为活动聚合索引，候选召回可能受索引覆盖范围影响；最终仍以 `java-ticket` 实时数据为准。
+- V1 无状态，不保存 query、解析结果、结果快照或会话历史。
+- 解释模型未联调真实 Ollama；模型失败时使用基于真实结果的确定性中文说明。
+
+## 未实现内容
+
+- AI Finder 前端、Copilot、Copilot 前端。
+- `/search/stream`。
+- RAG、Embedding、Vector DB、Agent、Tool Calling。
+- 自动下单、支付、库存锁定、锁座、退款。
+- 新独立 AI 微服务及 AI 搜索会话数据库表。
+
+## 2026-09-15 第二阶段收尾校正
+
+- 意图解析先校验模型输出的原始边界，再清除用户输入中没有明确表达的价格、人数和日期字段，避免模型擅自补全条件；原有未提供字段保持 `null` 的规则不变。
+- 解释结果增加事实数字白名单和库存数量语境校验；模型输出疑似编造库存数量、价格或其他事实数字时，统一回退到 Java 根据真实结果生成的中文说明。
+- 解释 Prompt 将业务事实包标记为不可信数据而非指令，降低活动名称、场馆名称等业务文本造成 Prompt Injection 的风险。
+- 新增回归覆盖：模型擅自补全字段、解释编造库存数量、事实数字解释，以及 Finder 相关定向测试。
+- 本次收尾实际修改文件：`java/java-ticket/src/main/java/com/omni/ticket/ai/TicketIntentParser.java`、`java/java-ticket/src/main/java/com/omni/ticket/service/TicketResultFormatter.java`、`java/java-ticket/src/main/resources/prompts/ticket-finder-explanation-v1.txt`、`java/java-ticket/src/test/java/com/omni/ticket/ai/TicketIntentParserTest.java`、`java/java-ticket/src/test/java/com/omni/ticket/service/TicketResultFormatterTest.java`。
+- 本阶段仍无数据库 Migration、无会话表、无跨服务数据库访问、无购买链路改动；工作区中第一阶段 `java-ai-core` 和客服共享客户端改动属于此前工作，不作为本阶段新增实现。
+- 收尾定向测试：Finder 相关测试 `25/25` 通过。
+
+## 2026-09-15 第二阶段 P1 修复
+
+### 实际实现内容
+
+- `TicketIntentParser` 只在用户原文包含明确数值价格约束时保留模型价格；“价格便宜一点”“预算有限”“价位实惠”等模糊表达会确定性清除 `minPrice/maxPrice`。
+- 相对日期由 Java 使用 `Asia/Shanghai` 时区的注入 `Clock` 计算；支持周末、周次和上下月范围，不接受模型擅自生成的具体相对日期。
+- 明确日期会校验模型输出与用户原文一致；不一致时清空日期并返回澄清问题。
+- `needAdjacentSeats=true` 且 `peopleCount=null` 时返回澄清问题；Availability 层也会保守短路，不返回未确认连座条件的结果。
+- `SeatAdjacencyEvaluator` 按 `seatBlockId`、`layoutSectionId`、`rowNo` 和连续 `seatNo` 分组；缺少布局证明、已锁或已售座位均不能判定为连座。
+- `TicketResultFormatter` 使用 Java 组装的结构化事实 DTO 作为 explanation facts，并对模型输出执行数字、事实文本和业务动作闭包校验；失败时回退到 Java 确定性说明。
+
+### 实际修改文件
+
+- `java/java-ticket/src/main/java/com/omni/ticket/ai/TicketIntentParser.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/service/TicketAvailabilityQueryService.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/service/SeatAdjacencyEvaluator.java`
+- `java/java-ticket/src/main/java/com/omni/ticket/service/TicketResultFormatter.java`
+- `java/java-ticket/src/main/resources/prompts/ticket-finder-intent-v1.txt`
+- `java/java-ticket/src/test/java/com/omni/ticket/ai/TicketIntentParserTest.java`
+- `java/java-ticket/src/test/java/com/omni/ticket/service/SeatAdjacencyEvaluatorTest.java`
+- `java/java-ticket/src/test/java/com/omni/ticket/service/TicketAvailabilityQueryServiceTest.java`
+- `java/java-ticket/src/test/java/com/omni/ticket/service/TicketResultFormatterTest.java`
+- `implementation-notes.md`
+
+### 测试结果
+
+- P1 定向测试：`36/36` 通过。
+- 覆盖模糊/明确价格、相对/明确日期、连座缺少人数、Block/Section 边界、缺失布局、锁座/售出座位和 explanation 编造事实/业务动作回退。
+
+### 已知限制与未实现内容
+
+- ES 仍使用 Activity 聚合索引和固定候选窗口，可能造成候选漏召回；本轮未重构 ES。
+- 未处理 trailing tokens、Prompt Injection 的全面治理、`RECOMMENDED` 独立算法和座位快照一致性重构。
+- 未修改购买、库存锁定、锁座、订单、支付、退款、数据库和跨微服务边界；未新增 `/search/stream`、前端或其他 AI 能力。
+
+## 2026-09-15 AI 智能找票 Frontend V1
+
+### 实际实现内容
+
+- 仅新增 C 端页面 `/ai/ticket-finder`，复用现有 `Header`、`Footer`、`Button`、`router`、`request<T>()` 和认证机制。
+- 接入 `POST /api/ticket/ai/finder/interpret` 与 `POST /api/ticket/ai/finder/search`，请求体均为 `{ query }`，不新增 HTTP client、axios、SSE 或全局状态。
+- 页面覆盖自然语言输入、空输入校验、interpret loading、澄清问题补充、找票条件展示、search loading、防重复提交、结果列表、后端 explanation、无结果和中文错误态。
+- 结果只展示后端返回的活动、场馆、城市、场次、票档、价格、库存、销售状态及可选连座字段；前端不计算库存、不判断可售、不重新排序。
+- “去购票”仅跳转现有活动详情路由，并携带真实 `activityId`、`sessionId`、`ticketTypeId`，未调用订单、支付、锁库存或锁座接口。
+- 实际 `TicketFinderResult` 没有独立连座状态字段，因此未在前端伪造该字段。
+
+### 实际修改文件
+
+- `frontend/src/app/ai/ticket-finder/page.tsx`
+- `frontend/src/lib/ai-ticket-finder.ts`
+- `frontend/src/lib/ai-ticket-finder.test.ts`
+- `frontend/src/lib/ai-ticket-finder-api.test.ts`
+- `frontend/src/lib/api.ts`
+- `frontend/src/types/api.ts`
+- `implementation-notes.md`
+
+### 验证结果
+
+- Finder/API 定向测试命令：`4/4` 通过；断言覆盖 API 请求体、条件缺失不展示、真实购票参数跳转和 401/403/超时/服务不可用/网络错误中文提示。
+- `pnpm typecheck`：通过。
+- `pnpm build`：通过，产物包含 `○ /ai/ticket-finder`。
+- 本轮新增文件 ESLint：`0 errors`；全量 `pnpm lint` 仍受仓库既有页面和 React Compiler 规则影响，结果为 `5 errors / 216 warnings`，未归因于本轮新增 Finder 文件。
+- 页面开发服务器曾以 `http://localhost:3003` 启动并返回 `/ai/ticket-finder` HTTP `200`，收尾时已停止。
+- `git diff --check`：通过。
+
+### 偏离说明与已知限制
+
+- 现有 `frontend/src/app/activity/[id]/page.tsx` 当前只按路径 `id` 加载详情，未读取 `sessionId` / `ticketTypeId` 查询参数，因此 Finder 已正确携带真实参数，但详情页不会自动预选对应场次和票档；本阶段未修改现有购买流程。
+- 未修改 Java、数据库、后端 API、订单/支付/库存/座位链路，也未实现 Copilot、RAG、Agent、Tool Calling 或 SSE。
+
+## 2026-09-15 AI Intent Structured Output + Semantic Hardening
+
+### 实现范围
+
+- `java-ai-core` 的 `AiRequest` 新增可选 `responseFormat`，仅在调用方显式提供时使用；旧客服调用不提供该字段，因此保持原有 Ollama 请求行为。
+- native Ollama `/api/chat` 请求在 Finder 场景传递 `format` JSON Schema；OpenAI-compatible 分支不发送 native `format`，避免把 Ollama 专有字段发送到兼容端点。
+- `TicketIntentParser` 请求 Finder Intent Schema，并继续使用严格 Jackson 解析：未知字段拒绝、类型强校验、日期/数值/枚举校验；不使用正则截取、Markdown 裁剪或失败后强行恢复。
+- 解析失败按安全分类记录 `model_response_empty`、`json_parse` 或 `semantic_validation`，日志不记录完整模型响应、JWT、Authorization 或其他凭证。
+
+### 语义约束
+
+- 原始 query 是语义约束来源；模型不能通过自由推断扩大日期、价格、人数或购票条件。
+- 未明确销售状态时清除 `saleStatus`；只有明确“已开售/还没开售/卖完”等表达时才保留对应状态。
+- “最近”只映射为 `TIME_ASC`，不生成具体日期；“便宜/最便宜”只映射为 `PRICE_ASC`，不生成价格。
+- 显式价格上限或范围由 Java 侧确定性解析并覆盖模型猜测；模糊价格表达不生成 `minPrice/maxPrice`。
+- 人数、连座、选座和实名要求不接受模型擅自补全；连座缺少人数时返回澄清。
+- 未明确排序时清除 `sortPreference`；模型提出但与真实缺失条件不匹配的澄清问题会被忽略。
+
+### 兼容性
+
+- 旧客服仍通过不带 `responseFormat` 的共享请求调用，不改变原有协议、Prompt 或回退路径。
+- 结构化输出能力只在 `java-ticket` Finder parser 使用，不修改 Gateway、Frontend、订单、支付、库存、座位锁定、数据库或 ES。
+- 运行时曾发现 `java-ticket` 从本地 Maven 仓库加载旧版 `java-ai-core`，导致 `NoSuchMethodError: AiRequest(..., JsonNode)`；已执行 `mvn -pl java-ai-core -am install "-DskipTests"` 安装当前版本后重启 `java-ticket`，错误消失。
+- 运行日志仅保留于 `runtime/logs/java-ticket-stage-a-20260915-retry.out.log`，属于本地运行产物，不纳入源码交付。
+
+### 真实模型验证
+
+- 当前 Ollama 模型为 `Qwen2.5:7b`，Ollama 地址为本机 `localhost:11434`；java-ticket 使用 `localhost:8082`，Gateway 使用 `localhost:8088`。
+- 认证后的直连和 Gateway Finder 请求均返回 HTTP `200`；未认证请求返回 `401 未认证`。
+- `帮我找上海最近的演唱会`：`city=上海`、日期为空、`saleStatus=null`、`sortPreference=TIME_ASC`。
+- `帮我找上海已开售的演唱会`：`saleStatus=on_sale`。
+- `帮我找上海还没开售的演唱会`：`saleStatus=coming_soon`。
+- `上海周末两个人看演唱会，500元以内`：日期为 `2026-09-19` 至 `2026-09-20`、`peopleCount=2`、`maxPrice=500`。
+- `上海演唱会，便宜一点`：不生成价格，`sortPreference=PRICE_ASC`。
+- Gateway `search` 返回 HTTP `200`、业务码 `200`；当前样例结果为空，explanation 为后端确定性中文说明，属于真实数据/条件结果，不是链路错误。
+
+### 验证与剩余风险
+
+- 已完成：Finder parser 定向测试 `23/23`、`java-ai-core` 全量测试 `34/34`、`java-ticket` 定向 parser 测试 `23/23`、完整 `java-ticket` 测试 `1120/1120`、`java-ticket` package、`java-ai-core` install、结构化 Ollama Schema 直连 HTTP `200`。
+- 完整 `java-ai-core` 测试首次在未设置本机 JDK17 loopback 参数时有 5 个 `AiHttpLifecycleTest` 因 Windows Unix domain socket `Invalid argument` 报错；使用既有 `-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime` 测试 JVM 参数重跑后 `34/34` 通过。未修改源码、配置或系统设置。
+- 完整 Maven reactor `compile` 已通过，9 个模块均为 `SUCCESS`；`git diff --check` 已通过。
+- 本轮不处理 ES top 100 漏召回、trailing JSON、Prompt Injection 全面治理、`RECOMMENDED` 独立排序算法和 seat snapshot consistency。
+
+## 2026-09-15 AI Ticket Finder 非空结果真实 E2E
+
+### Guaranteed Match Fixture
+
+- Activity：`900028`，中央芭蕾舞团《天鹅湖》广州站，已发布且状态正常。
+- Venue：广州珠江体育馆，城市为广州，场馆状态正常。
+- Session：`910028`，`2026-09-16 19:30:00`，状态正常且晚于当前日期 `2026-09-15`。
+- TicketType：`920084` 普通票 `¥240`、`920083` A区票 `¥360`、`920082` VIP票 `¥600`，均为可售状态且价格大于零。
+- 数据库实时可用座位分别为 `84`、`60`、`40`；锁定和售出座位均为 `0`。
+
+### ES 与真实 API
+
+- ES alias `omni_activity_current` 指向当前索引，直接使用 Finder 同等的关键词、城市、日期和价格条件可召回 `activityId=900028`。
+- 实际查询：`帮我找广州的天鹅湖演出，预算700元以内`。
+- 通过 Frontend server proxy `localhost:3000/api/ticket/ai/finder/*` 携带临时本地 JWT 调用：
+  - interpret：业务码 `200`，`keyword=天鹅湖`、`city=广州`、日期未指定、`maxPrice=700`。
+  - search：业务码 `200`，`results.length=3`。
+- 三个结果均为 `activityId=900028`、`sessionId=910028`，票档 ID、价格和实时库存分别为 `920084/240/84`、`920083/360/60`、`920082/600/40`，销售状态均为 `on_sale`。
+- explanation 为“已根据实时票务数据找到 3 个符合条件的可售票档。”，未出现编造价格、库存、场馆或自动交易指令。
+
+### 前端与副作用核对
+
+- `/ai/ticket-finder` 页面 HTTP `200`；Frontend proxy 已实际完成 interpret/search，结果 DTO 可供页面结果卡片直接展示。
+- 现有前端购票链接构造为 `/activity/900028?sessionId=910028&ticketTypeId=920084`；活动详情页 HTTP `200`。
+- 当前活动详情页源码没有读取 `sessionId` / `ticketTypeId` 查询参数，因此自动预选仍是既有限制，未修改详情页。
+- Fixture 对应订单数量为 `0`，最近 30 分钟新增订单为 `0`；对应座位无锁定、无售出、无订单关联。Finder 只读调用未创建订单、支付或锁座。
+
+### 阻塞结论
+
+- 浏览器自动化通道当前不可用：桌面 CUA 返回 `unsupported Codex auth method: apikey`；仓库 Playwright wrapper 依赖的 `bash` 在本机不可用，PowerShell 入口下载 `@playwright/cli` 又受 npm cache `EPERM` 阻塞。
+- 因此本阶段已完成真实 Frontend proxy → Gateway → java-ticket → Ollama → ES → PostgreSQL 的非空结果取证，但尚未能在真实浏览器中确认结果卡片可见并点击“去购票”。
+- 阶段 B 状态：`BLOCKED`，不是 `PASS`。待浏览器自动化可用后，只需复验结果卡片和最终跳转 URL，不应修改业务代码或数据。

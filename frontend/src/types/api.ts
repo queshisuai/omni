@@ -610,6 +610,54 @@ export interface ActivityVO {
   reviewCount?: number | null
 }
 
+export interface FinderQueryRequest {
+  query: string
+}
+
+export interface TicketIntent {
+  keyword: string | null
+  city: string | null
+  dateFrom: string | null
+  dateTo: string | null
+  preferredDate: string | null
+  minPrice: number | null
+  maxPrice: number | null
+  peopleCount: number | null
+  needAdjacentSeats: boolean | null
+  saleStatus: string | null
+  isSupportSeat: boolean | null
+  realNameRequired: boolean | null
+  sortPreference: string | null
+}
+
+export interface FinderClarification {
+  required: boolean
+  questions: string[]
+}
+
+export interface TicketFinderResult {
+  activityId: number
+  activityName: string
+  sessionId: number
+  sessionStartTime: string
+  venueId: number
+  venueName: string
+  city: string
+  ticketTypeId: number
+  ticketTypeName: string
+  price: number
+  availableQuantity: number
+  saleStatus: string
+}
+
+export interface FinderResponse {
+  requestId: string | null
+  parsedIntent: TicketIntent | null
+  clarification: FinderClarification | null
+  results: TicketFinderResult[]
+  explanation: string | null
+}
+
 export type SearchTrendingTagType = 'BURST' | 'HOT' | 'NEW' | 'NONE' | string
 export type SearchTrendingTargetType = 'EVENT' | 'KEYWORD' | string
 

@@ -309,12 +309,13 @@ if (-not $SkipJava) {
 if (-not $SkipInstall -and -not $SkipJava) {
     Write-Step "Installing Java Dependencies..."
 
-    $commonPath = Join-Path $projectRoot "java\java-common"
-    Write-Host "Installing java-common..." -ForegroundColor Cyan
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd $commonPath; mvn clean install -DskipTests" -WorkingDirectory $commonPath -PassThru | Out-Null
-    Start-Sleep -Seconds 10
-
-    Write-Host "[Info] Java dependencies installing in background..." -ForegroundColor Yellow
+    $javaParentPom = Join-Path $projectRoot "java\pom.xml"
+    Write-Host "正在安装 java-common 和 java-ai-core..." -ForegroundColor Cyan
+    & mvn -f $javaParentPom -pl "java-common,java-ai-core" -am install "-DskipTests"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Java 共享模块安装失败，请检查 Maven 输出后重试。"
+    }
+    Write-Host "Java 共享模块安装完成。" -ForegroundColor Green
 }
 
 # 5. Install Frontend Dependencies
