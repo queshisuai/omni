@@ -786,3 +786,24 @@
 - 浏览器自动化通道当前不可用：桌面 CUA 返回 `unsupported Codex auth method: apikey`；仓库 Playwright wrapper 依赖的 `bash` 在本机不可用，PowerShell 入口下载 `@playwright/cli` 又受 npm cache `EPERM` 阻塞。
 - 因此本阶段已完成真实 Frontend proxy → Gateway → java-ticket → Ollama → ES → PostgreSQL 的非空结果取证，但尚未能在真实浏览器中确认结果卡片可见并点击“去购票”。
 - 阶段 B 状态：`BLOCKED`，不是 `PASS`。待浏览器自动化可用后，只需复验结果卡片和最终跳转 URL，不应修改业务代码或数据。
+
+## 2026-09-15 Finder → Activity Detail 自动预选
+
+### 实现范围
+
+- 活动详情页首次加载完成后读取 URL 的 `sessionId` 和 `ticketTypeId`，通过纯函数计算初始 Session / TicketType。
+- 合法 `sessionId` 优先；无效时回退现有第一场次。
+- `ticketTypeId` 只在最终选中的 Session 的 `ticketTypes` 内匹配；无效或跨 Session 时回退该 Session 的第一票档。
+- 没有新增 API 请求，没有修改订单、支付、库存或锁座链路。
+
+### 初始化与兼容性
+
+- URL 参数只在当前活动首次成功初始化时生效；同页后续刷新使用现有默认选择逻辑。
+- 用户手动切换 Session 或 TicketType 仍直接更新现有 state，不会被持续 URL effect 覆盖。
+- 无 query 参数的 `/activity/{id}` 继续使用原有第一 Session / 第一 TicketType 默认行为。
+
+### 测试与已知限制
+
+- 新增纯函数测试，覆盖合法参数、非法 Session、非法 TicketType、跨 Session 票档、空 sessions 和无票档。
+- 增加详情页源码级接入测试，确认只在初始化路径读取 Finder query params，且纯函数不发请求。
+- 真实浏览器点击链路仍依赖本机浏览器自动化环境；本次未创建订单、支付、库存锁定或座位锁定。

@@ -169,3 +169,17 @@ test('activity detail uses shared floating back button with cached search return
   assert.match(component, /router\.push\(fallbackHref\)/)
   assert.doesNotMatch(component, /window\.history\.back\(\)/)
 })
+
+test('activity detail resolves Finder query params once during initial purchase selection', () => {
+  const source = readSource('app/activity/[id]/page.tsx')
+  const selection = readSource('lib/activity-detail-selection.ts')
+
+  assert.match(source, /useSearchParams/)
+  assert.match(source, /resolveInitialPurchaseSelection/)
+  assert.match(source, /initialPurchaseSelectionAppliedRef/)
+  assert.match(source, /searchParams\.get\('sessionId'\)/)
+  assert.match(source, /searchParams\.get\('ticketTypeId'\)/)
+  assert.match(source, /setSelectedSession\(initialSelection\.session\)/)
+  assert.match(source, /setSelectedTicket\(initialSelection\.ticket\)/)
+  assert.doesNotMatch(selection, /getActivityDetail|request<|fetch\(/)
+})

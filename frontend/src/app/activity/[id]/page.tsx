@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, use, useMemo, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Ban, Bell, CalendarDays, Check, Info, Clock3, Heart, MapPin, MessageCircle, ShieldCheck, Star, Ticket, UserCheck, UserRound, UsersRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
@@ -26,6 +26,7 @@ import { ACTIVITY_VIEW_SIGNAL_KEY, addActivityViewSignal, parseActivityViewSigna
 import { findActivitySubscriptionAction, getActivitySubscriptionActionLabel, getActivitySubscriptionActions, removeActivitySubscriptionById, upsertActivitySubscription, type ActivitySubscriptionActionType, type ActivitySubscriptionLike } from '@/lib/activity-actions'
 import { buildActivityDetailTabs, type ActivityDetailTabKey } from '@/lib/activity-detail-content'
 import { buildActivityDetailRecommendations, type ActivityDetailRecommendation } from '@/lib/activity-recommendations'
+import { resolveInitialPurchaseSelection } from '@/lib/activity-detail-selection'
 import type { ActivityDetailVO, ActivityQuestionVO, ActivityReviewListVO, ActivityVO, GrabProgressResult, PagePayResponse, SeatMapResponse, SessionDetail, SessionSeatVO, SessionVisibleStockResult, StationPurchaseDetail, TicketTypeEntity, UserAttendeeVO } from '@/types/api'
 
 const TERMINAL_GRAB_STATUSES = new Set(['ORDER_CREATED', 'SOLD_OUT', 'LIMITED', 'FAILED', 'PENDING_RECOVERY', 'EXPIRED'])
@@ -253,6 +254,7 @@ function formatStationDate(stationDetail: StationPurchaseDetail) {
 export default function ActivityDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [detail, setDetail] = useState<ActivityDetailVO | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -303,6 +305,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const progressPaymentOrderIdRef = useRef<number | null>(null)
   const progressPaymentInFlightOrderIdRef = useRef<number | null>(null)
   const hydratedGrabRequestRef = useRef<string | null>(null)
+  const initialPurchaseSelectionAppliedRef = useRef<string | null>(null)
   const loadDetailRef = useRef(() => {})
   const lastRefreshRef = useRef(0)
   const toastTimerRef = useRef<number | null>(null)
@@ -498,11 +501,17 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
       const initialPurchaseSessions = initialStationDetail ? getStationSessionDetails(data, initialStationDetail) : data.sessions
       setSelectedStationId(initialStationDetail?.station.id ?? null)
       if (initialStationState !== 'PENDING' && initialPurchaseSessions.length > 0) {
-        setSelectedSession(initialPurchaseSessions[0])
-        if (initialPurchaseSessions[0].ticketTypes.length > 0) {
-          setSelectedTicket(initialPurchaseSessions[0].ticketTypes[0])
-        }
+        const initialSelection = initialPurchaseSelectionAppliedRef.current === id
+          ? resolveInitialPurchaseSelection(initialPurchaseSessions, null, null)
+          : resolveInitialPurchaseSelection(
+            initialPurchaseSessions,
+            searchParams.get('sessionId'),
+            searchParams.get('ticketTypeId'),
+          )
+        setSelectedSession(initialSelection.session)
+        setSelectedTicket(initialSelection.ticket)
       }
+      initialPurchaseSelectionAppliedRef.current = id
     } catch (err: unknown) {
       setDetail(null)
       setRecommendations([])
