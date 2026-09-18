@@ -510,7 +510,7 @@ export function Header() {
                   >
                     <Search className="h-4 w-4 shrink-0 text-gray-400" />
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-gray-700">
-                      搜索 "{renderHighlightedText(activeSearchKeyword, activeSearchKeyword)}" 相关结果
+                      搜索“{renderHighlightedText(activeSearchKeyword, activeSearchKeyword)}”相关结果
                     </span>
                   </button>
                   {suggestionLoading ? (

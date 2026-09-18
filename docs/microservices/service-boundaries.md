@@ -56,7 +56,7 @@
 - 设计规格：`docs/operations/2026-05-20-production-physical-db-split-design.md`。
 - 实施计划：`docs/operations/2026-05-20-production-physical-db-split-implementation.md`。
 - 迁移清单：`sql/production-split/manifest.json`。
-- 生产拆库 SQL：`sql/production-split/user/`、`sql/production-split/ticket/`、`sql/production-split/order/`、`sql/production-split/payment/`、`sql/production-split/notification/`。
+- 生产拆库 SQL：`sql/production-split/user/`、`sql/production-split/ticket/`、`sql/production-split/order/`、`sql/production-split/payment/`、`sql/production-split/notification/`、`sql/production-split/grab/`。
 - SQL 检查脚本：`scripts/check-production-split-sql.ps1`。
 - 数据导出脚本：`scripts/export-production-split.ps1`。
 - 数据导入脚本：`scripts/import-production-split.ps1`。

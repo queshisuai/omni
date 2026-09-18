@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRightLeft,
   Bot,
@@ -34,10 +34,13 @@ import {
   listCsUserSessionHistory,
   listCsSessionMessages,
   listCsSessions,
+  sendSupportMessage,
   transferCsSession,
 } from '@/lib/api'
 import { getUser } from '@/lib/auth'
 import { hasConsolePermission, isPlatformAdminRole } from '@/lib/console-auth'
+import SupportCopilotPanel from '@/components/customer-service/SupportCopilotPanel'
+import { canUseSupportCopilot, haveMessagesChanged } from '@/lib/customer-service-copilot'
 import {
   filterCustomerServiceOrgTree,
   buildCustomerServiceSelectionQuery,
@@ -137,6 +140,10 @@ export default function CustomerServiceSessionsPage() {
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null)
   const [expandedUserIds, setExpandedUserIds] = useState<number[]>([])
   const [messages, setMessages] = useState<CsSessionMessageVO[]>([])
+  const [replyDraft, setReplyDraft] = useState('')
+  const [sendingReply, setSendingReply] = useState(false)
+  const [replyError, setReplyError] = useState('')
+  const [copilotMessageWarning, setCopilotMessageWarning] = useState('')
   const [notes, setNotes] = useState<CsInternalNoteVO[]>([])
   const [orders, setOrders] = useState<CsRecentOrderContextVO[]>([])
   const [history, setHistory] = useState<CsUserSessionHistoryVO[]>([])
@@ -154,8 +161,12 @@ export default function CustomerServiceSessionsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [detailError, setDetailError] = useState('')
+  const previousMessageIdsRef = useRef<number[]>([])
+  const selectedSessionIdRef = useRef<number | null>(null)
 
   const user = getUser()
+  selectedSessionIdRef.current = selectedSessionId
+  const canUseCopilot = Boolean(user && canUseSupportCopilot(user.role, user.permissionCodes || []))
   const canManage = Boolean(
     user && (isPlatformAdminRole(user.role) || hasConsolePermission(user.role, user.permissionCodes || [], 'cs.manage')),
   )
@@ -230,6 +241,19 @@ export default function CustomerServiceSessionsPage() {
     }
   }
 
+  const refreshSelectedSessionMessages = async (sessionId: number, warnOnChange = true) => {
+    const data = await listCsSessionMessages(sessionId)
+    if (selectedSessionIdRef.current !== sessionId) return
+    const nextMessages = data || []
+    const nextIds = nextMessages.map(message => message.id)
+    if (warnOnChange && previousMessageIdsRef.current.length > 0
+      && haveMessagesChanged(previousMessageIdsRef.current, nextIds)) {
+      setCopilotMessageWarning('会话内容已更新，已有 AI 建议可能已失效')
+    }
+    previousMessageIdsRef.current = nextIds
+    setMessages(nextMessages)
+  }
+
   useEffect(() => {
     void loadOrgTree()
   }, [])
@@ -241,12 +265,17 @@ export default function CustomerServiceSessionsPage() {
   useEffect(() => {
     if (!selectedSession) {
       setMessages([])
+      setReplyDraft('')
+      setReplyError('')
+      setSendingReply(false)
+      setCopilotMessageWarning('')
       setOrders([])
       setHistory([])
       setNotes([])
       setAuditScore(0)
       setAuditComments('')
       setDetailError('')
+      previousMessageIdsRef.current = []
       return
     }
 
@@ -254,14 +283,16 @@ export default function CustomerServiceSessionsPage() {
     setLoadingMessages(true)
     setDetailError('')
     setMessages([])
+    setReplyDraft('')
+    setReplyError('')
+    setSendingReply(false)
+    setCopilotMessageWarning('')
     setNotes([])
     setAuditScore(selectedSession.latestAuditScore || 0)
     setAuditComments('')
     setAuditResolved(true)
-    void listCsSessionMessages(selectedSession.id)
-      .then(data => {
-        if (!cancelled) setMessages(data || [])
-      })
+    previousMessageIdsRef.current = []
+    void refreshSelectedSessionMessages(selectedSession.id)
       .catch(err => {
         if (!cancelled) setDetailError(err instanceof Error ? err.message : '加载会话消息失败')
       })
@@ -332,6 +363,27 @@ export default function CustomerServiceSessionsPage() {
       setError(err instanceof Error ? err.message : '认领会话失败')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleSendReply = async () => {
+    const content = replyDraft.trim()
+    if (!selectedSession || !content || sendingReply) return
+    const sessionId = selectedSession.id
+    setSendingReply(true)
+    setReplyError('')
+    try {
+      await sendSupportMessage(sessionId, content)
+      if (selectedSessionIdRef.current !== sessionId) return
+      setReplyDraft('')
+      setCopilotMessageWarning('')
+      await refreshSelectedSessionMessages(sessionId, false)
+    } catch (err: unknown) {
+      if (selectedSessionIdRef.current === sessionId) {
+        setReplyError(err instanceof Error ? err.message : '发送客服消息失败')
+      }
+    } finally {
+      if (selectedSessionIdRef.current === sessionId) setSendingReply(false)
     }
   }
 
@@ -763,6 +815,37 @@ export default function CustomerServiceSessionsPage() {
               </div>
 
               <div className="shrink-0 border-t border-[#e5e7eb] bg-white px-4 py-3">
+                <section aria-label="人工回复编辑区" className="border-b border-[#edf0f3] pb-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#374151]">
+                      <MessageSquareText className="h-4 w-4 text-[#ff1268]" />
+                      人工回复
+                    </div>
+                    <span className="text-[10px] text-[#9ca3af]">发送后客户可见</span>
+                  </div>
+                  <textarea
+                    value={replyDraft}
+                    onChange={event => setReplyDraft(event.target.value)}
+                    rows={3}
+                    maxLength={5000}
+                    placeholder="输入要发送给客户的回复"
+                    className="min-h-[72px] w-full resize-none rounded-md border border-[#e5e7eb] px-3 py-2 text-[12px] text-[#374151] outline-none focus:border-[#ff1268]"
+                  />
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-[#9ca3af]">AI 建议仅作为草稿，发送前请人工确认</span>
+                    <button
+                      type="button"
+                      onClick={() => void handleSendReply()}
+                      disabled={sendingReply || !replyDraft.trim()}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[#ff1268] px-3 text-[12px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      {sendingReply ? '发送中...' : '发送'}
+                    </button>
+                  </div>
+                  {copilotMessageWarning ? <div className="mt-2 text-[11px] text-[#b45309]">{copilotMessageWarning}</div> : null}
+                  {replyError ? <div className="mt-2 text-[11px] text-[#dc2626]">{replyError}</div> : null}
+                </section>
                 <div className="mb-2 flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#374151]">
                     <ClipboardCheck className="h-4 w-4 text-[#ff1268]" />
@@ -794,7 +877,15 @@ export default function CustomerServiceSessionsPage() {
               </div>
             </div>
 
-            <aside className="w-[300px] shrink-0 overflow-y-auto border-l border-[#e5e7eb] bg-white">
+            <aside className="flex w-[300px] shrink-0 flex-col overflow-y-auto border-l border-[#e5e7eb] bg-white">
+              <SupportCopilotPanel
+                sessionId={selectedSession.id}
+                canUse={canUseCopilot}
+                onDraftChange={draft => {
+                  setReplyDraft(draft)
+                  setReplyError('')
+                }}
+              />
               <div className="sticky top-0 z-10 flex border-b border-[#edf0f3] bg-white px-3 py-2">
                 <button
                   type="button"

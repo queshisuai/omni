@@ -7,18 +7,23 @@ import com.omni.user.dto.ChangePasswordRequest;
 import com.omni.user.dto.InternalUserRefResponse;
 import com.omni.user.dto.LoginRequest;
 import com.omni.user.dto.LoginResponse;
+import com.omni.user.dto.RegisterRequest;
 import com.omni.user.dto.ResetPasswordRequest;
 import com.omni.user.dto.UserInfoResponse;
 import com.omni.user.entity.User;
 import com.omni.user.mapper.UserMapper;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -33,6 +38,41 @@ class UserServiceTest {
     private final RbacService rbacService = mock(RbacService.class);
     private final UserService userService = new UserService(userMapper, passwordEncoder, rbacService);
     private final UserService mockSmsUserService = new UserService(userMapper, passwordEncoder, rbacService, true);
+
+    @Test
+    void registerLogsMaskedPhoneOnly() {
+        when(userMapper.selectCount(any())).thenReturn(0L);
+        when(passwordEncoder.encode("password1")).thenReturn("encoded-password1");
+
+        List<String> logs = captureUserServiceLogs(() -> userService.register(registerRequest("13812345678")));
+
+        String message = logs.stream()
+                .filter(line -> line.contains("用户注册成功"))
+                .findFirst()
+                .orElse("");
+        assertTrue(message.contains("138****5678"));
+        assertFalse(message.contains("13812345678"));
+    }
+
+    @Test
+    void loginLogsMaskedPhoneOnly() {
+        User user = existingUser();
+        user.setPhone("13812345678");
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(rbacService.getInternalAuthContext(2004L)).thenReturn(authContextWithNoPermissions());
+
+        LoginResponse response = mockSmsUserService.login(smsLoginRequest("666666"));
+        List<String> logs = captureUserServiceLogs(() -> mockSmsUserService.login(smsLoginRequest("666666")));
+
+        assertEquals("13812345678", response.getPhone());
+        String message = logs.stream()
+                .filter(line -> line.contains("用户登录成功"))
+                .findFirst()
+                .orElse("");
+        assertTrue(message.contains("userId=2004"));
+        assertTrue(message.contains("138****5678"));
+        assertFalse(message.contains("13812345678"));
+    }
 
     @Test
     void smsLoginRejectsWrongCode() {
@@ -436,6 +476,14 @@ class UserServiceTest {
         return request;
     }
 
+    private RegisterRequest registerRequest(String phone) {
+        RegisterRequest request = new RegisterRequest();
+        request.setPhone(phone);
+        request.setPassword("password1");
+        request.setConfirmPassword("password1");
+        return request;
+    }
+
     private InternalAuthContextResponse authContextWithNoPermissions() {
         return authContext(null, List.of());
     }
@@ -454,5 +502,23 @@ class UserServiceTest {
         user.setAvatar("/uploads/user/avatar/2026/05/avatar.webp");
         user.setRole("user");
         return user;
+    }
+
+    private List<String> captureUserServiceLogs(Runnable action) {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(UserService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            action.run();
+            return appender.list.stream()
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .collect(Collectors.toList());
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 }

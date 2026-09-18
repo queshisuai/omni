@@ -166,11 +166,13 @@ curl.exe --% -s -m 10 -X POST http://localhost:8088/api/user/login -H "Content-T
 powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1
 ```
 
+Windows 本地运行该边界脚本时，会自动给 Java 测试 JVM 注入 `-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime`，用于规避 JDK/Netty loopback 兼容问题；该参数不写入生产或 Docker 运行配置。
+
 生产拆库 runtime verifier：
 
 ```powershell
 $env:PGPASSWORD='123456'
-powershell -ExecutionPolicy Bypass -File scripts/verify-production-split-runtime.ps1 -UserHost localhost -TicketHost localhost -OrderHost localhost -PaymentHost localhost -NotificationHost localhost -TargetDatabaseByService 'ticket=omni_ticket_split'
+powershell -ExecutionPolicy Bypass -File scripts/verify-production-split-runtime.ps1 -UserHost localhost -TicketHost localhost -OrderHost localhost -PaymentHost localhost -NotificationHost localhost -GrabHost localhost -TargetDatabaseByService 'ticket=omni_ticket_split'
 ```
 
 前端检查：

@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.Arrays;
 
 @Service
 public class RbacService {
@@ -63,6 +64,15 @@ public class RbacService {
         response.setScopeType(resolveScopeType(effectiveRole));
         response.setScopeId(resolveScopeId(user));
         return response;
+    }
+
+    public void requireAnyPermission(Long userId, String... permissionCodes) {
+        InternalAuthContextResponse context = getInternalAuthContext(userId);
+        List<String> effective = context.getPermissionCodes() == null
+                ? Collections.emptyList() : context.getPermissionCodes();
+        if (Arrays.stream(permissionCodes).noneMatch(effective::contains)) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权限使用客服 AI 助手");
+        }
     }
 
     private List<String> listRolePermissionCodes(String effectiveRole) {

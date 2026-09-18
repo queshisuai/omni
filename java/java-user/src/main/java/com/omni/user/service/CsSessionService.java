@@ -213,6 +213,11 @@ public class CsSessionService {
         return "ACTIVE";
     }
 
+    public SupportConversation requireVisibleConversation(Long actorUserId, Long sessionId) {
+        Access access = requireView(actorUserId);
+        return requireVisibleConversation(access, sessionId);
+    }
+
     public Page<CsSessionResponse> listSessions(Long actorUserId, CsSessionQuery query) {
         Access access = requireView(actorUserId);
         CsSessionQuery effective = query == null ? new CsSessionQuery() : query;
@@ -418,6 +423,11 @@ public class CsSessionService {
                 && (!STATUS_CLOSED.equals(conversation.getStatus())
                 || allAuditedSessionIds().contains(conversation.getId()))) {
             throw new BusinessException(ResultCode.FORBIDDEN, "该会话不在待主管质检队列");
+        }
+        if (access.manager && !access.globalManager
+                && (conversation.getSkillGroupId() == null
+                || !access.leaderGroupIds.contains(conversation.getSkillGroupId()))) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权查看该客服会话");
         }
         if (!access.manager && !access.reviewer
                 && !same(access.actorId, conversation.getAssignedAgentId())

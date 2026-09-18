@@ -110,6 +110,8 @@ powershell -ExecutionPolicy Bypass -File scripts\start-seata-docker.ps1
 powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1
 ```
 
+Windows 本地运行该边界脚本时，会自动给 Java 测试 JVM 注入 `-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime`，用于规避 JDK/Netty loopback 兼容问题；该参数不写入生产或 Docker 运行配置。
+
 单项检查：
 
 ```powershell
@@ -124,7 +126,7 @@ powershell -ExecutionPolicy Bypass -File scripts/check-production-split-sql.ps1
 
 ```powershell
 $env:PGPASSWORD='123456'
-powershell -ExecutionPolicy Bypass -File scripts/verify-production-split-runtime.ps1 -UserHost localhost -TicketHost localhost -OrderHost localhost -PaymentHost localhost -NotificationHost localhost -TargetDatabaseByService 'ticket=omni_ticket_split'
+powershell -ExecutionPolicy Bypass -File scripts/verify-production-split-runtime.ps1 -UserHost localhost -TicketHost localhost -OrderHost localhost -PaymentHost localhost -NotificationHost localhost -GrabHost localhost -TargetDatabaseByService 'ticket=omni_ticket_split'
 ```
 
 前端检查：

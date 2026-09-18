@@ -36,6 +36,8 @@ import type {
   UpdateTeamGrabStrategyPayload,
   ActivityMarketingRulePayload,
   CsAuditRequest,
+  CsCopilotEditRequest,
+  CsCopilotRejectRequest,
   CsInternalNoteRequest,
   CsInternalNoteVO,
   CsOrgTreeVO,
@@ -45,6 +47,7 @@ import type {
   CsSessionVO,
   CsTransferRequest,
   CsUserSessionHistoryVO,
+  SupportAiSuggestion,
   UserAttendeeExportVO,
   UserAttendeePayload,
   UserAttendeeVO,
@@ -58,6 +61,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 5000
 const CONSOLE_ADMIN_REQUEST_TIMEOUT_MS = 20000
 const QR_PAY_REQUEST_TIMEOUT_MS = 15000
 const SUPPORT_MESSAGE_REQUEST_TIMEOUT_MS = 70000
+const COPILOT_GENERATE_REQUEST_TIMEOUT_MS = 35000
 const AI_FINDER_REQUEST_TIMEOUT_MS = 70000
 const MESSAGE_LABELS: Record<string, string> = {
   'ticket type sold out': '当前票档已售罄',
@@ -81,6 +85,7 @@ const PARAMETER_LABELS: Record<string, string> = {
   activityId: '活动ID',
   resolutionId: '风险处理ID',
   stationConfigReviewId: '站点变更审核ID',
+  aiSuggestionId: 'AI建议编号',
 }
 
 class ApiError extends Error {
@@ -700,6 +705,36 @@ export async function addCsInternalNote(sessionId: number, body: CsInternalNoteR
   return request<CsInternalNoteVO>(`/api/user/cs/sessions/${sessionId}/internal-note`, {
     method: 'POST',
     body: JSON.stringify({ content: body.content.trim() }),
+  })
+}
+
+export async function generateCsCopilotSuggestion(sessionId: number) {
+  assertPositiveInteger(sessionId, '客服会话编号')
+  return request<SupportAiSuggestion>(`/api/user/cs/sessions/${sessionId}/copilot/suggestions`, {
+    method: 'POST',
+  }, { timeoutMs: COPILOT_GENERATE_REQUEST_TIMEOUT_MS })
+}
+
+export async function acceptCsCopilotSuggestion(suggestionId: number) {
+  assertPositiveInteger(suggestionId, 'aiSuggestionId')
+  return request<SupportAiSuggestion>(`/api/user/cs/copilot/suggestions/${suggestionId}/accept`, {
+    method: 'POST',
+  })
+}
+
+export async function editCsCopilotSuggestion(suggestionId: number, body: CsCopilotEditRequest) {
+  assertPositiveInteger(suggestionId, 'aiSuggestionId')
+  return request<SupportAiSuggestion>(`/api/user/cs/copilot/suggestions/${suggestionId}/edit`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function rejectCsCopilotSuggestion(suggestionId: number, body: CsCopilotRejectRequest = {}) {
+  assertPositiveInteger(suggestionId, 'aiSuggestionId')
+  return request<SupportAiSuggestion>(`/api/user/cs/copilot/suggestions/${suggestionId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(body),
   })
 }
 

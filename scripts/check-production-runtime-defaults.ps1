@@ -1,5 +1,57 @@
+param(
+    [string]$GatewayBaseFile,
+    [string]$GatewayProdFile
+)
+
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
+
+function Get-GatewayRouteRecords {
+    param([Parameter(Mandatory = $true)][string]$Content)
+
+    $routePattern = '(?ms)^[ \t]*-[ \t]*id:[ \t]*(?<id>\S+)[ \t]*\r?\n(?<body>.*?)(?=^[ \t]*-[ \t]*id:[ \t]*|\z)'
+    $records = @()
+    foreach ($match in [regex]::Matches($Content, $routePattern)) {
+        $body = $match.Groups["body"].Value
+        $uriMatches = [regex]::Matches($body, '(?m)^[ \t]+uri:[ \t]*(?<uri>\S+)[ \t]*$')
+        $pathMatches = [regex]::Matches($body, '(?m)^[ \t]+-[ \t]*Path=(?<path>\S+)[ \t]*$')
+        $records += [pscustomobject]@{
+            Id = $match.Groups["id"].Value
+            Uri = if ($uriMatches.Count -eq 1) { $uriMatches[0].Groups["uri"].Value } else { $null }
+            Path = if ($pathMatches.Count -eq 1) { $pathMatches[0].Groups["path"].Value } else { $null }
+        }
+    }
+    return $records
+}
+
+function Assert-GatewayRoute {
+    param(
+        [Parameter(Mandatory = $true)][string]$Content,
+        [Parameter(Mandatory = $true)][string]$Profile,
+        [Parameter(Mandatory = $true)][string]$RouteId,
+        [Parameter(Mandatory = $true)][string]$ExpectedPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedUri
+    )
+
+    $routes = @(Get-GatewayRouteRecords -Content $Content)
+    $matches = @($routes | Where-Object { $_.Id -eq $RouteId })
+    if ($matches.Count -ne 1) {
+        Write-Host "FAIL java-gateway $Profile route '$RouteId' must exist exactly once (found $($matches.Count))"
+        exit 1
+    }
+
+    $route = $matches[0]
+    if ($route.Path -ne $ExpectedPath) {
+        Write-Host "FAIL java-gateway $Profile route '$RouteId' has unexpected Path '$($route.Path)'"
+        exit 1
+    }
+    if ($route.Uri -ne $ExpectedUri) {
+        Write-Host "FAIL java-gateway $Profile route '$RouteId' has unexpected URI '$($route.Uri)'"
+        exit 1
+    }
+
+    return $route
+}
 
 $servicesWithInternalToken = @(
     "java-user",
@@ -163,7 +215,11 @@ if ($ticketProd -notmatch "(?m)^\s+uris:\s*\$\{ELASTICSEARCH_URIS:\$\{SPRING_ELA
 }
 Write-Host "PASS java-ticket prod-split search is fixed to required Elasticsearch"
 
-$gatewayProdFile = Join-Path -Path $repoRoot -ChildPath "java/java-gateway/src/main/resources/application-prod-split.yml"
+$gatewayProdFile = if ($GatewayProdFile) {
+    (Resolve-Path -LiteralPath $GatewayProdFile).Path
+} else {
+    Join-Path -Path $repoRoot -ChildPath "java/java-gateway/src/main/resources/application-prod-split.yml"
+}
 if (-not (Test-Path -LiteralPath $gatewayProdFile)) {
     Write-Host "FAIL missing Gateway prod-split profile: $gatewayProdFile"
     exit 1
@@ -188,18 +244,30 @@ if ($gatewayNacosServerAddrMatches.Count -lt 2) {
 
 Write-Host "PASS java-gateway prod-split Nacos config requires explicit environment"
 
-$gatewayBaseFile = Join-Path -Path $repoRoot -ChildPath "java/java-gateway/src/main/resources/application.yml"
+$gatewayBaseFile = if ($GatewayBaseFile) {
+    (Resolve-Path -LiteralPath $GatewayBaseFile).Path
+} else {
+    Join-Path -Path $repoRoot -ChildPath "java/java-gateway/src/main/resources/application.yml"
+}
 if (-not (Test-Path -LiteralPath $gatewayBaseFile)) {
     Write-Host "FAIL missing Gateway base profile: $gatewayBaseFile"
     exit 1
 }
 
 $gatewayBase = Get-Content -Raw -LiteralPath $gatewayBaseFile
-$gatewayRouteIds = [regex]::Matches($gatewayBase, '(?m)^\s+- id:\s*(\S+)\s*$') | ForEach-Object { $_.Groups[1].Value }
-if ($gatewayRouteIds.Count -le 14 -or $gatewayRouteIds[13] -ne "waitlist-service" -or $gatewayRouteIds[14] -ne "grab-service") {
-    Write-Host "FAIL java-gateway route index assumptions changed; update prod-split route list"
-    exit 1
-}
+$baseWaitlistRoute = Assert-GatewayRoute `
+    -Content $gatewayBase `
+    -Profile "base" `
+    -RouteId "waitlist-service" `
+    -ExpectedPath "/api/waitlist/**" `
+    -ExpectedUri '${GATEWAY_WAITLIST_SERVICE_URI:http://localhost:3001}'
+$baseGrabRoute = Assert-GatewayRoute `
+    -Content $gatewayBase `
+    -Profile "base" `
+    -RouteId "grab-service" `
+    -ExpectedPath "/api/grab/**" `
+    -ExpectedUri '${GATEWAY_GRAB_SERVICE_URI:http://localhost:3001}'
+Write-Host "PASS java-gateway base route IDs, paths and URIs are valid"
 
 $gatewayLegacyProdRoutesFile = Join-Path -Path $repoRoot -ChildPath "java/java-gateway/src/main/resources/application-prod-split.properties"
 if (Test-Path -LiteralPath $gatewayLegacyProdRoutesFile) {
@@ -207,11 +275,19 @@ if (Test-Path -LiteralPath $gatewayLegacyProdRoutesFile) {
     exit 1
 }
 
-$gatewayProdRouteIds = [regex]::Matches($gatewayProd, '(?m)^\s+- id:\s*(\S+)\s*$') | ForEach-Object { $_.Groups[1].Value }
-if ($gatewayProdRouteIds.Count -le 14 -or $gatewayProdRouteIds[13] -ne "waitlist-service" -or $gatewayProdRouteIds[14] -ne "grab-service") {
-    Write-Host "FAIL java-gateway prod-split route list must include complete waitlist/grab routes at expected indexes"
-    exit 1
-}
+$prodWaitlistRoute = Assert-GatewayRoute `
+    -Content $gatewayProd `
+    -Profile "prod-split" `
+    -RouteId "waitlist-service" `
+    -ExpectedPath "/api/waitlist/**" `
+    -ExpectedUri '${GATEWAY_WAITLIST_SERVICE_URI}'
+$prodGrabRoute = Assert-GatewayRoute `
+    -Content $gatewayProd `
+    -Profile "prod-split" `
+    -RouteId "grab-service" `
+    -ExpectedPath "/api/grab/**" `
+    -ExpectedUri '${GATEWAY_GRAB_SERVICE_URI}'
+Write-Host "PASS java-gateway prod-split route IDs, paths and URIs are valid"
 
 if ($gatewayProd -notmatch '(?ms)^\s+- id:\s*waitlist-service\s*\r?\n\s+uri:\s*\$\{GATEWAY_WAITLIST_SERVICE_URI\}\s*$') {
     Write-Host "FAIL java-gateway prod-split: waitlist route must require GATEWAY_WAITLIST_SERVICE_URI without fallback"

@@ -17,6 +17,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$NotificationHost,
 
+    [Parameter(Mandatory = $true)]
+    [string]$GrabHost,
+
     [int]$Port = 5432,
 
     [string]$DbUser = "postgres",
@@ -183,6 +186,7 @@ $targetHosts = @{
     order = $OrderHost
     payment = $PaymentHost
     notification = $NotificationHost
+    grab = $GrabHost
 }
 $expectedServiceKeys = @{}
 

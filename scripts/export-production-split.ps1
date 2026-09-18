@@ -5,6 +5,7 @@ param(
     [string]$SourceUser = "postgres",
     # 默认面向生产共享库 public schema；本地 local-schema 预演可通过 SourceSchemaByService 覆盖。
     [string]$SourceSchema = "public",
+    [string]$SourceDatabaseByService = "",
     [string]$SourceSchemaByService = "",
     [string]$OutputSchema = "public",
     [string]$OutputDir = "artifacts/production-split"
@@ -119,6 +120,31 @@ function Get-SourceSchemaMap {
     return $result
 }
 
+function Get-SourceDatabaseMap {
+    param([string]$Value)
+
+    $result = @{}
+    if (-not $Value) {
+        return $result
+    }
+
+    foreach ($entry in ($Value -split ',')) {
+        $trimmed = $entry.Trim()
+        if (-not $trimmed) {
+            continue
+        }
+
+        $parts = $trimmed -split '=', 2
+        if ($parts.Count -ne 2 -or -not $parts[0].Trim() -or -not $parts[1].Trim()) {
+            throw "Invalid SourceDatabaseByService entry '$entry'. Expected service=database"
+        }
+
+        $result[$parts[0].Trim()] = $parts[1].Trim()
+    }
+
+    return $result
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifestFile = Join-Path -Path $repoRoot -ChildPath "sql/production-split/manifest.json"
 
@@ -128,6 +154,7 @@ if (-not (Test-Path -LiteralPath $manifestFile)) {
 
 $manifest = Get-Content -Raw -LiteralPath $manifestFile | ConvertFrom-Json
 $resolvedOutputDir = Resolve-RepoPath -Path $OutputDir
+$sourceDatabaseMap = Get-SourceDatabaseMap -Value $SourceDatabaseByService
 $sourceSchemaMap = Get-SourceSchemaMap -Value $SourceSchemaByService
 
 if (-not (Test-Path -LiteralPath $resolvedOutputDir)) {
@@ -136,6 +163,10 @@ if (-not (Test-Path -LiteralPath $resolvedOutputDir)) {
 
 foreach ($service in $manifest.services) {
     $serviceKey = [string]$service.key
+    $databaseName = $SourceDatabase
+    if ($sourceDatabaseMap.ContainsKey($serviceKey)) {
+        $databaseName = $sourceDatabaseMap[$serviceKey]
+    }
     $schemaName = $SourceSchema
     if ($sourceSchemaMap.ContainsKey($serviceKey)) {
         $schemaName = $sourceSchemaMap[$serviceKey]
@@ -155,7 +186,7 @@ foreach ($service in $manifest.services) {
         "--host=$SourceHost",
         "--port=$SourcePort",
         "--username=$SourceUser",
-        "--dbname=$SourceDatabase",
+        "--dbname=$databaseName",
         "--no-owner",
         "--no-privileges"
     ) + $tableArguments
@@ -189,7 +220,7 @@ foreach ($service in $manifest.services) {
             throw "Filtered post-data still contains FOREIGN KEY or REFERENCES for service '$($service.key)'"
         }
         Set-Content -LiteralPath $postDataFile -Value $filteredPostDataSql -Encoding UTF8
-        Write-Host "Exported $($service.key) from schema $schemaName to $serviceDir"
+        Write-Host "Exported $($service.key) from $databaseName/$schemaName to $serviceDir"
     }
     finally {
         if (Test-Path -LiteralPath $tempPreDataFile) {

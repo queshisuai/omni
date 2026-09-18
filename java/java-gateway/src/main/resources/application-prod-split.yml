@@ -24,6 +24,13 @@ spring:
           metadata:
             connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
             response-timeout: ${GATEWAY_SHORT_RESPONSE_TIMEOUT_MS:3000}
+        - id: support-copilot-service
+          uri: lb://java-user
+          predicates:
+            - Path=/api/user/cs/sessions/{sessionId}/copilot/suggestions,/api/user/cs/copilot/suggestions/{suggestionId}/**
+          metadata:
+            connect-timeout: ${GATEWAY_CONNECT_TIMEOUT_MS:1000}
+            response-timeout: ${GATEWAY_SUPPORT_COPILOT_RESPONSE_TIMEOUT_MS:35000}
         - id: user-service
           uri: lb://java-user
           predicates:

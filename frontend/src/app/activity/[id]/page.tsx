@@ -301,6 +301,7 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   const [questionSubmitting, setQuestionSubmitting] = useState(false)
   const [reportingReviewId, setReportingReviewId] = useState<number | null>(null)
   const [centerToast, setCenterToast] = useState<{ id: number; message: string } | null>(null)
+  const centerToastIdRef = useRef(0)
   const seatMapRequestIdRef = useRef(0)
   const progressPaymentOrderIdRef = useRef<number | null>(null)
   const progressPaymentInFlightOrderIdRef = useRef<number | null>(null)
@@ -415,7 +416,8 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
   }
   const showCenterToast = (message: string) => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
-    setCenterToast({ id: Date.now(), message })
+    centerToastIdRef.current += 1
+    setCenterToast({ id: centerToastIdRef.current, message })
     toastTimerRef.current = window.setTimeout(() => {
       setCenterToast(null)
       toastTimerRef.current = null

@@ -981,6 +981,48 @@ export interface SupportAuditVO {
 
 export type CsSessionStatus = 'ACTIVE' | 'CLOSED' | 'NEED_AUDIT'
 export type CsSessionSort = 'latest' | 'sla_waiting' | 'quality'
+export type SupportAiSuggestionStatus =
+  | 'GENERATING'
+  | 'READY'
+  | 'ACCEPTED'
+  | 'ACCEPTED_EDITED'
+  | 'REJECTED'
+  | 'EXPIRED'
+  | 'FAILED'
+
+export interface CsCopilotSourceEvidenceResponse {
+  factKey: string
+  text: string
+}
+
+export interface SupportAiSuggestion {
+  suggestionId: number
+  conversationId: number
+  agentId: number
+  messageCutoff: number | null
+  contextDigest: string | null
+  status: SupportAiSuggestionStatus
+  suggestionText: string | null
+  summary: string | null
+  issueType: string | null
+  recommendedAction: string | null
+  missingInformation: string[]
+  sourceEvidence: CsCopilotSourceEvidenceResponse[]
+  editedText: string | null
+  createTime: string | null
+  updateTime: string | null
+  acceptedAt: string | null
+  editedAt: string | null
+  rejectedAt: string | null
+}
+
+export interface CsCopilotEditRequest {
+  editedText: string
+}
+
+export interface CsCopilotRejectRequest {
+  reason?: string | null
+}
 
 export interface CsAgentVO {
   userId: number

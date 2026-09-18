@@ -23,7 +23,7 @@
 | 服务 | PostgreSQL 实例 | 数据库 | 数据归属 |
 |:---|:---|:---|:---|
 | `java-user` | `pg-user` | `omni_user` | 用户、认证、主办方申请 |
-| `java-ticket` | `pg-ticket` | `omni_ticket` | 活动、场馆、场次、票档、座位、库存 |
+| `java-ticket` | `pg-ticket` | `omni_ticket_split` | 活动、场馆、场次、票档、座位、库存 |
 | `java-order` | `pg-order` | `omni_order` | 订单、订单座位、订单快照 |
 | `java-payment` | `pg-payment` | `omni_payment` | 支付、退款 |
 | `java-notification` | `pg-notification` | `omni_notification` | 通知 |
@@ -53,7 +53,7 @@
 - `sms_code`
 - `organizer_application`
 
-### `java-ticket` / `omni_ticket`
+### `java-ticket` / `omni_ticket_split`
 
 - `category`
 - `artist`

@@ -77,7 +77,7 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         userMapper.insert(user);
 
-        log.info("用户注册成功: phone={}", request.getPhone());
+        log.info("用户注册成功: phone={}", maskPhoneForLog(request.getPhone()));
     }
 
     /**
@@ -125,7 +125,7 @@ public class UserService {
         response.setRole(resolveFrontendRole(role, authContext));
         response.setPermissionCodes(resolvePermissionCodes(authContext));
 
-        log.info("用户登录成功: userId={}, phone={}", user.getId(), user.getPhone());
+        log.info("用户登录成功: userId={}, phone={}", user.getId(), maskPhoneForLog(user.getPhone()));
         return response;
     }
 
@@ -457,5 +457,16 @@ public class UserService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String maskPhoneForLog(String phone) {
+        String value = trimToNull(phone);
+        if (value == null) {
+            return null;
+        }
+        if (value.length() < 7) {
+            return "****";
+        }
+        return value.substring(0, 3) + "****" + value.substring(value.length() - 4);
     }
 }

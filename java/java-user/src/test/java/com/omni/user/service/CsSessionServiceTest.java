@@ -250,6 +250,23 @@ class CsSessionServiceTest {
         assertEquals(60L, tree.getGroups().get(0).getId());
     }
 
+    @Test
+    void teamLeaderCannotOpenSessionOutsideLeaderGroupsById() {
+        CsSessionService service = service();
+        when(userMapper.selectById(6L)).thenReturn(user(6L, "support"));
+        when(rbacService.getInternalAuthContext(6L)).thenReturn(auth(6L, "support_manager", List.of()));
+        when(groupMapper.selectList(any())).thenReturn(List.of(
+                group(60L, "TICKET_REFUND", "票务退改与咨询组", 6L)
+        ));
+        when(conversationMapper.selectById(70L))
+                .thenReturn(conversation(70L, 7001L, "ASSIGNED", 701L, 70L, false));
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.requireVisibleConversation(6L, 70L));
+
+        assertEquals("无权查看该客服会话", error.getMessage());
+    }
+
     private CsSessionService service() {
         return new CsSessionService(
                 groupMapper, memberMapper, sessionAuditMapper, conversationMapper,

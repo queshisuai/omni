@@ -160,6 +160,9 @@ if ($ticketSql) {
             Add-Failure "01-ticket.sql 缺少艺人头像引用: $keyword"
         }
     }
+    if ($ticketSql -notmatch "\(910028,\s*900028,\s*5,\s*CURRENT_DATE\s+\+\s+INTERVAL\s+'365 days 19 hours 30 minutes',\s*CURRENT_DATE\s+\+\s+INTERVAL\s+'365 days 22 hours 0 minutes',\s*1\)") {
+        Add-Failure "Finder 验收 fixture 910028 必须使用长期新鲜的相对日期表达式"
+    }
 }
 
 $orderSql = Read-RequiredFile -Path (Join-Path -Path $seedRoot -ChildPath "02-order.sql")

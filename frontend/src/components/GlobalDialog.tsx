@@ -20,7 +20,7 @@ type DialogOptions = {
 type DialogPresenter = (options: DialogOptions) => void
 
 let dialogFn: DialogPresenter | null = null
-let dialogQueue: DialogOptions[] = []
+const dialogQueue: DialogOptions[] = []
 let isDialogActive = false
 
 function flushDialogQueue() {

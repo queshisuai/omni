@@ -60,6 +60,12 @@ class GatewayRouteTimeoutConfigTest {
     }
 
     @Test
+    void supportCopilotRouteUsesDedicatedTimeoutBeforeGenericUserRoute() {
+        assertSupportCopilotRoute(loadGatewayProperties());
+        assertSupportCopilotRoute(loadYamlProperties("application-prod-split.yml"));
+    }
+
+    @Test
     void prodSplitGatewayRoutesOverrideDefinesCompleteRouteList() {
         Properties properties = loadYamlProperties("application-prod-split.yml");
         Map<String, Integer> routeIndexes = routeIndexes(properties);
@@ -132,6 +138,21 @@ class GatewayRouteTimeoutConfigTest {
         assertRouteDefault(properties, routeIndexes, "ai-ticket-finder", "connect-timeout", "1000");
         assertRouteDefault(properties, routeIndexes, "ai-ticket-finder", "response-timeout", "35000");
         assertRouteDefault(properties, routeIndexes, "ticket-service", "response-timeout", "5000");
+    }
+
+    private void assertSupportCopilotRoute(Properties properties) {
+        Map<String, Integer> routeIndexes = routeIndexes(properties);
+        int copilotIndex = requireRoute(routeIndexes, "support-copilot-service");
+        int userServiceIndex = requireRoute(routeIndexes, "user-service");
+
+        assertTrue(copilotIndex < userServiceIndex, "Copilot route must precede the generic user route");
+        assertEquals("Path=/api/user/cs/sessions/{sessionId}/copilot/suggestions,/api/user/cs/copilot/suggestions/{suggestionId}/**",
+                properties.getProperty("spring.cloud.gateway.routes[" + copilotIndex + "].predicates[0]"));
+        assertEquals("lb://java-user",
+                properties.getProperty("spring.cloud.gateway.routes[" + copilotIndex + "].uri"));
+        assertRouteDefault(properties, routeIndexes, "support-copilot-service", "connect-timeout", "1000");
+        assertRouteDefault(properties, routeIndexes, "support-copilot-service", "response-timeout", "35000");
+        assertRouteDefault(properties, routeIndexes, "user-service", "response-timeout", "5000");
     }
 
     private int requireRoute(Map<String, Integer> routeIndexes, String routeId) {

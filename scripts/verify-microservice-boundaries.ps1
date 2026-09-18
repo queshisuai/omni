@@ -27,6 +27,9 @@ function Invoke-Step {
 Write-Host "Microservice boundary verification"
 Write-Host "Repository: $repoRoot"
 
+$windowsUnixDomainTmpDir = (Join-Path -Path $repoRoot -ChildPath "runtime").Replace("\", "/")
+$isWindowsHost = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+
 Invoke-Step -Name "Service boundary guard" -Command {
     powershell -ExecutionPolicy Bypass -File (Join-Path -Path $repoRoot -ChildPath "scripts/check-service-boundaries.ps1")
 }
@@ -58,7 +61,19 @@ Invoke-Step -Name "Java boundary tests" -Command {
         if (-not $env:JWT_SECRET) {
             $env:JWT_SECRET = "omni-boundary-test-jwt-secret-32-bytes-minimum-20260603"
         }
-        mvn test -pl java-payment,java-ticket,java-order -am --% -Dsurefire.failIfNoSpecifiedTests=false
+        $mavenArgs = @(
+            "test",
+            "-pl",
+            "java-payment,java-ticket,java-order",
+            "-am",
+            "-Dsurefire.failIfNoSpecifiedTests=false"
+        )
+        if ($isWindowsHost) {
+            New-Item -ItemType Directory -Force -Path (Join-Path -Path $repoRoot -ChildPath "runtime") | Out-Null
+            $mavenArgs += "-DargLine=-Djdk.net.unixdomain.tmpdir=$windowsUnixDomainTmpDir"
+            Write-Host "Windows test JVM option: -Djdk.net.unixdomain.tmpdir=$windowsUnixDomainTmpDir"
+        }
+        mvn @mavenArgs
     } finally {
         if ($null -eq $previousJwtSecret) {
             Remove-Item Env:\JWT_SECRET -ErrorAction SilentlyContinue

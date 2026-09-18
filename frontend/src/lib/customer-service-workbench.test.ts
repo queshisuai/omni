@@ -163,3 +163,27 @@ test('中间列表按用户主卡片聚合并支持展开会话子目录', () =>
   assert.match(page, /historyList/)
   assert.match(page, /setSelectedSessionId\(session\.id\)/)
 })
+
+test('客服工作台接入人工回复发送和 Copilot 面板', () => {
+  const page = source('app/console/customer-service/sessions/page.tsx')
+  assert.match(page, /SupportCopilotPanel/)
+  assert.match(page, /sendSupportMessage/)
+  assert.match(page, /selectedSession\.id/)
+  assert.match(page, /人工回复/)
+  assert.match(page, /AI 建议仅作为草稿/)
+  assert.match(page, /refreshSelectedSessionMessages/)
+  assert.doesNotMatch(page, /sendSupportMessage\(.*accept/i)
+})
+
+test('Copilot 面板只负责 AI 建议，不直接发送客服消息', () => {
+  const panel = source('components/customer-service/SupportCopilotPanel.tsx')
+  assert.match(panel, /generateCsCopilotSuggestion/)
+  assert.match(panel, /acceptCsCopilotSuggestion/)
+  assert.match(panel, /editCsCopilotSuggestion/)
+  assert.match(panel, /rejectCsCopilotSuggestion/)
+  assert.match(panel, /onDraftChange/)
+  assert.match(panel, /EXPIRED/)
+  assert.match(panel, /重新生成/)
+  assert.doesNotMatch(panel, /sendSupportMessage/)
+  assert.doesNotMatch(panel, /messages\/stream/)
+})

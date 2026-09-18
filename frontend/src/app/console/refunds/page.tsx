@@ -150,7 +150,7 @@ export default function ConsoleRefundsPage() {
     setReviewDialogError('')
     try {
       let batchOutcome = ''
-      let batchError = ''
+      const batchError = ''
       if (refundReviewDialog.scope === 'single') {
         const [id] = refundReviewDialog.ids
         const currentRefund = refunds.find(refund => refund.id === id)

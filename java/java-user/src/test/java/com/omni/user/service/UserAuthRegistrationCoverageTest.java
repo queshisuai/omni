@@ -21,6 +21,10 @@ import org.mockito.quality.Strictness;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -153,6 +157,20 @@ class UserAuthRegistrationCoverageTest {
             UserController ctl = new UserController(svc, null, "", true);
             assertEquals(200, ctl.sendCode("13800000099").getCode());
             assertEquals("666666", ctl.sendCode("13800000099").getData());
+        }
+        @Test @DisplayName("UA-020a: mock send code logs masked phone only") void ua020a() {
+            UserController ctl = new UserController(svc, null, "", true);
+            PrintStream originalOut = System.out;
+            ByteArrayOutputStream capturedOut = new ByteArrayOutputStream();
+            try {
+                System.setOut(new PrintStream(capturedOut, true, StandardCharsets.UTF_8));
+                ctl.sendCode("13800000099");
+            } finally {
+                System.setOut(originalOut);
+            }
+            String output = capturedOut.toString(StandardCharsets.UTF_8);
+            assertTrue(output.contains("138****0099"));
+            assertFalse(output.contains("13800000099"));
         }
         @Test @DisplayName("UA-021: empty phone → handles gracefully") void ua021() {
             UserController ctl = new UserController(svc, null, "", true);

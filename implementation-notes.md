@@ -1,5 +1,40 @@
 # Implementation Notes
 
+## 2026-09-18 Phase ⑥-1 P2/P3 遗留问题清理收尾
+
+- P2 手机号日志：RESOLVED。除 `UserService.register()` / `login()` 外，继续检查并修复 `UserController.sendCode()` 的 mock 验证码日志；完整手机号不再进入登录、注册或验证码日志，统一保留前 3 位、后 4 位，中间使用 `****`。新增 `UserAuthRegistrationCoverageTest.ua020a` 覆盖验证码日志脱敏。
+- P2 Windows JVM 参数：RESOLVED AS LOCAL TEST SCRIPT COMPATIBILITY。问题根因为 Windows/JDK/Netty 本地 loopback 与 Unix domain socket 兼容性，不是业务代码缺陷；`scripts/verify-microservice-boundaries.ps1` 在 Windows 边界测试中自动创建 `runtime` 目录并注入 `-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime`，生产 JVM、Docker 和 Linux 运行配置不受污染。
+- P3 ESLint：RESOLVED。已按错误归属做最小修复，全量 ESLint 最新结果为 `0 errors / 218 warnings`；未关闭规则，warning 保留为非阻断项。涉及既有错误文件：`frontend/src/app/activity/[id]/page.tsx`、`frontend/src/app/console/refunds/page.tsx`、`frontend/src/components/GlobalDialog.tsx`、`frontend/src/components/Header.tsx`。
+- P3 Playwright wrapper：RESOLVED AS GLOBAL CLI ENTRY。仓库原 bash wrapper 不是 Windows 原生入口；未安装系统级 bash、未修改全局 PATH，使用已安装的全局 `playwright-cli` 完成真实浏览器验收。Finder 和 Copilot 均已通过真实页面/API 联调。
+- Java 最新回归：`java-common 30/30`、`java-ai-core 34/34`、`java-user 336/336`，合计 `400/400`，0 failures，0 errors。历史 `2026-09-17` 记录中的 `397/397` 保留为当日真实结果，不改写。
+- Frontend 最新定向回归：`62/62`；`pnpm typecheck` 通过；`pnpm build` 通过，静态页面 `54/54`。
+- Finder 真实验收：输入“帮我找广州的天鹅湖演出，预算700元以内”，`interpret` 返回 HTTP 200，解析 `keyword=天鹅湖`、`city=广州`、`maxPrice=700`；`search` 返回 HTTP 200 和 3 个可售票档。
+- Copilot 真实验收：平台管理员账号 Generate 成功；Accept 后状态为 `ACCEPTED`，Edit 后为 `ACCEPTED_EDITED`，Reject 后为 `REJECTED`；`support_ai_suggestion` 新增 `29/30` 两条记录，`conversation=988102` 的 `support_message` 数量保持 `1`，Accept 未自动发送客服消息。
+- 安全回归：`UserService` 日志仅保留脱敏手机号；AI 日志未发现 prompt、完整客服上下文、Authorization、JWT、API key、supplier key 或模型凭证。此前各章节中的历史问题描述保留为历史验收记录，当前状态以本节为准。
+- 边界与生产拆库回归：`verify-microservice-boundaries.ps1`、`check-production-split-sql.ps1`、`check-cross-owner-fks.ps1`、`check-production-runtime-defaults.ps1`、`verify-production-split-runtime.ps1`、`verify-prod-split-real-demo-seed.ps1` 均通过。
+- `git diff --check` 通过；未执行 commit、push、merge、reset、restore、checkout、clean 或 rebase。
+
+## 2026-09-17 Phase ⑥-1 P2/P3 遗留问题清理
+
+- P2 UserService 完整手机号日志：RESOLVED。根因是 `UserService.register()` 与 `UserService.login()` 成功日志直接输出 `request.getPhone()` / `user.getPhone()`；已改为仅输出 `138****5678` 形式的脱敏手机号，接口响应、JWT 生成、验证码和用户查询链路未改。
+- 验证：新增 `UserServiceTest.registerLogsMaskedPhoneOnly`、`UserServiceTest.loginLogsMaskedPhoneOnly` 先红后绿；`mvn -pl java-user "-Dtest=UserServiceTest" test` 通过 `29/29`，日志中未出现 `13812345678`，仅出现 `138****5678`。
+- P2 Windows `jdk.net.unixdomain.tmpdir`：RESOLVED AS LOCAL TEST SCRIPT COMPATIBILITY。`mvn -pl java-user -am test` 在不带参数时复现 `java-ai-core` 的 `AiHttpLifecycleTest` 5 个 error，根因为 Windows/JDK 本地 `HttpServer` selector loopback 初始化触发 `Unable to establish loopback connection` / `UnixDomainSockets ... Invalid argument`，不是 Java 业务代码缺陷。
+- 修改：`scripts/verify-microservice-boundaries.ps1` 仅在 Windows 主机执行 Java boundary tests 时自动追加 Surefire `-DargLine=-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime`，并确保 `runtime` 目录存在；README 和 AGENTS 增加同一说明，未把该参数写入 Maven 父 POM、Docker 或生产 runtime。
+- 验证：`mvn -pl java-user -am "-DargLine=-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime" test` 通过；`powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1` 无需手工 JVM 参数即通过，并打印 Windows test JVM option。
+
+## 2026-09-17 Phase ⑥ production split manifest consistency
+
+- 本阶段重新执行 `scripts/verify-production-split-runtime.ps1` 时发现 `omni_ticket_split.activity_artist` 已真实存在且包含同 owner 外键，但 `sql/production-split/manifest.json` 未登记该表，导致 runtime verifier 将 `activity_artist_activity_id_fkey` 判定为未知 child table。
+- 已按最小范围补齐 `java-ticket` manifest：登记 `activity_artist`，并登记其既有来源迁移 `ticket/20260522_activity_multi_artist_phase1.sql`、`ticket/20260522_activity_artist_governance_phase2.sql`；未新增 migration、未修改数据库和业务规则。
+- 同步将 `activity_artist` 的实际列集合加入 `scripts/check-production-split-sql.ps1` 白名单，使 manifest、生产迁移和 runtime FK 校验口径一致。
+- 偏离说明：该问题属于生产拆库资产登记遗漏，不是 `ActivityArtist` 业务实现或数据库缺表；此前通过的静态检查未覆盖“运行库已有外键表必须全部出现在 manifest”这一运行态条件。
+
+## 2026-09-17 Phase ⑥ production split manifest completeness follow-up
+
+- 修复 `activity_artist` 后重新运行 runtime verifier，继续发现 `activity_risk_resolution` 以及 `seat_layout_version`、`seat_layout_version_block`、`seat_layout_version_override`、`seat_layout_version_ticket_group`、`seat_layout_version_group_binding` 已存在于 `omni_ticket_split`，但未完整登记在 ticket manifest。
+- 已核对这些表分别由既有 `20260522_activity_risk_response_phase3.sql` 和 `20260524_seatcraft_layout_versioning.sql` 创建，源码也存在对应实体；已一次性补齐 manifest、owner 清单和静态列白名单。
+- `undo_log` 为 Seata 基础设施表，不纳入业务表 manifest；未修改其结构或迁移口径。
+
 ## 2026-09-15 Gateway AI Finder timeout
 
 - 在 `java-gateway` 的基础配置和 `prod-split` profile 中新增 `ai-ticket-finder` 专用路由，放在通用 `ticket-service` 路由之前。
@@ -807,3 +842,665 @@
 - 新增纯函数测试，覆盖合法参数、非法 Session、非法 TicketType、跨 Session 票档、空 sessions 和无票档。
 - 增加详情页源码级接入测试，确认只在初始化路径读取 Finder query params，且纯函数不发请求。
 - 真实浏览器点击链路仍依赖本机浏览器自动化环境；本次未创建订单、支付、库存锁定或座位锁定。
+
+## 2026-09-16 ⑤-1 Copilot Backend Core
+
+### 实现范围
+
+- 仅修改 `java-user`、`sql/production-split/user/20260916_support_ai_copilot.sql` 和本说明；未修改 Gateway、Frontend、`java-ticket`、`java-order`、`java-payment`、`grab-service`、Seata、Finder、`manifest.json` 或 verifier。
+- 新增客服 Copilot 建议生成、accept、edit、reject API；建议全程独立于 `support_message`，不调用 `sendMessage()`，`ACCEPTED` 不代表已发送。
+- `messageCutoff` 使用生成时会话最后一条 `support_message.id`；accept/edit 重新读取并通过数据库条件更新同时校验 `message_cutoff` 与 `context_digest`。
+- 生成失败或并发条件失效时，状态分别落为 `FAILED` 或 `EXPIRED`；对外不返回模型原始异常或旧草稿。
+
+### 安全与事实边界
+
+- 模型 `sourceEvidence` 只允许返回白名单 `factKey`；证据文本由服务端 `SupportCopilotFactCatalog` 生成。
+- 只向模型提供最近最多 50 条脱敏消息和最小事实快照，不持久化完整 `SupportContext`、完整订单快照、完整会话历史、token、密码、支付敏感信息、身份证或完整手机号。
+- 高风险订单号、票券 ID、金额和状态由 Java 确定性校验；当前上下文不存在 `paymentStatus` 时不创建该事实。
+- 所有接口继续经过 `RbacService` 与 `CsSessionService` 可见范围校验。当前 `support_agent` 的 `support.ai.review` 仍受现有本人会话/公共池可见范围限制，没有扩大为查看其他坐席会话。
+
+### 数据库与验证
+
+- 已只读核对本机 `omni_user`：真实表名为 `support_conversation`、`support_message` 和 `"user"`；相关 ID 为 `BIGINT`，时间字段为 `TIMESTAMP WITHOUT TIME ZONE`，JSON 字段使用 `JSONB`，FK 方向与现有用户库一致。
+- 本阶段按要求未修改 `sql/production-split/manifest.json` 和 verifier；因此 `check-cross-owner-fks.ps1` 会将新增 `support_ai_suggestion` 标记为 owner map 未分类并报告两条 FK，属于待生产 SQL 接入 checklist，不代表 Java 代码跨库访问。
+- `check-production-split-sql.ps1` 已通过；生产 SQL 尚未加入 manifest、导入链路和 verifier 的生产接入 checklist，未执行数据库迁移。
+- 未提交、未推送、未合并 Git；未修改本地数据库实例。
+
+### 测试
+
+- Copilot 定向测试：25/25 通过，覆盖认证、RBAC、严格 JSON、unknown field、标量类型、factKey、事实校验、上下文摘要、null Mapper 防御、状态迁移、stale、并发 accept、超时、模型失败和无 support message 副作用。
+- 最终完整命令 `mvn -pl java-user -am -DargLine=-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime test` 通过：`java-common 30`、`java-ai-core 34`、`java-user 332`，共 396 项，0 failures、0 errors。
+- `git diff --check` 与 `check-production-split-sql.ps1` 通过；`verify-microservice-boundaries.ps1` 的 service boundary 通过，但 cross-owner FK 阶段因本阶段禁止更新 `manifest/verifier` 而报告未登记的 `support_ai_suggestion`，该风险已保留。
+
+## 2026-09-16 ⑤-1.1 Copilot Production Split Asset Registration
+
+### 登记范围
+
+- 已将 `support_ai_suggestion` 正式登记到 `sql/production-split/manifest.json` 的 `java-user` owner。
+- 已登记 migration `user/20260916_support_ai_copilot.sql`。
+- 已将 `support_ai_suggestion` 的完整生产 SQL 字段白名单加入 `check-production-split-sql.ps1`。
+- 已将 `support_ai_suggestion` 加入 `check-cross-owner-fks.ps1` 的 `java-user` owner map；`conversation_id -> support_conversation(id)` 与 `agent_id -> "user"(id)` 均识别为同 owner FK。
+
+### 验证
+
+- `check-production-split-sql.ps1`、`check-cross-owner-fks.ps1` 与 `git diff --check` 均通过；`support_ai_suggestion` 的两个 FK 被识别为 `java-user` 同 owner。
+- `verify-microservice-boundaries.ps1` 已完成到 cross-owner FK、production split SQL 等阶段，但在既有的 `java-gateway` route index guard 处失败；该失败与本阶段 manifest/verifier 资产登记无关。当前 Gateway 实际 route index 为 `waitlist-service=14`、`grab-service=15`，而 guard 仍要求 `waitlist-service=13`、`grab-service=14`。
+- 未修改 Java 业务、Gateway、数据库现有数据、Seata、Finder；未执行数据库迁移，未提交、推送或合并 Git。
+
+## 2026-09-16 Repository Infrastructure：Gateway Route ID Guard
+
+### 修复范围
+
+- 修复 `scripts/check-production-runtime-defaults.ps1` 的 Gateway route guard。
+- `waitlist-service` 与 `grab-service` 不再依赖固定 index，改为按 route ID 定位，并严格校验唯一性、Path、URI 与生产环境变量约束。
+- 保留现有其他 route guard、生产 `.properties` 覆盖检查、localhost fallback 检查和所有非 Gateway 检查。
+- 支持临时 base/prod 配置路径参数，仅用于脚本级 fixture 验证；默认执行仍检查仓库正式 Gateway 配置。
+
+### 根因与边界
+
+- 根因是 `2026-09-15` 合法加入 `ai-ticket-finder` 后，后续 route index 整体后移一位；旧 verifier 未同步，属于 Repository verifier baseline drift。
+- 未修改 Gateway route 顺序、Gateway Java、Copilot、Finder、数据库、Seata、Nacos 或任何业务服务；与 Copilot 修改无关。
+
+### 验证
+
+- 当前 route 顺序：`waitlist-service=14`、`grab-service=15`，通过。
+- 插入未来 route 导致 index 改变后，route-id guard 仍通过。
+- 缺失 route、重复 route、错误 Path、错误生产 URI、生产 localhost fallback 均按预期失败。
+- `check-production-split-sql.ps1`、`check-cross-owner-fks.ps1`、`git diff --check` 均通过。
+- `verify-microservice-boundaries.ps1` 在设置临时 `JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime` 后完整通过；未设置该 JVM 参数时，当前 Windows/JDK 环境仍会在 `java-ai-core` 的 `AiHttpLifecycleTest` 触发既有 loopback 初始化失败。
+
+## 2026-09-16 ⑤-2 Copilot Backend Real Ollama E2E
+
+### 接管与旧进程处理
+
+- 8081 原占用 PID 为 `28868`，进程名 `java.exe`，父进程 PID `13588` 为 IDEA `idea64.exe`，窗口标题 `omni`。
+- WMI 未返回旧进程 CommandLine，`jcmd` attach 返回 `拒绝访问`；通过 `http://localhost:8081/api/user/cs/sessions` 返回 java-user 客服接口未认证响应交叉确认该端口为 java-user 服务。
+- 已按要求只停止旧 java 子进程 `28868`，未停止 IDEA 主进程、PostgreSQL、Nacos、Ollama、Seata、Gateway 或其他 Java 业务服务。
+- 停止后 `netstat -ano | findstr ":8081"` 无输出，确认 8081 已释放。
+- 因当前 IDEA RunManager 配置缺少本次要求的 `SEATA_ENABLED` 与 `-Djdk.net.unixdomain.tmpdir`，且 IDE UI 未提供可用的自动操作入口，使用同一 `com.omni.user.UserApplication` 的最新 clean package jar 启动等价运行配置；未修改 IDEA 或项目配置文件。
+- `mvn -pl java-user -am -DskipTests clean compile` 与 `mvn -pl java-user -am -DskipTests package` 均通过；7 个 Copilot 目标 class 时间戳为 `2026-09-16 18:53:28/29`。
+- 新 java-user PID 为 `32872`，启动日志显示 `UserApplication`、`prod-split`、Tomcat `8081`、Nacos `java-user 10.150.195.38:8081 register finished` 和 `Started UserApplication`。
+- 基础无副作用 API `GET /api/user/cs/org-tree` 使用真实 JWT（userId `2019`）返回 HTTP 200 / business code 200；PostgreSQL、JWT、Spring Boot、Nacos 链路正常。
+- 真实 RBAC 核对：`"user".id=2019` 启用、`role=support`；`support_account.support_role=support_manager`；`support_manager` 的 `support.ai.use`、`support.ai.review`、`support.conversation.view` 均启用并已关联。
+- 源码 mapping 已确认：`/sessions/{sessionId}` 的 `sessionId` 实际是 `support_conversation.id`，不是独立 session 表，也不是自动等于任意 conversation ID；当前准备会话为 `support_conversation.id=988111`。
+- 当前真实阻塞：`support_conversation.id=988111` 为 `ASSIGNED`、`assigned_agent_id=2019`、`skill_group_id=1`，但 `cs_skill_group.id=1..3` 的 `leader_user_id` 全部为 NULL，且 2019 不在 `cs_agent_member`。`CsSessionService.requireView()` 对 `support_manager` 仅按 leader 技能组授权，因此 2019 的会话列表为空，直接访问 988111 会被可见范围拒绝。
+- 尚未执行真实 Copilot Generate；需要用户确认是否允许仅在本地 `omni_user` 为 E2E fixture 设置 `cs_skill_group.id=1.leader_user_id=2019`，不得修改 RBAC 表结构或 Java 代码。
+
+### 用户授权后的本地测试夹具
+
+- 用户明确允许仅对本地 `omni_user` 测试数据设置 `cs_skill_group.id=1.leader_user_id=2019`，用于本轮 E2E；该关系不是生产权限设计。
+- 已临时设置该字段，并在 E2E 完成后立即恢复为 `NULL`。
+- `support_conversation.id=988111` 的 stale context 字段已恢复原值；java-user 已停止，8081 已释放，Nacos 中的 `java-user` 实例已注销。
+
+### 真实链路与结果
+
+- 真实链路为 `java-user -> java-ai-core -> Ollama -> Qwen2.5:7b`，没有 mock/offline 降级。
+- `2019` 通过真实 RBAC、`support_manager` 角色、`support.ai.use` / `support.ai.review` / `support.conversation.view` 权限及 skill group leader 范围访问 `support_conversation.id=988111`。
+- Generate：创建 `support_ai_suggestion.id=12`，状态 `READY`；`model=Qwen2.5:7b`、`prompt_version=v1`、`sourceEvidence` 使用合法 `factKey`，evidence 文本由服务端生成。
+- Accept：`READY -> ACCEPTED`。
+- Edit：`ACCEPTED -> ACCEPTED_EDITED`；AI 原文保留，人工编辑文本单独保存。
+- Reject：`support_ai_suggestion.id=13`，`READY -> REJECTED`。
+- stale message：`support_ai_suggestion.id=14` 生成后，使用原客服发送链路新增普通 `support_message.id=988244`；Accept 返回 HTTP `409`，旧草稿变为 `EXPIRED`。
+- stale context：`support_ai_suggestion.id=15` 生成后改变会话升级事实；Accept 返回 HTTP `409`，旧草稿变为 `EXPIRED`。
+- stale message 测试中新增的 1 条普通客服消息是显式测试动作；Copilot 本身没有新增 `support_message`，也没有调用客服发送方法。
+- AI 只写入 `support_ai_suggestion`；Accept 仅接受草稿，最终发送仍走原客服发送链路。
+
+### 失败路径与副作用
+
+- 已验证非法 `factKey`、事实冲突、LLM 超时/不可用分别进入预期失败路径；失败不暴露模型原始异常或旧草稿内容。
+- 测试期间未触发订单、支付、退款、票务、座位锁定、库存修改、抢票或候补业务；相关表无新增或更新。
+- 本轮真实 Generate 耗时约 `11.0s`、`8.6s`、`2.7s`、`3.5s`、`4.0s`；当前代码没有独立持久化 context preparation time。
+
+### 本轮最小修复
+
+- `support_ai_suggestion.missing_information` 与 `source_evidence` 为 `NOT NULL`，首次插入传入 `NULL` 会导致 HTTP 500；已在 `SupportAiSuggestion` 中提供可持久化默认值。
+- `AiResponse.model` 原先未写入 `support_ai_suggestion.model`，导致 READY 记录模型为空；已补齐 DTO 字段并在 `SupportCopilotService` 持久化。
+- 未修改生产权限设计；未提交、未推送、未合并 Git。
+
+### 本轮验证记录
+
+- `SupportCopilotServiceTest`：`10/10` 通过。
+- Copilot 定向测试：`SupportCopilotContextServiceTest`、`SupportCopilotFactValidatorTest`、`SupportCopilotSchemaTest`、`SupportCopilotServiceTest` 共 `18/18` 通过。
+
+## 2026-09-16 ⑤-3 Copilot B 端客服工作台前端接入
+
+### 实现范围
+
+- 复用现有 `frontend/src/app/console/customer-service/sessions/page.tsx`，未新建平行客服工作台；`/console/support-conversations` 兼容跳转保持不变。
+- 新增 `SupportCopilotPanel`，负责 Generate、Accept、READY 编辑快捷入口、Edit 保存、Reject、409 过期、502 事实校验失败、503 AI 不可用和事实依据展示。
+- `frontend/src/lib/api.ts` 仅在现有 `request<T>()` 基础设施上新增四个 Copilot API 方法，未修改底层请求封装。
+- `frontend/src/types/api.ts` 按 `CsCopilotSuggestionResponse` Controller Response DTO JSON 增加状态、建议、编辑请求、拒绝请求和事实依据类型；未根据 Entity 猜测字段。
+- 工作台新增人工回复编辑区和发送按钮；内部经办备注区保持独立。
+
+### 真实接口与数据流
+
+- Generate：`POST /api/user/cs/sessions/{sessionId}/copilot/suggestions`
+- Accept：`POST /api/user/cs/copilot/suggestions/{suggestionId}/accept`
+- Edit：`POST /api/user/cs/copilot/suggestions/{suggestionId}/edit`
+- Reject：`POST /api/user/cs/copilot/suggestions/{suggestionId}/reject`
+- 当前真实 ID 映射沿用已核对实现：`selectedSession.id -> sendSupportMessage(conversationId, content)`；最终发送调用 `/api/user/support/conversations/{id}/messages`。
+- Accept/Edit/Reject 和 Copilot 面板均不调用 `/messages`；只有人工点击“发送”才创建普通 `support_message`。
+- `READY` 的“编辑”按钮因后端 Edit 只接受 `ACCEPTED`，先执行 Accept 进入人工编辑态；保存修改时才执行 `/edit`，不自动发送。
+
+### 权限、隔离与过期处理
+
+- 前端只有 `permissionCodes` 包含 `support.ai.use` 时显示 Generate；角色名不会自行扩大 Copilot 权限，后端仍是最终边界。
+- `selectedSession.id` 变化时清理回复草稿、Copilot suggestion、loading、error 和消息快照；Copilot 异步响应校验请求对应的 session，旧会话响应会丢弃。
+- 消息列表 ID 发生变化时提示“会话内容已更新，已有 AI 建议可能已失效”，不清空或覆盖 `replyDraft`，不自动重新生成或发送。
+- 409 将当前 suggestion 标记为 `EXPIRED`，禁用旧操作并提供重新生成；重新生成使用当前 session 创建新 suggestion。
+- `sourceEvidence` 直接展示后端返回的 `text`，前端不查询数据库、ES 或自行拼接业务事实。
+
+### 验证
+
+- `node --test src/lib/customer-service-workbench.test.ts src/lib/customer-service-copilot.test.ts src/lib/api.test.ts`：`61/61` 通过。
+- `node --test src/lib/customer-service-workbench.test.ts src/lib/customer-service-copilot.test.ts`：`17/17` 通过。
+- `pnpm typecheck`：通过。
+- `pnpm build`：通过，Next.js 16.2.1 生产构建完成。
+- `git diff --check`：退出码 `0`；仅显示工作区既有 CRLF 转换提示，无 whitespace error。
+- 本轮修改文件定向 ESLint：`0 errors`，仅有 React Hooks 和未使用变量 warning；全量 ESLint 仍有 5 个未涉及本轮文件的既有 error，位于 `src/app/activity/[id]/page.tsx`、`src/app/console/refunds/page.tsx`、`src/components/GlobalDialog.tsx` 和 `src/components/Header.tsx`。
+- 本阶段未执行真实浏览器交互或再次调用真实 Copilot 写接口；后端真实 Ollama E2E 已在 ⑤-2 完成。
+- 未修改数据库结构、C 端 `/api/user/support/conversations/{id}/messages/stream`、Java Copilot 核心或其他业务链路。
+- 未提交、未推送、未合并 Git。
+
+## 2026-09-17 Copilot Phase ⑤-4 完整联调、回归验证与生产前验收
+
+### 验收口径与环境
+
+- 验收日期：`2026-09-17`。
+- 验收范围：AI Customer Service Copilot 与 AI Ticket Finder 的本地 / 开发环境真实联调验证；未声明为生产环境验证。
+- 运行环境：Windows 本机，`prod-split` 微服务拓扑；Nacos `localhost:8848`，Ollama `localhost:11434`，Gateway `8088`，Frontend `3000`，`java-user` 使用 `-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime`。
+- 数据库拓扑仍为拆库：`java-user -> omni_user`，`java-ticket -> omni_ticket_split`；未创建新的 migration，未修改 Copilot DB schema。
+- 本轮为 E2E 临时将本地 `cs_skill_group.id=1.leader_user_id` 设置为 `2019`，验收收尾恢复为 `NULL`。
+
+### 代码审计
+
+- Copilot 后端调用链确认：`CsCopilotController -> SupportCopilotService -> SupportCopilotContextService -> SupportCopilotFactCatalog / SupportCopilotFactValidator -> AiModelClient -> SupportAiSuggestionMapper`。
+- Copilot 后端未直接注入或调用 ticket/order/payment/refund/seat/inventory Mapper，未直接使用 Elasticsearch client；跨服务事实仍来自已有客服上下文聚合。
+- Copilot 前端确认：Accept/Edit/Reject 分别只走 `/copilot/suggestions/{id}/accept|edit|reject`；真正发送仍由 `sendSupportMessage(selectedSession.id, replyDraft)` 走原 `/api/user/support/conversations/{id}/messages`。
+- AI Ticket Finder 调用链确认：LLM 只负责 intent 与 explanation；ES 负责 candidate recall；PostgreSQL availability 层负责真实可售性；Java 服务负责确定性过滤、排序和 DTO 格式化。
+
+### 构建与测试
+
+- `mvn -pl java-user -am "-DargLine=-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime" test`：`java-common 30/30`、`java-ai-core 34/34`、`java-user 333/333`，合计 `397/397`，0 failures，0 errors。
+- `powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1`：通过，包含 service boundary、cross-owner FK、production split SQL/runtime guard 与 Java boundary tests。
+- `check-production-split-sql.ps1`、`check-cross-owner-fks.ps1`、`check-production-runtime-defaults.ps1`：均通过。
+- `node --test src/lib/customer-service-workbench.test.ts src/lib/customer-service-copilot.test.ts src/lib/api.test.ts`：`61/61` 通过。
+- `pnpm typecheck`：通过。
+- `pnpm build`：通过，Next.js 16.2.1 生产构建完成。
+- `git diff --check`：通过；仅有既有 CRLF 转换提示，无 whitespace error。
+
+### Copilot 真实 Ollama E2E
+
+- 测试账号：`2019`；测试客服会话：`988111`；使用真实 JWT、真实 RBAC、真实 `java-user -> java-ai-core -> Ollama` 链路。
+- C1 Generate：`support_ai_suggestion.id=16`，`GENERATING -> READY`；DTO 字段包含 `suggestionText`、`summary`、`issueType`、`recommendedAction`、`missingInformation`、`sourceEvidence`、`model`、`promptVersion`。
+- C2 Accept：`id=16`，`READY -> ACCEPTED`；未新增 `support_message`，未触发订单、支付、退款、票务、座位或库存写操作。
+- C3 人工发送：通过原客服发送链路显式调用 `/messages` 产生 `support_message`；确认不是 Copilot Accept 直接发送。
+- C4 Edit：`id=17`，`READY -> ACCEPTED -> ACCEPTED_EDITED`；`suggestionText` 保留原文，`editedText` 保存人工编辑内容，未自动发送。
+- C5 Reject：`id=18`，`READY -> REJECTED`；未新增 `support_message`。
+- C6 stale message：`id=19`，生成 READY 后新增普通客服消息；Accept 返回 HTTP `409`，状态 `EXPIRED`，重复 Accept 仍失败。
+- C7 stale context：`id=20`，生成 READY 后改变 suggestion-relevant context；Accept/Edit 返回 HTTP `409`，状态 `EXPIRED`。
+- C8 AI unavailable：临时将 `java-user` 指向不可用 endpoint，Generate 返回 HTTP `503`；最新失败记录为 `FAILED/UNAVAILABLE`，前端映射为“AI 服务暂时不可用，请稍后重试。”，未暴露 stack trace、prompt、token、API key 或模型凭证。
+- C9 fact validation：本阶段未重新诱导真实错误模型输出；代码路径与单测覆盖 unknown `factKey` / 事实冲突 -> `502` + `FAILED/INVALID_OUTPUT`，错误事实不会进入 `sourceEvidence`。
+
+### 前端真实 UI 验收
+
+- `/console/customer-service/sessions` 真实页面可见三栏客服工作台：组织树、会话列表、消息展示、内部经办备注、人工回复编辑器、发送按钮和 Copilot Panel。
+- 已结束会话切片可见 `988111`；Copilot Panel 可见“AI 智能助手”和“生成 AI 回复建议”。
+- 前端会话切换保护已通过源码与定向测试验证：异步 Generate 响应按 session 校验，旧会话响应不写入新会话 UI；切换会话会清理当前 suggestion 与 `replyDraft`。
+- 新消息提示逻辑已验证：消息 ID 序列变化时仅提示“会话内容已更新，已有 AI 建议可能已失效”，不自动清空 `replyDraft`、不自动重新生成、不自动发送、不调用 Accept。
+- 真实页面点击 Generate 经 Gateway/Frontend proxy 出现 `504`，同一时刻 `java-user` 日志显示 Ollama 调用成功耗时约 `9927ms`；根因为 Gateway 当前 `/api/user/**` route `response-timeout=5000ms`，按本阶段纪律仅记录，不调整 timeout。
+
+### RBAC 与 Skill Group
+
+- `support_manager` 用户 `2019`：具备 `support.ai.use`，skill group leader 临时 fixture 生效，Generate 通过。
+- `support_agent` 用户 `2020`：工作台可进入，但对 `988111` 直接 Generate 返回 `403 无权查看该客服会话`。
+- `platform_super_admin` 用户 `2002`：Generate 通过。
+- 普通用户 `2004`：直接调用 Copilot API 返回 `403 无权限使用客服 AI 助手`。
+- 前端仅在 `permissionCodes` 包含 `support.ai.use` 或平台管理员时显示 Generate；最终权限仍以后端为准。
+
+### 微服务边界与生产 SQL
+
+- `verify-microservice-boundaries.ps1` 本轮完整通过；Copilot 与 Finder 未突破现有服务边界。
+- `support_ai_suggestion` 已登记在 `sql/production-split/manifest.json` 的 `java-user` owner；`user/20260916_support_ai_copilot.sql` 已包含表、FK、状态 check、JSON check 与索引。
+- `check-production-split-sql.ps1` 已登记 `support_ai_suggestion` 字段白名单；`check-cross-owner-fks.ps1` 将其两个 FK 识别为 `java-user` 同 owner。
+
+### 日志安全
+
+- Copilot / AI Core 日志未打印 prompt、完整上下文、Authorization、JWT、API key、supplier key 或敏感凭证；允许字段为 requestId、model、latency、success、stream、result。
+- 本轮审计发现既有 `UserService` 登录/注册日志打印完整手机号；这不是 Copilot 新代码引入，但属于日志安全既有风险，记录为 P2/P3。
+
+### AI Ticket Finder 回归
+
+- 查询“帮我找广州的天鹅湖演出，预算700元以内”的 interpret 真实请求返回 HTTP 200 / 业务码 200，解析为 `keyword=天鹅湖`、`city=广州`、`maxPrice=700`。
+- search 真实请求返回 HTTP 200 / 业务码 200，但 `results=[]`。
+- 根因：fixture `Activity=900028`、`Session=910028` 的开始时间为 `2026-09-16 19:30:00`，验收日期 `2026-09-17` 已过期；ES 仍可召回 `900028`，PostgreSQL availability 层正确过滤已过期场次。
+- 结论：Finder 链路无业务边界回归，但指定非空 fixture 已过期，需要后续刷新验收数据。
+
+### 性能观察
+
+- Copilot Generate 在真实 Ollama 下观察到约 `2.7s`、`3.5s`、`4.0s`、`9.9s`、`11.0s` 等波动；首次或长回复可能超过 Gateway 5s route timeout。
+- Accept/Edit/Reject 为普通数据库状态迁移，真实观察为亚秒级到低百毫秒级。
+- 本阶段未修改 timeout、模型参数或架构。
+
+### 已知问题分类
+
+- P0：无。
+- P1：无。未发现越权、AI 直接执行关键业务、Accept 自动发送、stale 绕过或错误事实进入用户回复。
+- P2：前端经 Gateway/Next proxy 调用 Copilot Generate 可能因 `/api/user/**` route `response-timeout=5000ms` 返回 `504`，后端真实 Ollama 调用仍成功；本阶段按要求仅记录。
+- P2：日志安全既有问题：`UserService` 登录/注册日志打印完整手机号，非 Copilot 新增。
+- P3：AI Ticket Finder 指定非空 fixture 已过期，导致 search 结果为空；业务逻辑正确过滤，但验收 fixture 需要更新。
+- P3：本机 Playwright wrapper 依赖的 bash 入口不可用；已改用 `npx --package @playwright/cli` 完成真实页面检查。
+- P3：全量 ESLint 仍有 5 个未涉及本轮文件的既有 error，沿用 ⑤-3 记录。
+
+### Git 与清理
+
+- 未 commit、未 push、未 merge。
+- 本轮收尾恢复本地 E2E fixture：`cs_skill_group.id=1.leader_user_id` 恢复为 `NULL`。
+- 本轮启动的 `java-user` 验收进程在完成后停止并释放 `8081`。
+
+## 2026-09-17 AI Phase ⑤-5：AI 网关超时治理 + Finder fixture 刷新 + 最终回归
+
+### Finder fixture 生命周期修复
+
+- 按本地 `prod-split-real-demo` 数据生命周期修复 `sql/seeds/prod-split-real-demo/01-ticket.sql`：`Session=910028` 改为 `CURRENT_DATE + INTERVAL '365 days ...'`，避免验收日期推进后自然过期。
+- 未修改 Finder 日期过滤、可售性过滤、ES 查询或 `TicketAvailabilityQueryService` 业务逻辑。
+- 执行前确认目标文件属于 `sql/seeds/prod-split-real-demo/`，目标数据库为本机 `omni_ticket_split` / `localhost:5432`。
+- 已将 `01-ticket.sql` 应用到 `omni_ticket_split`；抽查 `910028` 为 `2027-09-17 19:30:00`，距离当前日期 365 天。
+- 同步修复本地 seed 可执行性问题：`01-ticket.sql` 的 `artist 901010` 缺少 `update_time` 值；`04-user-ops.sql` 删除客服会话前补充清理 `support_ai_suggestion`，避免 Copilot 新表 FK 阻断本地验收 seed 重放。
+
+### Gateway / Frontend Copilot timeout 修复
+
+- Gateway 新增 `support-copilot-service` route，覆盖：
+  - `/api/user/cs/sessions/{sessionId}/copilot/suggestions`
+  - `/api/user/cs/copilot/suggestions/{suggestionId}/**`
+- Copilot route timeout 为 `GATEWAY_SUPPORT_COPILOT_RESPONSE_TIMEOUT_MS:35000`；普通 `/api/user/**` 仍保持 `GATEWAY_DEFAULT_ROUTE_RESPONSE_TIMEOUT_MS:5000`。
+- 前端 `generateCsCopilotSuggestion()` 使用专用 `COPILOT_GENERATE_REQUEST_TIMEOUT_MS=35000`；Accept/Edit/Reject 不扩大为长超时。
+- 未修改 C 端客服 stream，也未修改普通客服消息发送 timeout。
+
+### 真实 Copilot Generate latency
+
+- Gateway 直连链路：`POST http://localhost:8088/api/user/cs/sessions/988101/copilot/suggestions`，普通客服 `2020`，真实 Ollama，HTTP 200 / 业务码 200，`READY`，耗时 `15063ms`，未出现 504。
+- Frontend Next proxy 链路：`POST http://localhost:3000/api/user/cs/sessions/988101/copilot/suggestions`，HTTP 200 / 业务码 200，`READY`，耗时 `6388ms`，未出现前端代理超时。
+- Copilot 状态流补充验收：Accept `READY -> ACCEPTED`，Edit `ACCEPTED -> ACCEPTED_EDITED`，Reject `READY -> REJECTED`。
+
+### Finder 非空 search 验收
+
+- 登录用户 `2004` 后调用 Finder：
+  - interpret：HTTP 200 / 业务码 200，耗时 `5598ms`，解析为 `keyword=天鹅湖`、`city=广州`、`maxPrice=700`。
+  - search：HTTP 200 / 业务码 200，耗时 `9066ms`，返回 `3` 条非空结果。
+- 返回结果均为 `activityId=900028`、`sessionId=910028`、`city=广州`、`saleStatus=on_sale`。
+- 与 PostgreSQL 真值核对：
+  - `920084` 普通票 `240.00`，`session_seat` 可用量 `84`。
+  - `920083` A区票 `360.00`，`session_seat` 可用量 `60`。
+  - `920082` VIP票 `600.00`，`session_seat` 可用量 `40`。
+
+### 最终回归结果
+
+- `git diff --check`：通过；仅 CRLF 转换提示，无 whitespace error。
+- `powershell -ExecutionPolicy Bypass -File scripts/verify-prod-split-real-demo-seed.ps1`：通过。
+- `powershell -ExecutionPolicy Bypass -File scripts/check-production-runtime-defaults.ps1`：通过。
+- `powershell -ExecutionPolicy Bypass -File scripts/check-production-split-sql.ps1`：通过。
+- `powershell -ExecutionPolicy Bypass -File scripts/check-cross-owner-fks.ps1`：通过。
+- `mvn -pl java-gateway -Dtest=GatewayRouteTimeoutConfigTest test`：通过，`6/6`。
+- `mvn -pl java-user -am "-DargLine=-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime" test`：通过，`397/397`。
+- `node --test src/lib/customer-service-workbench.test.ts src/lib/customer-service-copilot.test.ts src/lib/api.test.ts`：通过，`62/62`。
+- `pnpm typecheck`：通过。
+- `pnpm build`：通过。
+- `powershell -ExecutionPolicy Bypass -File scripts/verify-microservice-boundaries.ps1`：首次在 Windows 本机因 `java-ai-core` 测试 JVM 缺少 loopback 临时目录参数失败；使用 `$env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime'` 后重跑通过，包含 Java boundary tests。
+
+### 已知问题分类
+
+- P0：无。
+- P1：无。
+- P2：`verify-microservice-boundaries.ps1` 在 Windows 环境需要给测试 JVM 注入 `-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime`，否则 `AiHttpLifecycleTest` 可能出现 `Unable to establish loopback connection`。
+- P2：日志安全既有问题仍存在：`UserService` 登录/注册日志打印完整手机号，非本阶段新增。
+- P3：本地 `prod-split-real-demo` seed 需要覆盖 Copilot 新表后的清理顺序，本阶段已修复 `04-user-ops.sql`。
+
+### Git 与运行态
+
+- 未 commit、未 push、未 merge。
+- 本阶段为本地真实验收启动/重启了 `java-user:8081` 与 `java-gateway:8088`；前端 `3000` 保持可访问。
+
+## 2026-09-17 Phase ⑥：最终系统验收与论文证据
+
+### 1. 系统最终架构
+
+Omni 当前采用 B 端主导、C 端参与的在线票务平台架构。前端使用 Next.js，统一通过 `request<T>()` 调用 Next.js proxy；proxy 将 `/api/**` 转发到 `java-gateway:8088`。Gateway 通过 Nacos 发现 Java 服务，Java 服务按数据归属访问各自 PostgreSQL 数据库，跨服务业务协作通过带 `X-Internal-Token` 的 internal API 完成。
+
+当前 `prod-split` 拓扑如下：
+
+| 服务 | 运行职责 | 数据库或基础设施 |
+|:---|:---|:---|
+| `java-user` | 用户、认证、RBAC、主办方、客服工作台、Copilot | `omni_user` |
+| `java-ticket` | 活动、场馆、场次、票档、座位、库存、搜索、Finder | `omni_ticket_split`、Elasticsearch |
+| `java-order` | 订单、订单快照、座位、电子票、转赠、核验 | `omni_order` |
+| `java-payment` | 支付、支付宝同步、退款、对账 | `omni_payment` |
+| `java-notification` | 站内通知和投递记录 | `omni_notification` |
+| `grab-service` | 抢票、团队抢票、候补、幂等、补偿 | `omni_grab`、Redis、RabbitMQ |
+| `java-gateway` | 路由、服务发现入口、超时和诊断日志 | 不连接业务数据库 |
+| `frontend` | C 端、B 端、客服工作台、AI Finder 页面 | Next.js proxy |
+
+`omni_ticket` 只保留为历史共享库、迁移源或 local-schema disposable 实验库。当前票务运行库为 `omni_ticket_split`。Production Split manifest 的迁移源仍为 `omni_ticket`，ticket 服务目标库已改为 `omni_ticket_split`。
+
+### 2. 主要模块
+
+- 用户与权限模块负责登录、注册、用户资料、主办方账号、客服账号、角色权限、技能组范围和操作审计。
+- 票务模块负责活动、艺人、巡演、场馆、场次、票种、座位图、库存、活动搜索和票务管理。
+- 订单模块负责创建订单、订单快照、座位锁定、确认售出、电子票、转赠和现场核验。
+- 支付模块负责支付发起、支付宝同步、退款审核和对账；真实支付或退款的外部副作用不在本阶段重复触发。
+- 抢票模块负责 Redis hold、Lua 原子操作、排队、团队策略、候补和补偿任务。
+- 客服工作台复用 `support_conversation`、`support_message`、`support_conversation_note` 等客服域数据，并通过 `SupportCopilotPanel` 提供 AI 草稿审核入口。
+
+### 3. AI Ticket Finder
+
+Finder 的实际调用链为：
+
+`自然语言 -> TicketIntentParser -> Elasticsearch candidate recall -> PostgreSQL availability truth -> Java 确定性筛选/排序 -> TicketResultFormatter -> 前端`
+
+AI 只负责自然语言意图解析和结果解释。Elasticsearch 负责候选召回；Java 票务服务从 PostgreSQL 读取场次、票档、价格、库存和售卖状态，并执行日期、城市、预算、可售性和排序规则。Finder 不创建订单、不锁座、不支付、不退款，也不修改库存。
+
+前序真实本地联调记录：
+
+- 查询：`帮我找广州的天鹅湖演出，预算700元以内`。
+- `interpret` 返回 HTTP 200，解析为 `keyword=天鹅湖`、`city=广州`、`maxPrice=700`，观察耗时 `5598ms`。
+- `search` 返回 HTTP 200 和 3 条非空结果，观察耗时 `9066ms`。
+- 结果均对应 `activityId=900028`、`sessionId=910028`、城市 `广州`、`saleStatus=on_sale`。
+- PostgreSQL 可售性真值为：`920084` 普通票 `240.00`、可用 `84`；`920083` A 区票 `360.00`、可用 `60`；`920082` VIP 票 `600.00`、可用 `40`。
+
+本阶段重新执行 `verify-prod-split-real-demo-seed.ps1`，确认 `910028` 仍为未来场次，活动数量为 `120`，海报数量不少于 `120`。未修改 Finder 的日期过滤、ES 查询或库存真值逻辑。
+
+### 4. AI Customer Service Copilot
+
+Copilot 后端调用链为：
+
+`CsCopilotController -> SupportCopilotService -> SupportCopilotContextService -> SupportCopilotFactCatalog/SupportCopilotFactValidator -> AiModelClient -> SupportAiSuggestionMapper`
+
+核心接口为：
+
+- `POST /api/user/cs/sessions/{sessionId}/copilot/suggestions`
+- `POST /api/user/cs/copilot/suggestions/{suggestionId}/accept`
+- `POST /api/user/cs/copilot/suggestions/{suggestionId}/edit`
+- `POST /api/user/cs/copilot/suggestions/{suggestionId}/reject`
+
+Copilot 状态机为：
+
+`GENERATING -> READY -> ACCEPTED -> ACCEPTED_EDITED`
+
+失败或终止状态包括 `REJECTED`、`EXPIRED` 和 `FAILED`。真实本地 Ollama 联调已验证：
+
+- Generate 创建 `support_ai_suggestion`，由 `GENERATING` 进入 `READY`。
+- Accept 将 `READY` 变为 `ACCEPTED`，不创建 `support_message`。
+- Edit 保存人工修改内容，将 `ACCEPTED` 变为 `ACCEPTED_EDITED`，保留原始 AI 文本。
+- Reject 将新的 `READY` 建议变为 `REJECTED`。
+- 新消息或上下文事实变化后，旧建议 Accept/Edit 返回 HTTP `409`，状态变为 `EXPIRED`。
+- AI 不可用时返回 HTTP `503`，失败记录为 `FAILED/UNAVAILABLE`，前端显示中文错误提示。
+- 非法 `factKey` 或事实冲突进入事实校验失败路径，返回 HTTP `502` 并记录 `FAILED/INVALID_OUTPUT`；错误事实不会进入 `sourceEvidence`。
+
+Copilot 只写入 `support_ai_suggestion`。人工点击 Accept 只接受草稿，人工编辑只保存修改；最终消息仍由工作台调用 `sendSupportMessage(selectedSession.id, replyDraft)` 写入 `support_message`。因此 `Accept != Send`。
+
+当前实现使用客服上下文、服务端事实目录和事实校验。仓库中的知识库或 RAG 基础能力不被本阶段描述为 Copilot 每次回答的强制依赖，不能据此声称所有 Copilot 回复均经过 RAG。
+
+### 5. AI 与业务边界
+
+| AI 模块 | AI 负责内容 | Java/业务服务负责内容 | 是否允许业务写操作 |
+|:---|:---|:---|:---|
+| AI Ticket Finder | 意图解析、自然语言条件提取、结果解释 | ES 候选召回、PostgreSQL 可售性、价格、日期、库存、确定性排序和 DTO | 不允许创建订单、锁座、支付、退款或改库存 |
+| Customer Service Copilot | 回复草稿、摘要、问题类型、推荐动作、事实引用建议 | 会话可见性、事实目录、事实校验、状态机、人工审核和消息发送 | 只允许写 `support_ai_suggestion`，不直接写 `support_message` |
+
+源码审计未发现 Finder 或 Copilot 直接注入 ticket/order/payment/refund/seat/inventory Mapper，也未发现 AI 直接调用订单、支付、退款、座位锁定或库存修改方法。
+
+### 6. RBAC
+
+Copilot 使用 `support.ai.use` 控制 Generate，使用 `support.ai.review` 控制 Accept/Edit/Reject；会话访问仍由 `CsSessionService.requireVisibleConversation` 按角色、技能组和会话归属判断。平台管理员沿用平台级权限，但普通用户不能通过前端隐藏或直接调用 API 绕过后端检查。
+
+真实本地权限验收记录：
+
+| 身份 | 验收结果 |
+|:---|:---|
+| `support_manager` 测试账号 `2019` | 在临时本地技能组 leader 夹具下可 Generate、Review；夹具已恢复 |
+| `support_agent` 测试账号 `2020` | 可进入工作台，但访问不在其技能组范围的会话返回 `403` |
+| `platform_super_admin` 测试账号 `2002` | Copilot Generate 通过 |
+| 普通用户测试账号 `2004` | Copilot API 返回 `403` |
+
+本地 E2E 曾临时设置 `cs_skill_group.id=1.leader_user_id=2019` 以覆盖主管技能组范围，测试结束后恢复为 `NULL`。没有为测试永久改变权限模型。
+
+### 7. Skill Group
+
+技能组树由 `cs_skill_group`、`cs_agent_member` 和会话的 `skill_group_id` 组成。树节点统计、会话分页、公共待认领池、坐席本人范围、主管技能组范围和平台管理员全局范围由服务端计算。前端将组织树筛选转换为服务端过滤参数，不在客户端自行扩大可见范围。
+
+### 8. Elasticsearch
+
+普通活动搜索和 Finder 候选召回都使用 `ElasticsearchActivitySearchProvider`。`ActivitySearchProperties` 要求 Elasticsearch，搜索服务没有恢复 PostgreSQL 或内存过滤 fallback。搜索索引变更通过 RabbitMQ 事件传递，消费者执行幂等 upsert/delete，失败进入 retry queue 和 DLQ。PostgreSQL 不承担搜索接口，但承担活动详情、票档、库存和座位等业务真值。
+
+### 9. PostgreSQL 与 Production Split
+
+当前目标数据库为：
+
+| 服务 | 数据库 |
+|:---|:---|
+| `java-user` | `omni_user` |
+| `java-ticket` | `omni_ticket_split` |
+| `java-order` | `omni_order` |
+| `java-payment` | `omni_payment` |
+| `java-notification` | `omni_notification` |
+| `grab-service` | `omni_grab` |
+
+`support_ai_suggestion` 归属 `java-user`，迁移文件为 `sql/production-split/user/20260916_support_ai_copilot.sql`，已登记到 manifest。新增的 `sql/production-split/grab/001_same_owner_constraints.sql` 补回 grab 服务内部外键和索引。此前运行 verifier 发现的 `activity_artist`、SeatCraft 版本表和风险恢复表 manifest 遗漏也已补齐。
+
+本阶段最终验证结果：
+
+- `check-production-split-sql.ps1`：通过。
+- `check-cross-owner-fks.ps1`：7 个历史 cross-owner FK、131 个 same-owner FK、1 个 legacy FK，清单通过。
+- `verify-production-split-runtime.ps1`：`user/ticket/order/payment/notification/grab` 分别通过 `25/51/8/1/0/4` 个 FK 检查；目标库包括 `omni_ticket_split`。
+- `check-production-runtime-defaults.ps1`：通过，生产 profile 的 token、密码、Nacos、Seata、ES、RabbitMQ、Alipay、Gateway 和前端 proxy 配置均通过守护检查。
+- `verify-prod-split-real-demo-seed.ps1`：通过，活动 `120` 条，海报不少于 `120` 张。
+
+本阶段没有执行生产数据库 cutover，没有删除生产 FK，没有执行新的数据库 migration，也没有把 `sql/local/*` 纳入生产链路。
+
+### 10. Redis / MQ
+
+- Redis 由 `grab-service` 用于库存 hold、幂等键、用户 hold、座位 hold 和抢票状态。
+- RabbitMQ 用于搜索索引事件、支付/业务通知和抢票异步队列；消费者使用幂等处理和失败队列。
+- Seata 用于订单、票务、支付核心跨服务写链路；各服务通过自己的数据源注册 RM，不通过跨库 Mapper 实现业务协作。
+
+本阶段以既有实现记录、配置守护、边界测试和 Java 单测作为证据，未进行压测或大规模并发吞吐实验。
+
+### 11. Gateway
+
+Gateway 不连接业务数据库。当前保留专用长超时路由：
+
+- `ai-ticket-finder` 匹配 `/api/ticket/ai/finder/**`，默认响应超时 `35000ms`。
+- `support-copilot-service` 匹配 Copilot 四类接口，默认响应超时 `35000ms`。
+- 普通 `/api/user/**` 和 `/api/ticket/**` 仍使用默认 `5000ms`，避免把所有业务请求无差别延长。
+- 客服消息流使用独立 stream route，普通人工发送链路没有改为 Copilot 长超时。
+
+`GatewayRouteTimeoutConfigTest` 最终为 `6/6`，覆盖 route 顺序、路径、URI 和 timeout 配置。
+
+### 12. Ollama
+
+客服 Copilot 的本地真实链路为 `java-user -> java-ai-core -> Ollama -> Qwen2.5:7b`。AI Core 对请求取消、超时、HTTP 错误、空结果、JSON 错误、SSE 错误和不可用状态进行统一映射。日志只保留 `requestId`、模型名、耗时、成功标记、stream 标记和结果分类，不记录 prompt、完整客服上下文、JWT、Authorization、API key 或供应商密钥。
+
+### 13. 测试环境
+
+- 操作系统：Windows 本机。
+- 运行 profile：`prod-split`。
+- PostgreSQL：本机 `localhost:5432`，使用六个服务数据库。
+- Gateway：`8088`；前端：`3000`；Nacos：`8848`；Ollama：`11434`；Redis：`6379`；RabbitMQ：`5672`。
+- 前端 Node 版本满足项目 `>=24` 要求。
+- Windows 测试 JVM 需要设置 `-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime`，以避免部分 AI Core boundary test 的 loopback 初始化问题。
+
+测试证据来自源码审计、PowerShell 守护脚本、Maven 单元测试、Node 测试、前端 typecheck/build 和前序本地真实 API 联调。支付、退款、座位锁定、库存修改等不可逆动作没有在本阶段主动触发。
+
+### 14. 测试方法
+
+1. 使用源码搜索核对 Finder、Copilot、Mapper、Repository、Entity、internal API 和业务写操作边界。
+2. 使用生产拆库、cross-owner FK、运行时默认值和 demo seed 脚本检查配置、资产和数据库现状。
+3. 使用 Maven 和 Node 测试覆盖状态机、异常映射、权限、事实校验、前端 API 路径和工作台交互状态。
+4. 使用本地真实 Ollama、Gateway、Frontend proxy 和 PostgreSQL 记录 Finder/Copilot 的实际请求结果和耗时。
+5. 对支付、退款、库存和座位等有外部副作用的动作只采用已有测试和只读数据证据，不重复触发真实写操作。
+
+### 15. 测试结果
+
+| 测试项 | 结果 |
+|:---|:---|
+| Java `mvn -pl java-user -am ... test` | `397/397`，0 failures，0 errors |
+| Frontend 定向 Node tests | `62/62`，0 failures |
+| `GatewayRouteTimeoutConfigTest` | `6/6` |
+| `pnpm exec tsc --noEmit` | PASS |
+| `pnpm build` | PASS，Next.js `16.2.1`，静态页面 `54/54` |
+| `verify-microservice-boundaries.ps1` | PASS |
+| `check-production-split-sql.ps1` | PASS |
+| `check-cross-owner-fks.ps1` | PASS |
+| `verify-production-split-runtime.ps1` | PASS，六个服务均完成 runtime FK 检查 |
+| `check-production-runtime-defaults.ps1` | PASS |
+| `verify-prod-split-real-demo-seed.ps1` | PASS |
+| `git diff --check` | PASS，无 whitespace error；仅有 CRLF 转换提示 |
+| 全量 `pnpm lint` | FAIL，5 个既有 error、218 个 warning，未涉及本阶段新增 Copilot 文件 |
+
+全量 lint 的 5 个 error 位于 `src/app/activity/[id]/page.tsx`、`src/app/console/refunds/page.tsx`、`src/components/GlobalDialog.tsx` 和 `src/components/Header.tsx`，规则类型为 React purity、`prefer-const` 和 `react/no-unescaped-entities`。本阶段没有扩大到无关页面修复。
+
+### 16. 异常测试
+
+| HTTP 或状态 | 验证内容 | 结果 |
+|:---|:---|:---|
+| `400` | 参数校验、非法请求和业务前置条件 | 既有 Java/Frontend 测试通过 |
+| `403` | 普通用户 Copilot、技能组范围和会话隔离 | 真实权限联调和测试通过 |
+| `409` | 新消息或上下文变化后的 stale Accept/Edit | 真实联调返回 `409`，状态为 `EXPIRED` |
+| `502` | Copilot 事实字段非法或事实冲突 | FactCatalog/FactValidator 测试和服务失败路径通过 |
+| `503` | Ollama/AI 服务不可用 | 真实不可用 endpoint 联调通过，状态为 `FAILED/UNAVAILABLE` |
+| `504` | AI 请求超出普通 Gateway 路由超时 | 已通过 Finder/Copilot 专用 `35000ms` route 治理；⑤-5 真实请求未再出现该问题 |
+
+事实校验的非法模型输出本阶段没有再次诱导真实模型产生；当前结论来自源码路径和定向单测，不把未重新测量的场景写成新的真实采样。
+
+### 17. 权限测试
+
+- `support.ai.use` 控制 Generate，`support.ai.review` 控制审核动作。
+- `support_manager` 需要同时满足角色权限和技能组 leader 可见范围。
+- `support_agent` 不能访问不属于本人或其技能组范围的会话。
+- `platform_super_admin` 可按平台权限访问 Copilot。
+- 普通用户直接调用 Copilot API 返回 `403`。
+- 前端只根据后端返回的 `permissionCodes` 显示 Generate，后端仍是最终授权边界。
+
+### 18. 安全测试
+
+- 新增 internal API 继续要求 `X-Internal-Token`；生产运行默认值检查要求通过环境变量注入 token、数据库密码、JWT secret、Nacos、Seata、RabbitMQ、Elasticsearch 和 Alipay 配置。
+- AI 日志不记录 prompt、完整客服上下文、Authorization、JWT、API key、supplier key 或模型凭证。
+- Finder/Copilot 不直接越过订单、支付、退款、票务和库存服务执行关键动作。
+- `support_ai_suggestion` 的事实引用经过白名单 FactCatalog 和 FactValidator 校验。
+- 已发现既有 `UserService` 登录/注册日志打印完整手机号；该问题不是 Copilot 本阶段引入，列为 P2。
+
+### 19. 性能观察
+
+本项目当前只有本地开发环境采样，没有形成 P95、P99、QPS、吞吐量或长期成功率结论。
+
+已记录的真实观察值：
+
+| 链路 | 观察值 |
+|:---|:---|
+| Finder interpret | `5598ms` |
+| Finder search | `9066ms` |
+| Copilot Gateway Generate | `15063ms` |
+| Copilot Frontend proxy Generate | `6388ms` |
+| Copilot Generate 其他 Ollama 样本 | 约 `2.7s`、`3.5s`、`4.0s`、`9.9s`、`11.0s`，存在模型和回复长度波动 |
+| Copilot Accept/Edit/Reject | 本地观察为亚秒级到低百毫秒级，未形成统计样本 |
+
+### 20. 已知问题
+
+- P0：无。
+- P1：无。未发现越权、AI 直接执行关键业务、Accept 自动发送、stale 绕过或错误事实进入用户回复。
+- P2：`UserService` 登录/注册日志仍打印完整手机号，属于既有日志安全问题。
+- P2：Windows 环境执行包含 AI Core boundary test 的完整边界脚本时，需要注入 `-Djdk.net.unixdomain.tmpdir=D:/Project/omni/runtime`。
+- P3：全量 ESLint 仍有 5 个未涉及本阶段文件的既有 error 和 218 个 warning。
+- P3：本机 Playwright wrapper 的 bash 入口不可用，真实页面检查使用 `npx --package @playwright/cli` 完成。
+
+Finder fixture 生命周期、Gateway/Copilot timeout 和 Production Split `grab` runtime 覆盖缺口已在本阶段或前序阶段修复，不列为当前未解决问题。
+
+### 材料 A：系统模块表
+
+| 模块 | 职责 | 核心技术 | 主要服务 |
+|:---|:---|:---|:---|
+| 用户与认证 | 登录、注册、资料、用户资产 | Spring Boot、PostgreSQL、JWT | `java-user` |
+| RBAC 与客服 | 角色、权限、技能组、会话、审计 | RBAC、Skill Group、PostgreSQL | `java-user` |
+| 票务管理 | 活动、场馆、场次、票档、座位、库存 | Spring Boot、PostgreSQL、Seata | `java-ticket` |
+| 活动搜索 | 关键词搜索、筛选、排序、索引 | Elasticsearch、RabbitMQ | `java-ticket` |
+| 订单与电子票 | 下单、订单快照、出票、转赠、核验 | Spring Boot、PostgreSQL、Seata | `java-order` |
+| 支付与退款 | 支付、同步、退款审核、对账 | Alipay、PostgreSQL、RabbitMQ | `java-payment` |
+| 通知 | 站内通知和投递 | RabbitMQ、PostgreSQL | `java-notification` |
+| 抢票与候补 | 排队、hold、幂等、候补、补偿 | NestJS、Redis Lua、RabbitMQ、PostgreSQL | `grab-service` |
+| AI Ticket Finder | 意图解析、候选召回、可售性筛选、解释 | Ollama、Elasticsearch、PostgreSQL | `java-ticket`、Gateway、Frontend |
+| Customer Service Copilot | 客服建议、事实引用、人工审核 | Ollama、FactCatalog、RBAC | `java-user`、Gateway、Frontend |
+
+### 材料 B：AI 能力对比表
+
+| AI 模块 | 输入 | AI 负责内容 | Java 负责内容 | 输出 | 是否允许业务写操作 |
+|:---|:---|:---|:---|:---|:---|
+| Ticket Finder | 用户自然语言找票条件 | Intent、条件提取、解释 | ES candidate recall、数据库真值、筛选排序 | 票务结果 DTO 和解释 | 否 |
+| Customer Service Copilot | 当前客服会话和服务端事实 | 草稿、摘要、问题类型、推荐动作 | 上下文权限、事实校验、建议状态、人工发送 | `support_ai_suggestion` 和人工最终消息 | 仅写建议，不直接写 `support_message` |
+
+### 材料 C：Copilot 状态机
+
+```text
+GENERATING
+  -> READY
+  -> FAILED
+
+READY
+  -> ACCEPTED
+  -> REJECTED
+  -> EXPIRED
+  -> FAILED
+
+ACCEPTED
+  -> ACCEPTED_EDITED
+  -> EXPIRED
+
+ACCEPTED_EDITED
+  -> EXPIRED
+```
+
+`EXPIRED` 由 stale message 或 stale context 触发；`FAILED` 记录不可用模型、超时或结构化输出/事实校验失败。
+
+### 材料 D：AI Ticket Finder 流程
+
+```text
+自然语言
+  -> TicketIntentParser
+  -> Elasticsearch 候选召回
+  -> PostgreSQL availability truth
+  -> Java 确定性筛选与排序
+  -> TicketResultFormatter
+  -> Frontend
+```
+
+### 材料 E：Copilot 流程
+
+```text
+客服会话
+  -> Context
+  -> Fact Catalog
+  -> Ollama
+  -> Structured Output
+  -> Fact Validation
+  -> Suggestion
+  -> Human Review
+  -> 人工 Send
+  -> support_message
+```
+
+### 材料 F：最终测试结果
+
+| 证据 | 结果 |
+|:---|:---|
+| Java 用户域及依赖模块 | `397/397` |
+| Frontend 客服工作台、Copilot、API 定向测试 | `62/62` |
+| Gateway route timeout | `6/6` |
+| Frontend typecheck | PASS |
+| Frontend production build | PASS，静态页面 `54/54` |
+| Microservice boundary verifier | PASS |
+| Production Split SQL/FK/runtime/defaults/seed | PASS |
+| `git diff --check` | PASS |
+| Full ESLint | FAIL，5 个既有 error，218 个 warning |
+
+### Phase ⑥ 结论
+
+在 Windows 本地 `prod-split` 环境中，Omni 已形成可运行的在线票务平台和两条边界清晰的 AI 辅助链路。Finder 将 AI 限制在意图和解释层，将可售性和业务真值交给 Elasticsearch、PostgreSQL 与 Java；Copilot 将 AI 输出限制为客服建议，经过事实校验和人工审核后才由原客服发送链路写入 `support_message`。本阶段结论为 PASS，但不等同于生产 cutover 完成，也不代表已完成性能压测或消除所有历史工程质量问题。

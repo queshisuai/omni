@@ -417,13 +417,24 @@ public class UserController {
             return Result.fail(400, "当前环境未启用短信验证码");
         }
         System.out.println("==========================================");
-        System.out.println("  短信验证码 [" + phone + "]: " + MOCK_SMS_CODE);
+        System.out.println("  短信验证码 [" + maskPhoneForLog(phone) + "]: " + MOCK_SMS_CODE);
         System.out.println("==========================================");
         return Result.success(MOCK_SMS_CODE);
     }
 
     public Result<String> sendCodeBlocked(String phone, BlockException exception) {
         return Result.fail(429, "系统繁忙，请稍后重试");
+    }
+
+    private String maskPhoneForLog(String phone) {
+        if (!StringUtils.hasText(phone)) {
+            return null;
+        }
+        String value = phone.trim();
+        if (value.length() < 7) {
+            return "****";
+        }
+        return value.substring(0, 3) + "****" + value.substring(value.length() - 4);
     }
 
     private Long requireAuthUserId(String authorization) {

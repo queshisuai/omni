@@ -63,7 +63,7 @@
       "service": "java-ticket",
       "key": "ticket",
       "targetInstance": "pg-ticket",
-      "targetDatabase": "omni_ticket",
+      "targetDatabase": "omni_ticket_split",
       "tables": ["category", "artist", "tour", "station", "activity", "venue", "venue_application", "session", "ticket_type", "ticket_type_area", "session_seat", "venue_area", "venue_seat", "reservation", "seat", "stock_log", "venue_seat_layout_template", "venue_seat_layout_template_section", "venue_default_layout", "venue_default_layout_section", "activity_seat_layout", "activity_seat_layout_section", "session_seat_layout", "session_seat_layout_section", "seat_block", "seat_override", "ticket_group", "layout_section"]
     },
     {
@@ -628,7 +628,7 @@ param(
 $ErrorActionPreference = "Stop"
 $checks = @(
     @{ Key = "user"; Host = $UserHost; Database = "omni_user" },
-    @{ Key = "ticket"; Host = $TicketHost; Database = "omni_ticket" },
+    @{ Key = "ticket"; Host = $TicketHost; Database = "omni_ticket_split" },
     @{ Key = "order"; Host = $OrderHost; Database = "omni_order" },
     @{ Key = "payment"; Host = $PaymentHost; Database = "omni_payment" },
     @{ Key = "notification"; Host = $NotificationHost; Database = "omni_notification" }

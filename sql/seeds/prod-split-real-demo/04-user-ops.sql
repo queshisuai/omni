@@ -60,6 +60,7 @@ DELETE FROM support_conversation_audit WHERE conversation_id BETWEEN 988101 AND 
 DELETE FROM support_conversation_tag WHERE conversation_id BETWEEN 988101 AND 988120;
 DELETE FROM support_conversation_note WHERE conversation_id BETWEEN 988101 AND 988120;
 DELETE FROM support_message WHERE conversation_id BETWEEN 988101 AND 988120;
+DELETE FROM support_ai_suggestion WHERE conversation_id BETWEEN 988101 AND 988120;
 DELETE FROM support_conversation WHERE id BETWEEN 988101 AND 988120;
 DELETE FROM support_quick_reply WHERE title IN ('用户上下文核查', '退款异常核查');
 DELETE FROM exception_task WHERE id BETWEEN 986001 AND 986050;
