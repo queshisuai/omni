@@ -41,7 +41,7 @@ function getSuggestionText(suggestion: SupportAiSuggestion) {
 function getStatusLabel(status: SupportAiSuggestion['status']) {
   if (status === 'GENERATING') return '正在分析'
   if (status === 'READY') return '待人工确认'
-  if (status === 'ACCEPTED') return '已接受'
+  if (status === 'ACCEPTED') return '已采用'
   if (status === 'ACCEPTED_EDITED') return '已人工修改'
   if (status === 'REJECTED') return '已拒绝'
   if (status === 'EXPIRED') return '已失效'
@@ -209,9 +209,9 @@ export default function SupportCopilotPanel({
             <Sparkles className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-[13px] font-semibold text-[#111827]">AI 智能助手</h3>
+            <h3 className="truncate text-[13px] font-semibold text-[#111827]">AI 客服 Copilot</h3>
             <div className="mt-0.5 text-[10px] text-[#9ca3af]">
-              {suggestion ? getStatusLabel(suggestion.status) : '人工审核后发送'}
+              {suggestion ? getStatusLabel(suggestion.status) : 'AI 草稿，人工确认后发送'}
             </div>
           </div>
         </div>
@@ -302,7 +302,7 @@ export default function SupportCopilotPanel({
                   className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#ff1268] px-3 text-[11px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Check className="h-3.5 w-3.5" />
-                  {loadingAction === 'accept' ? '处理中...' : '接受'}
+                  {loadingAction === 'accept' ? '处理中...' : '采用建议'}
                 </button>
                 <button
                   type="button"

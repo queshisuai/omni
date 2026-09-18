@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, use, useMemo, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Ban, Bell, CalendarDays, Check, Info, Clock3, Heart, MapPin, MessageCircle, ShieldCheck, Star, Ticket, UserCheck, UserRound, UsersRound } from 'lucide-react'
+import { Ban, Bell, CalendarDays, Check, Info, Clock3, Heart, MapPin, MessageCircle, ShieldCheck, Sparkles, Star, Ticket, UserCheck, UserRound, UsersRound } from 'lucide-react'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { FloatingBackButton } from '@/components/FloatingBackButton'
@@ -1518,6 +1519,13 @@ export default function ActivityDetailPage({ params }: { params: Promise<{ id: s
                 ? '倒计时：当前站点排期待公布'
                 : selectedSession?.session.startTime ? `倒计时：${getCountdownText(selectedSession.session.startTime)}` : '倒计时：场次时间待定'}
             </div>
+            <Link
+              href="/ai/ticket-finder"
+              className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[#ffd6e7] bg-[#fff8fb] px-3.5 py-2.5 text-[13px] font-medium text-[#e6005c] transition-colors hover:border-[#ff1268] hover:bg-[#fff0f5]"
+            >
+              <Sparkles className="h-4 w-4" />
+              想找更合适的场次？让 AI 帮你找票
+            </Link>
           </div>
         </div>
 

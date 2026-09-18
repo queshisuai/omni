@@ -1504,3 +1504,22 @@ ACCEPTED_EDITED
 ### Phase ⑥ 结论
 
 在 Windows 本地 `prod-split` 环境中，Omni 已形成可运行的在线票务平台和两条边界清晰的 AI 辅助链路。Finder 将 AI 限制在意图和解释层，将可售性和业务真值交给 Elasticsearch、PostgreSQL 与 Java；Copilot 将 AI 输出限制为客服建议，经过事实校验和人工审核后才由原客服发送链路写入 `support_message`。本阶段结论为 PASS，但不等同于生产 cutover 完成，也不代表已完成性能压测或消除所有历史工程质量问题。
+
+### 2026-09-18 前端 AI 功能产品化完善（工程记录）
+
+- C 端入口：首页轻量入口、Header 顶部导航、Header 搜索旁入口、搜索无结果辅助入口、活动详情辅助入口，统一跳转 `/ai/ticket-finder`。
+- Finder：增加快捷示例、Enter 提交与 Shift+Enter 换行、用户可见的理解/查找阶段文案、无结果调整建议，以及 404/429/500/502/503/504 错误映射。
+- 购票跳转：继续使用既有 `activityId + sessionId + ticketTypeId` 详情链接；详情页既有合法 session 优先、跨 session ticket 回退逻辑未修改。
+- Copilot：面板标题改为“AI 客服 Copilot”，明确“AI 草稿，人工确认后发送”，采用建议仍只填充人工回复编辑区，人工 `sendSupportMessage()` 链路未改变。
+- 验证：Finder/Copilot/详情预选/搜索相关 Node 测试 `42/42` 通过；`pnpm typecheck` 通过；`pnpm build` 通过，静态页面 `54/54`；`pnpm lint` 无 error，保留仓库既有 warning。
+- 浏览器：桌面和 390x844 移动视口已验证首页入口、Header 菜单、Finder 初始状态、快捷示例填充和空输入提示。因本地后端未启动，真实 Finder 三条结果、活动详情预选和登录后的 Copilot 会话闭环未在本次运行中复现。
+- 本记录仅记录工程实现与验收偏离，不涉及毕业论文或开题报告整理。
+
+### 2026-09-18 Seata 本地注册地址治理
+
+- 根因证据：四个目标 Java `application-prod-split.yml` 只配置 Nacos Registry/Config、`SEATA_GROUP`、`omni_tx_group` 和 `default` cluster，没有写入 `10.150.195.38`；旧地址同时出现在运行中 `omni-seata` 的 `SEATA_IP`、Nacos `SEATA_GROUP@@seata-server` 实例和 `seataServer.properties` 的 `service.default.grouplist`。
+- 当前网络：宿主机有效 IPv4 为 `10.150.206.83`；`127.0.0.1:8091` 虽通过 `Test-NetConnection`，但 Seata 1.6.1 Docker 实测向 Nacos 注册为容器地址 `172.18.0.7:8091`，宿主机 Java 通过 Nacos 发现后不可用，因此不能把回环地址作为最终注册方案。
+- 修复：保留并强化宿主机非回环 IPv4 自动探测；`start-seata-docker.ps1` 增加 Nacos 注册收敛校验，并将一次性 `seata-config-init` 改为 `docker compose run --rm`，避免脚本挂在 attached one-shot 容器；`refresh-seata-advertise-host.ps1` 继续在网络变化后按当前主 IPv4 触发重建。
+- 防漂移：Seata 重建后脚本会同步 Nacos 配置中心、校验 `SEATA_GROUP@@seata-server` 仅保留当前有效实例，并输出 Docker/Nacos/注册地址/端口/健康/注册表/连通性结果；不需要修改四个 Java 服务的 `application.yml`。
+- 偏离说明：本轮先验证了 `127.0.0.1`，随后因 Nacos 实例证据回退到非回环自动探测方案；未修改订单、支付、票务、库存、AI 或 Seata 事务业务逻辑。
+- 最终验收：`omni-seata` 为 `running/healthy`；Nacos `SEATA_GROUP@@seata-server` 仅保留 `10.150.206.83:8091` 且 `healthy=true/enabled=true`；`seataServer.properties` 的 `service.vgroupMapping.omni_tx_group=default` 与 `service.default.grouplist=10.150.206.83:8091` 已生效。Seata 日志确认 `java-order`、`java-payment`、`java-ticket` 的 TM/RM 注册成功，RM 资源分别为 `omni_order`、`omni_payment`、`omni_ticket_split`；Java 回归测试和微服务边界验收均通过。

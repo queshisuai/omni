@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Search, MapPin, ChevronDown, User, Menu, X, Trash2, Flame } from "lucide-react";
+import { Search, MapPin, ChevronDown, User, Menu, X, Trash2, Flame, Sparkles } from "lucide-react";
 import { AUTH_UPDATED_EVENT, getUser, isAuthenticated, logout } from "@/lib/auth";
 import { CITY_KEY, filterCityOptions, formatCityDisplay, resolveRouteCity, resolveStoredCity, ALL_CITY_VALUE } from "@/lib/city-selection";
 import { canEnterConsole, getDefaultConsolePath } from "@/lib/console-auth";
@@ -52,6 +52,7 @@ export function Header() {
   const pathname = usePathname();
   const [showCityDropdown, setShowCityDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [nickname, setNickname] = useState("");
   const [avatar, setAvatar] = useState<string | null>(null);
@@ -227,6 +228,10 @@ export function Header() {
       window.removeEventListener(AUTH_UPDATED_EVENT, checkAuth)
       window.removeEventListener('omni-city-updated', handleCityUpdate)
     }
+  }, [pathname])
+
+  useEffect(() => {
+    setShowMobileMenu(false)
   }, [pathname])
 
   useEffect(() => {
@@ -424,7 +429,7 @@ export function Header() {
         </div>
 
         {/* Nav Links */}
-        <nav className="flex items-center gap-6 ml-2">
+        <nav className="ml-2 hidden items-center gap-6 lg:flex">
           <Link
             href="/"
             className={`text-[16px] font-medium transition-colors ${
@@ -440,6 +445,15 @@ export function Header() {
             }`}
           >
             分类
+          </Link>
+          <Link
+            href="/ai/ticket-finder"
+            className={`inline-flex items-center gap-1.5 text-[16px] font-medium transition-colors ${
+              pathname.startsWith('/ai/ticket-finder') ? 'text-[#ff1268]' : 'text-[#111] hover:text-[#ff1268]'
+            }`}
+          >
+            <Sparkles className="h-4 w-4" />
+            AI 找票
           </Link>
         </nav>
 
@@ -633,6 +647,13 @@ export function Header() {
             </div>
           )}
         </div>
+        <Link
+          href="/ai/ticket-finder"
+          className="hidden h-11 shrink-0 items-center gap-1.5 rounded-2xl border border-[#ffd6e7] bg-[#fff7fa] px-3 text-[13px] font-semibold text-[#e6005c] transition-colors hover:border-[#ff1268] hover:bg-[#fff0f5] lg:inline-flex"
+        >
+          <Sparkles className="h-4 w-4" />
+          AI 找票
+        </Link>
 
         {loggedIn && <NotificationBell />}
 
@@ -749,10 +770,41 @@ export function Header() {
         </div>
 
         {/* Mobile Menu */}
-        <button className="lg:hidden">
-          <Menu className="w-6 h-6" />
+        <button
+          type="button"
+          aria-label={showMobileMenu ? '关闭菜单' : '打开菜单'}
+          aria-expanded={showMobileMenu}
+          onClick={() => setShowMobileMenu(open => !open)}
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-[#111] transition-colors hover:bg-[#fff0f5] hover:text-[#ff1268] lg:hidden"
+        >
+          {showMobileMenu ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
       </div>
+      {showMobileMenu && (
+        <div className="border-t border-gray-100 bg-white px-5 py-3 shadow-sm lg:hidden">
+          <nav className="mx-auto flex max-w-[1200px] flex-col gap-1">
+            <Link
+              href="/"
+              className="rounded-lg px-3 py-2.5 text-[14px] font-medium text-[#111] hover:bg-[#fff4f8] hover:text-[#ff1268]"
+            >
+              首页
+            </Link>
+            <Link
+              href="/search"
+              className="rounded-lg px-3 py-2.5 text-[14px] font-medium text-[#111] hover:bg-[#fff4f8] hover:text-[#ff1268]"
+            >
+              分类
+            </Link>
+            <Link
+              href="/ai/ticket-finder"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#fff7fa] px-3 py-2.5 text-[14px] font-semibold text-[#e6005c] hover:bg-[#fff0f5]"
+            >
+              <Sparkles className="h-4 w-4" />
+              AI 找票
+            </Link>
+          </nav>
+        </div>
+      )}
     </header>
   );
 }

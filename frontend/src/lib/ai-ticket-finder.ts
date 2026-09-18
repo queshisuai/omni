@@ -1,6 +1,12 @@
 import { ApiError } from './api.ts'
 import type { TicketFinderResult, TicketIntent } from '@/types/api'
 
+export const AI_TICKET_FINDER_QUICK_EXAMPLES = [
+  '上海周末的演唱会',
+  '广州300元以内的话剧',
+  '北京近期适合两个人看的演出',
+] as const
+
 export interface FinderCondition {
   label: string
   value: string
@@ -56,8 +62,12 @@ export function getFinderErrorMessage(error: unknown) {
     if (error.code === 401) return '请先登录后使用 AI 智能找票'
     if (error.code === 403) return '当前账号暂时不能使用 AI 智能找票'
     if (error.code === 400) return error.message || '找票条件不正确，请调整后重试'
+    if (error.code === 404) return '暂时找不到相关票务信息，请调整条件后重试'
+    if (error.code === 429) return '当前请求较多，请稍后再试'
     if (error.code === 504 || error.message.includes('超时')) return '找票服务响应超时，请稍后重试'
-    if (error.code === 503) return '找票服务暂时不可用，请稍后重试'
+    if (error.code === 500 || error.code === 502 || error.code === 503) {
+      return 'AI 找票服务暂时不可用，请稍后重试'
+    }
   }
   return '找票失败，请稍后重试'
 }

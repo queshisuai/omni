@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, Suspense, useRef } from 'react'
+import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { ArrowRight, Sparkles } from 'lucide-react'
 import { Header, HOT_CITIES, OTHER_CITIES } from '@/components/Header'
 import { Footer } from '@/components/Footer'
 import { TicketCard } from '@/components/TicketCard'
@@ -794,6 +796,16 @@ function SearchContent() {
             <div className="rounded-3xl border border-gray-100 bg-white px-6 py-20 text-center text-[14px] text-gray-500">
               <div className="font-medium text-gray-600">暂无符合条件的演出</div>
               <div className="mt-2 text-[13px] text-gray-400">可以放宽筛选条件，或先关注城市；无票票档可在购票区加入候补。</div>
+              {keyword.trim() && (
+                <Link
+                  href="/ai/ticket-finder"
+                  className="mx-auto mt-6 inline-flex max-w-full items-center gap-2 rounded-xl border border-[#ffd6e7] bg-[#fff8fb] px-4 py-3 text-left text-[13px] font-semibold text-[#e6005c] transition-colors hover:border-[#ff1268] hover:bg-[#fff0f5]"
+                >
+                  <Sparkles className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 truncate">找不到合适的票？试试 AI 智能找票</span>
+                  <ArrowRight className="h-4 w-4 shrink-0" />
+                </Link>
+              )}
               {(emptyRecommendations.terms.length > 0 || emptyRecommendations.recentTerms.length > 0 || emptyRecommendations.cities.length > 0) && (
                 <div className="mx-auto mt-5 max-w-[640px] rounded-2xl bg-gray-50 px-4 py-4 text-left">
                   {emptyRecommendations.terms.length > 0 && (

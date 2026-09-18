@@ -7,11 +7,16 @@ import { Button } from '@/components/ui/button'
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
 import { interpretAiTicketFinder, searchAiTicketFinder } from '@/lib/api'
-import { buildFinderPurchaseHref, formatFinderConditions, getFinderErrorMessage } from '@/lib/ai-ticket-finder'
+import {
+  AI_TICKET_FINDER_QUICK_EXAMPLES,
+  buildFinderPurchaseHref,
+  formatFinderConditions,
+  getFinderErrorMessage,
+} from '@/lib/ai-ticket-finder'
 import { isAuthenticated } from '@/lib/auth'
 import type { FinderClarification, TicketFinderResult, TicketIntent } from '@/types/api'
 
-const EXAMPLE_QUERY = '这周末东京两个人看演唱会，预算500元以内'
+const EXAMPLE_QUERY = '例如：帮我找广州的天鹅湖演出，预算700元以内'
 
 function formatSessionTime(value: string | null | undefined) {
   return value ? value.replace('T', ' ').slice(0, 16) : '场次时间待同步'
@@ -160,11 +165,19 @@ export default function TicketFinderPage() {
 
   const handleAdjust = () => {
     setHasSearched(false)
+    setIntent(null)
+    setClarification(null)
+    setClarificationAnswer('')
     setResults([])
     setExplanation('')
     setError('')
     inputRef.current?.focus()
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleAdjustWithHint = (hint: string) => {
+    setQuery(current => `${current.trim()}；${hint}`.replace(/^；/, ''))
+    handleAdjust()
   }
 
   const handlePurchase = (result: TicketFinderResult) => {
@@ -197,7 +210,7 @@ export default function TicketFinderPage() {
                 value={query}
                 onChange={event => setQuery(event.target.value)}
                 onKeyDown={event => {
-                  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                  if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
                     handleInterpret()
                   }
@@ -208,7 +221,7 @@ export default function TicketFinderPage() {
                 className="min-h-[84px] w-full resize-none bg-transparent px-2 py-1 text-[16px] leading-7 text-[#17191d] outline-none placeholder:text-[#a4a8b0]"
               />
               <div className="flex flex-col gap-3 border-t border-[#eef0f2] px-2 pt-3 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-[12px] text-[#a0a4ab]">描述越具体，筛选结果越贴合</span>
+                <span className="text-[12px] text-[#a0a4ab]">按 Enter 提交，Shift + Enter 换行</span>
                 <Button
                   type="button"
                   onClick={handleInterpret}
@@ -216,8 +229,23 @@ export default function TicketFinderPage() {
                   className="h-10 w-full bg-[#ff1268] px-5 text-white hover:bg-[#e50f5d] sm:w-auto"
                 >
                   {interpreting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {interpreting ? '正在理解条件' : '开始找票'}
+                  {interpreting ? '正在理解你的需求……' : '开始找票'}
                 </Button>
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="mb-2 text-[12px] font-medium text-[#8a8e97]">快捷示例</div>
+              <div className="flex flex-wrap gap-2">
+                {AI_TICKET_FINDER_QUICK_EXAMPLES.map(example => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => setQuery(example)}
+                    className="max-w-full truncate rounded-full border border-[#eceef1] bg-white px-3 py-1.5 text-left text-[12px] text-[#646872] transition-colors hover:border-[#ff1268] hover:bg-[#fff7fa] hover:text-[#e6005c]"
+                  >
+                    {example}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -292,7 +320,7 @@ export default function TicketFinderPage() {
                   className="h-10 w-full bg-[#17191d] px-5 text-white hover:bg-[#30343a] sm:w-auto"
                 >
                   {searching ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {searching ? '正在查找' : '查找符合条件的票'}
+                  {searching ? '正在为你查找可售票……' : '查找符合条件的票'}
                 </Button>
               </div>
               {conditions.length > 0 ? (
@@ -324,20 +352,39 @@ export default function TicketFinderPage() {
             {searching ? (
               <div className="flex flex-col items-center justify-center py-20 text-[13px] text-[#8a8e97]">
                 <LoaderCircle className="mb-3 h-7 w-7 animate-spin text-[#ff1268]" />
-                正在查找真实可购场次
+                正在为你查找可售票……
               </div>
             ) : results.length === 0 ? (
               <div className="py-16 text-center">
-                <div className="text-[16px] font-medium text-[#373b42]">暂时没有找到符合全部条件的场次</div>
-                <div className="mt-2 text-[13px] text-[#9a9ea6]">当前条件没有自动放宽，调整后可以再次查找。</div>
+                <div className="text-[16px] font-medium text-[#373b42]">暂时没有找到符合条件的可售票</div>
+                <div className="mt-2 text-[13px] text-[#9a9ea6]">可以调整预算、城市或日期，再重新找票。</div>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleAdjust}
                   className="mt-6 border-[#ff1268] text-[#e6005c] hover:bg-[#fff0f5]"
                 >
-                  调整条件
+                  重新找票
                 </Button>
+                <div className="mx-auto mt-7 max-w-[680px] border-t border-[#f0f1f3] pt-5 text-left">
+                  <div className="mb-3 text-[12px] font-medium text-[#9a9ea6]">可以尝试</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: '降低预算要求', hint: '预算可以再灵活一些' },
+                      { label: '更换城市', hint: '也可以看看其他城市' },
+                      { label: '放宽日期', hint: '日期可以适当放宽' },
+                    ].map(option => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        onClick={() => handleAdjustWithHint(option.hint)}
+                        className="rounded-full border border-[#eceef1] bg-white px-3 py-1.5 text-[12px] text-[#646872] transition-colors hover:border-[#ff1268] hover:bg-[#fff7fa] hover:text-[#e6005c]"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 {conditions.length > 0 && (
                   <div className="mx-auto mt-7 max-w-[680px] border-t border-[#f0f1f3] pt-5 text-left">
                     <div className="mb-3 text-[12px] font-medium text-[#9a9ea6]">当前条件</div>

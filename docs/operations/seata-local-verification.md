@@ -8,7 +8,7 @@
   - `https://docker.m.daocloud.io/`
 - Seata Server 镜像：`seataio/seata-server:1.6.1`
 - 本地 Java 服务运行位置：宿主机
-- 本地 Seata Server 注册地址：通过 `SEATA_ADVERTISE_HOST` 设置为宿主机可达的非回环 IPv4，本次验证为 `10.142.195.38:8091`
+- 本地 Seata Server 注册地址：由脚本自动探测宿主机可达的非回环 IPv4
 
 ## 启动
 
@@ -17,13 +17,13 @@ powershell -ExecutionPolicy Bypass -File scripts/start-seata-docker.ps1
 powershell -ExecutionPolicy Bypass -File start-project.ps1
 ```
 
-宿主机运行 Java 服务、Docker 运行 Nacos/Seata 时，不要手工维护 `.env` 里的 `SEATA_ADVERTISE_HOST`。统一使用脚本自动探测当前宿主机非回环 IPv4，并同步更新 Nacos 配置中心和 Seata 服务注册表：
+宿主机运行 Java 服务、Docker 运行 Nacos/Seata 时，不要手工维护 `.env` 里的 `SEATA_ADVERTISE_HOST`。统一使用脚本自动探测当前宿主机可达的非回环 IPv4，并同步更新 Nacos 配置中心和 Seata 服务注册表：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/start-seata-docker.ps1
 ```
 
-注意：Seata Server 1.6.1 不接受 `127.0.0.1` 作为注册 IP。若未设置 `SEATA_ADVERTISE_HOST` 或设置为回环地址，`seata-config-init` 会失败，避免向 Nacos 写入宿主机 Java 不可达的地址。
+当前 Seata 1.6.1 Docker 实测不适合把 `127.0.0.1` 作为 Nacos 注册地址：Seata Server 会向 Nacos 暴露 Docker 网络地址，宿主机 Java 客户端通过 Nacos 发现后无法使用该容器地址。因此本地和跨机器模式统一使用自动探测的宿主机非回环 IPv4；网络变化后重新运行脚本即可更新注册。
 
 本地 Docker Compose 不再启动 PostgreSQL 容器；Java 服务和 grab-service 均连接本机 PostgreSQL。不要恢复 `postgres` / `omni-postgres` Docker 服务，否则容易出现某个服务误连旧 Docker 数据库的运行错误。
 
